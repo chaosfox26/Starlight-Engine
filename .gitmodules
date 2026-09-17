@@ -1,0 +1,3 @@
+[submodule "deep/third_party/JoltPhysics"]
+	path = deep/third_party/JoltPhysics
+	url = https://github.com/jrouwe/JoltPhysics.git
