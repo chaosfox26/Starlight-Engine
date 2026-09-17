@@ -252,7 +252,7 @@ void NativeSession::run(std::stop_token stop) {
         }
         auto report = status();
         atomic_write(application_data() / L"Diagnostics/NativeEditor" /
-                         (L"session-" + std::to_wstring(GetCurrentProcessId()) + L".json"),
+                         (L"session-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(reinterpret_cast<uintptr_t>(window_)) + L".json"),
                      json{{"frames", report.frames}, {"renderWidth", report.width},
                           {"gpuMs", report.gpu_ms}, {"rayMs", report.ray_ms},
                           {"denoiseMs", report.denoise_ms}, {"activeTier", report.tier},

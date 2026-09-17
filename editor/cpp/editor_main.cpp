@@ -7,6 +7,8 @@
 #include "music.hpp"
 
 #include "native_session.hpp"
+#include "game_preview.hpp"
+#include "features.hpp"
 
 #include "projects.hpp"
 
@@ -159,6 +161,8 @@ struct Editor {
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
 
+    #include "classic_completion.inl"
+
     explicit Editor(HINSTANCE h) : instance(h) {
         Gdiplus::GdiplusStartupInput input;
         if (Gdiplus::GdiplusStartup(&graphicsToken, &input, nullptr) != Gdiplus::Ok)
@@ -166,7 +170,10 @@ struct Editor {
     }
 
     ~Editor() {
+        gamePreview.reset();
+        if(projectWindow && IsWindow(projectWindow)) DestroyWindow(projectWindow);
         renderer.reset();
+        if(projectHeading)DeleteObject(projectHeading);
         if (font)
             DeleteObject(font);
         if (smallFont)
@@ -231,11 +238,7 @@ struct Editor {
             }
             if (m == WM_KEYDOWN) {
                 if (w == VK_ESCAPE) {
-                    self->pendingPour.reset();
-                    self->history.cancel(self->scene);
-                    self->stroke = self->orbit = false;
-                    self->refresh();
-                    ReleaseCapture();
+                    self->escape();
                     return 0;
                 }
                 if (w == VK_DELETE) {
@@ -325,6 +328,7 @@ struct Editor {
         bool checkbox = std::wstring_view(cls) == L"BUTTON" && (style & BS_TYPEMASK) == BS_AUTOCHECKBOX;
         if (std::wstring_view(cls) == L"COMBOBOX")
             style |= CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;
+        if (std::wstring_view(cls) != L"STATIC") style |= WS_TABSTOP;
         auto child = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, parent,
                                      reinterpret_cast<HMENU>(INT_PTR(id)), instance, nullptr);
         if (!child)
@@ -429,6 +433,12 @@ struct Editor {
 
     static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
         auto self = reinterpret_cast<Editor *>(data);
+        if (h == self->dock && ((m == WM_HSCROLL && !l) || m == WM_MOUSEWHEEL)) {
+            SCROLLINFO si{sizeof(si),SIF_ALL};GetScrollInfo(h,SB_HORZ,&si);int next=self->dockScroll;
+            if(m==WM_MOUSEWHEEL)next-=GET_WHEEL_DELTA_WPARAM(w)/120*80;
+            else switch(LOWORD(w)){case SB_LINELEFT:next-=44;break;case SB_LINERIGHT:next+=44;break;case SB_PAGELEFT:next-=int(si.nPage);break;case SB_PAGERIGHT:next+=int(si.nPage);break;case SB_THUMBTRACK:next=si.nTrackPos;break;case SB_LEFT:next=0;break;case SB_RIGHT:next=si.nMax;break;}
+            self->scroll_dock(next);return 0;
+        }
         if (m == WM_SIZE) InvalidateRect(h, nullptr, FALSE);
         if (m == WM_HSCROLL || m == WM_COMMAND || m == WM_DRAWITEM || m == WM_MEASUREITEM ||
             m == WM_CTLCOLORSTATIC || m == WM_CTLCOLOREDIT || m == WM_CTLCOLORLISTBOX)
@@ -453,6 +463,7 @@ struct Editor {
     }
     HWND panel(int x, int y, int w, int h) {
         auto result = control(window, L"STATIC", L"", 0, x, y, w, h, WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+        SetWindowLongPtrW(result,GWL_EXSTYLE,GetWindowLongPtrW(result,GWL_EXSTYLE)|WS_EX_CONTROLPARENT);
         SetWindowSubclass(result, panel_proc, 3, reinterpret_cast<DWORD_PTR>(this));
         return result;
     }
@@ -498,6 +509,7 @@ struct Editor {
         for (auto h : dockControls)
             destroy_control(h);
         dockControls.clear();
+        dockScroll=0;
         radiusSlider = strengthSlider = nullptr;
         dockSection = section;
         int x = 14;
@@ -617,15 +629,9 @@ struct Editor {
             row(Stamp, L"Stamp selected shape");
             row(MenuWorld + 100, L"Lighting & world settings");
         } else if (id == MenuMore) {
-            row(MusicOpen, L"Choose music…");
-            row(MusicPlay, L"Play music");
-            row(MusicPause, L"Pause music");
-            row(MusicNext, L"Next track");
-            row(MusicStop, L"Stop music");
-            row(MusicQuieter, L"Volume down");
-            row(MusicLouder, L"Volume up");
-            row(FullScreen, L"Full screen");
+            openMenu=0;ensure_secondary_panels();ShowWindow(morePanel,IsWindowVisible(morePanel)?SW_HIDE:SW_SHOW);
         }
+
         layout();
     }
     void initialize() {
@@ -683,7 +689,8 @@ struct Editor {
         if (!fs::exists(characterAsset)) characterAsset.clear();
         assetPanel = panel(24, 76, 260, 500);
         control(assetPanel, L"STATIC", L"CHARACTERS", 0, 16, 15, 220, 22);
-        characterCard = control(assetPanel, L"STATIC", characterAsset.empty() ? L"Choose a character" : L"★  Fox", 0, 16, 47, 228, 32);
+        characterCard = control(assetPanel, L"STATIC", characterAsset.empty() ? L"Choose a character" : L"★  Fox", 0, 16, 47, 228, 32, SS_NOTIFY | WS_TABSTOP);
+        SetWindowSubclass(characterCard,card_proc,8,reinterpret_cast<DWORD_PTR>(this));
         control(assetPanel, L"BUTTON", L"Place character", PlaceCharacter, 14, 84, 232, 34);
         control(assetPanel, L"BUTTON", L"Import character…", Import, 14, 124, 232, 34);
         control(assetPanel, L"BUTTON", L"Character settings", ObjectProperties, 14, 164, 232, 34);
@@ -725,16 +732,20 @@ struct Editor {
         renderer->size(vw, vh);
         for (size_t i = 1; i < top.size(); i++)
             MoveWindow(top[i], width - 184 + int(i - 1) * 44, 18, 36, 30, TRUE);
-        int dockX = std::max(18, (width - dockWidth) / 2);
-        int dockBottom = dockX + dockWidth > width - 292 ? height - 192 : height - 120;
-        MoveWindow(dock, dockX, std::max(110, dockBottom), dockWidth, 60, TRUE);
-        SetWindowRgn(dock, CreateRoundRectRgn(0, 0, dockWidth + 1, 61, 60, 60), TRUE);
+        dockViewportWidth=std::min(dockWidth,std::max(1,width-36));
+        int dockX = std::max(18, (width - dockViewportWidth) / 2);
+        int dockBottom = dockX + dockViewportWidth > width - 292 ? height - 192 : height - 120;
+        const int dockHeight=dockWidth>dockViewportWidth?80:60;
+        MoveWindow(dock, dockX, std::max(110, dockBottom), dockViewportWidth, dockHeight, TRUE);
+        SCROLLINFO horizontal{sizeof(horizontal),SIF_RANGE|SIF_PAGE|SIF_POS};horizontal.nMax=dockWidth-1;horizontal.nPage=dockViewportWidth;horizontal.nPos=dockScroll;
+        SetScrollInfo(dock,SB_HORZ,&horizontal,TRUE);scroll_dock(dockScroll);
+        SetWindowRgn(dock, CreateRoundRectRgn(0, 0, dockViewportWidth + 1, dockHeight+1, 30, 30), TRUE);
         MoveWindow(playbackPanel, width - 264, height - 120, 232, 60, TRUE);
         SetWindowRgn(playbackPanel, CreateRoundRectRgn(0, 0, 233, 61, 24, 24), TRUE);
         int page = int(SendMessage(tab, CB_GETCURSEL, 0, 0));
         int ph = std::min(std::max(250, height - 190), formRows * 35 + 90);
         const bool dockSettings = page == 4 || page == 5;
-        const int px = dockSettings ? std::clamp(dockX + dockWidth - 318, 18, width - 336) : width - 342;
+        const int px = dockSettings ? std::clamp(dockX + dockViewportWidth - 318, 18, width - 336) : width - 342;
         const int py = dockSettings ? std::max(66, dockBottom - ph - 10) : 76;
         MoveWindow(propertiesPanel, px, py, 318, ph, TRUE);
         MoveWindow(inspector, 8, 54, 302, std::max(100, ph - 64), TRUE);
@@ -755,6 +766,7 @@ struct Editor {
             SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         for (auto h : {dock, playbackPanel, assetPanel, propertiesPanel, menuPanel})
             SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        layout_secondary();
         InvalidateRect(window, nullptr, FALSE);
     }
     void paint_chrome() {
@@ -941,7 +953,8 @@ struct Editor {
             field("gridSnap", "Grid snap (0.5 m)", gridSnap ? "1" : "0", true);
             field("groundSnap", "Snap to ground", groundSnap ? "1" : "0", true);
             field("objectSnap", "Snap near objects", objectSnap ? "1" : "0", true);
-            field("ground", "Floor color", scene.GroundColor);
+            int colorIndex=6;for(int i=0;i<6;++i)if(scene.GroundColor==floorColors[i])colorIndex=i;
+            choice("ground", "Floor color", colorIndex, {L"Dark blue",L"Black",L"Purple",L"Pink",L"Green",L"Sand",L"Custom color"});
             form_button(ViewSide, L"Side view"); form_button(ViewAbove, L"Above view");
             form_button(ViewLow, L"Low view"); form_button(ViewFocus, L"Focus selected");
         }
@@ -991,6 +1004,7 @@ struct Editor {
                         i);
         inspector_fields();
         renderer->scene(scene);
+        if(gamePreview)gamePreview->sync(scene);
         renderer->tools(actor() ? actor()->Id : std::string{}, currentMode);
         camera();
         SetWindowTextW(window, (std::wstring(L"Starlight Engine Editor") + (dirty ? L" *" : L"")).c_str());
@@ -1059,7 +1073,7 @@ struct Editor {
             } else if (page == 4) {
                 if (!scene.Terrain) scene.Terrain.emplace();
                 b("water", scene.Terrain->WaterEnabled); n("level", scene.Terrain->WaterLevel); b("lava", scene.Terrain->Lava);
-            } else if (page == 5) scene.GroundColor = text(inputs.at("ground"));
+            } else if (page == 5 && integer("ground") < 6) scene.GroundColor = floorColors[std::clamp(integer("ground"),0,5)];
         });
     }
 
@@ -1076,16 +1090,12 @@ struct Editor {
             if (playing) throw std::runtime_error("Pause playback before editing");
             edit([&] { if (id == ClearPours) scene.LiquidSources.clear(); else if (actor()) actor()->Route.clear(); }); return;
         }
-        if (id == PlaceCharacter) {
-            if (playing) throw std::runtime_error("Pause playback before editing");
-            if (characterAsset.empty()) throw std::runtime_error("Import a GLB character first");
-            edit([&] {
-                Character c; c.Asset = utf8(characterAsset.wstring()); c.Name = utf8(characterAsset.stem().wstring());
-                c.X = std::clamp(focusX, -12., 12.); c.Z = std::clamp(focusZ, -12., 12.);
-                c.Y = scene.Terrain ? scene.Terrain->height_at(c.X, c.Z) : 0;
-                scene.Characters.push_back(c); selected = int(scene.Characters.size()) - 1;
-            }); return;
-        }
+        if (id == PlaceCharacter) {place_character({focusX,0,focusZ});return;}
+        if(id==ShowMusic){ensure_secondary_panels();ShowWindow(morePanel,SW_HIDE);ShowWindow(musicPanel,SW_SHOW);music_controls();return;}
+        if(id==CloseMore){ShowWindow(morePanel,SW_HIDE);return;}
+        if(id==CloseMusic){ShowWindow(musicPanel,SW_HIDE);return;}
+        if(id==FeatureList||id==FeatureCheck){feature_selection(id==FeatureCheck);return;}
+        if(id==MusicToggle){command(musicPlaying?MusicPause:MusicPlay);return;}
         if (id == MenuFile || id == MenuBuilder || id == MenuWorld || id == MenuMore) {
             toggle_menu(id);
             return;
@@ -1176,15 +1186,15 @@ struct Editor {
             return;
         }
         if (id == MusicPlay) {
-            music.play();
+            music.play();musicPlaying=!songs.empty();music_controls();
             return;
         }
         if (id == MusicPause) {
-            music.pause();
+            music.pause();musicPlaying=false;music_controls();
             return;
         }
         if (id == MusicStop) {
-            music.stop();
+            music.stop();musicPlaying=false;music_controls();
             return;
         }
         if (id == MusicNext) {
@@ -1196,7 +1206,7 @@ struct Editor {
         }
         if (id == MusicQuieter || id == MusicLouder) {
             musicVolume = std::clamp(musicVolume + (id == MusicLouder ? .1 : -.1), 0., 1.);
-            music.volume(musicVolume);
+            music.volume(musicVolume);music_controls();
             return;
         }
         if (id == FullScreen) {
@@ -1252,27 +1262,27 @@ struct Editor {
         }
 
         if (id == Projects) {
-            show_inspector(3);
+            open_project();
             return;
         }
         if (id >= ChooseProject && id <= LaunchProject) {
             if (presetTask.valid())
                 throw std::runtime_error("Wait for the current settings check");
             if (id == ChooseProject) {
-                auto files = file_dialog(window, "projects", {{L"Starlight project", L"*.star"}});
+                auto files = file_dialog(projectWindow && IsWindowVisible(projectWindow)?projectWindow:window, "projects", {{L"Starlight project", L"*.star"}});
                 if (files.empty())
                     return;
                 auto next = ProjectData::load(files[0]);
                 project = std::move(next);
                 preset.reset();
-                inspector_fields();
+                if(projectWindow && IsWindowVisible(projectWindow))project_form();else inspector_fields();
                 return;
             }
             if (!project)
                 throw std::runtime_error("Choose a project first");
             project->selected = text(inputs.at("scene"));
             if (id == ChoosePreset) {
-                auto files = file_dialog(window, "presets", {{L"Starlight test preset", L"*.startest"}});
+                auto files = file_dialog(projectWindow && IsWindowVisible(projectWindow)?projectWindow:window, "presets", {{L"Starlight test preset", L"*.startest"}});
                 if (!files.empty())
                     begin_preset(id, files[0]);
                 return;
@@ -1339,15 +1349,10 @@ struct Editor {
             else
                 follow = !follow;
             renderer->playback_options(repeat, follow && actor() ? actor()->Id : std::string{});
+            if(gamePreview)gamePreview->options(repeat,follow&&actor()?actor()->Id:std::string{});
             return;
         }
-        if (id == Play || id == Pause || id == Stop) {
-            playing = id == Play ? !playing : false;
-            SetWindowTextW(playButton, playing ? L"Ⅱ" : L"▶");
-            SetWindowTextW(playState, playing ? L"Playing" : id == Stop ? L"Ready" : L"Paused");
-            renderer->playback(playing, id == Stop);
-            return;
-        }
+        if (id == Play || id == Pause || id == Stop) {playback_command(id);return;}
         if (playing)
             throw std::runtime_error("Pause playback before editing");
         if (id == New) {
@@ -1748,7 +1753,7 @@ struct Editor {
             return;
         music.open(songs[songIndex]);
         music.volume(musicVolume);
-        music.play();
+        music.play();musicPlaying=true;music_controls();
     }
 
     void tick() {
@@ -1761,14 +1766,14 @@ struct Editor {
                 preset = presetTask.get();
                 if (presetAction == SavePreset) {
                     auto files =
-                        file_dialog(window, "presets", {{L"Starlight test preset", L"*.startest"}}, true);
+                        file_dialog(projectWindow && IsWindowVisible(projectWindow)?projectWindow:window, "presets", {{L"Starlight test preset", L"*.startest"}}, true);
                     if (!files.empty())
                         atomic_write(files[0], read_file(preset->path), true);
                 } else if (presetAction == LaunchProject)
                     launch_project(engine_path(), *project, preset->path);
-                inspector_fields();
+                if(projectWindow && IsWindowVisible(projectWindow)){project_form();SetWindowTextW(projectMessage,L"Settings checked successfully.");}else inspector_fields();
             } catch (const std::exception &e) {
-                error(e.what());
+                if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
             }
         }
         auto now = GetTickCount64();
@@ -1831,8 +1836,8 @@ struct Editor {
         }
         if (renderer && now % 500 < 20) {
             auto s = renderer->status();
-            if (playing && !s.playing && s.seconds > 0) {
-                playing = false;
+            if ((!gamePreview || !gamePreview->visible()) && playing && s.frames>inlinePlayFrame+1 && !s.playing && s.seconds > 0) {
+                playing = false;inlineFinished=true;
                 SetWindowTextW(playButton, L"▶");
                 SetWindowTextW(playState, L"Ready");
             }
@@ -1857,6 +1862,7 @@ struct Editor {
     LRESULT message(UINT m, WPARAM w, LPARAM l) {
         switch (m) {
         case WM_HSCROLL:
+            if(reinterpret_cast<HWND>(l)==musicSlider && musicSlider){musicVolume=SendMessage(musicSlider,TBM_GETPOS,0,0)/100.;music.volume(musicVolume);return 0;}
             for (const auto& [key, scale] : sliders) {
                 if (inputs.at(key) != reinterpret_cast<HWND>(l)) continue;
                 const double value = number(key);
@@ -1923,6 +1929,8 @@ struct Editor {
             if (!discard())
                 return 0;
             KillTimer(window, 1);
+            gamePreview.reset();
+            if(projectWindow){DestroyWindow(projectWindow);projectWindow=nullptr;}
             renderer.reset();
             DestroyWindow(window);
             return 0;
@@ -1986,6 +1994,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         auto accelerators = CreateAcceleratorTableW(keys, int(std::size(keys)));
         MSG msg;
         while (GetMessage(&msg, nullptr, 0, 0) > 0) {
+            const HWND root=GetAncestor(msg.hwnd,GA_ROOT);
+            if(msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE && (root==editor.window || root==editor.projectWindow)){editor.escape();continue;}
+            if(editor.projectWindow && IsWindowVisible(editor.projectWindow) && IsDialogMessageW(editor.projectWindow,&msg)){editor.reveal_focus();continue;}
+            if(editor.gamePreview && root==editor.gamePreview->window()) {
+                if(msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE){editor.gamePreview->escape();continue;}
+                if(msg.message==WM_KEYDOWN && msg.wParam==VK_TAB && IsDialogMessageW(root,&msg))continue;
+                TranslateMessage(&msg);DispatchMessage(&msg);continue;
+            }
+            if(msg.message==WM_KEYDOWN && msg.wParam==VK_TAB && IsDialogMessageW(editor.window,&msg)){editor.reveal_focus();continue;}
             if (!TranslateAcceleratorW(editor.window, accelerators, &msg)) {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);

@@ -71,5 +71,6 @@ class LocalMusic {
         }
         return false;
     }
+    std::wstring state() { return opened_ ? command(L"status " + alias_ + L" mode") : L"closed"; }
 };
 } // namespace starlight::editor

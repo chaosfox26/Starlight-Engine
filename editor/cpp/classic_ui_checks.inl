@@ -8,6 +8,7 @@ int ui_checks(const fs::path& output) {
     auto check = [&](const char* name, bool okay) {
         report["checks"].push_back({{"name", name}, {"pass", okay}});
         if (!okay) ++failures;
+        atomic_write(output.string()+".progress.json",report.dump(2));
     };
     RECT initial; GetClientRect(view, &initial);
     command(BuildShapes); command(2000); command(ObjectProperties);
@@ -37,10 +38,12 @@ int ui_checks(const fs::path& output) {
     check("shapes gear exposes snapping and views", inputs.contains("gridSnap") && !inputs.contains("paint"));
     RECT after; GetClientRect(view, &after);
     check("opening controls preserves full canvas size", EqualRect(&initial, &after));
+    #include "classic_completion_checks.inl"
     auto cycle = [&] {
         for (int section : {BuildTerrain, BuildShapes, BuildNature, BuildSculpt}) command(section);
         for (int menu : {MenuFile, MenuBuilder, MenuWorld, MenuMore}) { toggle_menu(menu); toggle_menu(0); }
         for (int page : {0, 1, 2, 3, 4, 5}) show_inspector(page);
+        command(ShowMusic);command(CloseMusic);open_project();close_project();
         command(BuildShapes); command(DockSettings);
         // Service paints and the Windows message queue between cycles. Otherwise
         // Windows can create a hung-window ghost and inflate the process USER count.

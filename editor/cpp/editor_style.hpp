@@ -74,8 +74,8 @@ inline LRESULT CALLBACK labelProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, 
         GetClientRect(h, &r);
         wchar_t label[1024];
         GetWindowTextW(h, label, 1024);
-        text(dc, reinterpret_cast<HFONT>(SendMessage(h, WM_GETFONT, 0, 0)), label, r, muted,
-             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, reinterpret_cast<HFONT>(SendMessage(h, WM_GETFONT, 0, 0)), label, r, GetPropW(h,L"sl.textColor") ? COLORREF(INT_PTR(GetPropW(h,L"sl.textColor"))-1) : muted,
+             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         EndPaint(h, &ps);
         return 0;
     }
@@ -124,9 +124,11 @@ inline void button(DRAWITEMSTRUCT &d, HFONT font) {
 }
 inline void combo(DRAWITEMSTRUCT &d, HFONT font) {
     FillRect(d.hDC, &d.rcItem, fieldBrush());
-    wchar_t label[512]{};
-    if (d.itemID != UINT(-1))
-        SendMessageW(d.hwndItem, CB_GETLBTEXT, d.itemID, reinterpret_cast<LPARAM>(label));
+    std::wstring label;
+    if (d.itemID != UINT(-1)) {
+        auto n=SendMessageW(d.hwndItem,CB_GETLBTEXTLEN,d.itemID,0);
+        if(n>=0){label.resize(size_t(n)+1);SendMessageW(d.hwndItem,CB_GETLBTEXT,d.itemID,reinterpret_cast<LPARAM>(label.data()));label.resize(size_t(n));}
+    }
     RECT r = d.rcItem;
     r.left += 8;
     if (d.itemState & ODS_SELECTED) {
@@ -134,7 +136,7 @@ inline void combo(DRAWITEMSTRUCT &d, HFONT font) {
         FillRect(d.hDC, &d.rcItem, brush);
         DeleteObject(brush);
     }
-    text(d.hDC, font, label, r, ink, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+    text(d.hDC, font, label.c_str(), r, ink, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 }
 inline LRESULT CALLBACK buttonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR) {
     if (m == WM_PAINT && GetPropW(h, L"sl.check")) {
