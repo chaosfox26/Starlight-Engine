@@ -1,0 +1,14 @@
+{
+  "references": [
+    {
+      "path": "audit-runs/run-20260917-192850/legacy-renderer/Starlight.Editor.dll",
+      "sha256": "69766876172bbe98fcfb79485a0eacb4ce67384ef25c9ff384cdd44db3dd638c",
+      "purpose": "Preserved C# renderer comparison evidence; not an active native build dependency."
+    },
+    {
+      "path": "audit-runs/run-20260917-190948/legacy-renderer/Starlight.Editor.dll",
+      "sha256": "69766876172bbe98fcfb79485a0eacb4ce67384ef25c9ff384cdd44db3dd638c",
+      "purpose": "Preserved C# renderer comparison evidence; not an active native build dependency."
+    }
+  ]
+}

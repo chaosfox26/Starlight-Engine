@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "name": "Native 1440p performance",
+  "settings": {
+    "resolution": [
+      2560,
+      1440
+    ],
+    "displayMode": "fullscreen",
+    "frameLimit": 500,
+    "durationMs": 5000,
+    "upscaler": "off",
+    "quality": "native",
+    "frameGeneration": false,
+    "vsync": false,
+    "culling": false,
+    "foreground": true
+  }
+}

@@ -1,0 +1,1541 @@
+{
+  "scope": "Tracked publication files before licensing additions; classification does not prove authorship",
+  "files": [
+    {
+      "path": ".gitignore",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "5e0d356afa17e648b41335a9fab00353d41a1caaef0247a84800196d4d910219"
+    },
+    {
+      "path": ".gitmodules",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "124f9f6838a288af548c9b287417c894e89749bfa43b3d0357b4ebdb228e9bc0"
+    },
+    {
+      "path": "Build-Native.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "76d196bab439ff8ca30d8ea3c1cde1dce2d9d9aff2b508baafaeba50a4d33960"
+    },
+    {
+      "path": "CHAT-SUMMARY-2026-09-18.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "521d803e17e7a508b3df61dcfd60289138d7a45ed85f3bf5e801150dcf61601b"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7a63b1031fd0ea70b90fb477132bcc4242c544a8fee930641c1550644cdb7bd4"
+    },
+    {
+      "path": "CMakePresets.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "2892687d5d38c8f1ce29e0abbe0dcbd65a68606b66a34cfe790bf9fb96e1f070"
+    },
+    {
+      "path": "EDITOR-PARITY-2026-09-23.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "73abcce50b89849abac067d44825fc8158748a1b031c3c4aa6922719e75ed4c3"
+    },
+    {
+      "path": "GATE0-RELIABILITY-2026-09-22.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "40491dd5c2a7ae1ec0f5f6e9ebfc7fa31a2c5ef1e7bece4effdcc4483e527a0e"
+    },
+    {
+      "path": "INTERACTION-RESEARCH.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ab111d62d25e4754f74b92f7d148d666dc67eac2316e2253f61bbe8a9cdea4f6"
+    },
+    {
+      "path": "Launch-Starlight-Editor.cmd",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3d251eddb1a201430519aca61c8309b74e6a9020c312e76843eae693e4b967f8"
+    },
+    {
+      "path": "README.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "093cf2a6325d9712ceb5ae61c6c24270838ec975449d4389dc78e375d6dd110e"
+    },
+    {
+      "path": "STARLIGHT-CONTINUATION-2026-09-18.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "16cd455b5d771e193c9033932098db2448852035f77b2a1f4ad52b18ef2b9210"
+    },
+    {
+      "path": "STARLIGHT-CORE-PILLARS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "663d57bcb222fbec837848e83070aa78711307717a2a3f454543a48fdef2d167"
+    },
+    {
+      "path": "STARLIGHT-ENGINE-CURRENT-STATE-2026-09-17.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ee61a4bf133995045a9e4f04bcb7e82028884e06474536b5cb5dd3a2d91742c2"
+    },
+    {
+      "path": "STARLIGHT-KNOWLEDGE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c4325c9f898da02ad1c40fa3afb28d61b0fbcca3cdfab413b0ea255cf51691cc"
+    },
+    {
+      "path": "STARLIGHT-NATIVE-PERFORMANCE-STRATEGY.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "29c622f242a595b7a12287ceb7415dfbdd77ce308963df2f87bdd7406d252c2e"
+    },
+    {
+      "path": "STARLIGHT-PRODUCT-DIRECTION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7d0195528c265d70caf3d7aef08cf5d5ba5f06cf1497c8471cfe04c8ba34cb06"
+    },
+    {
+      "path": "STARLIGHT-SAMPLEGAME-CHAT-HANDOFF.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1316853ca1d33fd733ca1152826845dcf182f3aa4a88a3f1c7bd1cc533b2bdf5"
+    },
+    {
+      "path": "STARLIGHT-SCULPTING-FEASIBILITY-2026-09-18.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "20d7be95cdcc128e91435a2cf8c1b3575f8138588608838a75e7aea6de0eaadc"
+    },
+    {
+      "path": "STARLIGHT-TECHNICAL-SPECIFICATION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8848237f949bc00666581a3c0cfcd422b63328a35ac332782e57d0949a6860eb"
+    },
+    {
+      "path": "STARLIGHT-TEN-TASK-PLAN.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "813a847dd86abe0778670a89bdac6a12c2d2d0b74630ce507f70ebf935166e0f"
+    },
+    {
+      "path": "TASK-3-OBJECT-AUTHORING-REPORT.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "fb39346c9decb2a33a9b49c7a73a45683601b58fe44af20cee88beae82f5bd8f"
+    },
+    {
+      "path": "TASK-3-QUEST-FINAL-REPORT.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f2e59b4bfc22711a8eebbebf8ae26b592de3080a79d82c0b9af729d79c1ffc40"
+    },
+    {
+      "path": "TERRAIN-BUILDER-GUIDE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a2978675a0b8a578dfb598a35b225ef259a36be3cd4143affc80ccaf10fde567"
+    },
+    {
+      "path": "THIRD-PARTY-NOTICES.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bef3d15222138f4f919562e36851ca9ac0f87b38687b95b7f18fcfdfbd1bba71"
+    },
+    {
+      "path": "TOOLS-MAP-2026-09-23.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "acf45ea2f9deccb73d9b6f0e402dd0ef9bf12e3d7019bd9d4229675025f61956"
+    },
+    {
+      "path": "audit-runs/run-20260917-192850/comparison.bin",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8c1f65801d1c6ddafb3210714102b0d4b7e8ab160066bb9f473621daf44f0810"
+    },
+    {
+      "path": "deep/Physics/CMakeLists.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "970c135791cef4d74d1fb24e436789eeca0dbb07f843bc5d0153da17de9a8704"
+    },
+    {
+      "path": "deep/Physics/PhysicsWorld.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "98837352fbbb0af38336ff2816e1144d23a00c0d98c6a6b93256880db98c5d09"
+    },
+    {
+      "path": "deep/engine/atmosphere.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d17a4bc266acccfba30338e7bb17430cb400d5bc9a157608d6ab087e910a8c2b"
+    },
+    {
+      "path": "deep/engine/atmosphere.hlsl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9fd16a4d6c115918deb2da6630f34caa4c7a12d09247729f96424b16ac4a30fa"
+    },
+    {
+      "path": "deep/engine/atmosphere_shader.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8bda2a91a85214d67bf2203f1b64f3e467990986eadd5a46f4f5b7dc679d3a9b"
+    },
+    {
+      "path": "deep/engine/chaos_lightning.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "b44b7f9f0195c31529f229b4daf672805d21ee32933469a4c655fc4c85460376"
+    },
+    {
+      "path": "deep/engine/crash_diagnostics.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1808070fefc7fb80fc4b6a080758926f8b55cbc8db25c256316fab3b61e9d609"
+    },
+    {
+      "path": "deep/engine/dxr.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "10c18ffebac6ff2c165de5e575acc63ef760f3a30c773f07488bb1ae4cec2989"
+    },
+    {
+      "path": "deep/engine/dxr.hlsl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ba5abc643e10a09b51a2c9572fda56bd6513948c9cf67d9a8ef738a0e25e1334"
+    },
+    {
+      "path": "deep/engine/dxr_shader.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e81c06aa64e2a7ec1eeb132b6db211d2d3a8beb5445dd861f3151dd43e556320"
+    },
+    {
+      "path": "deep/engine/gen/gen_config.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d0570c561ff9217b60b71fc04cf4451bb38ea9268d927094b0dd8e62b4efa450"
+    },
+    {
+      "path": "deep/engine/latency/antilag2.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4a74cc0e2cd5329809ba87eb28feaaad2030a18c73dc430cc6c374b6831cd181"
+    },
+    {
+      "path": "deep/engine/latency/antilag2.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "660f5f28583a93e6bd898e5bdfd283de92c36412f66ff50870c244a1c1f6d20c"
+    },
+    {
+      "path": "deep/engine/model/skinned.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7aa2de453cd307452e648bc057ab02c6c7ed474b3fdb24c647cecb5600bc8c48"
+    },
+    {
+      "path": "deep/engine/model/skinned.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a8b4866f496841b4f3102dce4f7b88c0f6713b7e40aa6b43d1d87a65d5495a73"
+    },
+    {
+      "path": "deep/engine/model/texture.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "76a6a479652cb8662f4873543dc5a848264f6f61fb07bbcc9b25068f72cbebac"
+    },
+    {
+      "path": "deep/engine/model/texture.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "81022d78578a306089c3a6419a8427c9eb9352ac37e49e8b71a027158197f4fd"
+    },
+    {
+      "path": "deep/engine/persistent_workers.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "767cec9a366c11feb63079ca0a2f7148c38b4fccdc92ef0288c6f032dea0cda3"
+    },
+    {
+      "path": "deep/engine/ray_reconstruction.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "af8a277bf73859f81b36b1081d17b18d6f1f0af7c719e1a106488ad294f5fbba"
+    },
+    {
+      "path": "deep/engine/render_device.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d54ddcbf42f0ea4f3e71d1e6139d2e0ef7c7c9a18b990e28efd2beb437ad84aa"
+    },
+    {
+      "path": "deep/engine/svgf.hlsl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "418bb7be80b36937fcfd3781469fad536a3025a4fbee2c9ab5dd388a4885fbcc"
+    },
+    {
+      "path": "deep/engine/third_party/cgltf.h",
+      "classification": "vendored-third-party",
+      "license": "MIT (cgltf and embedded jsmn)",
+      "sha256": "efb169dee911696b5d35fc8e3f7ea0c56d679debc529eba9ca6aa6443ba9d5e9"
+    },
+    {
+      "path": "deep/engine/upscale/upscale.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "309ef7ae95b9996fd33ed40039a5ccf5a3c8a74348cc3c50beb48722773aade4"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_dlss.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1a8467537adf1b6fc394be7c66d18257d9a5fbcb3c302a29b820a7bfcd8899e6"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_fsr.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c99effcbd202d7e94964039bd104e4ba93a0a8aafb766beb7ff7829e0dab7675"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_off.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "5ff90c45e3f54c38505fe246edee8fdad4331fc2e5a0ef6786638db8c0e0e5e0"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_stubs.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4ac6ab44face2123813e80caed498052c4423ce9bfc589967265642144e64def"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_xess.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f3164dbbaec8ad9dd45f624a07f3d6645f335dcb35affb4e07747a860c137003"
+    },
+    {
+      "path": "deep/projects/Empty/Empty.star",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "29e96e1d74b0cb6f18f650b35ca29d917bb8299c0e8d63303e7dd5e390f96a11"
+    },
+    {
+      "path": "deep/projects/Empty/Empty.starlight.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7832311abee965ffd6454e96d1f5c4abce25db200d0d380bf96fff7b2f9c7ccc"
+    },
+    {
+      "path": "deep/projects/Empty/project.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "766736d05f323cccc53b2438df561cd8e16345803b27a6cfc382801c112051cc"
+    },
+    {
+      "path": "deep/projects/SampleGame/SampleGame.star",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c37465319cfeec826ee21d5ecc520bf6c2e89523b0382fe16c3642508e942715"
+    },
+    {
+      "path": "deep/projects/SampleGame/SampleGame.starlight.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "88041af3a45d14cf22782be4caff27466a3e3d08ecf077c9038f9fbf4bcc26c6"
+    },
+    {
+      "path": "deep/projects/SampleGame/gen/gen_flags.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "cd05f5e96db05b47bac5f0a139a79040151a076cad8c84d8fda5eae9eda7b3ca"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/NET-LOG.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f1656ca4639897ac0c0580da374c3a70ab8e15c884c513daba91c23636976e25"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/build-net.bat",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c735e473844b7d883b815c4bb1357e6cda5fd465353d64e55443bf97476d13e6"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/json.hpp",
+      "classification": "vendored-third-party",
+      "license": "MIT",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/test_net.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "cf9a846828575aad0c9980e2f03a1c773f8d45235d9d96631349ac78e3a0f2e8"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/world_state.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "15ba1c2c09555cbf09749fc0293a4a2ee0fbd81db03e8bca8b81c8d90cb6f65e"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/ws_client.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "aa3894e6b224f272e0022b0bfe173444e1dc481a30899800f6ca3961505ed251"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/ws_client.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d5d523f1cfdfc96cd2f8f9a2b7440776cca3255b40e1c31907ff604c9d69a8f3"
+    },
+    {
+      "path": "deep/projects/SampleGame/project.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "577eef14aa2ea2ba2f1e6cfb33f4f2d23827765421b85efd0883431da3e87a59"
+    },
+    {
+      "path": "deep/settings/default.startest",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "243ae06da96e1a8de93bfbddd9aadbcb75dd5246e06af0deaeb078897cfc2679"
+    },
+    {
+      "path": "deep/settings/native-1440p.startest",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "243ae06da96e1a8de93bfbddd9aadbcb75dd5246e06af0deaeb078897cfc2679"
+    },
+    {
+      "path": "deep/settings/settings-registry.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3a0de575c95a4c8793c3e897f2db6271ed9833cc23638c501918a447eb7cc5be"
+    },
+    {
+      "path": "deep/src/json.hpp",
+      "classification": "vendored-third-party",
+      "license": "MIT",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6"
+    },
+    {
+      "path": "deep/src/preset_reconciliation.inc",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "435fc9476218363e71657d1aa98c4048881c00a927e433fdf34508f92a161c7d"
+    },
+    {
+      "path": "deep/src/runtime.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a1dbb35703049455d59e6de913efc327f4c6c86fd76e3dec5be0cff13ab15da6"
+    },
+    {
+      "path": "deep/src/settings_registry.generated.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e246f539a655f7b18667f432f1420c06d6644638677244cefa1645f92f983358"
+    },
+    {
+      "path": "deep/third_party/JoltPhysics",
+      "classification": "pinned-third-party-submodule",
+      "license": "MIT",
+      "commit": "0373ec0dd762e4bc2f6acdb08371ee84fa23c6db"
+    },
+    {
+      "path": "design/branding/SIMILARITY-SEARCH.md",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "f7b1ff7080acbdba7b8105f641b30baaee43879900bcf12c6c0ba519dd315672"
+    },
+    {
+      "path": "design/branding/starlight-editor.ico",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "2f0aac0e0144c9698be3ea1b8dfebd784a92a8738efd7d7a84c1d8f74e11cfb5"
+    },
+    {
+      "path": "design/branding/starlight-glass-icon-v1-prompt.txt",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "995bebe0f12dbed633cb20c33bf25da49d432f5f5f9329d51ce64b2c9522511b"
+    },
+    {
+      "path": "design/branding/starlight-glass-icon-v1.png",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "8dcc9b9ea20b6d7358f23f19df64a15147a757e3cad03889cb50e557429170a1"
+    },
+    {
+      "path": "design/branding/starlight-star-concept-v1-prompt.txt",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "c55baadfdd41bb4f504654b8fd081cd1e6c77675a6e93138224f8ec2a171bf63"
+    },
+    {
+      "path": "design/branding/starlight-star-concept-v1.png",
+      "classification": "branding-assets-and-provenance",
+      "license": "not-covered-by-proposed-code-license",
+      "sha256": "f1c0cf5f8309ae976f658ccd6c9ac413748252f330bef41a0ceb4a2dda5f3644"
+    },
+    {
+      "path": "docs/ADVENTURE-CONTROLS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "2afd44bb4b3f334270289a62bfbf28d016e46308164ac7c51cda0f9c1f3154cc"
+    },
+    {
+      "path": "docs/GIT-WORKFLOW.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "b4e9b1f69e7d70bdb147823198faa98bb5b29573ed4e256879fea5703113be5b"
+    },
+    {
+      "path": "docs/INTERFACE-SCALING.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "cbf81de26cf37d2118b4973054bab462695f3f5e7f86d196defc3427180b1dae"
+    },
+    {
+      "path": "docs/LICENSING-STATUS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8658aba67ebab5a6022207847c0affdf9f63a01d33c5bc59f1293b14b01b9571"
+    },
+    {
+      "path": "docs/MMO-MOVEMENT-REFERENCE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8c01df770f10a6c54fdaa7ee5d262f3c75e7014d7015a05dc58f3a018efaddf9"
+    },
+    {
+      "path": "docs/MOVEMENT-TUNING-NOTES.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bf2c50264bcce99a88f3443b16e29fdf47983c1fb364d3df55f3afc2d75199dc"
+    },
+    {
+      "path": "docs/OBJECT-FIRST-AUTHORING.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c13ab5c953ecab242156f84119edb4c884dbc03abc23efd59cf58128c1e20f14"
+    },
+    {
+      "path": "docs/PORTABLE-SCENES.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f600b77d13323d9766cff82d75db52470f402a4e5d284c8506403b9a9ba8e09d"
+    },
+    {
+      "path": "docs/PUBLICATION-BOUNDARY.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "b7d79a3c69232e3acde5bf9d045da7c4d0f7fdda5dc839674bd89ef0eed83c8f"
+    },
+    {
+      "path": "docs/PUBLICATION-VERIFICATION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "79d1b8c5130a5f2fb55cf47cc3c1b074c668c22cd3a413786f504f604b8b3432"
+    },
+    {
+      "path": "docs/QUEST-TRACKER-REFERENCE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d4bba06d7c1297f26068f711dcf7a48f43a3187c9ce25789933cd351d885c5e7"
+    },
+    {
+      "path": "docs/QUESTS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "740c958d0a7f9b86f0ec5f6489d9a4430d48970611d42d45d5fa6e8fc9f8cc62"
+    },
+    {
+      "path": "docs/REUSABLE-OBJECTS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d81bf9fe87b905d564a723d60aed50bbc7170e8dcb2a7704cfde45ebb428e205"
+    },
+    {
+      "path": "docs/STEP-4-IMPLEMENTATION-STATUS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "42dea352004bdeadb8bb1461a838f4d0014abc5042c1485678a431b197a430aa"
+    },
+    {
+      "path": "docs/STEP-4-MOVEMENT-AND-COMBAT.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "0d761c5ecb65b530ea8fcb40c27ed0672e46150da93c98fe4a8b227a92f74fef"
+    },
+    {
+      "path": "editor/AI-INTERFACE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f35b0af6591814442c22c4a3f15f38ead6a6e98985d503a57e289b0b4673fa5b"
+    },
+    {
+      "path": "editor/AUDIT-2026-09-17.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a5e1951b383152ab15906e6eb648f55be37a7094f3ef55186aafee08857dfe79"
+    },
+    {
+      "path": "editor/CHAOS-RELEASE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "141a0a3c0f1aa1d6e80007337e5d1712db168e75f9ff449e4989116c58efe5e4"
+    },
+    {
+      "path": "editor/DENOISING-RELEASE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "65efa61a1da6516ccfa963687ed32ad73f3776776e06f7d931f522363061a448"
+    },
+    {
+      "path": "editor/DXR-RELEASE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "aebed5611af27448985648400369fb1611a0e7c4953602fb7020c0028fee50fc"
+    },
+    {
+      "path": "editor/WORLD-QUALITY-RELEASE.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "448b6be415cc920d5c04f0bb415725f6ed4544bd198602ada19b6dc3da62e371"
+    },
+    {
+      "path": "editor/checks/denoise/regression/DXR-preview.starscene",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bb15d15e8467b10924f8e2c7b781d85d17c3e45d99c1b7357c36157775e21b92"
+    },
+    {
+      "path": "editor/checks/denoise/regression/chaos-rt.packet",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "6751c0f9912dc75da4e3fe77f3a8e0d8d3bff3425c4fe8c06fe3b53ed6daf95f"
+    },
+    {
+      "path": "editor/cpp/ability_slots.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "440795d9b6d940f3e99a86484f1af2ce6f0090361c347d7d4a851c7773a63402"
+    },
+    {
+      "path": "editor/cpp/adventure.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c06bf64b6d0cb6947d6eb102f8e9e0f0899c7810c464e96ccbb3921ef8395b46"
+    },
+    {
+      "path": "editor/cpp/adventure_controller.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9f76cfe8848133d0bdafdd3f9567071dcf2da7afdf091ee6518fe3fbfe54fcf9"
+    },
+    {
+      "path": "editor/cpp/adventure_controller.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "0058487c1be57419309ec73e3e230844e2f0710fe591be31b1ba6c514277ea0a"
+    },
+    {
+      "path": "editor/cpp/adventure_template.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ceeb54fbcf1026c659beb4ae9410ac904c4ba37260c98726506e5c911851ccf8"
+    },
+    {
+      "path": "editor/cpp/asset_browser.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1f7b0482fddc49a0e85e35d9536736d230dcb3a8e66996fbdc5b43785a1c5ae3"
+    },
+    {
+      "path": "editor/cpp/asset_library.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4f3cf7fd74471b33874110a626641e035e86fd6fb4e55f8a4a444e86739259b3"
+    },
+    {
+      "path": "editor/cpp/asset_library.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "40f9119e4c23610fd2df6ab62d1f2f6aab25216d212d4fec1b3cc3284c6e1a25"
+    },
+    {
+      "path": "editor/cpp/assets.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d18df16de49fee658c1484feb64018ae88028313a2dd8a235ff179b65dce49ba"
+    },
+    {
+      "path": "editor/cpp/assets.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "67dc8b2e160a53d86b66b96de862e799e59f555aed1d1bc34fe21b94cd9c5f3a"
+    },
+    {
+      "path": "editor/cpp/basic_attack.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "21fa3df4f6e5828093f388c41beb21894547b8a71aabc8c0e20e7dd7d699cceb"
+    },
+    {
+      "path": "editor/cpp/classic_completion.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c97bd474b7d79157d5ce63ff17ffd21b37cd981327a516a5634af6ff51bafe14"
+    },
+    {
+      "path": "editor/cpp/cli.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d2332af56df514416aa15fd6abe17f33a91623297b6c5b353f0702ad75141995"
+    },
+    {
+      "path": "editor/cpp/color.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9528a661fa9a0eae5be1d90647a1ba7ad0643a3987e868c336b0026b69bae37d"
+    },
+    {
+      "path": "editor/cpp/combat_control.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4b3f939efba5f278ef46a97b564ed8e337f1b6416a7a5f29197ed8f65fd5a32d"
+    },
+    {
+      "path": "editor/cpp/combat_hud.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d03ca264c20e46c9d63db4a4e705fcd8670e8889323bc89e601b2c84e13e0fe2"
+    },
+    {
+      "path": "editor/cpp/command_runner.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1d9a372874924e6f36d8a016182f2be875b0811ea7bf40f1f073756e45def304"
+    },
+    {
+      "path": "editor/cpp/commands.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "15f55e978be2a4ff0f14947b04215d915f0d09ea571d5904d627bb7fe8127646"
+    },
+    {
+      "path": "editor/cpp/commands.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3513e9d925a5d96095e36e35a9623bf27907b4743027dd8558f1bbc7da4b6b29"
+    },
+    {
+      "path": "editor/cpp/edge_feedback.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d22b21517f07686c3efc782f23299355816fa84c7b1cfce5936658c20f8ec4b6"
+    },
+    {
+      "path": "editor/cpp/editor.manifest",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1f3543bcc792dde20ec1a3548fe7f505fa91b42577fff2b47c7c57c98e862970"
+    },
+    {
+      "path": "editor/cpp/editor_icons.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a97999b3a9f1dbfc0bce68503eeba63596e05cbeea2fc7c81b2dbc2265b6dc31"
+    },
+    {
+      "path": "editor/cpp/editor_main.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "311db5f1bf887eefa60f87e1687c1670a5b6933fb39e77f328bf6150b029873c"
+    },
+    {
+      "path": "editor/cpp/editor_style.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e1250f51a4a02f4d025acb613eac57275b1083d7341b441232b64a09d0134859"
+    },
+    {
+      "path": "editor/cpp/features.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "96c019c398c75b32dac9eb2eefbfbdcdf57192dede753d0cc2d80fb82ce62f31"
+    },
+    {
+      "path": "editor/cpp/flow.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c29b9fd25501f96dcd2c635edc4b2a1579962ba6d5c3b6bb2b24af564a6ed591"
+    },
+    {
+      "path": "editor/cpp/flow.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4628224d8960a347a4d4434c6567dd351789c316f8c3f2a1132d3f8e40cee851"
+    },
+    {
+      "path": "editor/cpp/game_export.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "704556e196f91848afbe59402ad9cb0bdc94b6fc4cdbb928d1aeadd4e7e251f5"
+    },
+    {
+      "path": "editor/cpp/game_preview.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "62733c57a026a6f46336b2819fefb993a197eb8d05bdabbd5bd0f61a5af96b15"
+    },
+    {
+      "path": "editor/cpp/gameplay_rules.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "691240849be4b9879fce54201d61b8fa3dc26db3492e4fec4f7a40a565df6388"
+    },
+    {
+      "path": "editor/cpp/geometry.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "965c429803cef1873c7f79f590965cf9651913acc4925ebe2b623dc59e74e8f1"
+    },
+    {
+      "path": "editor/cpp/geometry.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "39e3f739e8678d93d88e87284cf27a0cac313a3c2824f8eaea4480c61d333871"
+    },
+    {
+      "path": "editor/cpp/grapple_motion.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "124c8449ae838ccce8cd2e7f9277fd521dcb4c41833d0f7ad473d6e90a50fb04"
+    },
+    {
+      "path": "editor/cpp/ground_navigation.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "58672790cf5f97f427be3b25d0c4b0dbde135dcd9264e5362913e0cc7136a791"
+    },
+    {
+      "path": "editor/cpp/ground_steering.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bc3928ef15846572d9f16e3257759c4634f7dc066f1eb87ec271caab4d1f86d3"
+    },
+    {
+      "path": "editor/cpp/interactions.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4b7a323e417dc61f365eeba2e854cb955181d897e0a3c1993e21e78c6f6dc4fd"
+    },
+    {
+      "path": "editor/cpp/interactions.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "2c0caa2dd976022ac8bb508f2f405933c2720b6432bc4d6fa5ed4c0825a48a9f"
+    },
+    {
+      "path": "editor/cpp/mesh.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "6719723e4db6d5f21f44bc57a233509c9ea0568e722978c0efe9e344a83e225c"
+    },
+    {
+      "path": "editor/cpp/mesh.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e79a46e39a146f440b7c79ffcc3b6357d40d8a98d32c21229d6525735e5c2b93"
+    },
+    {
+      "path": "editor/cpp/movement_hud.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "48affe1ab8bd1bd357b3682964649b16807c8e67b3eeafe304b3cad3b73e0aab"
+    },
+    {
+      "path": "editor/cpp/movement_resources.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1b4dbcbd2f4087da67f7574fab6e1e3f9deea32cf8dcc13f2ac1036ea610edc3"
+    },
+    {
+      "path": "editor/cpp/music.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d5510974da678eecaf63518f611d76e0b5da636ebe05391d7fb993d5423f306f"
+    },
+    {
+      "path": "editor/cpp/named_colors.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a3fd285c4b84fdb26e8c28d8c57308f536d32e1c61227f129ee3890908209833"
+    },
+    {
+      "path": "editor/cpp/native_session.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "a9a87641fb823dbf8dc84166617dde086fc2ee95fff183a35cf82850c6bf99a7"
+    },
+    {
+      "path": "editor/cpp/native_session.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d0eab3d0ce16e042e7c3d1b949619ad8e8837a39aa942a7687bb53353e2e58d5"
+    },
+    {
+      "path": "editor/cpp/object_behaviors.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "da5712fb80c86a75af8320a26853cd16cfe27422d63021a2e2520c63e2da7b3f"
+    },
+    {
+      "path": "editor/cpp/object_template.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4c8b4409713c249ade7fdf8168e2e2a6db408a37a29b1c7738b51998c2d41ace"
+    },
+    {
+      "path": "editor/cpp/object_template.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "dbba46d648946771fdc741e0a32a756474018880230e94de5f8ba1dfb7a4171e"
+    },
+    {
+      "path": "editor/cpp/physics.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e80a2e4b7ca89b32a41345b039023cc16838c45560584aae3dc3ec5e62bb7eb9"
+    },
+    {
+      "path": "editor/cpp/physics.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d133d9e8ffca07e4e5cc38d7ad8efcf43e5a8f4265554ab3efaa6ab54f2d2cd6"
+    },
+    {
+      "path": "editor/cpp/platform.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "06a5d4f2aeed1b2b8d025ddb4f38df68773355d63878f77886fa63293f5cb055"
+    },
+    {
+      "path": "editor/cpp/platform.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3a2e1aa311dfeb02789a152a05a5c3e50c213e4e3cb49daa4a7e75c82f243d81"
+    },
+    {
+      "path": "editor/cpp/player_main.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "532b30927e9d77d5bab21747238adaf9037daa068e6d6efaa15d24dfd3a3b430"
+    },
+    {
+      "path": "editor/cpp/player_presentation.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "42fb89bd4f83a19dacc84100bdf61ad0f7ed5f02541695f40f92194511e2be3c"
+    },
+    {
+      "path": "editor/cpp/portable_scene.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4dceba79c82915e13353868fa293bbb7c6938b9690e6c55ade9da4741247e64f"
+    },
+    {
+      "path": "editor/cpp/projects.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "848d94e206c20ff10fb42e66445a73c6b96e312aff7d1e336047e6617be60daa"
+    },
+    {
+      "path": "editor/cpp/projects.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7b6edbfca8ca06b657ab0830ad92d89c461e18b5896b21ad2a4b475669c38dc5"
+    },
+    {
+      "path": "editor/cpp/quest_model.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "de6385409a7840decac010f4566b078a358db341f26a6b0c199352eedc7ebaec"
+    },
+    {
+      "path": "editor/cpp/quest_tracker.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "69d2dc592f9b85b217f6afb36996303ba76c31da2d3928f59521cba95741a099"
+    },
+    {
+      "path": "editor/cpp/reference_menu.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "501319e120a3efb42ee8a1fd88e3877c7995dbc8828d323ef8d83394c3c6a6a3"
+    },
+    {
+      "path": "editor/cpp/render_scene.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "0bd7b6316056a431c4b21f73c6472dd1d552de06cd90417a76943fb7e429fd11"
+    },
+    {
+      "path": "editor/cpp/render_scene.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d209cbb86d9e9f8d55ce3908dfcdd3309bab0fbdcbf96d01040a2abd76b88872"
+    },
+    {
+      "path": "editor/cpp/scene.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8fb7696eacc206e6a54800408d4a7b0f8ded965b9a86e6d57cbc4d327c0ba317"
+    },
+    {
+      "path": "editor/cpp/scene.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "0a9236023adcb8f22e1692ee41002998389fd2faed308aa322b8448f6d7c0e70"
+    },
+    {
+      "path": "editor/cpp/scene_json.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1ddf34ade49835e414751dd813a6377be5c863e7cb03542fa09d5984b027beff"
+    },
+    {
+      "path": "editor/cpp/selection_clipboard.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e6cfd9ed78d67ef910b87c9c376336e35b4192440fcab21967ad42deb239a2c4"
+    },
+    {
+      "path": "editor/cpp/startup_activation.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e2dc1a22840b1f103bb3a5e04bc91931ff5c5fc7ad0dc7f084c7360209dacf23"
+    },
+    {
+      "path": "editor/cpp/tutorial_progress.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ee67dbe5c2345d4b1a714caf7dd18a70dbb67bb6e9ed5fa21ea505ccda0c04c3"
+    },
+    {
+      "path": "editor/cpp/tutorials.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "213ee2c30e111bdeee045e304024567183bcb820612315b7191b0231d67dd532"
+    },
+    {
+      "path": "editor/native/build.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ddc21d124ee8505fa76f2482f659b7b502539b2c9f81efc06bf4f3700873cdde"
+    },
+    {
+      "path": "editor/native/check_denoise.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "281a1dadbef772a59d08c289c874a6a8cb2181ee751038f3e62a32f6599e9b6c"
+    },
+    {
+      "path": "editor/native/cmake_shaders.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4c2a88b8bb57360c4a0d8d55ccae39418b76bcc859eeda80c86550603abf7d8a"
+    },
+    {
+      "path": "editor/native/edge_aa.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "574a3defbbf06a159c624916e4cf4516ae8b90ad22264eaeefa80ff076202d97"
+    },
+    {
+      "path": "editor/native/prepare_renderer.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "7800a172fa6658e4e5626e73227006a8ecf4b2aad1e182bd89d4041e990e37e4"
+    },
+    {
+      "path": "editor/native/render_device_editor.h",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "0f8cf14699be274bb6295f6fe13fdd6fc2c63689729b278ea015a52e9b1b82ab"
+    },
+    {
+      "path": "editor/native/viewport.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f9fc216f4efff1a11917092021a91e623b55f1c182c83bd2ed88563b83db0617"
+    },
+    {
+      "path": "editor/native/world_surface.hlsl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "6d28f88b20b523b0463059a9def87fb7156ccb183ac594fe4bc6b0de30e345fb"
+    },
+    {
+      "path": "licenses/Jolt-MIT.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8d1c7e0303333dfdafcc6583c620eb163e9c6c53c7cebcb53db78eaa9807e76c"
+    },
+    {
+      "path": "licenses/cgltf-MIT.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f619925f80ef862497aaf8e8155ef218fa6a2190055129523ca3df9119a9ba95"
+    },
+    {
+      "path": "licenses/jsmn-MIT.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "86e73cd390fe2180bbb12e7188287a15a53fffe4a35a8f85f32c7611944133bd"
+    },
+    {
+      "path": "licenses/json-embedded-credits.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "fb6b847b6909e2498a1b0333d0ebd3fb4027fbd056136cfab4ba86d783fd033c"
+    },
+    {
+      "path": "licenses/nlohmann-json-MIT.txt",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+    },
+    {
+      "path": "licenses/sources.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "73e7f77fc475159b31fd8b700fd7ce94a29e2012f107375595d6206f6c70548c"
+    },
+    {
+      "path": "migration/CLASSIC-RESTORATION-EXECUTION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e29683b7c0daa557ca80404a518dbd3f31bf86afd2c1152f00403b07078f75c4"
+    },
+    {
+      "path": "migration/COMPETITIVE-GAP-ANALYSIS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1c5b6cbe5597b5f36e772d816830914cf4194da919946b230a1c9152c1368381"
+    },
+    {
+      "path": "migration/DEPENDENCIES.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "927bff0a26ad5b92dd29d4a30ec8c2a7c40b21b2733ee352e202253aeb6afd3a"
+    },
+    {
+      "path": "migration/INTERFACE-RESTORATION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c624a2d6df18244c00a8c467810e776a3afd775110b3d7629b8e9d4f010c49e4"
+    },
+    {
+      "path": "migration/NATIVE-MIGRATION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "347515da9b7551f93ad5260757335d0ab9b69ce60ef3452992b86c4e342159ac"
+    },
+    {
+      "path": "migration/OLD-INTERFACE-CONTROLS.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "50d8111744e81bf3a577832461e3a9735324c672ad8ed0a235186de073feee69"
+    },
+    {
+      "path": "migration/OLD-INTERFACE-SPECIFICATION.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "157f9c296fb66a21a9cace9bcb79964216c433158264f108dbedf5372c87bd91"
+    },
+    {
+      "path": "migration/TEXTURE-PIPELINE-AUDIT.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e1610ff42ee705afc8e7f8b39228a95dc4e913412172698951a2aee914f0e2b4"
+    },
+    {
+      "path": "migration/fixtures/deep-node-graph.glb",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f4baeaf762825f49ab3ff7faffc8090d4637c89c6e1ba9867c0689a81db8c5c1"
+    },
+    {
+      "path": "migration/fixtures/triangle.glb",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ef70e22a22d4e0c8ca2c69b5250a76efec2fee8131f1c3d6a56d49841291881b"
+    },
+    {
+      "path": "migration/geometry-reference.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d7efcd2491c7d5f2b566a823f4951523939a9d053a4de9b207b2f421084d331a"
+    },
+    {
+      "path": "migration/verify_no_managed.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "dd7b33c765adfcfd68a0585d80240589747944dccf9618923ec4e2d19a82bb96"
+    },
+    {
+      "path": "optimization_audit_report.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3c597067128c51d3a2c61b268dfdc0a00bbebb5250549fc66a18c660a13137ab"
+    },
+    {
+      "path": "tools/README.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "6294016d1cd7eac62192eef7bb1c8d162abe91eef3bc6aa392c698c544c0a80a"
+    },
+    {
+      "path": "tools/audit/DEEP-ANALYSIS-README.md",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "fda5b09d217da526d16bc846652f5ff541f4d2fe738b36a0bc4798d423d4ea52"
+    },
+    {
+      "path": "tools/audit/audit.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "77383d905a625598e665183bc50083da9227bc9c8363a9b06deb836735bb0b2c"
+    },
+    {
+      "path": "tools/audit/audit_engine.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "76ea726ff7df0b747390f26f13036ba9b54253ce65f44b20ab9d812c9837dd99"
+    },
+    {
+      "path": "tools/audit/audit_theme.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d0f008f69e88c064c86424dc4753a6198ab0828dad0b6a63f4c335b1163a6e6d"
+    },
+    {
+      "path": "tools/audit/build_deep_analysis.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "fba6373f3d33845088393fbc6b82f220561a84ce9ce7a6966213de3dc8507adc"
+    },
+    {
+      "path": "tools/audit/contract_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "487d0bfa5f631614885859681aa92d8a9ec833b8ac0f26df94b1e3346db81361"
+    },
+    {
+      "path": "tools/audit/deep_analysis.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1d89613aa1f647d5c83a39779ea03095512146708bdfb719508875e510b54f2b"
+    },
+    {
+      "path": "tools/audit/deep_analysis_gui.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "fa5a3915ac773b7ca0ba18033e803fc55033c1288bfaa6b7320e2a4aaf966264"
+    },
+    {
+      "path": "tools/audit/engine_comparison.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "8ef79bfac27a505b5a9cf128827f2bcc5086666d23f90eac6d3fa7aed8d431a1"
+    },
+    {
+      "path": "tools/audit/feature_evidence.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "e2dced6f1802c4a59e2ede7ca33093441bded716babafb3f03b432343d5588c3"
+    },
+    {
+      "path": "tools/audit/handle_control.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "00cdac9515c23333824fd2a143890410ab92c166ede88e95ad5ee704bdbce95c"
+    },
+    {
+      "path": "tools/audit/knowledge_report.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bfdd57fb14e993677b5b25ce5518beeb05f2fd5921c3f3d197a6d096000cc60c"
+    },
+    {
+      "path": "tools/audit/optimization_scan.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "87aaa71b1bc056651676d13fe169129c5f4d5c42cd39c96a850d9779dd3a44ae"
+    },
+    {
+      "path": "tools/audit/render_contract.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ae52cba845310d4e59c8a0f1938736819d03bcad7b491eb94d7df534cc7bf6f0"
+    },
+    {
+      "path": "tools/audit/run_editor_parity_checks.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d27f848ff06a4ebbb50d5fe624d5d178d3a16bb4fa693ad270bb38ece4ef9491"
+    },
+    {
+      "path": "tools/audit/source_lookup.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "1cb08657889e8e3bffc6ebee7fccf94a91450c159b35a07ea388153bad388ded"
+    },
+    {
+      "path": "tools/audit/test_audit_engine.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ffa5fb4fefb0de442ed6038d8a0485b42ab87fd8bea0740900835056ae535bcb"
+    },
+    {
+      "path": "tools/audit/test_deep_analysis.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c018d0335cbc97fcd6c4e8e094038d19e6653858ace2a86cd6441720256a1220"
+    },
+    {
+      "path": "tools/audit/test_engine_comparison.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d53420a84433466cdfc8f60336a7fde5a22b10b87608f32f96834407feb2ca4a"
+    },
+    {
+      "path": "tools/audit/test_source_lookup.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "58bcbd07c93125d116b7606a44d9e81eb5744466bc46347c887956b1edbeebf8"
+    },
+    {
+      "path": "tools/audit/tool-inventory.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "f23dbd0d569ddc193735b403fcd789398d9aa47b6e5bac9419e6578fe4096274"
+    },
+    {
+      "path": "tools/build/Build-Native.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ec6f3842b78bb03eded60cc7a4d69b7317f0d5a83ddcc8d5ac25614e68565701"
+    },
+    {
+      "path": "tools/build/build_deep_analysis.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "cace6181d6856c71b72999c8a5dcd11f1dbf003a232e76626a7b827296701ca5"
+    },
+    {
+      "path": "tools/build/cmake_shaders.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "165b43d97ee1d6c2375192376b56b75a7598b8b9c1a190189e0cdadf34c7afa7"
+    },
+    {
+      "path": "tools/build/prepare_renderer.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bb0af5c76c2eca14ab767df89e7aa7fba45410e4143afdbc9b44b704aedad682"
+    },
+    {
+      "path": "tools/checks/character_controller_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "2978376764dc313aa2bdd244106fc6876ba08223397e93576e4522f562ade502"
+    },
+    {
+      "path": "tools/checks/check_adventure_export.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "b2cc9741338428d470f26820790612c870523a205e814aa2a89df3706d24e83a"
+    },
+    {
+      "path": "tools/checks/classic_completion_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "3cad1f3a82c410422ec80f5c876c95890b3fdf3e161daf8520c99ef88eafabda"
+    },
+    {
+      "path": "tools/checks/classic_ui_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "ead0b74e94e040d8b351d8fe4104427b5ccee0cea00403fef5015672abe7c45c"
+    },
+    {
+      "path": "tools/checks/core_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "4c732c09f81326a0a736131719e022d367eef68cf4d6a069ad1daf785bb83d9d"
+    },
+    {
+      "path": "tools/checks/diagnostic_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d36612f57e8c9db0c7ac5eb7454ae2119d0f1fa6fb176f87f8d29003a39076d5"
+    },
+    {
+      "path": "tools/checks/gameplay_rule_ui_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9dbf0fec0157eccac11c2816e3ee1a897f0763590ae01fa15eba87437507adae"
+    },
+    {
+      "path": "tools/checks/gameplay_rules_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9d122271182ef975a614a29e80f73b3cb1f531cee0eb150555e159e7d3fce66a"
+    },
+    {
+      "path": "tools/checks/historical-managed-references.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "96e53880f898c07174d40663c3ea35e80340b06916e844034b30c4a4a859d087"
+    },
+    {
+      "path": "tools/checks/interface_scale_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "71c22b365692fa2cafec99ba7a806d2c2bb0bab523010f6f5d0109b48e5b0286"
+    },
+    {
+      "path": "tools/checks/quest_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "694406a54a2f2738b71d80a5bff4d0cfd12ed78aed34151551a8f48ef3307dfb"
+    },
+    {
+      "path": "tools/checks/render_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "80e195651c429ef4c022030392702f2f4a95a17e8fbde0162ba2d7043841ab23"
+    },
+    {
+      "path": "tools/checks/scroll_layout_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "bf02055d1ebcf11443874b712e397f09e91bce4a350bfc6700fe57c9d746d0ad"
+    },
+    {
+      "path": "tools/checks/session_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d883eb4655c77139c47fdaa300cee8fa3c54af3611e8dd43dc3956a4afa064fd"
+    },
+    {
+      "path": "tools/checks/test_verify_no_managed.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "03ea2a1f140f3c638e9c31e93be7ab152c646925cc11307e830d16706c33ce64"
+    },
+    {
+      "path": "tools/checks/texture_checks.cpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "dc3d9f71e3c9e6a665473dc9c97be2a6d4b0ec7447befef09c58cc1a6cf73bc3"
+    },
+    {
+      "path": "tools/checks/verify_no_managed.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "86f2a4c31716fc12a61a70b805b208eac6f71a314e17e580bf7dd3a9bf5eb1da"
+    },
+    {
+      "path": "tools/checks/visible_ui_checks.inl",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "c6de4527b3eb9e3e02168ef779673db0676ba4ad501163de47d75f15f513a7f1"
+    },
+    {
+      "path": "tools/diagnostics/audit_input_runtime.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9adfbcd398ffe17f2ec9a26f08d059eea62940eeff0b9e549b209c21faef385f"
+    },
+    {
+      "path": "tools/diagnostics/audit_window_trace.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "9d82d8077ea719826e4b7f981e1822b055814241d19a2e3fef92a1de619ddeb0"
+    },
+    {
+      "path": "tools/diagnostics/gate0_handle_trace.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "659be299b6f299e7e763b71c24117008818d0dbaa8367131c6ba732e4642444d"
+    },
+    {
+      "path": "tools/diagnostics/memory_allocation_trace.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "40a416f18db81a4e5913e2d6bd37b18f37607186cae611fed55ca2b967e135e0"
+    },
+    {
+      "path": "tools/diagnostics/menu_timing.hpp",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d26414d87bbc2d5295949ac9ea463269557c67ce1467b266360a03a618987362"
+    },
+    {
+      "path": "tools/launch/Launch-Starlight-Editor.cmd",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "392dd0830dc759414e49e25b61e917fc7c9505c496889ddd573fb677c6448915"
+    },
+    {
+      "path": "tools/profiling/optimization_scan.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "dd510c1b58485f1c4335fb4c2e61a25321ce0d8cdf1e7efed0052898c8905427"
+    },
+    {
+      "path": "tools/render/check_denoise.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "65d9795588e85dffdb1f90e165471654cc4abc65f9457dcbe0ca3764a83819a4"
+    },
+    {
+      "path": "tools/render/validate_native.py",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "abee719706cfda2e68a65fea37d37f6c7ae4fbb82f588ef6d2db88d1687dcc2b"
+    },
+    {
+      "path": "tools/tool-relocations-2026-09-23.json",
+      "classification": "project-origin-review",
+      "license": "pending-origin-confirmation",
+      "sha256": "d3c9538df024f6c617a3a8ea8e0b54a613943b9999641885d10ec8103be3ca86"
+    }
+  ]
+}

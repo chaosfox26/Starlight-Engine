@@ -1,0 +1,17 @@
+[
+  {
+    "file": "licenses/nlohmann-json-MIT.txt",
+    "source": "https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT",
+    "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+  },
+  {
+    "file": "licenses/cgltf-MIT.txt",
+    "source": "https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/LICENSE",
+    "sha256": "f619925f80ef862497aaf8e8155ef218fa6a2190055129523ca3df9119a9ba95"
+  },
+  {
+    "file": "licenses/Jolt-MIT.txt",
+    "source": "https://github.com/jrouwe/JoltPhysics/blob/0373ec0dd762e4bc2f6acdb08371ee84fa23c6db/LICENSE",
+    "sha256": "8d1c7e0303333dfdafcc6583c620eb163e9c6c53c7cebcb53db78eaa9807e76c"
+  }
+]

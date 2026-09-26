@@ -1,0 +1,413 @@
+{
+  "scope": "Starlight repository engine tools; ancillary entries separated, unrelated sibling projects excluded",
+  "tools": [
+    {
+      "group": "Build and launch",
+      "path": "tools/build/Build-Native.py",
+      "purpose": "Canonical CMake/Ninja configure/build; optional CTest; supports isolated build directory",
+      "output": "Build tree, native binaries; tests only with --test",
+      "status": "Active; changes generated build files",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "Build-Native.py"
+    },
+    {
+      "group": "Build and launch",
+      "path": "CMakeLists.txt",
+      "purpose": "Declares native editor, runtime, DLLs, tests and audit harness",
+      "output": "Configured targets; registered CTest checks include archive-policy and standalone adventure-export checks; discover current count from CTest",
+      "status": "Authoritative build/test registration",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Build and launch",
+      "path": "tools/launch/Launch-Starlight-Editor.cmd",
+      "purpose": "Launch normal native editor with terrain",
+      "output": "Running out/classic/Release editor",
+      "status": "Active; distinct from latest out/gate0-auto candidate",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "Launch-Starlight-Editor.cmd"
+    },
+    {
+      "group": "Build and launch",
+      "path": "tools/checks/check-editor.ps1",
+      "purpose": "Convenience Release build plus tests",
+      "output": "Delegates to Build-Native.py --test",
+      "status": "Consolidated into tools/build/Build-Native.py; old compatibility entry retained",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/check-editor.ps1",
+      "canonicalPath": "tools/build/Build-Native.py"
+    },
+    {
+      "group": "Build and launch",
+      "path": "tools/build/native_compat.py",
+      "purpose": "Compatibility build entry point",
+      "output": "Delegates to root build script",
+      "status": "Consolidated into tools/build/Build-Native.py; old compatibility entry retained",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/native/build.py",
+      "canonicalPath": "tools/build/Build-Native.py"
+    },
+    {
+      "group": "Build and launch",
+      "path": "tools/build/cmake_shaders.py",
+      "purpose": "Compile DXR/denoiser shaders and generate headers",
+      "output": "Generated CMake build-tree shader files",
+      "status": "Build dependency, not an audit test",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/native/cmake_shaders.py"
+    },
+    {
+      "group": "Build and launch",
+      "path": "tools/build/prepare_renderer.py",
+      "purpose": "Prepare editor renderer header from engine source",
+      "output": "Generated renderer header",
+      "status": "Build transformation; default output can write source-tree generated header",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/native/prepare_renderer.py"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/deep_analysis_gui.cpp",
+      "purpose": "Reusable desktop progress window with Start and report/folder actions",
+      "output": "Fresh run directories and worker logs",
+      "status": "Three actions built and visually present; repeat workflow validation in progress",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/build/build_deep_analysis.py",
+      "purpose": "Build native analysis window and optionally launch it",
+      "output": "Analysis executable; snapshots worker modules per run",
+      "status": "Active; no engine tests by itself",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "tools/audit/build_deep_analysis.py"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/deep_analysis.py",
+      "purpose": "File census, source markers, build/contracts/PE inventory, saved JSON evidence discovery",
+      "output": "Sealed run, source atlas, manifests, knowledge reports",
+      "status": "Static scan only; no runtime certification",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/knowledge_report.py",
+      "purpose": "Compose product knowledge, feature/workflow descriptions and coverage warnings",
+      "output": "Knowledge pack; can regenerate from sealed evidence after source rehash",
+      "status": "Active; semantic descriptions remain curated",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/feature_evidence.py",
+      "purpose": "Join explicit feature IDs to build/source/workload/issue evidence",
+      "output": "feature-status.json and generated feature briefing",
+      "status": "Implemented, fixture-tested; unknown/legacy evidence stays flagged",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/test_deep_analysis.py",
+      "purpose": "Test the reporting tool on controlled fixtures",
+      "output": "Console verdict and temporary fixture outputs",
+      "status": "Passed; does not test engine correctness",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Audit/reporting",
+      "path": "tools/audit/audit_engine.py",
+      "purpose": "Proposed common coordinator for builds, discovered CTest, native diagnostics and shareable reporting",
+      "output": "Proposed audit-summary and combined report",
+      "status": "Integrated feature/error/combined workflow; first real run preserved. Reporter count/list bug fixed; regeneration pending",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native audit",
+      "path": "tools/audit/audit.cpp",
+      "purpose": "Isolated runtime audit and profiling controller; full, Gate 0, component and visible modes",
+      "output": "Fresh process logs, samples, findings, comparisons and verdicts",
+      "status": "Batch mode built and executed: nine bounded stages passed, both lifecycle stages failed",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native audit",
+      "path": "tools/audit/contract_checks.cpp",
+      "purpose": "Test render-evidence acceptance/rejection rules",
+      "output": "AuditContractChecks process verdict",
+      "status": "CTest audit-contract; validates harness rules, not actual renderer",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native audit",
+      "path": "tools/audit/render_contract.hpp",
+      "purpose": "Shared render-report contract validation",
+      "output": "Structured acceptance/errors used by harness",
+      "status": "Supporting validator, not standalone test",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native audit",
+      "path": "tools/audit/handle_control.cpp",
+      "purpose": "Observe handles in no-engine idle/asynchronous control process",
+      "output": "Handle/private-memory samples",
+      "status": "Standalone diagnostic; zero exit means observation completed, not leak-free pass",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native audit",
+      "path": "tools/audit/run_editor_parity_checks.py",
+      "purpose": "Run UI regression checks with deadline and explicit completion; capture feature evidence",
+      "output": "UI report, timeout record, provenance sidecar",
+      "status": "Runner; new sidecar integration needs real execution validation",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/core_checks.cpp",
+      "purpose": "Exercise authored scene/core commands and geometry reference behavior",
+      "output": "Core check report, scene/packet fixtures",
+      "status": "CTest native-core; not a visual menu audit",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/core_checks.cpp"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/diagnostic_checks.cpp",
+      "purpose": "Exercise crash diagnostics including isolated child crash/minidump",
+      "output": "Diagnostics artifacts/report",
+      "status": "CTest native-diagnostics; expected child crash is part of test",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/diagnostic_checks.cpp"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/texture_checks.cpp",
+      "purpose": "Check supported compressed texture loading and upload foundation",
+      "output": "Texture check output",
+      "status": "CTest native-textures; not complete material authoring",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/texture_checks.cpp"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/session_checks.cpp",
+      "purpose": "Exercise native sessions, scene lifetime and simulation; includes diagnostic modes",
+      "output": "Session results and lifecycle evidence",
+      "status": "CTest native-session; handle attribution/long-soak still open",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/session_checks.cpp"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/classic_ui_checks.inl",
+      "purpose": "Built-in native editor UI assertions and resource cycles",
+      "output": "--ui-check report",
+      "status": "CTest native-classic-ui; test counts do not certify visual polish",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/classic_ui_checks.inl"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/classic_completion_checks.inl",
+      "purpose": "Additional editor interaction/feature checks",
+      "output": "Included in editor UI check report",
+      "status": "Supporting checks, not an additional independent executable",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/classic_completion_checks.inl"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/visible_ui_checks.inl",
+      "purpose": "Visible editor walkthrough with focus/capture checks",
+      "output": "--ui-walkthrough results and screenshots",
+      "status": "Invoked by native audit; not all nested menus or DPI states",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/visible_ui_checks.inl"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/render_checks.cpp",
+      "purpose": "Native render diagnostics/benchmark, offscreen and visible/fullscreen modes",
+      "output": "Render JSON, frame capture, diagnostics log",
+      "status": "NativeRenderChecks; harness-invoked, not directly registered in CTest",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/native/standalone.cpp"
+    },
+    {
+      "group": "Native tests",
+      "path": "tools/checks/verify_no_managed.py",
+      "purpose": "Detect managed sources/manifests/PE images under repository policy",
+      "output": "migration/no-managed-results.json",
+      "status": "Active: full repository scan separates two exact path/hash-pinned historical references; changed archives and active managed output still fail. CTest also runs test_verify_no_managed.py policy safeguards.",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "migration/verify_no_managed.py"
+    },
+    {
+      "group": "Specialized validation",
+      "path": "tools/render/check_denoise.py",
+      "purpose": "GPU denoiser sequence/guide capture and offline image checks",
+      "output": "editor/checks/denoise/sequence artifacts",
+      "status": "Explicit build/fixture/output; integrated diagnostic passed in consolidated run",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/native/check_denoise.py"
+    },
+    {
+      "group": "Specialized validation",
+      "path": "tools/render/validate_native.py",
+      "purpose": "Renderer tier/RR/fallback matrix and PE inspection",
+      "output": "migration/validation-CONFIG outputs",
+      "status": "Explicit build/fixture/output; nine fallback cases and PE checks passed; not a fullscreen benchmark",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "migration/validate_native.py"
+    },
+    {
+      "group": "Profiling",
+      "path": "tools/profiling/optimization_scan.py",
+      "purpose": "Lexical optimization investigation sites and compiled structure-layout probe",
+      "output": "out/optimization-audit manifest, review sites, layouts",
+      "status": "Investigation leads, not measured bottleneck proof; writes fixed output",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "tools/audit/optimization_scan.py"
+    },
+    {
+      "group": "Automation/runtime",
+      "path": "editor/cpp/cli.cpp",
+      "purpose": "NativeCommands local scene describe/inspect/change interface",
+      "output": "Command results and possible authored scene changes",
+      "status": "Product automation executable, not automatically safe to run arbitrary mutating commands as tests",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Automation/runtime",
+      "path": "deep/src/runtime.cpp",
+      "purpose": "Native project host",
+      "output": "Running Empty/SampleGame project module",
+      "status": "Product runtime, not test coverage by itself",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Project-specific",
+      "path": "deep/projects/SampleGame/net/build-net.bat",
+      "purpose": "Build standalone SampleGame network test",
+      "output": "net/bin/test_net.exe",
+      "status": "Separate project scope; not general engine audit",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Project-specific",
+      "path": "deep/projects/SampleGame/net/test_net.cpp",
+      "purpose": "Standalone network-module test program",
+      "output": "Console/network test behavior",
+      "status": "Requires separate environment/endpoint review before inclusion",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/build_interface_reference.py",
+      "purpose": "Inventory archived C# source/interface declarations",
+      "output": "OLD-INTERFACE-CONTROLS.md and HTML/source inventory",
+      "status": "Read-only reference source; writes documentation; not screenshots or exhaustive dynamic behavior",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/discover.py",
+      "purpose": "Workspace-wide managed dependency/artifact inventory",
+      "output": "migration dependency audit and workspace list",
+      "status": "Broader D:/projects scan; separate from engine-only audit",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/record_classic_release.py",
+      "purpose": "Aggregate dated release evidence and prepend continuation notes",
+      "output": "classic-final-validation.json and modified handoff documents",
+      "status": "Historical release helper; do not automatically relabel current state",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/restore_classic_controls.py",
+      "purpose": "One-shot asserted rewrite of editor source",
+      "output": "editor_main.cpp and backup",
+      "status": "SOURCE MUTATION; exclude from audit execution",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/retirement_plan.py",
+      "purpose": "Inventory managed files for relocation",
+      "output": "retirement-plan.json",
+      "status": "Historical planning; not retirement authorization",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Reference/migration",
+      "path": "migration/retire_managed.ps1",
+      "purpose": "Move planned files/directories into recovery archive",
+      "output": "Relocated source/artifacts and hashes",
+      "status": "FILE MOVES; exclude from audit execution; preserve C# parity reference",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Documentation",
+      "path": "design/build_shareable_roadmap.py",
+      "purpose": "Generate designed roadmap PDF",
+      "output": "Shareable roadmap PDF",
+      "status": "Documentation generation; proposal content not feature proof",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Documentation",
+      "path": "design/update-scaffolding-pdf.py",
+      "purpose": "One-shot text rewrite of roadmap generator",
+      "output": "Modified build_shareable_roadmap.py",
+      "status": "SOURCE MUTATION; historical maintenance, exclude from audit",
+      "integrationScope": "reference-only; not automatic audit execution"
+    },
+    {
+      "group": "Instrumentation",
+      "path": "tools/diagnostics/audit_window_trace.hpp",
+      "purpose": "Record helper-window creation evidence",
+      "output": "Used by editor/session code",
+      "status": "Supporting component, not independent tool/pass",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/audit_window_trace.hpp"
+    },
+    {
+      "group": "Instrumentation",
+      "path": "tools/diagnostics/gate0_handle_trace.hpp",
+      "purpose": "Support lifecycle handle diagnostics",
+      "output": "Used by editor/session code",
+      "status": "Supporting component, not independent tool/pass",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/gate0_handle_trace.hpp"
+    },
+    {
+      "group": "Instrumentation",
+      "path": "tools/diagnostics/menu_timing.hpp",
+      "purpose": "Bounded opt-in menu handler timing; not input-to-display latency",
+      "output": "Used by editor/session code",
+      "status": "Supporting component, not independent tool/pass",
+      "integrationScope": "engine tool/component; assess before integration",
+      "previousPath": "editor/cpp/menu_timing.hpp"
+    },
+    {
+      "group": "Instrumentation",
+      "path": "editor/cpp/edge_feedback.hpp",
+      "purpose": "Editor feedback support; part of UI implementation, not standalone audit",
+      "output": "Used by editor/session code",
+      "status": "Supporting component, not independent tool/pass",
+      "integrationScope": "engine tool/component; assess before integration"
+    },
+    {
+      "group": "Automated checks",
+      "path": "tools/checks/check_adventure_export.py",
+      "purpose": "Fresh starter creation, standalone export, refusal safety, binary identity and hidden rendering",
+      "output": "Unique run folder, result.json, commands.log, render.json and playable fixture",
+      "status": "Registered as native-adventure-export; no desktop input",
+      "integrationScope": "Audit coordinator discovers and links to gameplay/export feature records"
+    }
+  ]
+}

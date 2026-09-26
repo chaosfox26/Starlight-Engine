@@ -1,0 +1,24 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "native",
+      "displayName": "Native C++ (Ninja, no MSBuild)",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/out/native",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "STARLIGHT_BUILD_RENDERER": "ON",
+        "STARLIGHT_BUILD_PROJECTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "native-debug", "configurePreset": "native", "configuration": "Debug", "jobs": 12},
+    {"name": "native-release", "configurePreset": "native", "configuration": "Release", "jobs": 12}
+  ],
+  "testPresets": [
+    {"name": "native-debug", "configurePreset": "native", "configuration": "Debug", "output": {"outputOnFailure": true}},
+    {"name": "native-release", "configurePreset": "native", "configuration": "Release", "output": {"outputOnFailure": true}}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "name": "SampleGame",
+  "module": "SampleGame.dll",
+  "arguments": [
+    "--models",
+    "D:\\projects\\SampleGame\\starlight-realms\\build\\models",
+    "--textures",
+    "D:\\projects\\SampleGame\\starlight-realms\\build\\textures\\bakes-v1",
+    "--quality",
+    "native",
+    "--upscaler",
+    "off",
+    "--novsync",
+    "--nocull",
+    "1",
+    "--stress",
+    "100000",
+    "--camdist",
+    "800",
+    "--camhigh",
+    "650",
+    "--display",
+    "windowed",
+    "--res",
+    "1280x720"
+  ]
+}

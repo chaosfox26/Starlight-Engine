@@ -1,0 +1,47 @@
+#pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include "scene.hpp"
+#include <filesystem>
+#include <functional>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <windows.h>
+namespace starlight::editor {
+namespace fs = std::filesystem;
+struct Handle {
+    HANDLE value = nullptr;
+    explicit Handle(HANDLE h = nullptr) : value(h) {}
+    ~Handle() {
+        if (value && value != INVALID_HANDLE_VALUE)
+            CloseHandle(value);
+    }
+    Handle(const Handle &) = delete;
+    Handle &operator=(const Handle &) = delete;
+    Handle(Handle &&other) noexcept : value(other.value) { other.value = nullptr; }
+    explicit operator bool() const { return value && value != INVALID_HANDLE_VALUE; }
+};
+std::wstring wide(std::string_view);
+std::string utf8(std::wstring_view);
+std::string read_file(const fs::path &);
+std::string hash_file(const fs::path &);
+std::string hash_bytes(std::string_view);
+void atomic_write(const fs::path &, std::string_view, bool backup = false,
+                  const std::optional<std::string> &expected = {});
+fs::path application_data();
+void diagnostic(std::string_view, std::string_view) noexcept;
+std::vector<fs::path> file_dialog(HWND owner, std::string_view purpose,
+                                  const std::vector<std::pair<std::wstring, std::wstring>> &filters,
+                                  bool save = false, bool multiple = false, const fs::path &fallback = {},
+                                  std::wstring_view title = {}, bool folders = false);
+void save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {});
+SceneData load_scene(const fs::path &);
+json export_playable_game(const SceneData &, const fs::path &destination, const fs::path &runtime);
+json export_portable_scene(const SceneData &, const fs::path &destination);
+json verify_portable_scene(const fs::path &folder);
+json export_scene_selection(const SceneData &, const std::vector<std::string>& ids, const fs::path &destination);
+std::optional<size_t> repair_scene_models(SceneData &, const std::function<std::optional<fs::path>(const fs::path&)>& choose);
+} // namespace starlight::editor

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "settings": [
+    "resolution",
+    "displayMode",
+    "frameLimit",
+    "durationMs",
+    "upscaler",
+    "quality",
+    "frameGeneration",
+    "vsync",
+    "culling",
+    "foreground"
+  ],
+  "aliases": {
+    "fullscreen": {
+      "target": "displayMode",
+      "conversion": "bool-to-display"
+    },
+    "fpsCap": {
+      "target": "frameLimit",
+      "conversion": "identity"
+    },
+    "benchmarkMs": {
+      "target": "durationMs",
+      "conversion": "identity"
+    }
+  },
+  "sourceSha256": "910b84ba94983b0fbec44509900afc85a19f44aa62c9efd8f304d9f9d7ee1ef5"
+}
