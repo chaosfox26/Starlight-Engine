@@ -7,7 +7,8 @@ struct Bounds {
 };
 Bounds object_bounds(const Character &);
 void move_group(SceneData &, const Character &, const std::unordered_map<std::string, Character> &);
-void snap_object(SceneData &, Character &, bool grid, bool objects, bool ground);
+double snap_increment(double value,double step);
+void snap_object(SceneData &, Character &, bool grid, bool objects, bool ground,double gridStep=.5);
 std::optional<Vec3> terrain_hit(const TerrainData *, Vec3 origin, Vec3 ray);
 struct GizmoSegment {
     Vec3 a, b;

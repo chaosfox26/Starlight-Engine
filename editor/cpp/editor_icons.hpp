@@ -25,8 +25,12 @@ inline const char *dockIcon(int n) {
         "19,16",                                           // move
         "M20,7 A10,10 0 1 0 22,17 M16,7 L22,7 22,1",       // rotate
         "M2,22 L22,2 M14,2 L22,2 22,10 M2,14 L2,22 10,22", // scale
+        "M9,4 L3,10 9,16 M3,10 L14,10 Q22,10 22,20", // undo
+        "M15,4 L21,10 15,16 M21,10 L10,10 Q2,10 2,20", // redo
+        "M2,6 L22,6 M2,12 L22,12 M2,18 L22,18 M7,3 L7,9 M17,9 L17,15 M10,15 L10,21", // settings
+        "M5,5 L19,19 M19,5 L5,19", // close
     };
-    return n >= 0 && n < 17 ? paths[n] : nullptr;
+    return n >= 0 && n < int(sizeof(paths) / sizeof(paths[0])) ? paths[n] : nullptr;
 }
 inline void drawDockIcon(Gdiplus::Graphics &g, int n, float width, float height) {
     const char *s = dockIcon(n);

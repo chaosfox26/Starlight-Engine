@@ -76,6 +76,8 @@ struct OffUpscaler : Upscaler {
     }
     void shutdown() override { heap.Reset(); pso.Reset(); rs.Reset(); dev.Reset(); lastSrc = lastDst = nullptr; }
 
+    bool resizeOutput(UINT width, UINT height) override { outW=width; outH=height; lastSrc=lastDst=nullptr; return true; }
+
     int modeCount() const override { return kStdModeCount; }
     const char* modeName(int i) const override { return (i >= 0 && i < kStdModeCount) ? kStdModes[i].name : "?"; }
     int mode() const override { return curMode; }

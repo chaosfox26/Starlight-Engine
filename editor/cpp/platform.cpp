@@ -10,6 +10,11 @@
 namespace starlight::editor {
 using Microsoft::WRL::ComPtr;
 namespace {
+fs::path native_file_path(const fs::path& path) {
+    auto native=fs::absolute(path).lexically_normal().make_preferred().wstring();
+    if(native.rfind(L"\\\\?\\",0)==0)return fs::path(native);
+    return fs::path(native.rfind(L"\\\\",0)==0 ? L"\\\\?\\UNC\\"+native.substr(2) : L"\\\\?\\"+native);
+}
 void check(HRESULT hr) {
     if (FAILED(hr))
         throw std::runtime_error("Windows operation failed: " +
@@ -50,7 +55,7 @@ std::string new_id() {
     return out;
 }
 std::string read_file(const fs::path &p) {
-    std::ifstream f(p, std::ios::binary);
+    std::ifstream f(native_file_path(p), std::ios::binary);
     if (!f)
         throw std::runtime_error("Cannot open " + utf8(p.wstring()));
     std::string data((std::istreambuf_iterator<char>(f)), {});
@@ -59,10 +64,12 @@ std::string read_file(const fs::path &p) {
     return data;
 }
 std::string hash_file(const fs::path &p) {
-    auto data = read_file(p);
+    return hash_bytes(read_file(p));
+}
+std::string hash_bytes(std::string_view data) {
     unsigned char hash[32];
     if (data.size() > ULONG_MAX ||
-        BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, reinterpret_cast<PUCHAR>(data.data()),
+        BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, reinterpret_cast<PUCHAR>(const_cast<char*>(data.data())),
                    ULONG(data.size()), hash, 32) < 0)
         throw std::runtime_error("SHA256 failed");
     std::ostringstream out;
@@ -73,7 +80,10 @@ std::string hash_file(const fs::path &p) {
 }
 void atomic_write(const fs::path &path, std::string_view data, bool backup,
                   const std::optional<std::string> &expected) {
-    auto p = fs::absolute(path).lexically_normal();
+    // Staging folders and unique temporary suffixes can exceed MAX_PATH even
+    // when the user's chosen destination does not. Use the Unicode extended
+    // path form for our Win32 file calls without depending on machine policy.
+    auto p = native_file_path(path);
     fs::create_directories(p.parent_path());
     Handle lock(CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                             OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
@@ -87,7 +97,7 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
             Handle f(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
                                  nullptr));
             if (!f)
-                throw std::runtime_error("Cannot create temporary file");
+                throw std::runtime_error("Cannot create temporary file (Windows error "+std::to_string(GetLastError())+")");
             size_t offset = 0;
             while (offset < data.size()) {
                 DWORD written = 0, n = DWORD(std::min<size_t>(data.size() - offset, 1 << 20));
@@ -126,7 +136,27 @@ void diagnostic(std::string_view operation, std::string_view message) noexcept {
     }
 }
 void save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected) {
-    atomic_write(path, scene.encode(), true, expected);
+    auto saved = scene;
+    const auto base = fs::absolute(path).parent_path().lexically_normal();
+    for (auto &object : saved.Characters) {
+        auto asset = fs::path(wide(object.Asset));
+        if (asset.is_absolute()) {
+            auto relative = asset.lexically_normal().lexically_relative(base);
+            if (!relative.empty() && *relative.begin() != L"..")
+                object.Asset = utf8(relative.generic_wstring());
+        }
+    }
+    atomic_write(path, saved.encode(), true, expected);
+}
+SceneData load_scene(const fs::path &path) {
+    auto scene = SceneData::decode(read_file(path));
+    for (auto &object : scene.Characters) {
+        if (object.Asset.empty()) continue;
+        auto asset = fs::path(wide(object.Asset));
+        if (asset.is_relative())
+            object.Asset = utf8((fs::absolute(path).parent_path() / asset).lexically_normal().wstring());
+    }
+    return scene;
 }
 namespace {
 fs::path shell_path(IShellItem *item) {
@@ -185,7 +215,7 @@ class FolderEvents final : public IFileDialogEvents {
 } // namespace
 std::vector<fs::path> file_dialog(HWND owner, std::string_view purpose,
                                   const std::vector<std::pair<std::wstring, std::wstring>> &filters,
-                                  bool save, bool multiple, const fs::path &fallback) {
+                                  bool save, bool multiple, const fs::path &fallback, std::wstring_view title, bool folders) {
     ComPtr<IFileDialog> dialog;
     check(CoCreateInstance(save ? CLSID_FileSaveDialog : CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
                            IID_PPV_ARGS(&dialog)));
@@ -193,9 +223,11 @@ std::vector<fs::path> file_dialog(HWND owner, std::string_view purpose,
     check(dialog->GetOptions(&flags));
     flags |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR;
     flags |= save ? FOS_OVERWRITEPROMPT : FOS_FILEMUSTEXIST;
+    if (folders) flags |= FOS_PICKFOLDERS;
     if (multiple && !save)
         flags |= FOS_ALLOWMULTISELECT;
     check(dialog->SetOptions(flags));
+    if (!title.empty()) check(dialog->SetTitle(std::wstring(title).c_str()));
     std::vector<COMDLG_FILTERSPEC> specs;
     for (const auto &f : filters)
         specs.push_back({f.first.c_str(), f.second.c_str()});

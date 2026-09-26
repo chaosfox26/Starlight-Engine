@@ -28,6 +28,12 @@ struct AtmospherePass {
   srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE3D;srv.Texture3D.MipLevels=1;srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;d.device->CreateShaderResourceView(cells.Get(),&srv,cpu);cpu.ptr+=inc;d.device->CreateShaderResourceView(integral.Get(),&srv,cpu);cpu.ptr+=inc;
   D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE3D;uav.Texture3D.WSize=64;uav.Format=srv.Format;d.device->CreateUnorderedAccessView(cells.Get(),nullptr,&uav,cpu);cpu.ptr+=inc;d.device->CreateUnorderedAccessView(integral.Get(),nullptr,&uav,cpu);cpu.ptr+=inc;uav={};uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;uav.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.device->CreateUnorderedAccessView(d.upOutput.Get(),nullptr,&uav,cpu);
  }
+ void resize(RenderDevice& d){
+  auto cpu=heap->GetCPUDescriptorHandleForHeapStart();UINT inc=d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Texture2D.MipLevels=1;srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;
+  d.device->CreateShaderResourceView(d.sceneColor.Get(),&srv,cpu);cpu.ptr+=inc;srv.Format=DXGI_FORMAT_R32_FLOAT;d.device->CreateShaderResourceView(d.depth.Get(),&srv,cpu);
+  cpu.ptr+=5*inc;D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;uav.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.device->CreateUnorderedAccessView(d.upOutput.Get(),nullptr,&uav,cpu);
+ }
  void draw(RenderDevice& d,const FrameCB& light,float time,float density,const std::vector<XMFLOAT4>& smoke,ID3D12Resource* scene=nullptr,D3D12_GPU_VIRTUAL_ADDRESS acceleration=0){
   if(acceleration&&!rtInject){D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=signature.Get();pd.CS={kDxrFog,sizeof(kDxrFog)};if(FAILED(d.device->CreateComputePipelineState(&pd,IID_PPV_ARGS(&rtInject))))throw std::runtime_error("RT fog pipeline failed");}
   Constants c{};XMStoreFloat4x4(&c.inverse,XMMatrixInverse(nullptr,d.viewProjNoJit));c.eyeTime=XMFLOAT4(d.camWorld.x,d.camWorld.y,d.camWorld.z,time);c.sun=light.lightDir;c.skyDensity=XMFLOAT4(light.ambient.x,light.ambient.y,light.ambient.z,density);

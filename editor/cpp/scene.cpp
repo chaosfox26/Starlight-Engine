@@ -135,6 +135,10 @@ WalkPoint Character::at(double seconds) const {
     return p;
 }
 void Character::validate() const {
+    require(GrappleMode>=0 && GrappleMode<=2,"Invalid grapple attachment mode");
+    require(std::isfinite(CombatSightRange) && CombatSightRange>=1 && CombatSightRange<=1000 && std::isfinite(CombatHealth) && CombatHealth>=0 && CombatHealth<=1000000000 && CombatTeam>=0 && CombatTeam<=255 && CombatControlEffect>=-1 && CombatControlEffect<14 && (!CombatBoss || CombatHealth>0),"Invalid combat actor settings");
+    require(GameplayRole=="none" || GameplayRole=="key" || GameplayRole=="door" || GameplayRole=="exit" || GameplayRole=="breakable", "Invalid gameplay role");
+    require(GameplayKey.size()<=128 && (GameplayRole!="key" || !GameplayKey.empty()), "Give a collectible key a key name");
     require(finite({X, Y, Z, Size, Speed, Width, Height, Depth, RotationX, RotationY, RotationZ, TargetX,
                     TargetY, TargetZ, BranchSpread, Density, LightCone, LightIntensity, LightRange}) &&
                 Size > 0 && Speed > 0 && Width > 0 && Height > 0 && Depth > 0 &&
@@ -158,8 +162,56 @@ void Character::validate() const {
     if (Sculpt)
         Sculpt->validate();
 }
+void GameplayRule::validate() const {
+    require(!Id.empty() && Id.size()<=128 && Name.size()<=160 && Subject.size()<=128,"Invalid gameplay rule identity");
+    require(Description.size()<=2048,"Objective description too long");
+    require(Event=="item-collected" || Event=="enter-area" || Event=="interact" || Event=="object-opened" || Event=="object-broken" || Event=="stand-on-object","Unsupported gameplay event");
+    require(finite({X,Y,Z,Radius}) && std::abs(X)<=100000 && std::abs(Y)<=100000 && std::abs(Z)<=100000 && Radius>=.1 && Radius<=1000,"Invalid rule area");
+    require(Conditions.size()<=16 && !Actions.empty() && Actions.size()<=16,"Rules need 1-16 actions and at most 16 conditions");
+    for(const auto& c:Conditions)require((c.Type=="has-key" || c.Type=="objective-complete") && !c.Value.empty() && c.Value.size()<=128,"Invalid rule condition");
+    for(const auto& a:Actions)require((a.Type=="open-door" || a.Type=="complete-objective" || a.Type=="finish-game") && a.Target.size()<=128 && (a.Type=="finish-game" || !a.Target.empty()),"Invalid rule action");
+}
+void GameSettings::validate() const {
+    require(Preset=="adventure", "Unsupported game preset");
+    require(finite({SpawnX,SpawnY,SpawnZ,MoveSpeed,LookSensitivity,PlayerRadius}) &&
+        std::abs(SpawnX)<=100000 && std::abs(SpawnY)<=100000 && std::abs(SpawnZ)<=100000 &&
+        MoveSpeed>=.1 && MoveSpeed<=100 && LookSensitivity>=.01 && LookSensitivity<=5 &&
+        PlayerRadius>=.05 && PlayerRadius<=2 && std::isfinite(SightRange) && SightRange>=1 && SightRange<=1000, "Invalid player settings");
+}
 void SceneData::validate() const {
-    require(SchemaVersion >= 1 && SchemaVersion <= 7, "Unsupported scene schema");
+    if(Game)Game->validate();
+    require(Rules.size()<=64,"A scene supports at most 64 gameplay rules");
+    std::set<std::string> ruleIds;
+    for(const auto& rule:Rules){rule.validate();require(ruleIds.insert(rule.Id).second,"Duplicate gameplay rule identity");}
+    require(Quests.size()<=32,"Scene supports at most32 quests");
+    std::set<std::string> questIds;
+    for(const auto& q:Quests){
+        require(!q.Id.empty() && q.Id.size()<=128 && questIds.insert(q.Id).second,"Invalid or duplicate quest ID");
+        require(!q.Title.empty() && q.Title.size()<=160 && q.Description.size()<=4096,"Invalid quest text");
+        require(!q.RuleIds.empty() && q.RuleIds.size()<=16,"Quest needs1-16 objectives");
+        if(!q.StepSizes.empty()){
+            require(q.StepSizes.size()<=16,"Quest supports at most 16 steps");
+            size_t total=0;for(int count:q.StepSizes){require(count>=1 && count<=5,"Each quest step needs one to five objectives");total+=count;}
+            require(total==q.RuleIds.size(),"Step sizes must cover every selected objective exactly once");
+            size_t start=0;
+            for(int count:q.StepSizes){
+                for(size_t i=start;i<start+count;++i){
+                    auto r=std::find_if(Rules.begin(),Rules.end(),[&](const auto& rule){return rule.Id==q.RuleIds[i];});
+                    if(r==Rules.end())continue;
+                    for(const auto& condition:r->Conditions)if(condition.Type=="objective-complete")
+                        for(size_t j=start;j<q.RuleIds.size();++j){
+                            auto other=std::find_if(Rules.begin(),Rules.end(),[&](const auto& rule){return rule.Id==q.RuleIds[j];});
+                            if(other!=Rules.end())for(const auto& action:other->Actions)
+                                require(action.Type!="complete-objective" || action.Target!=condition.Value,"Objectives cannot depend on their own step or a later step");
+                        }
+                }
+                start+=count;
+            }
+        }
+        std::set<std::string> links;
+        for(const auto& id:q.RuleIds)require(ruleIds.contains(id) && links.insert(id).second,"Quest objective rule missing or duplicated");
+    }
+    require(SchemaVersion >= 1 && SchemaVersion <= 12, "Unsupported scene schema");
     require(RaytracingQuality >= 0 && RaytracingQuality <= 4 && PathBounces >= 2 && PathBounces <= 4,
             "Invalid raytracing settings");
     require(finite({Hour, DayLength, FogDensity}) && Hour >= 0 && Hour <= 24 && DayLength >= 10 &&
@@ -185,7 +237,7 @@ void SceneData::validate() const {
 SceneData SceneData::decode(std::string_view text) {
     auto s = json::parse(text).get<SceneData>();
     s.validate();
-    s.SchemaVersion = 7;
+    s.SchemaVersion = std::any_of(s.Characters.begin(),s.Characters.end(),[](const auto& c){return c.CombatHealth>0;}) ? 12 : std::any_of(s.Quests.begin(),s.Quests.end(),[](const auto& q){return !q.StepSizes.empty();}) ? 11 : !s.Quests.empty() ? 10 : !s.Rules.empty() ? 9 : s.Game || std::any_of(s.Characters.begin(),s.Characters.end(),[](const auto& c){return c.GameplayRole!="none";}) ? 8 : 7;
     return s;
 }
 std::string SceneData::encode() const {

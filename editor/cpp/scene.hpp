@@ -50,6 +50,15 @@ struct WalkPoint {
 void to_json(json &, const WalkPoint &);
 void from_json(const json &, WalkPoint &);
 struct Character {
+    double CombatSightRange=60;
+    double CombatHealth=0; // Zero keeps ordinary scenery out of actor combat.
+    int CombatTeam=2; // Viewer/player team is 1; 0 is neutral.
+    bool CombatBoss=false;
+    bool CombatAutoAttack=false;
+    bool CombatPursuit=false;
+    int GrappleMode=0; // Auto, wall attachment, or swing.
+    int CombatControlEffect=-1; // None, or shared ControlEffect index.
+    std::string GameplayRole="none", GameplayKey="";
     std::string Id = new_id();
     std::string Name = "Character";
     std::string Asset = "";
@@ -85,7 +94,44 @@ struct Character {
 };
 void to_json(json &, const Character &);
 void from_json(const json &, Character &);
+struct GameplayCondition { std::string Type="has-key", Value; };
+struct GameplayAction { std::string Type="complete-objective", Target; };
+struct GameplayRule {
+    std::string Id=new_id(), Name="New rule", Event="item-collected", Subject, Description;
+    double X=0, Y=1.7, Z=0, Radius=2;
+    bool Once=true, Enabled=true;
+    std::vector<GameplayCondition> Conditions;
+    std::vector<GameplayAction> Actions;
+    void validate() const;
+};
+void to_json(json&,const GameplayCondition&);
+void from_json(const json&,GameplayCondition&);
+void to_json(json&,const GameplayAction&);
+void from_json(const json&,GameplayAction&);
+void to_json(json&,const GameplayRule&);
+void from_json(const json&,GameplayRule&);
+struct QuestDefinition {
+    std::string Id=new_id(), Title="New quest", Description;
+    std::vector<std::string> RuleIds;
+    std::vector<int> StepSizes;
+    bool Tracked=true;
+};
+void to_json(json&,const QuestDefinition&);
+void from_json(const json&,QuestDefinition&);
+struct GameSettings {
+    std::string Preset = "adventure";
+    double SpawnX=0, SpawnY=1.7, SpawnZ=6;
+    double MoveSpeed=4, LookSensitivity=.15, PlayerRadius=.3, SightRange=60;
+    bool Collision=true, ReducedCameraMotion=false;
+    void validate() const;
+};
+void to_json(json &, const GameSettings &);
+void from_json(const json &, GameSettings &);
 struct SceneData {
+    std::vector<GameplayRule> Rules;
+    std::vector<QuestDefinition> Quests;
+    std::optional<GameSettings> Game;
+
     double Hour = 15;
     bool DayCycle = false;
     double DayLength = 180;

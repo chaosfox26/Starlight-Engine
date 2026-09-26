@@ -1,5 +1,4 @@
-"""Compatibility entry point; every native target now uses the root CMake build."""
+"""Compatibility entry point for the canonical Starlight CMake/Ninja or tool workflow."""
 from pathlib import Path
-import subprocess, sys
-root = Path(__file__).resolve().parents[2]
-raise SystemExit(subprocess.call([sys.executable, str(root/'Build-Native.py'), *sys.argv[1:]]))
+import runpy
+runpy.run_path(str(Path(__file__).resolve().parents[2] / 'tools/build/Build-Native.py'), run_name="__main__")

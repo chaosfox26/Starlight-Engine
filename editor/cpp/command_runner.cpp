@@ -1,4 +1,5 @@
 #include "commands.hpp"
+#include "adventure_template.hpp"
 #include <iostream>
 using namespace starlight::editor;
 int starlight::editor::run_commands(int argc, wchar_t **argv) {
@@ -19,6 +20,16 @@ int starlight::editor::run_commands(int argc, wchar_t **argv) {
             report = describe_commands();
         else if (args.size() == 2 && args[0] == L"--inspect")
             report = inspect_scene(args[1]);
+        else if (args.size() == 2 && args[0] == L"--new-adventure") {
+            if(fs::exists(args[1]))throw std::runtime_error("Starter scene destination already exists");
+            save_scene(adventure_template(),args[1]);report={{"success",true}};
+        }
+        else if (args.size() == 4 && args[0] == L"--export-game")
+            report = export_playable_game(load_scene(args[1]), args[2], args[3]);
+        else if (args.size() == 3 && args[0] == L"--export-portable")
+            report = export_portable_scene(load_scene(args[1]), args[2]);
+        else if (args.size() == 2 && args[0] == L"--verify-portable")
+            report = verify_portable_scene(args[1]);
         else if (args.size() == 2 && args[0] == L"--feature") {
             report = invoke_feature(utf8(args[1]));
             code = 1;
@@ -26,7 +37,7 @@ int starlight::editor::run_commands(int argc, wchar_t **argv) {
             report = apply_commands(args[1]);
         else
             throw std::runtime_error(
-                "Use --describe, --inspect <scene>, or --commands <request>; optional --result <report>");
+                "Use --describe, --inspect <scene>, --commands <request>, --new-adventure <new-scene>, --export-portable <scene> <new-folder>, or --export-game <scene> <new-folder> <runtime-folder>; optional --result <report>");
     } catch (const std::exception &e) {
         report = {{"success", false}, {"error", e.what()}};
         diagnostic("command", e.what());

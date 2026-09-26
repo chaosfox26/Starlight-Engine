@@ -10,6 +10,11 @@
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <future>
 #include <array>
 #include <mutex>
@@ -41,9 +46,73 @@ public:
  BroadLayers broad;PairFilter pairs;BroadFilter filter;TempAllocatorImpl temp{32*1024*1024};JobSystemThreadPool jobs{cMaxPhysicsJobs,cMaxPhysicsBarriers,4};PhysicsSystem world;
  struct Tile {BodyID body;std::array<float,289> heights{},requested{};std::future<ShapeRefC> pending;bool valid=false;};
  std::array<Tile,36> tiles;std::vector<BodyID> bodies,allProps;double accumulator=0;uint64_t ticks=0,cooks=0;
+ Ref<CharacterVirtual> character;
+ int characterJumps=0;
+ float characterRadius=.3f,characterHeight=1.8f;
  PhysicsWorld(){world.Init(8192,0,32768,32768,broad,filter,pairs);world.SetContactListener(&contacts);}
  ~PhysicsWorld(){for(auto& tile:tiles)if(tile.pending.valid())tile.pending.wait();}
- void ClearProps(){auto& api=world.GetBodyInterface();for(auto id:allProps){api.RemoveBody(id);api.DestroyBody(id);}bodies.clear();allProps.clear();contacts.touching.clear();accumulator=0;ticks=0;}
+ void ClearProps(){character=nullptr;auto& api=world.GetBodyInterface();for(auto id:allProps){api.RemoveBody(id);api.DestroyBody(id);}bodies.clear();allProps.clear();contacts.touching.clear();accumulator=0;ticks=0;}
+ void StartCharacter(float radius,Vec3 feet){
+  characterJumps=0;
+  characterRadius=radius;characterHeight=1.8f;
+  // Terrain cooking is completed once at controller creation, never by sleeping.
+  for(auto& tile:tiles)if(tile.pending.valid())tile.pending.wait();
+  if(!Poll())throw std::runtime_error("Character terrain was not ready");
+  CharacterVirtualSettings settings;
+  const float halfHeight=std::max(.01f,.9f-radius);
+  settings.mShape=new CapsuleShape(halfHeight,radius);
+  settings.mShapeOffset=Vec3(0,halfHeight+radius,0);
+  settings.mSupportingVolume=Plane(Vec3::sAxisY(),-radius);
+  settings.mMaxSlopeAngle=DegreesToRadians(45.f);
+  settings.mEnhancedInternalEdgeRemoval=true;
+  character=new CharacterVirtual(&settings,RVec3(feet),Quat::sIdentity(),&world);
+  character->RefreshContacts(world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
+ }
+ bool CharacterHeight(float height){
+  if(!character || !std::isfinite(height) || height<.4f || height>1.8f)return false;
+  if(std::abs(height-characterHeight)<.001f)return true;
+  float radius=std::min(characterRadius,height*.45f),half=std::max(.01f,height*.5f-radius);
+  RefConst<Shape> shape=new CapsuleShape(half,radius);
+  auto oldOffset=character->GetShapeOffset();character->SetShapeOffset(Vec3(0,half+radius,0));
+  if(!character->SetShape(shape,.02f,world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp)){
+   character->SetShapeOffset(oldOffset);return false;
+  }
+  characterHeight=height;return true;
+ }
+ bool CharacterTraverse(Vec3 feet,Vec3 travel){
+  if(!character || !std::isfinite(feet.LengthSq()) || !std::isfinite(travel.LengthSq()))return false;
+  CapsuleShape capsule(std::max(.01f,.9f-characterRadius),characterRadius);
+  RShapeCast cast(&capsule,Vec3::sOne(),RMat44::sTranslation(RVec3(feet+Vec3(0,.9f,0))),travel);
+  ShapeCastSettings settings;ClosestHitCollisionCollector<CastShapeCollector> hits;
+  world.GetNarrowPhaseQuery().CastShape(cast,settings,RVec3::sZero(),hits,world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1));
+  return !hits.HadHit();
+ }
+ void CharacterStep(float dt,Vec3 feet,Vec3 input,bool jump,float* output,bool overrideMotion=false){
+  if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f)throw std::runtime_error("Invalid character step");
+  if((character->GetPosition()-RVec3(feet)).LengthSq()>1.e-6){
+   character->SetPosition(RVec3(feet));character->SetLinearVelocity(Vec3::sZero());
+   character->RefreshContacts(world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
+  }
+  character->UpdateGroundVelocity();
+  Vec3 ground=character->GetGroundVelocity();
+  bool supported=character->GetGroundState()==CharacterBase::EGroundState::OnGround;
+  bool descending=character->GetLinearVelocity().GetY()-ground.GetY()<.1f;
+  Vec3 velocity(0,character->GetLinearVelocity().GetY(),0);
+  if(supported && descending){velocity=ground;characterJumps=0;}
+  // Each request is a fresh input press. Walking off a ledge leaves one air
+  // jump; landing restores both. Air jump replaces vertical speed, so falling
+  // does not consume the second jump without providing upward motion.
+  if(!supported && characterJumps==0)characterJumps=1;
+  if(jump && characterJumps<2){velocity.SetY(ground.GetY()+5.f);++characterJumps;}
+  character->SetLinearVelocity(overrideMotion?input:velocity+input+world.GetGravity()*dt);
+  CharacterVirtual::ExtendedUpdateSettings settings;
+  settings.mWalkStairsStepUp=Vec3(0,.4f,0);
+  settings.mStickToFloorStepDown=(overrideMotion || jump || velocity.GetY()>ground.GetY()+.1f)?Vec3::sZero():Vec3(0,-.4f,0);
+  if(overrideMotion)settings.mWalkStairsStepUp=Vec3::sZero();
+  character->ExtendedUpdate(dt,world.GetGravity(),settings,world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
+  if(world.Update(dt,1,&temp,&jobs)!=EPhysicsUpdateError::None)throw std::runtime_error("Character world capacity exceeded");
+  auto p=character->GetPosition();output[0]=(float)p.GetX();output[1]=(float)p.GetY();output[2]=(float)p.GetZ();output[3]=character->GetGroundState()==CharacterBase::EGroundState::OnGround?1.f:0.f;
+ }
  static ShapeRefC Cook(const std::array<float,289>& h,int tx,int tz){
   TriangleList triangles;triangles.reserve(512);
   auto point=[&](int x,int z){return Float3(-12+(tx*16+x)*.25f,h[z*17+x],-12+(tz*16+z)*.25f);};
@@ -87,3 +156,12 @@ API uint32_t slp_add(void* p,const float* points,int count,const uint32_t* indic
 API int slp_step(void* p,double dt,const starlight::Liquid* liquid,int count,starlight::BodyState* output,int capacity){try{return static_cast<starlight::PhysicsWorld*>(p)->Step(dt,liquid,count,output,capacity);}catch(const std::exception& e){error=e.what();return -1;}}
 API uint64_t slp_cooks(void* p){return static_cast<starlight::PhysicsWorld*>(p)->cooks;}
 API uint64_t slp_ticks(void* p){return static_cast<starlight::PhysicsWorld*>(p)->ticks;}
+API int slp_character_start(void* p,float radius,float x,float y,float z){try{static_cast<starlight::PhysicsWorld*>(p)->StartCharacter(radius,Vec3(x,y,z));return 1;}catch(const std::exception& e){error=e.what();return 0;}}
+API int slp_character_traverse(void* p,float x,float y,float z,float dx,float dy,float dz){try{return static_cast<starlight::PhysicsWorld*>(p)->CharacterTraverse(Vec3(x,y,z),Vec3(dx,dy,dz))?1:0;}catch(const std::exception& e){error=e.what();return -1;}}
+API int slp_character_height(void* p,float height){try{return static_cast<starlight::PhysicsWorld*>(p)->CharacterHeight(height)?1:0;}catch(const std::exception& e){error=e.what();return -1;}}
+API int slp_character_step(void* p,float dt,float x,float y,float z,float vx,float vz,int jump,float* output){try{static_cast<starlight::PhysicsWorld*>(p)->CharacterStep(dt,Vec3(x,y,z),Vec3(vx,0,vz),jump!=0,output);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
+API int slp_character_motion(void* p,float dt,float x,float y,float z,float vx,float vy,float vz,float* output){try{static_cast<starlight::PhysicsWorld*>(p)->CharacterStep(dt,Vec3(x,y,z),Vec3(vx,vy,vz),false,output,true);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
+API void slp_character_remove(void* p,uint32_t raw){auto& w=*static_cast<starlight::PhysicsWorld*>(p);BodyID id(raw);w.world.GetBodyInterface().RemoveBody(id);w.world.GetBodyInterface().DestroyBody(id);w.allProps.erase(std::remove(w.allProps.begin(),w.allProps.end(),id),w.allProps.end());w.bodies.erase(std::remove(w.bodies.begin(),w.bodies.end(),id),w.bodies.end());}
+API void slp_character_platform(void* p,uint32_t raw,float x,float y,float z,float dt){auto& w=*static_cast<starlight::PhysicsWorld*>(p);auto& api=w.world.GetBodyInterface();BodyID id(raw);api.SetMotionType(id,EMotionType::Kinematic,EActivation::Activate);api.MoveKinematic(id,RVec3(x,y,z),Quat::sIdentity(),dt);}
+API void slp_character_actor(void* p,uint32_t raw,float x,float y,float z,float yaw,float roll,float dt){auto& w=*static_cast<starlight::PhysicsWorld*>(p);auto& api=w.world.GetBodyInterface();BodyID id(raw);api.SetMotionType(id,EMotionType::Kinematic,EActivation::Activate);api.MoveKinematic(id,RVec3(x,y,z),Quat::sRotation(Vec3(-std::sin(roll),std::cos(roll),0),yaw),dt);}
+

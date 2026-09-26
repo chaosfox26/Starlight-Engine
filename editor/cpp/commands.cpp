@@ -1,6 +1,7 @@
 #include "commands.hpp"
 #include "assets.hpp"
 #include "features.hpp"
+#include "object_template.hpp"
 #include <set>
 namespace starlight::editor {
 namespace {
@@ -48,17 +49,40 @@ json describe_commands() {
             {"featureCommand", "--feature <id> --result <report.json>"},
             {"operations",
              {"add", "move", "route", "rename", "remove", "configure", "shape", "transform", "terrain-brush",
-              "terrain-water", "terrain-stamp"}},
+              "terrain-water", "terrain-stamp", "insert-object", "insert-group", "duplicate", "replace-model", "merge-scene"}},
             {"readOperations", {"describe", "inspect"}},
+            {"portableExport", "--export-portable <scene.starscene> <new-folder>"},
+            {"portableVerification", "--verify-portable <folder>"},
+            {"starterAdventure", "--new-adventure <new-scene.starscene>"},
+            {"playableExport", "--export-game <scene.starscene> <new-folder> <runtime-folder>"},
             {"limitations",
              {"Native Win32 editor; fixed panels, no docking layout system",
               "Static GLB geometry preview; skeletal animation not imported"}}};
 }
 json inspect_scene(const fs::path &input) {
     auto p = fs::absolute(input).lexically_normal();
-    auto bytes = read_file(p);
-    auto scene = SceneData::decode(bytes);
-    return {{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", hash_file(p)}, {"scene", scene}};
+    auto scene = load_scene(p);
+    json assets = json::array();
+    size_t missing = 0;
+    for (const auto &object : scene.Characters) {
+        if (object.Shape || object.Sculpt || object.Asset.empty()) continue;
+        auto found = std::find_if(assets.begin(), assets.end(), [&](const json &entry) { return entry.at("path") == object.Asset; });
+        if (found != assets.end()) { (*found)["objectIds"].push_back(object.Id); continue; }
+        fs::path asset(wide(object.Asset));
+        std::error_code error;
+        bool available = fs::is_regular_file(asset, error);
+        json entry{{"path",object.Asset},{"objectIds",json::array({object.Id})},{"available",available},
+            {"geometryValidated",false}};
+        if (!available) { ++missing; entry["problem"] = error ? error.message() : "Model file is missing or is not a regular file"; }
+        else {
+            auto size = fs::file_size(asset, error);
+            if (!error) entry["bytes"] = size;
+            else entry["problem"] = error.message();
+        }
+        assets.push_back(std::move(entry));
+    }
+    return {{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", hash_file(p)}, {"scene", scene},
+        {"assets",assets},{"missingAssetCount",missing},{"assetCheckScope","File presence only; geometry and runtime correctness are not certified"}};
 }
 json apply_commands(const fs::path &file) {
     auto request = json::parse(read_file(file));
@@ -71,12 +95,66 @@ json apply_commands(const fs::path &file) {
     auto expected = request.at("expectedSha256").get<std::string>();
     if (_stricmp(hash_file(path).c_str(), expected.c_str()))
         throw std::runtime_error("Scene changed; inspect again before editing");
-    auto scene = SceneData::decode(read_file(path));
+    auto scene = load_scene(path);
     const auto &operations = request.at("operations");
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
     for (const auto &op : operations) {
         auto kind = op.at("op").get<std::string>();
+        if (kind == "merge-scene") {
+            keys(op, {"op", "file", "expectedSha256", "x", "z"});
+            auto source = fs::path(wide(op.at("file").get<std::string>()));
+            if (source.is_relative()) source = fs::absolute(file).parent_path() / source;
+            source = fs::absolute(source).lexically_normal();
+            auto bytes = read_file(source);
+            if (_stricmp(hash_bytes(bytes).c_str(), op.at("expectedSha256").get<std::string>().c_str()))
+                throw std::runtime_error("Source scene changed; inspect it again before merging");
+            auto objects = SceneData::decode(bytes).Characters;
+            if (objects.empty()) throw std::runtime_error("Source scene contains no objects");
+            for (auto &object : objects) {
+                object.Id = new_id();
+                if (!object.Asset.empty()) {
+                    auto asset = fs::path(wide(object.Asset));
+                    if (asset.is_relative()) object.Asset = utf8((source.parent_path() / asset).lexically_normal().wstring());
+                }
+            }
+            place_object_group(objects, scene, op.value("x", objects.front().X), op.value("z", objects.front().Z));
+            for (auto &object : objects) scene.Characters.push_back(std::move(object));
+            continue;
+        }
+        if (kind == "insert-object" || kind == "insert-group") {
+            if (kind == "insert-group") keys(op, {"op", "file", "expectedSha256", "x", "z"});
+            else keys(op, {"op", "file", "expectedSha256", "name", "x", "z"});
+            auto source = fs::path(wide(op.at("file").get<std::string>()));
+            if (source.is_relative()) source = fs::absolute(file).parent_path() / source;
+            if (fs::file_size(source) > 32 * 1024 * 1024) throw std::runtime_error("Reusable object exceeds 32 MiB");
+            auto bytes = read_file(source);
+            // Hash the same bytes that are decoded, avoiding a check/read race.
+            if (_stricmp(hash_bytes(bytes).c_str(), op.at("expectedSha256").get<std::string>().c_str()))
+                throw std::runtime_error("Saved object changed; inspect it again before inserting");
+            if (kind == "insert-group") {
+                auto objects = decode_object_group(bytes);
+                place_object_group(objects, scene, op.value("x", objects.front().X), op.value("z", objects.front().Z));
+                for (auto &object : objects) scene.Characters.push_back(std::move(object));
+                continue;
+            }
+            auto object = decode_object_template(bytes);
+            object.Name = op.value("name", object.Name);
+            place_object_template(object, op.value("x", object.X), op.value("z", object.Z));
+            snap(scene, object);
+            scene.Characters.push_back(std::move(object));
+            continue;
+        }
+        if (kind == "duplicate") {
+            keys(op, {"op", "id", "name", "x", "z"});
+            auto object = find(scene, op);
+            object.Id = new_id();
+            object.Name = op.value("name", object.Name + " copy");
+            place_object_template(object, op.value("x", object.X), op.value("z", object.Z));
+            snap(scene, object);
+            scene.Characters.push_back(std::move(object));
+            continue;
+        }
         if (kind == "terrain-brush") {
             keys(op, {"op", "tool", "x", "z", "radius", "strength", "seconds", "target", "paint"});
             auto tool = op.at("tool").get<std::string>();
@@ -140,7 +218,15 @@ json apply_commands(const fs::path &file) {
             continue;
         }
         auto &c = find(scene, op);
-        if (kind == "transform") {
+        if (kind == "replace-model") {
+            keys(op, {"op", "id", "asset"});
+            if (c.Shape || c.Sculpt) throw std::runtime_error("Model replacement requires an imported object, not a shape or sculpt");
+            auto asset = fs::path(wide(op.at("asset").get<std::string>()));
+            if (asset.is_relative()) asset = fs::absolute(file).parent_path() / asset;
+            asset = fs::absolute(asset).lexically_normal();
+            load_glb(asset);
+            c.Asset = utf8(asset.wstring());
+        } else if (kind == "transform") {
             keys(op, {"op", "id", "y", "width", "height", "depth", "rotationX", "rotationY", "rotationZ",
                       "keepAboveFloor", "color", "lightIntensity", "lightRange"});
             c.Y = op.value("y", c.Y);

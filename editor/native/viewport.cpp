@@ -50,6 +50,12 @@ static thread_local std::string failure;
 #define API extern "C" __declspec(dllexport)
 API int sl_lightning(float x,float y,float z,float spread,float* output,int capacity){try{if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z)||!std::isfinite(spread)||spread<0||spread>5)return 0;auto mesh=starlight::Lightning({x,y,z},spread);if(output){if(capacity<(int)mesh.size())return 0;memcpy(output,mesh.data(),mesh.size()*sizeof(starlight::ArcVertex));}return (int)mesh.size();}catch(...){return 0;}}
 API const char* sl_error(){return failure.c_str();}
+// Optional ABI: old DLLs can be tested without importing unavailable symbols.
+API int sl_benchmark_contract(){return 2;} // owned offscreen target; no swapchain writes
+API void sl_benchmark(void* handle,int enable){auto& d=*static_cast<Viewport*>(handle)->renderer;d.setAuditOffscreen(enable!=0);}
+API void sl_benchmark_flush(void* handle){static_cast<Viewport*>(handle)->renderer->flush();}
+API void sl_scene_resources(void* handle,unsigned long long* parts,unsigned long long* blas,unsigned long long* uploads){auto& v=*static_cast<Viewport*>(handle);*parts=v.parts.size();*blas=v.rt.cache.size();*uploads=v.renderer->uploadKeepAlive.size();}
+API void sl_upload_pool_stats(void* handle,unsigned long long* count,unsigned long long* bytes,unsigned long long* created,unsigned long long* reused){auto& d=*static_cast<Viewport*>(handle)->renderer;*count=d.uploadPool.size();*bytes=d.uploadPoolBytes;*created=d.uploadCreated;*reused=d.uploadReused;}
 API void* sl_create(HWND window,int width,int height){
  try{
   wchar_t debugLog[32768];DWORD debugLen=GetEnvironmentVariableW(L"STARLIGHT_NATIVE_LOG",debugLog,32768);if(debugLen>0&&debugLen<32768&&!g_logFile)_wfopen_s(&g_logFile,debugLog,L"w");
@@ -58,6 +64,14 @@ API void* sl_create(HWND window,int width,int height){
   d.d3dDebug=GetEnvironmentVariableW(L"STARLIGHT_D3D_DEBUG",nullptr,0)>0;d.linearHdrScene=true;d.frameRateLimit=500;d.vsync=false;d.upsRequest="off";d.modeRequest="native";d.fgRequest=false;d.cullOn=false;d.editorCameraDistance=13;
   Mesh cube;BuildBox(cube);d.init(window,width,height,cube);v->atmosphere.init(d);v->rt.init(d);auto raw=v.get();d.editorDraw=[raw]{raw->draw();};d.editorPost=[raw]{float time=raw->visualTime();bool animated=!raw->freeze&&(raw->cycle>0||raw->fogDensity>0||!raw->smoke.empty());for(auto& p:raw->parts)if(p.effect||(!p.source->verts.empty()&&p.source->verts[0].kind>=7))animated|=!raw->freeze;auto input=raw->rt.draw(*raw->renderer,raw->rtItems,raw->frameLights,time,raw->fogDensity,raw->smoke,animated);raw->atmosphere.draw(*raw->renderer,raw->frameLights,time,raw->fogDensity,raw->smoke,input,raw->rt.active>=3&&raw->rt.tlasBuilt?raw->rt.tlas->GetGPUVirtualAddress():0);};return v.release();
  }catch(const std::exception& e){failure=e.what();return nullptr;}
+}
+API int sl_resize(void* handle,int width,int height){
+ try{
+  if(!handle||width<1||height<1)throw std::runtime_error("Invalid viewport resize");
+  auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
+  if(d.w==(UINT)width&&d.h==(UINT)height)return 1;
+  d.resizeNativeOutput(width,height);v.rt.resize(d);v.atmosphere.resize(d);return 1;
+ }catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_scene(void* handle,const uint8_t* bytes,int length){
  try{
@@ -90,20 +104,29 @@ API int sl_scene(void* handle,const uint8_t* bytes,int length){
   bool changed=false;for(auto& in:incoming)if(!cache.count(in.part.meshKey))changed=true;
   if(changed){d.flush();d.alloc->Reset();d.cmd->Reset(d.alloc.Get(),nullptr);}
   std::vector<Part> next;for(auto& in:incoming){auto found=cache.find(in.part.meshKey);if(found==cache.end()){in.part.gpu=d.uploadMesh(in.mesh);v.uploads++;cache.emplace(in.part.meshKey,in.part.gpu);}else in.part.gpu=found->second;auto source=sources.find(in.part.meshKey);if(source!=sources.end())in.part.source=source->second;else{in.part.source=std::make_shared<Mesh>(std::move(in.mesh));sources.emplace(in.part.meshKey,in.part.source);}next.push_back(std::move(in.part));}
-  if(changed){d.cmd->Close();ID3D12CommandList* lists[]={d.cmd.Get()};d.queue->ExecuteCommandLists(1,lists);d.flush();d.uploadKeepAlive.clear();}
+  if(changed){d.cmd->Close();ID3D12CommandList* lists[]={d.cmd.Get()};d.queue->ExecuteCommandLists(1,lists);d.flush();d.retireUploads();}
   // Retire removed buffers only after their previous frame has completed.
   bool removed=false;for(const auto& old:v.parts)if(std::none_of(next.begin(),next.end(),[&](const Part& p){return p.meshKey==old.meshKey;}))removed=true;
-  if(removed&&!changed)d.flush();v.parts=std::move(next);v.localLights=std::move(localLights);v.hour=hour;v.cycle=cycle;v.dayLength=dayLength;v.fogDensity=density;v.smoke=std::move(smoke);v.rt.denoiserMode=rrMode;v.rt.requested=rtTier;v.rt.bounces=rtBounces;if(rtFreeze&&!v.freeze)v.frozenTime=v.visualTime();v.freeze=rtFreeze!=0;d.resetHistory=true;return 1;
+  if(removed&&!changed)d.flush();
+  if(removed){v.rt.retireGeometry(d);v.rtItems.clear();d.prevModelByKey.clear();d.curModelByKey.clear();}
+  for(auto& old:cache)if(std::none_of(next.begin(),next.end(),[&](const Part& p){return p.meshKey==old.first;})){
+   d.recycleBuffer(old.second.vb);d.recycleBuffer(old.second.ib);
+  }
+  v.parts=std::move(next);v.localLights=std::move(localLights);v.hour=hour;v.cycle=cycle;v.dayLength=dayLength;v.fogDensity=density;v.smoke=std::move(smoke);v.rt.denoiserMode=rrMode;v.rt.requested=rtTier;v.rt.bounces=rtBounces;if(rtFreeze&&!v.freeze)v.frozenTime=v.visualTime();v.freeze=rtFreeze!=0;d.resetHistory=true;return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_frame(void* handle,double seconds,float distance){
- try{if(!handle||!std::isfinite(seconds)||!std::isfinite(distance))throw std::runtime_error("Invalid frame input");auto& v=*static_cast<Viewport*>(handle);v.seconds=seconds;v.renderer->editorTime=v.visualTime();v.renderer->editorCameraDistance=distance;std::vector<DxrItem> geometry;for(auto& p:v.parts)if(p.effect!=4)geometry.push_back({p.meshKey,p.source.get(),{}, {}});try{v.rt.prepare(*v.renderer,geometry);}catch(const std::exception& ex){v.rt.active=0;v.rt.supported=false;v.rt.status=std::string("DXR initialization failed; raster fallback: ")+ex.what();}v.renderer->editorRaytracing=v.rt.active>0;v.renderer->renderEmpty(v.window);if(FAILED(v.renderer->device->GetDeviceRemovedReason()))throw std::runtime_error("Native graphics device lost");return 1;}
+ try{if(!handle||!std::isfinite(seconds)||!std::isfinite(distance))throw std::runtime_error("Invalid frame input");auto& v=*static_cast<Viewport*>(handle);v.seconds=seconds;v.renderer->editorTime=v.visualTime();v.renderer->editorCameraDistance=distance;std::vector<DxrItem> geometry;for(auto& p:v.parts)if(p.effect!=4)geometry.push_back({p.meshKey,p.source.get(),{}, {}});try{v.rt.prepare(*v.renderer,geometry);}catch(const std::exception& ex){v.rt.active=0;v.rt.supported=false;v.rt.status=std::string("DXR initialization failed; raster fallback: ")+ex.what();}v.renderer->editorRaytracing=v.rt.active>0;v.renderer->renderEmpty(v.window);if(FAILED(v.renderer->device->GetDeviceRemovedReason())){v.renderer->reportDeviceLoss();throw std::runtime_error("Native graphics device lost");}return 1;}
  catch(const std::exception& e){failure=e.what();return 0;}
 }
 API double sl_gpu_ms(void* handle){return static_cast<Viewport*>(handle)->renderer->lastGpuMs;}
 API int sl_render_width(void* handle){return static_cast<Viewport*>(handle)->renderer->rw;}
+API int sl_render_height(void* handle){return static_cast<Viewport*>(handle)->renderer->rh;}
+API int sl_debug_active(void* handle){return static_cast<Viewport*>(handle)->renderer->d3dq ? 1 : 0;}
+API int sl_native_contract(void* handle){auto& d=*static_cast<Viewport*>(handle)->renderer;return d.rw==d.w&&d.rh==d.h&&d.ups->path()==up::Path::Off&&!d.ups->fgEnabled();}
 API int sl_output_width(void* handle){return static_cast<Viewport*>(handle)->renderer->w;}
 API void sl_camera(void* handle,float x,float y,float z,float tx,float ty,float tz){auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorEye=XMFLOAT3(x,y,z);d.editorTarget=XMFLOAT3(tx,ty,tz);}
+API void sl_camera_up(void* handle,float x,float y,float z){auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorUp=XMFLOAT3(x,y,z);}
 API uint64_t sl_uploads(void* handle){return static_cast<Viewport*>(handle)->uploads;}
 API int sl_parts(void* handle){return (int)static_cast<Viewport*>(handle)->parts.size();}
 API int sl_captured(void* handle){return static_cast<Viewport*>(handle)->renderer->shotDone?1:0;}
@@ -129,6 +152,8 @@ API uint64_t sl_history_resets(void* handle){return static_cast<Viewport*>(handl
 
 API int sl_rr_active(void* handle){return static_cast<Viewport*>(handle)->rt.rrActive?1:0;}
 API const char* sl_rr_status(void* handle){return static_cast<Viewport*>(handle)->rt.rr.status.c_str();}
+// Stable ABI: 0 = native temporal wavelet, 1 = optional native-resolution RR.
+// Do not invert this mapping: existing projects and editor controls persist it.
 API void sl_denoiser(void* handle,int mode){auto& rt=static_cast<Viewport*>(handle)->rt;rt.denoiserMode=mode==1?1:0;rt.historyValid=false;}
 API int sl_denoise_history_index(void* handle){auto& rt=static_cast<Viewport*>(handle)->rt;return 11+(1-rt.historyParity)*4;}
 // Explicit offline validation only. Never called by the interactive frame loop.

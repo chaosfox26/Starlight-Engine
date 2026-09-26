@@ -1,0 +1,54 @@
+{
+    SceneData level;level.Game.emplace();level.Game->SpawnY=.5;level.Game->SpawnZ=2;
+    Character red;red.Shape="cube";red.GameplayRole="key";red.GameplayKey="red";
+    Character blue=red;blue.Id=new_id();blue.X=3;blue.GameplayKey="blue";
+    Character door;door.Shape="cube";door.X=6;door.Height=2;door.GameplayRole="door";
+    level.Characters={red,blue,door};
+    GameplayRule collection;collection.Name="Collect the set";
+    collection.Conditions={{"has-key","red"},{"has-key","blue"}};
+    collection.Actions={{"complete-objective","Find both items"}};
+    GameplayRule area;area.Event="enter-area";area.X=6;area.Y=.5;area.Z=2;area.Radius=.5;
+    area.Conditions={{"objective-complete","Find both items"}};area.Actions={{"open-door",door.Id}};
+    GameplayRule finish;finish.Event="enter-area";finish.X=9;finish.Y=.5;finish.Z=2;finish.Radius=.5;
+    finish.Conditions=area.Conditions;finish.Actions={{"finish-game",""}};
+    level.Rules={collection,area,finish};
+    auto encoded=level.encode();auto loaded=SceneData::decode(encoded);
+    require(loaded.SchemaVersion==9 && json(loaded.Rules)==json(level.Rules),"Saved events conditions and actions round trip without losing identities");
+    AdventurePlayer player;player.start(loaded);
+    player.interact();require(player.rules().items.contains("red") && player.rules().objectives.empty(),"Required-set objective waits for all items");
+    player.position.x=3;player.interact();
+    require(player.rules().objectives.contains("Find both items"),"Collecting the complete required set completes its objective");
+    player.position.x=6;player.move(0,0,.016);
+    require(player.scene().Characters.empty() && player.rules().removed.contains(door.Id),"Entering a linked area opens the door through shared rule actions");
+    player.position.x=9;player.move(0,0,.016);require(player.finished,"An area rule can finish the game");
+    require(level.encode()==encoded && loaded.encode()==encoded,"Rule execution never changes authored or loaded scene data");
+    player.start(loaded);require(!player.finished && player.rules().objectives.empty() && player.rules().items.empty() && player.scene().Characters.size()==3,"Restart creates independent empty rule state");
+    AdventurePlayer other;other.start(loaded);player.interact();require(other.rules().items.empty(),"Two Play sessions never share inventory or objective state");
+    player.start(loaded,false);player.position={6,.5,2};player.move(0,0,.016);player.interact();
+    require(player.scene().Characters.size()==3 && player.rules().items.empty(),"Authoring exploration never executes gameplay rules or interactions");
+    auto interaction=level;interaction.Rules={finish};interaction.Rules[0].Event="interact";interaction.Rules[0].Subject=door.Id;interaction.Rules[0].Conditions.clear();
+    player.start(interaction);player.position.x=6;player.interact();require(player.finished,"Object interaction emits a reusable saved event");
+    auto repeated=level;repeated.Rules={area};repeated.Rules[0].Conditions.clear();repeated.Rules[0].Once=false;
+    GameplayRulesRuntime runtime;runtime.reset(repeated.Rules);runtime.areas({6,.5,2},repeated);
+    repeated.Characters.push_back(door);runtime.areas({6,.5,2},repeated);
+    require(repeated.Characters.size()==3,"Area event does not repeat every frame while the player stays inside");
+    runtime.areas({9,.5,2},repeated);runtime.areas({6,.5,2},repeated);
+    require(repeated.Characters.size()==2,"Repeatable area event fires on a later entry");
+    repeated=level;repeated.Rules={area};repeated.Rules[0].Conditions.clear();runtime.reset(repeated.Rules);
+    runtime.areas({6,.5,2},repeated);repeated.Characters.push_back(door);runtime.areas({9,.5,2},repeated);runtime.areas({6,.5,2},repeated);
+    require(repeated.Characters.size()==3,"Once-only area rules remain completed until Play restart");
+    for(int bad=0;bad<7;++bad){auto data=json(level);
+        if(bad==0)data["Rules"][0]["Event"]="arbitrary-script";
+        if(bad==1)data["Rules"][0]["Actions"][0]["Type"]="shell";
+        if(bad==2)data["Rules"][0]["Radius"]=-1;
+        if(bad==3)data["Rules"][1]["Id"]=data["Rules"][0]["Id"];
+        if(bad==4)data["Rules"]=std::vector<GameplayRule>(65,collection);
+        if(bad==5)data["Rules"][0]["Conditions"]=std::vector<GameplayCondition>(17,{"has-key","red"});
+        if(bad==6)data["Rules"][0]["Actions"]=json::array();
+        bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}
+        require(rejected,"Malformed or unbounded gameplay rule rejected before Play");
+    }
+    auto portable=folder/"rules-portable";export_portable_scene(level,portable);verify_portable_scene(portable);
+    auto packaged=SceneData::decode(read_file(portable/"scene.starscene"));
+    require(json(packaged.Rules)==json(level.Rules),"Portable/export content preserves rule events and linked door identity");
+}

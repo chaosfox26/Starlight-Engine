@@ -5,11 +5,15 @@
 namespace {
 extern "C" {
 __declspec(dllimport) void *sl_create(HWND, int, int);
+__declspec(dllimport) int sl_resize(void*, int, int);
 __declspec(dllimport) int sl_scene(void *, const unsigned char *, int);
 __declspec(dllimport) int sl_frame(void *, double, float);
 __declspec(dllimport) void sl_camera(void *, float, float, float, float, float, float);
+__declspec(dllimport) void sl_camera_up(void *,float,float,float);
 __declspec(dllimport) void sl_destroy(void *);
 __declspec(dllimport) void sl_shot(void *, const wchar_t *);
+__declspec(dllimport) void sl_scene_resources(void *, unsigned long long *, unsigned long long *, unsigned long long *);
+__declspec(dllimport) void sl_upload_pool_stats(void *, unsigned long long *, unsigned long long *, unsigned long long *, unsigned long long *);
 __declspec(dllimport) const char *sl_error();
 __declspec(dllimport) double sl_gpu_ms(void *);
 __declspec(dllimport) double sl_ray_ms(void *);
@@ -57,6 +61,24 @@ void NativeSession::playback(bool play, bool reset) {
     playing_ = play;
     reset_ |= reset;
 }
+void NativeSession::gameplay_overlays(std::vector<MeshPart> parts){
+    std::lock_guard lock(mutex_);
+    auto sameVector=[](Vec3 a,Vec3 b){return a.x==b.x && a.y==b.y && a.z==b.z;};
+    bool same=parts.size()==gameplayOverlays_.size();
+    for(size_t i=0;same && i<parts.size();++i){
+        const auto& a=parts[i];const auto& b=gameplayOverlays_[i];
+        same=sameVector(a.color,b.color) && a.emissive==b.emissive && a.mesh.indices==b.mesh.indices && a.mesh.vertices.size()==b.mesh.vertices.size();
+        for(size_t j=0;same && j<a.mesh.vertices.size();++j){
+            const auto& x=a.mesh.vertices[j];const auto& y=b.mesh.vertices[j];
+            same=sameVector(x.position,y.position) && sameVector(x.normal,y.normal) && sameVector(x.color,y.color) && x.kind==y.kind;
+        }
+    }
+    if(same)return;
+    gameplayOverlays_=std::move(parts);gameplayOverlaysDirty_=true;
+}
+void NativeSession::gameplay_time(std::optional<double> time) {
+    std::lock_guard lock(mutex_);gameplayTime_=time;
+}
 void NativeSession::playback_options(bool repeat, std::string follow) {
     std::lock_guard lock(mutex_);
     repeat_ = repeat;
@@ -92,13 +114,13 @@ void NativeSession::run(std::stop_token stop) {
         std::unique_ptr<TerrainFlow> flow;
         SceneData authored, simulation;
         int w = 0, h = 0;
-        double seconds = 0, simulationRender = 0;
+        double seconds = 0;
         bool physicsNeeded = false;
         auto previous = std::chrono::steady_clock::now();
         std::vector<uint8_t> packet;
         auto reset = [&] {
             simulation = authored;
-            seconds = simulationRender = 0;
+            seconds = 0;
             physics.reset();
             physicsNeeded = std::any_of(simulation.Characters.begin(), simulation.Characters.end(),
                                         [](const Character &c) { return c.Dynamic; });
@@ -126,10 +148,12 @@ void NativeSession::run(std::stop_token stop) {
             double dt = std::clamp(std::chrono::duration<double>(begin - previous).count(), 0., .05);
             previous = begin;
             CameraState camera;
+            std::vector<MeshPart> gameplayOverlays;
             bool play, doReset, repeat, toolsDirty;
             std::string follow, selected, tool;
             int requestedW, requestedH;
             std::optional<SceneData> next;
+            std::optional<double> gameplayTime;
             std::optional<fs::path> shot;
             {
                 std::unique_lock lock(mutex_);
@@ -142,12 +166,15 @@ void NativeSession::run(std::stop_token stop) {
                     dt = 0;
                 }
                 camera = camera_;
+                gameplayTime=gameplayTime_;
                 play = playing_;
                 repeat = repeat_;
                 follow = follow_;
                 selected = selected_;
                 tool = tool_;
                 toolsDirty = tools_dirty_;
+                toolsDirty |= gameplayOverlaysDirty_;gameplayOverlaysDirty_=false;
+                gameplayOverlays=gameplayOverlays_;
                 tools_dirty_ = false;
                 doReset = reset_;
                 reset_ = false;
@@ -180,15 +207,17 @@ void NativeSession::run(std::stop_token stop) {
                         flow->step(std::max(1e-6, dt));
                     if (physics && physics->step(simulation, dt, flow.get()))
                         obstacles();
-                    simulationRender += dt;
-                    if ((flow || physics) && simulationRender >= .05) {
-                        rebuild = true;
-                        simulationRender = 0;
-                    }
+                    // Publish the current simulation on this rendered frame;
+                    // do not hold moving objects behind a 20 Hz visual throttle.
+                    if (flow || physics) rebuild = true;
                 }
             }
-            if (!viewport || w != requestedW || h != requestedH) {
-                viewport.reset();
+            if (viewport && (w != requestedW || h != requestedH)) {
+                if (!sl_resize(viewport.get(), requestedW, requestedH))
+                    throw std::runtime_error(sl_error());
+                w=requestedW; h=requestedH;
+            }
+            if (!viewport) {
                 w = requestedW;
                 h = requestedH;
                 viewport.reset(sl_create(window_, w, h));
@@ -197,10 +226,13 @@ void NativeSession::run(std::stop_token stop) {
                 rebuild = true;
             }
             if (rebuild || packet.empty()) {
+                auto uploadStart=std::chrono::steady_clock::now();
                 auto overlays = editor_overlays(simulation, selected, tool, play);
+                overlays.insert(overlays.end(),gameplayOverlays.begin(),gameplayOverlays.end());
                 packet = render_scene(simulation, flow.get(), overlays);
                 if (packet.size() > INT_MAX || !sl_scene(viewport.get(), packet.data(), int(packet.size())))
                     throw std::runtime_error(sl_error());
+                {std::lock_guard lock(mutex_);status_.scene_cpu_total_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();++status_.scene_updates;}
             }
             double duration = 0;
             for (const auto &c : authored.Characters) {
@@ -212,13 +244,14 @@ void NativeSession::run(std::stop_token stop) {
                 }
                 duration = std::max(duration, length / c.Speed);
             }
-            if (play && duration > 0 && !physicsNeeded && !flow && !repeat && seconds >= duration) {
+            if (play && !authored.Game && duration > 0 && !physicsNeeded && !flow && !repeat && seconds >= duration) {
                 seconds = duration;
                 play = false;
                 std::lock_guard lock(mutex_);
                 playing_ = false;
             }
             double routeTime = repeat && duration > 0 ? std::fmod(seconds, duration) : seconds;
+            if(gameplayTime)routeTime=*gameplayTime;
             if (!follow.empty())
                 for (const auto &c : simulation.Characters)
                     if (c.Id == follow) {
@@ -230,13 +263,20 @@ void NativeSession::run(std::stop_token stop) {
                     }
             sl_camera(viewport.get(), float(camera.eye.x), float(camera.eye.y), float(camera.eye.z),
                       float(camera.target.x), float(camera.target.y), float(camera.target.z));
+            sl_camera_up(viewport.get(),float(camera.up.x),float(camera.up.y),float(camera.up.z));
             if (shot)
                 sl_shot(viewport.get(), shot->c_str());
+            auto frameStart=std::chrono::steady_clock::now();
             if (!sl_frame(viewport.get(), routeTime, float(camera.distance)))
                 throw std::runtime_error(sl_error());
             {
                 std::lock_guard lock(mutex_);
                 status_.frames++;
+                status_.frame_cpu_total_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStart).count();
+                if (shot) ++status_.captures;
+                if (next) ++status_.scene_revision;
+                sl_scene_resources(viewport.get(), &status_.scene_parts, &status_.scene_blas, &status_.pending_uploads);
+                sl_upload_pool_stats(viewport.get(), &status_.upload_pool_count, &status_.upload_pool_bytes, &status_.upload_created, &status_.upload_reused);
                 status_.seconds = seconds;
                 status_.playing = play;
                 status_.gpu_ms = sl_gpu_ms(viewport.get());
@@ -246,9 +286,9 @@ void NativeSession::run(std::stop_token stop) {
                 status_.rr = sl_rr_active(viewport.get()) != 0;
                 status_.width = sl_render_width(viewport.get());
             }
-            std::unique_lock lock(mutex_);
-            condition_.wait_until(lock, begin + std::chrono::milliseconds(8),
-                                  [&] { return stop.stop_requested() || pending_.has_value(); });
+            // Match the reference editor's continuous native render loop.
+            // Suspension and stop handling remain at the top of the loop;
+            // GPU fences/presentation provide rendering backpressure.
         }
         auto report = status();
         atomic_write(application_data() / L"Diagnostics/NativeEditor" /

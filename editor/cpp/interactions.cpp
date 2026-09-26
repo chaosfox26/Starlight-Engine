@@ -10,12 +10,19 @@ Bounds object_bounds(const Character &c) {
     }
     return b;
 }
-void snap_object(SceneData &scene, Character &c, bool grid, bool objects, bool ground) {
+double snap_increment(double value,double step) {
+    if(!std::isfinite(value)||!std::isfinite(step)||step<=0)
+        throw std::runtime_error("Snap spacing must be positive and finite");
+    const double result=std::nearbyint(value/step)*step;
+    if(!std::isfinite(result))throw std::runtime_error("Snap result is out of range");
+    return result;
+}
+void snap_object(SceneData &scene, Character &c, bool grid, bool objects, bool ground,double gridStep) {
     double oldX = c.X, oldZ = c.Z;
     if (grid) {
-        c.X = std::nearbyint(c.X * 2) / 2;
-        c.Y = std::nearbyint(c.Y * 2) / 2;
-        c.Z = std::nearbyint(c.Z * 2) / 2;
+        c.X = snap_increment(c.X,gridStep);
+        c.Y = snap_increment(c.Y,gridStep);
+        c.Z = snap_increment(c.Z,gridStep);
     }
     if (objects) {
         auto b = object_bounds(c);

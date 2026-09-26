@@ -4,7 +4,7 @@ inline constexpr char feature_catalog[] = R"FEATURES([
   {
     "Id": "native-play",
     "Name": "Native Play",
-    "Description": "Run the scene you made in the real game engine. Windowed: a game window. Full screen: inside the canvas.",
+    "Description": "Run the scene you made in the real game engine, inside the editor canvas in both windowed and full-screen modes.",
     "DependsOn": "Saved scenes and renderer connection",
     "Proof": "Saved characters and routes run correctly; stopping returns to editing.",
     "Status": "experimental",
@@ -24,12 +24,12 @@ inline constexpr char feature_catalog[] = R"FEATURES([
   {
     "Id": "assets",
     "Name": "Assets & reusable objects",
-    "Description": "Organize models, pictures and files. Reuse groups of objects in different scenes.",
+    "Description": "Browse and search asset folders for models, native objects, groups and scenes. Reuse native shapes and sculpts individually or in groups. Replace imported models while retaining object settings. Repair missing model references; export entire scenes or selected objects with embedded GLB assets and an integrity manifest; add objects from saved scenes without replacing the current world. Browser thumbnails remain planned. Windows adventure packaging is tracked separately under Build & export.",
     "DependsOn": "Portable asset references and import pipeline",
     "Proof": "A copied project opens with its assets on another computer.",
-    "Status": "scaffolded",
+    "Status": "experimental",
     "Available": false,
-    "Label": "Coming soon — not implemented"
+    "Label": "Experimental — reusable shapes and sculpts"
   },
   {
     "Id": "animation",
@@ -44,22 +44,22 @@ inline constexpr char feature_catalog[] = R"FEATURES([
   {
     "Id": "gameplay",
     "Name": "Gameplay rules",
-    "Description": "Build actions such as opening a door or collecting an item without writing code.",
-    "DependsOn": "Scene objects, events and saved behaviors",
+    "Description": "Adventure walking controls with beginner and advanced settings. Assign collectible keys, matching doors and exits to scene objects. Play uses temporary state; Reset restores authored objects.",
+    "DependsOn": "Broader triggers, dynamic character collision and complete gameplay authoring remain planned",
     "Proof": "A small game can be built, saved and played with working rules.",
-    "Status": "scaffolded",
-    "Available": false,
-    "Label": "Coming soon — not implemented"
+    "Status": "experimental",
+    "Available": true,
+    "Label": "Experimental adventure rules"
   },
   {
     "Id": "physics",
     "Name": "Physics",
     "Description": "Give objects weight and stop them passing through floors and walls.",
     "DependsOn": "Transforms and collision shapes",
-    "Proof": "Objects collide reliably at different frame rates.",
-    "Status": "scaffolded",
-    "Available": false,
-    "Label": "Coming soon — not implemented"
+    "Proof": "Jolt rigid-body integration with bounded falling-object and terrain checks; broad collision and scale validation remain open.",
+    "Status": "partial",
+    "Available": true,
+    "Label": "Jolt rigid bodies — bounded integration"
   },
   {
     "Id": "navigation",
@@ -144,12 +144,12 @@ inline constexpr char feature_catalog[] = R"FEATURES([
   {
     "Id": "export",
     "Name": "Build & export",
-    "Description": "Turn your project into a game other people can install and play.",
-    "DependsOn": "Portable assets and runtime packaging",
+    "Description": "Export a Windows x64 adventure folder with a standalone player, native engine libraries, C++ runtime files and portable scene assets. Package loading is checked; live standalone play and clean-machine distribution remain unverified.",
+    "DependsOn": "Clean-machine validation and broader platform packaging",
     "Proof": "A packaged game runs on a clean computer without the editor.",
-    "Status": "scaffolded",
-    "Available": false,
-    "Label": "Coming soon — not implemented"
+    "Status": "experimental",
+    "Available": true,
+    "Label": "Experimental Windows game export"
   },
   {
     "Id": "platforms",
@@ -200,6 +200,26 @@ inline constexpr char feature_catalog[] = R"FEATURES([
     "Status": "scaffolded",
     "Available": false,
     "Label": "Coming soon — not implemented"
+  },
+  {
+    "Id": "interactive-building",
+    "Name": "Walk and build preview",
+    "Description": "Explore the authored scene at player height with W A S D and right-drag, then use the existing building tools. Play tests a separate gameplay copy; Pause returns to building.",
+    "DependsOn": "Experimental foundation; objectives, progression, unlocks and complete visual/input acceptance remain unfinished",
+    "Proof": "Shared-scene and viewpoint preservation have core checks. Live controls and usability still need verification.",
+    "Status": "experimental",
+    "Available": true,
+    "Label": "Experimental — visual verification pending"
+  },
+  {
+    "Id": "editor-help",
+    "Name": "Help and tutorials",
+    "Description": "Open Help / Tutorials or press F1, search for a lesson, and resume reading where you left off. Guidance is optional and does not change your scene.",
+    "DependsOn": "Live input and visual acceptance; interactive lesson tracking and animated previews remain future work",
+    "Proof": "Saved progress, catalog changes and malformed preferences have core checks. Visible walkthrough checks are prepared but not yet run.",
+    "Status": "experimental",
+    "Available": true,
+    "Label": "Text guidance - visual verification pending"
   }
 ])FEATURES";
 }

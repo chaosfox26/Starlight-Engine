@@ -2,6 +2,7 @@
 !/.gitignore
 !/.gitmodules
 !/README.md
+!/STARLIGHT-PRODUCT-DIRECTION.md
 !/Build-Native.py
 !/CMakeLists.txt
 !/CMakePresets.json
@@ -28,6 +29,9 @@
 /migration/*
 !/migration/verify_no_managed.py
 !/migration/geometry-reference.json
+!/tools/
+/tools/*
+!/tools/audit/
 **/build/
 **/bin/
 **/generated/
@@ -43,3 +47,47 @@
 *.exp
 *.log
 *.lock
+
+# Canonical Starlight tool sources (including tools/build, not build output).
+!/tools/README.md
+!/tools/*.json
+!/tools/build/
+!/tools/build/*.py
+!/tools/checks/
+!/tools/diagnostics/
+!/tools/render/
+!/tools/profiling/
+!/tools/launch/
+
+# Maintained editor asset-workflow documentation.
+!/docs/
+/docs/*
+!/docs/REUSABLE-OBJECTS.md
+!/docs/PORTABLE-SCENES.md
+
+!/docs/ADVENTURE-CONTROLS.md
+
+# Version project requirements and handoff records along with the implementation.
+!/*.md
+!/docs/*.md
+!/editor/*.md
+!/migration/*.md
+
+# Small regression inputs are source fixtures; test outputs remain ignored.
+!/editor/checks/
+/editor/checks/*
+!/editor/checks/denoise/
+/editor/checks/denoise/*
+!/editor/checks/denoise/regression/
+/editor/checks/denoise/regression/*
+!/editor/checks/denoise/regression/chaos-rt.packet
+!/editor/checks/denoise/regression/DXR-preview.starscene
+
+# Local credentials and machine-specific settings must never enter checkpoints.
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+CMakeUserPresets.json

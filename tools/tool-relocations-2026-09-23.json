@@ -1,0 +1,141 @@
+{
+  "backup": "D:\\projects\\Starlight-analysis\\tool-layout-backup-20260923-035907",
+  "moves": [
+    {
+      "old": "Build-Native.py",
+      "new": "tools/build/Build-Native.py",
+      "originalSha256": "098094e516b0a6971ad6d3391dec54f10c12a936b473321cb4616e0248d3e1bc",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "editor/native/build.py",
+      "new": "tools/build/native_compat.py",
+      "originalSha256": "42c33927471f3d7abbec849901fea05f15d128cd578bb53ad9fd10981384d6cb",
+      "compatibilityEntry": true,
+      "consolidatedInto": "tools/build/Build-Native.py",
+      "note": "Intermediate wrapper removed after backup; old entry calls canonical build directly. new records the original relocation destination."
+    },
+    {
+      "old": "editor/native/cmake_shaders.py",
+      "new": "tools/build/cmake_shaders.py",
+      "originalSha256": "acf560f5cacccfbafea9f68e04de34b02cd6c3610c3e3f93acfa97a54ffb8adf",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "editor/native/prepare_renderer.py",
+      "new": "tools/build/prepare_renderer.py",
+      "originalSha256": "d7481a47378fef4326961c012b7c9d39e2aeb52501661ba3f1c6969a1c0a858d",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "tools/audit/build_deep_analysis.py",
+      "new": "tools/build/build_deep_analysis.py",
+      "originalSha256": "cace6181d6856c71b72999c8a5dcd11f1dbf003a232e76626a7b827296701ca5",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "Launch-Starlight-Editor.cmd",
+      "new": "tools/launch/Launch-Starlight-Editor.cmd",
+      "originalSha256": "60b9c2f580286418798c3769d6a6da11cec0239916ca6256980ee5b7409ac796",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "editor/check-editor.ps1",
+      "new": "tools/checks/check-editor.ps1",
+      "originalSha256": "63f7796b60eb0b6bcb6c91b66d91ee56a84ace682a73cd7aba49b7c2ee60adbe",
+      "compatibilityEntry": true,
+      "consolidatedInto": "tools/build/Build-Native.py",
+      "note": "Intermediate wrapper removed after backup; old entry calls canonical build directly. new records the original relocation destination."
+    },
+    {
+      "old": "editor/cpp/core_checks.cpp",
+      "new": "tools/checks/core_checks.cpp",
+      "originalSha256": "33f096b2fa5eeca4ef9149ff87c6543f430247c5b3bba60b992cd2fde61443ee",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/diagnostic_checks.cpp",
+      "new": "tools/checks/diagnostic_checks.cpp",
+      "originalSha256": "d36612f57e8c9db0c7ac5eb7454ae2119d0f1fa6fb176f87f8d29003a39076d5",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/texture_checks.cpp",
+      "new": "tools/checks/texture_checks.cpp",
+      "originalSha256": "dc3d9f71e3c9e6a665473dc9c97be2a6d4b0ec7447befef09c58cc1a6cf73bc3",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/session_checks.cpp",
+      "new": "tools/checks/session_checks.cpp",
+      "originalSha256": "c280d1b0d18b3a10998d64cd1abe7d69e9a87f565660506914a77ec9e2328b2a",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/classic_ui_checks.inl",
+      "new": "tools/checks/classic_ui_checks.inl",
+      "originalSha256": "fa0d5bd9f8051798655be6e5330d565fde9cd4de7a2a0b06750ee1fb7c50ae5f",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/classic_completion_checks.inl",
+      "new": "tools/checks/classic_completion_checks.inl",
+      "originalSha256": "2e9061813b5d4e1a3103a3ea4ca31e81de1ecc26f06a79840c0ff92ac0305aac",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/visible_ui_checks.inl",
+      "new": "tools/checks/visible_ui_checks.inl",
+      "originalSha256": "607282df3bc6931607c4b8e3649e63c4dad0d49e9d75fd1e17b6c20e61aee4ef",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/native/standalone.cpp",
+      "new": "tools/checks/render_checks.cpp",
+      "originalSha256": "80e195651c429ef4c022030392702f2f4a95a17e8fbde0162ba2d7043841ab23",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/native/check_denoise.py",
+      "new": "tools/render/check_denoise.py",
+      "originalSha256": "1b9af71e622ffacf470e7b56ebe7eec612133cf5ff5384d52cd174dc3a5bb95e",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "migration/validate_native.py",
+      "new": "tools/render/validate_native.py",
+      "originalSha256": "a9657070ace68dc55b7f14c9498e0f39b884b33e6f76ae030464ccbe36f07978",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "migration/verify_no_managed.py",
+      "new": "tools/checks/verify_no_managed.py",
+      "originalSha256": "bc7eebe177ff787393f853d6c23f9ca0a5d32a2fe1b176cafc30af5188c8eddd",
+      "compatibilityEntry": true
+    },
+    {
+      "old": "editor/cpp/audit_window_trace.hpp",
+      "new": "tools/diagnostics/audit_window_trace.hpp",
+      "originalSha256": "9d82d8077ea719826e4b7f981e1822b055814241d19a2e3fef92a1de619ddeb0",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/gate0_handle_trace.hpp",
+      "new": "tools/diagnostics/gate0_handle_trace.hpp",
+      "originalSha256": "659be299b6f299e7e763b71c24117008818d0dbaa8367131c6ba732e4642444d",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "editor/cpp/menu_timing.hpp",
+      "new": "tools/diagnostics/menu_timing.hpp",
+      "originalSha256": "d26414d87bbc2d5295949ac9ea463269557c67ce1467b266360a03a618987362",
+      "compatibilityEntry": false
+    },
+    {
+      "old": "tools/audit/optimization_scan.py",
+      "new": "tools/profiling/optimization_scan.py",
+      "originalSha256": "dd510c1b58485f1c4335fb4c2e61a25321ce0d8cdf1e7efed0052898c8905427",
+      "compatibilityEntry": true
+    }
+  ]
+}

@@ -13,9 +13,9 @@ auto pump_until = [&](auto ready, int timeout = 15000) {
     return ready();
 };
 ensure_secondary_panels();
-check("More restores all twenty catalogue entries", SendMessage(featureList, LB_GETCOUNT, 0, 0) == 20);
+check("More restores every registered catalogue entry", catalogue.size()>=20 && SendMessage(featureList, LB_GETCOUNT, 0, 0) == LRESULT(catalogue.size()));
 bool details = true;
-for (int i = 0; i < 20; ++i)
+for (size_t i = 0; i < catalogue.size(); ++i)
 {
     SendMessage(featureList, LB_SETCURSEL, i, 0);
     command(FeatureCheck);
@@ -176,40 +176,29 @@ check("Escape closes settings before fullscreen", fullScreen && !inspectorShown)
 escape();
 check("Escape exits fullscreen only after suboperations are closed", !fullScreen);
 auto authored = scene.encode();
+auto canvas = view;
+auto session = renderer.get();
 command(Play);
-check("windowed Play creates independent preview HWND and session",
-      gamePreview && gamePreview->visible() && gamePreview->window() != window);
-bool live = pump_until(
-    [&] { return gamePreview->session().status().frames >= 3 && gamePreview->session().status().seconds > .05; },
-    30000);
-check("preview advances while authoring session stays stopped",
-      live && !renderer->status().playing && scene.encode() == authored);
+check("windowed Play retains editor canvas without allocating a preview", !gamePreview && view == canvas && renderer.get() == session);
+bool live = pump_until([&] { return renderer->status().frames >= 3 && renderer->status().seconds > .05; }, 30000);
+check("inline playback advances without changing authored scene", live && scene.encode() == authored);
 command(Pause);
-pump_until([&] { return !gamePreview->session().status().playing; });
-double paused = gamePreview->session().status().seconds;
-auto frame = gamePreview->session().status().frames;
-pump_until([&] { return gamePreview->session().status().frames > frame + 2; });
-check("preview pause freezes simulation time", gamePreview->session().status().seconds == paused);
+pump_until([&] { return !renderer->status().playing; });
+double paused = renderer->status().seconds;
+auto frame = renderer->status().frames;
+pump_until([&] { return renderer->status().frames > frame + 2; });
+check("inline pause freezes simulation time", renderer->status().seconds == paused);
+command(Play);
+check("inline resume advances from paused time", pump_until([&] { return renderer->status().seconds > paused; }));
+command(FullScreen);
+check("fullscreen transition retains active canvas and session", view == canvas && renderer.get() == session && !gamePreview && renderer->status().playing);
 command(Stop);
-check("preview reset restores zero simulation time",
-      pump_until([&] { return gamePreview->session().status().seconds == 0; }));
-auto previewHandle = gamePreview->window();
-gamePreview->hide();
-check("closing preview parks its renderer and preserves main window",
-      pump_until([&] { return gamePreview->session().status().suspended; }) && IsWindow(window) &&
-          !gamePreview->visible());
-for (int n = 0; n < 4; ++n)
-{
+check("inline reset restores zero simulation time", pump_until([&] { return renderer->status().seconds == 0 && !renderer->status().playing; }));
+for (int n = 0; n < 4; ++n) {
     command(Play);
     command(Pause);
-    gamePreview->hide();
 }
-check("preview reopen reuses HWND and renderer instead of recreating GPU resources",
-      gamePreview->window() == previewHandle && pump_until([&] { return gamePreview->session().status().suspended; }));
-command(FullScreen);
-command(Play);
-check("fullscreen Play uses the primary canvas without revealing preview",
-      !gamePreview->visible() && pump_until([&] { return renderer->status().playing; }));
+check("repeated inline Play preserves scene and renderer", !gamePreview && renderer.get() == session && scene.encode() == authored);
 command(Stop);
 command(FullScreen);
 show_inspector(5);

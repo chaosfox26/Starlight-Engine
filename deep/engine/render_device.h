@@ -449,7 +449,28 @@ struct RenderDevice {
     HANDLE framePacingTimer = nullptr;
     LONGLONG lastFrameStart = 0, pacingFrequency = 0;
     virtual ~RenderDevice() { if (framePacingTimer) CloseHandle(framePacingTimer); if (frameLatencyWaitable) CloseHandle(frameLatencyWaitable); if (fenceEvent) CloseHandle(fenceEvent); }
+    // Audit-only offscreen throughput: retain GPU fences and resource barriers,
+    // but do not enter DXGI/DWM presentation or the editor's frame limiter.
+    bool auditOffscreen = false;
+    ComPtr<ID3D12Resource> auditOutput;
+    void setAuditOffscreen(bool enabled) {
+        flush();
+        if (enabled && !auditOutput) {
+            auto desc = targets[0]->GetDesc();
+            desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+            D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+            must(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE,
+                &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+                IID_PPV_ARGS(&auditOutput)), "Create audit output");
+            auditOutput->SetName(L"Starlight owned offscreen benchmark output");
+        }
+        auditOffscreen = enabled;
+        if (!enabled) auditOutput.Reset();
+        frame = swap->GetCurrentBackBufferIndex();
+        lastFrameStart = 0;
+    }
     void paceFrame() {
+        if (auditOffscreen) return;
         if (!frameRateLimit) {
             wchar_t value[32]{};
             if (!GetEnvironmentVariableW(L"STARLIGHT_FRAME_LIMIT", value, 32)) throw std::runtime_error("Frame limit must be supplied by launch settings");
@@ -644,7 +665,73 @@ struct RenderDevice {
     ComPtr<ID3D12PipelineState>  psoBg;     // fullscreen background fill (fog colour + zero mvec), no depth
     ComPtr<ID3D12Resource>       cb;
     uint8_t*                     cbBase = nullptr;   // persistently-mapped instance CB (kMaxInstances*256)
-    std::vector<ComPtr<ID3D12Resource>> uploadKeepAlive;
+    struct UploadStorage { ComPtr<ID3D12Resource> resource; void* mapped = nullptr; };
+    std::vector<UploadStorage> uploadKeepAlive;
+    // Reusable staging storage, never scene geometry. Pending copies remain in
+    // uploadKeepAlive until their queue fence has completed.
+    std::vector<UploadStorage> uploadPool;
+    UINT64 uploadPoolBytes = 0;
+    UINT64 uploadCreated = 0, uploadReused = 0;
+    struct IdleBuffer { ComPtr<ID3D12Resource> resource; bool accelerationStructure=false; };
+    std::vector<IdleBuffer> bufferPool;
+    UINT64 bufferPoolBytes=0,bufferCreated=0,bufferReused=0;
+    static constexpr UINT64 bufferPoolLimit=16ull*1024*1024;
+    // Only fence-completed buffers enter this pool. No mesh identities or scene
+    // references survive retirement. AS resources must retain their fixed state.
+    void recycleBuffer(ComPtr<ID3D12Resource>& resource,bool accelerationStructure=false) {
+        if(!resource)return;
+        for(const auto& idle:bufferPool)if(idle.resource.Get()==resource.Get()){resource.Reset();return;}
+        const auto bytes=uploadStorageBytes(resource.Get());
+        if(bytes>bufferPoolLimit){resource.Reset();return;}
+        while(bufferPool.size()>=64 || bytes>bufferPoolLimit-bufferPoolBytes){
+            auto smallest=std::min_element(bufferPool.begin(),bufferPool.end(),[](const auto& a,const auto& b){return a.resource->GetDesc().Width<b.resource->GetDesc().Width;});
+            bufferPoolBytes-=uploadStorageBytes(smallest->resource.Get());bufferPool.erase(smallest);
+        }
+        bufferPoolBytes+=bytes;bufferPool.push_back({std::move(resource),accelerationStructure});
+    }
+    ComPtr<ID3D12Resource> acquireBuffer(UINT64 bytes,D3D12_RESOURCE_STATES state,bool uav=false) {
+        const bool accelerationStructure=state==D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+        const auto flags=uav?D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS:D3D12_RESOURCE_FLAG_NONE;
+        size_t best=bufferPool.size();
+        for(size_t i=0;i<bufferPool.size();++i){auto desc=bufferPool[i].resource->GetDesc();
+            if(bufferPool[i].accelerationStructure==accelerationStructure && desc.Flags==flags && desc.Width>=bytes &&
+               (best==bufferPool.size() || desc.Width<bufferPool[best].resource->GetDesc().Width))best=i;
+        }
+        ComPtr<ID3D12Resource> result;
+        if(best<bufferPool.size()){
+            bufferPoolBytes-=uploadStorageBytes(bufferPool[best].resource.Get());result=std::move(bufferPool[best].resource);bufferPool.erase(bufferPool.begin()+best);++bufferReused;
+        }else{
+            D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+            D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=std::max<UINT64>(256,bytes);desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;desc.Flags=flags;
+            must(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,accelerationStructure?state:D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&result)),"create reusable graphics buffer");++bufferCreated;
+        }
+        // Ordinary buffers decay to COMMON after completed ExecuteCommandLists.
+        if(!accelerationStructure && state!=D3D12_RESOURCE_STATE_COMMON)barrier(result.Get(),D3D12_RESOURCE_STATE_COMMON,state);
+        return result;
+    }
+    static constexpr UINT64 uploadPoolLimit = 16ull * 1024 * 1024;
+    static UINT64 uploadStorageBytes(ID3D12Resource* resource) {
+        const auto width = resource->GetDesc().Width;
+        return (width + D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1) &
+               ~(UINT64(D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT) - 1);
+    }
+    // Call only after submitting the copies and completing their fence.
+    void retireUploads() {
+        for (auto& resource : uploadKeepAlive) {
+            auto bytes = uploadStorageBytes(resource.resource.Get());
+            if (bytes <= uploadPoolLimit) {
+                while (uploadPool.size() >= 16 || bytes > uploadPoolLimit - uploadPoolBytes) {
+                    auto smallest = std::min_element(uploadPool.begin(), uploadPool.end(),
+                        [](const auto& a, const auto& b) { return a.resource->GetDesc().Width < b.resource->GetDesc().Width; });
+                    uploadPoolBytes -= uploadStorageBytes(smallest->resource.Get());
+                    uploadPool.erase(smallest);
+                }
+                uploadPoolBytes += bytes;
+                uploadPool.push_back(std::move(resource));
+            }
+        }
+        uploadKeepAlive.clear();
+    }
 
     GpuMesh  charMesh, coneMesh, ringMesh, ringThinMesh, boxMesh, discMesh, cylMesh, heartMesh;
     XMMATRIX charNorm = XMMatrixIdentity();          // normalize forge mesh: feet at y=0, ~1.8m tall
@@ -671,11 +758,15 @@ struct RenderDevice {
     // full GPU idle: init / mode change / screenshot / teardown only (never per frame, M6)
     void flush() {
         const UINT64 v = ++fenceVal;
-        queue->Signal(fence.Get(), v);
+        must(queue->Signal(fence.Get(), v), "signal GPU completion");
         waitFence(v);
     }
     void waitFence(UINT64 v) {
-        if (fence->GetCompletedValue() < v) { fence->SetEventOnCompletion(v, fenceEvent); WaitForSingleObject(fenceEvent, INFINITE); }
+        if (fence->GetCompletedValue() < v) {
+            must(fence->SetEventOnCompletion(v, fenceEvent), "arm GPU completion");
+            if (WaitForSingleObject(fenceEvent, INFINITE) != WAIT_OBJECT_0)
+                throw std::runtime_error("Wait for GPU completion failed");
+        }
     }
     // --d3ddebug: pull every queued D3D12 / DXGI debug-layer message into the log (once per frame + at exit)
     void drainDebug() {
@@ -697,6 +788,26 @@ struct RenderDevice {
             }
             dxgiq->ClearStoredMessages(kDxgiDebugAll);
         }
+    }
+    void reportDeviceLoss() {
+        drainDebug();
+        char reason[64]{};
+        snprintf(reason, sizeof(reason), "device removed HRESULT=0x%08lx",
+                 static_cast<unsigned long>(device->GetDeviceRemovedReason()));
+        logLine(reason);
+        ComPtr<ID3D12DeviceRemovedExtendedData1> dred;
+        if (FAILED(device.As(&dred))) { logLine("DRED unavailable"); return; }
+        D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 breadcrumbs{};
+        if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput1(&breadcrumbs))) {
+            unsigned count = 0;
+            for (auto node = breadcrumbs.pHeadAutoBreadcrumbNode; node && count++ < 128; node = node->pNext)
+                logLine("DRED command list: " + std::string(node->pCommandListDebugNameA ? node->pCommandListDebugNameA : "unnamed") +
+                        " completed=" + std::to_string(node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0) +
+                        " total=" + std::to_string(node->BreadcrumbCount));
+        }
+        D3D12_DRED_PAGE_FAULT_OUTPUT1 fault{};
+        if (SUCCEEDED(dred->GetPageFaultAllocationOutput1(&fault)))
+            logLine("DRED page fault VA=" + std::to_string(fault.PageFaultVA));
     }
     // orderly exit: GPU idle -> drop our swapchain/backbuffer refs -> vendor backend (contexts, its
     // swapchain proxy, worker threads, DLL) -> the device dies later at static destruction.
@@ -723,21 +834,38 @@ struct RenderDevice {
         bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1;
         bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-        ComPtr<ID3D12Resource> def;
-        must(device->CreateCommittedResource(&hpDefault, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&def)), "create default buffer");
-        ComPtr<ID3D12Resource> up;
-        must(device->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&up)), "create upload buffer");
+        auto def=acquireBuffer(bytes,D3D12_RESOURCE_STATE_COMMON);
+        UploadStorage up;
+        size_t best = uploadPool.size();
+        for (size_t i = 0; i < uploadPool.size(); ++i) {
+            const auto width = uploadPool[i].resource->GetDesc().Width;
+            if (width >= bytes && (best == uploadPool.size() || width < uploadPool[best].resource->GetDesc().Width)) best = i;
+        }
+        if (best != uploadPool.size()) {
+            uploadPoolBytes -= uploadStorageBytes(uploadPool[best].resource.Get());
+            up = std::move(uploadPool[best]);
+            ++uploadReused;
+            uploadPool.erase(uploadPool.begin() + best);
+        } else {
+            must(device->CreateCommittedResource(&hpUpload, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&up.resource)), "create upload buffer");
+            ++uploadCreated;
+        }
 
-        void* p = nullptr; D3D12_RANGE none{ 0,0 };
-        up->Map(0, &none, &p); memcpy(p, src, bytes); up->Unmap(0, nullptr);
+        // Upload heaps remain mapped for their lifetime. Only fence-completed
+        // storage is checked out, so the CPU never overwrites an in-flight copy.
+        if (!up.mapped) {
+            D3D12_RANGE none{ 0,0 };
+            must(up.resource->Map(0, &none, &up.mapped), "map upload buffer");
+        }
+        memcpy(up.mapped, src, bytes);
 
-        cmd->CopyBufferRegion(def.Get(), 0, up.Get(), 0, bytes);
+        cmd->CopyBufferRegion(def.Get(), 0, up.resource.Get(), 0, bytes);
         D3D12_RESOURCE_BARRIER br{}; br.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         br.Transition.pResource = def.Get(); br.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;   // promoted by the copy above
         br.Transition.StateAfter = finalState; br.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         cmd->ResourceBarrier(1, &br);
 
-        uploadKeepAlive.push_back(up);
+        uploadKeepAlive.push_back(std::move(up));
         return def;
     }
 
@@ -747,6 +875,12 @@ struct RenderDevice {
         w = width; h = height; startTick = GetTickCount64();
         UINT flags = 0;
         if (d3dDebug) {
+            ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dred;
+            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dred)))) {
+                dred->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                logLine("DRED breadcrumbs and page faults enabled");
+            }
             ComPtr<ID3D12Debug> dbg; if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg)))) { dbg->EnableDebugLayer(); flags |= DXGI_CREATE_FACTORY_DEBUG; logLine("d3d12 debug layer ON"); }
             if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiq)))) { dxgiq->SetMuteDebugOutput(kDxgiDebugAll, FALSE); logLine("dxgi debug queue ON"); }
         }
@@ -880,6 +1014,26 @@ struct RenderDevice {
         }
         ups.reset(up::createOff()); upsReason += (order.empty() ? "requested off" : "-> off");
         ups->preDevice(&logLine);
+    }
+
+    // Native editor resize: preserve device, pipelines, geometry and frame counters.
+    // Called only between frames on the owning render thread.
+    void resizeNativeOutput(UINT width, UINT height) {
+        if (!width || !height) throw std::runtime_error("Invalid resize dimensions");
+        if (width == w && height == h) return;
+        if (ups->path() != up::Path::Off) throw std::runtime_error("Native resize requires native backend");
+        flush();
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        must(swap->GetDesc1(&desc), "Resize swap description");
+        for (auto& target : targets) target.Reset();
+        must(swap->ResizeBuffers(kFrameCount, width, height, desc.Format, desc.Flags), "ResizeBuffers");
+        w=width; h=height;
+        must(ups->resizeOutput(w,h) ? S_OK : E_FAIL, "Resize native backend");
+        createBackbufferViews();
+        applyMode(ups->mode());
+        auditOutput.Reset();
+        if (auditOffscreen) setAuditOffscreen(true);
+        lastFrameStart=0;
     }
 
     void createBackbufferViews() {
@@ -1348,7 +1502,7 @@ struct RenderDevice {
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
         flush();
-        uploadKeepAlive.clear();
+        retireUploads();
     }
 
     static UINT cbSlotBytes() { return kMaxInstances * kCbStride + kFrameCbBytes; }
@@ -1720,15 +1874,16 @@ struct RenderDevice {
     std::function<void()> editorDraw;
     float editorCameraDistance = 0;
     XMFLOAT3 editorEye{0,9.36f,13},editorTarget{0,0,0};
+    XMFLOAT3 editorUp{0,1,0};
     void renderEmpty(HWND hwnd) {
         (void)hwnd;
-        if (frameLatencyWaitable) WaitForSingleObject(frameLatencyWaitable, 1000);
+        if (frameLatencyWaitable && !auditOffscreen) WaitForSingleObject(frameLatencyWaitable, 1000);
         paceFrame();
         uint64_t now = GetTickCount64();
         float dt = lastTick ? (now-lastTick)*0.001f : 0.016f; lastTick=now;
         const float nearZ=0.1f, farZ=400.0f, fovY=XMConvertToRadians(50.0f);
         XMVECTOR eye=editorCameraDistance>0?XMLoadFloat3(&editorEye):XMVectorSet(0,3,8,0), ctr=editorCameraDistance>0?XMLoadFloat3(&editorTarget):XMVectorZero();
-        XMMATRIX view=editorCameraDistance>0?XMMatrixLookAtRH(eye, ctr, XMVectorSet(0,1,0,0)):XMMatrixLookAtLH(eye, ctr, XMVectorSet(0,1,0,0));
+        XMMATRIX view=editorCameraDistance>0?XMMatrixLookAtRH(eye, ctr, XMLoadFloat3(&editorUp)):XMMatrixLookAtLH(eye, ctr, XMVectorSet(0,1,0,0));
         float cameraFov=editorCameraDistance>0?2*atanf(tanf(XMConvertToRadians(48.0f)*.5f)*(float)rh/rw):fovY;
         XMMATRIX proj=editorCameraDistance>0?XMMatrixPerspectiveFovRH(cameraFov,(float)rw/rh,nearZ,farZ):XMMatrixPerspectiveFovLH(cameraFov,(float)rw/rh,nearZ,farZ);
         viewProjNoJit=XMMatrixMultiply(view,proj); viewProj=viewProjNoJit;
@@ -1801,7 +1956,8 @@ struct RenderDevice {
         barrier(depth.Get(),      D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         up::FrameIn fi;
         fi.cmd = cmd.Get(); fi.color = sceneColor.Get(); fi.depth = depth.Get(); fi.mvec = sceneMvec.Get();
-        fi.exposure = exposureTex.Get(); fi.output = upOutput.Get(); fi.backbuffer = targets[frame].Get();
+        auto outputTarget = auditOffscreen ? auditOutput.Get() : targets[frame].Get();
+        fi.exposure = exposureTex.Get(); fi.output = upOutput.Get(); fi.backbuffer = outputTarget;
         fi.renderW = rw; fi.renderH = rh; fi.outW = w; fi.outH = h;
         fi.jitterX = jitterX; fi.jitterY = jitterY; fi.dtMs = dt * 1000.0f; fi.reset = resetHistory;
         fi.frameIndex = frameIndex; fi.backbufferIndex = frame;
@@ -1815,15 +1971,15 @@ struct RenderDevice {
         if(!linearHdrScene)ups->evaluate(fi);
 
         barrier(upOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        barrier(targets[frame].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
-        cmd->CopyResource(targets[frame].Get(), upOutput.Get());
+        barrier(outputTarget, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+        cmd->CopyResource(outputTarget, upOutput.Get());
         // ---- --shot: grab this frame's reconstructed output on the way to PRESENT ----
         bool shotNow = !shotPath.empty() && !shotDone && (now - startTick) >= shotAtMs;
         if (shotNow) captureBackbuffer(upOutput.Get());
         barrier(upOutput.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        barrier(targets[frame].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+        barrier(outputTarget, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
         fi.backbufferState = D3D12_RESOURCE_STATE_PRESENT;
-        ups->beforePresent(fi);
+        if (!auditOffscreen) ups->beforePresent(fi);
         if (tsHeap) {   // GPU-work end + resolve this slot's pair to the readback buffer
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot + 1);
             cmd->ResolveQueryData(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot, 2, tsReadback.Get(), sizeof(UINT64) * 2 * slot);
@@ -1835,8 +1991,8 @@ struct RenderDevice {
         queue->ExecuteCommandLists(1, lists);
         antilag.markEndOfFrameRendering();
         antilag.setFrameGenFrameType(false);
-        ups->present(swap.Get(), vsync ? 1 : 0, (!vsync && tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0);
-        ups->afterPresent();
+        if (!auditOffscreen) ups->present(swap.Get(), vsync ? 1 : 0, (!vsync && tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0);
+        if (!auditOffscreen) ups->afterPresent();
         // ---- M6: retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
         slotFence[slot] = ++fenceVal;

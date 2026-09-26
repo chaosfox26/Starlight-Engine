@@ -38,14 +38,27 @@ struct DxrPass {
   if(FAILED(d.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5,&caps,sizeof(caps)))||caps.RaytracingTier<D3D12_RAYTRACING_TIER_1_1||FAILED(d.device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL,&shader,sizeof(shader)))||shader.HighestShaderModel<D3D_SHADER_MODEL_6_5){status="DXR 1.1 / shader model 6.5 unsupported; raster fallback";return;}
   if(FAILED(d.device.As(&device))||FAILED(d.cmd.As(&command))){status="DXR interfaces unavailable; raster fallback";return;}supported=true;status="DXR 1.1 supported";
  }
+ void createImages(RenderDevice& d){
+  D3D12_HEAP_PROPERTIES hp{};hp.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC r{};r.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;r.Width=d.w;r.Height=d.h;r.DepthOrArraySize=1;r.MipLevels=1;r.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;r.SampleDesc.Count=1;r.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+  for(UINT i=0;i<imageCount;i++){r.Format=(i==4||i==24)?DXGI_FORMAT_R32_FLOAT:(i==25?DXGI_FORMAT_R16G16_FLOAT:((i==13||i==17)?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R16G16B16A16_FLOAT));images[i].Reset();states[i]=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;check(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&r,states[i],nullptr,IID_PPV_ARGS(&images[i])));}
+ }
+ void resize(RenderDevice& d){
+  if(!initialized)return;
+  createImages(d);
+  for(auto& heap:heaps){
+   auto cpu=heap->GetCPUDescriptorHandleForHeapStart();UINT inc=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+   for(UINT i=0;i<imageCount;i++){D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;srv.Format=images[i]->GetDesc().Format;device->CreateShaderResourceView(images[i].Get(),&srv,cpu);cpu.ptr+=inc;}
+   for(UINT i=0;i<imageCount;i++){D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;uav.Format=images[i]->GetDesc().Format;device->CreateUnorderedAccessView(images[i].Get(),nullptr,&uav,cpu);cpu.ptr+=inc;}
+  }
+  rr.shutdown();rr.attempted=false;rr.failed=false;historyValid=false;historyParity=0;samples=0;
+ }
  void initializeResources(RenderDevice& d){
   D3D12_DESCRIPTOR_RANGE ranges[2]={{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,imageCount,4,0,0},{D3D12_DESCRIPTOR_RANGE_TYPE_UAV,imageCount,0,0,imageCount}};
   D3D12_ROOT_PARAMETER p[7]{};for(int i=0;i<4;i++){p[i].ParameterType=D3D12_ROOT_PARAMETER_TYPE_SRV;p[i].Descriptor.ShaderRegister=i;}p[4].ParameterType=D3D12_ROOT_PARAMETER_TYPE_CBV;p[5].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;p[5].DescriptorTable={2,ranges};
   p[6].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;p[6].Constants.ShaderRegister=1;p[6].Constants.Num32BitValues=2;
   D3D12_ROOT_SIGNATURE_DESC desc{};desc.NumParameters=7;desc.pParameters=p;ComPtr<ID3DBlob> blob,error;check(D3D12SerializeRootSignature(&desc,D3D_ROOT_SIGNATURE_VERSION_1,&blob,&error));check(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_PPV_ARGS(&signature)));
   auto pipeline=[&](const unsigned char* bytes,size_t size,ComPtr<ID3D12PipelineState>& dest){D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=signature.Get();pd.CS={bytes,size};check(device->CreateComputePipelineState(&pd,IID_PPV_ARGS(&dest)));};pipeline(kDxrTrace,sizeof(kDxrTrace),trace);pipeline(kDxrPrefilter,sizeof(kDxrPrefilter),prefilter);pipeline(kDxrTemporal,sizeof(kDxrTemporal),temporal);pipeline(kDxrAtrous,sizeof(kDxrAtrous),atrous);pipeline(kDxrComposite,sizeof(kDxrComposite),composite);
-  D3D12_HEAP_PROPERTIES hp{};hp.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC r{};r.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;r.Width=d.w;r.Height=d.h;r.DepthOrArraySize=1;r.MipLevels=1;r.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;r.SampleDesc.Count=1;r.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-  for(UINT i=0;i<imageCount;i++){r.Format=(i==4||i==24)?DXGI_FORMAT_R32_FLOAT:(i==25?DXGI_FORMAT_R16G16_FLOAT:((i==13||i==17)?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R16G16B16A16_FLOAT));states[i]=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;check(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&r,states[i],nullptr,IID_PPV_ARGS(&images[i])));}
+  createImages(d);
   constants=buffer(stride*kFrameCount,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_STATE_GENERIC_READ);check(constants->Map(0,nullptr,(void**)&constantMap));
   instanceUpload=buffer(sizeof(Instance)*kMaxInstances*kFrameCount,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_STATE_GENERIC_READ);check(instanceUpload->Map(0,nullptr,(void**)&instanceMap));
   descriptionUpload=buffer(sizeof(D3D12_RAYTRACING_INSTANCE_DESC)*kMaxInstances*kFrameCount,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_STATE_GENERIC_READ);check(descriptionUpload->Map(0,nullptr,(void**)&descriptionMap));
@@ -57,6 +70,11 @@ struct DxrPass {
   D3D12_QUERY_HEAP_DESC q{};q.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;q.Count=kFrameCount*4;check(device->CreateQueryHeap(&q,IID_PPV_ARGS(&queries)));readback=buffer(kFrameCount*4*sizeof(UINT64),D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);check(d.queue->GetTimestampFrequency(&frequency));initialized=true;
  }
  // Called between frames, before renderEmpty resets the allocator. Old resources retire after flush.
+ void retireGeometry(RenderDevice& d){
+  d.flush();for(auto& item:cache)d.recycleBuffer(item.second.result,true);cache.clear();d.recycleBuffer(vertices);d.recycleBuffer(indices);d.recycleBuffer(tlas,true);d.recycleBuffer(scratch);
+  capacity=previousCount=0;tlasBuilt=false;historyValid=false;previousItems.clear();
+  samples=0;lastHash=lastTopology=0;
+ }
  void prepare(RenderDevice& d,const std::vector<DxrItem>& items){
   active=supported?requested:0;if(!active)return;
   if(!initialized)initializeResources(d);
@@ -64,16 +82,18 @@ struct DxrPass {
   bool changed=unique.size()!=cache.size();for(auto& pair:unique)if(!cache.count(pair.first))changed=true;
   if(!changed)return;
   d.flush();d.alloc->Reset();d.cmd->Reset(d.alloc.Get(),nullptr);
+  d.recycleBuffer(vertices);d.recycleBuffer(indices);
   std::vector<Vertex> v;std::vector<uint32_t> ix;std::map<uint64_t,Blas> next;
   for(auto& pair:unique){Blas b;if(cache.count(pair.first))b=cache.at(pair.first);b.vertex=(UINT)v.size();b.index=(UINT)ix.size();v.insert(v.end(),pair.second->verts.begin(),pair.second->verts.end());ix.insert(ix.end(),pair.second->indices.begin(),pair.second->indices.end());next.emplace(pair.first,b);}
   if(!v.empty()){
    vertices=d.createDefaultBuffer(v.data(),v.size()*sizeof(Vertex),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);indices=d.createDefaultBuffer(ix.data(),ix.size()*sizeof(uint32_t),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
    std::vector<ComPtr<ID3D12Resource>> temporary;
    for(auto& pair:next)if(!pair.second.result){auto& b=pair.second;auto mesh=unique.at(pair.first);D3D12_RAYTRACING_GEOMETRY_DESC g{};g.Type=D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;g.Flags=D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;g.Triangles.VertexBuffer={vertices->GetGPUVirtualAddress()+b.vertex*sizeof(Vertex),sizeof(Vertex)};g.Triangles.VertexCount=(UINT)mesh->verts.size();g.Triangles.VertexFormat=DXGI_FORMAT_R32G32B32_FLOAT;g.Triangles.IndexBuffer=indices->GetGPUVirtualAddress()+b.index*sizeof(uint32_t);g.Triangles.IndexCount=(UINT)mesh->indices.size();g.Triangles.IndexFormat=DXGI_FORMAT_R32_UINT;
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};build.Inputs.Type=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;build.Inputs.DescsLayout=D3D12_ELEMENTS_LAYOUT_ARRAY;build.Inputs.NumDescs=1;build.Inputs.pGeometryDescs=&g;build.Inputs.Flags=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info{};device->GetRaytracingAccelerationStructurePrebuildInfo(&build.Inputs,&info);if(!info.ResultDataMaxSizeInBytes)throw std::runtime_error("Invalid BLAS prebuild size");b.result=buffer(info.ResultDataMaxSizeInBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);auto temp=buffer(info.ScratchDataSizeInBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);build.DestAccelerationStructureData=b.result->GetGPUVirtualAddress();build.ScratchAccelerationStructureData=temp->GetGPUVirtualAddress();command->BuildRaytracingAccelerationStructure(&build,0,nullptr);uav(b.result.Get());temporary.push_back(temp);builds++;
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};build.Inputs.Type=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;build.Inputs.DescsLayout=D3D12_ELEMENTS_LAYOUT_ARRAY;build.Inputs.NumDescs=1;build.Inputs.pGeometryDescs=&g;build.Inputs.Flags=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info{};device->GetRaytracingAccelerationStructurePrebuildInfo(&build.Inputs,&info);if(!info.ResultDataMaxSizeInBytes)throw std::runtime_error("Invalid BLAS prebuild size");b.result=d.acquireBuffer(info.ResultDataMaxSizeInBytes,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);auto temp=d.acquireBuffer(info.ScratchDataSizeInBytes,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);build.DestAccelerationStructureData=b.result->GetGPUVirtualAddress();build.ScratchAccelerationStructureData=temp->GetGPUVirtualAddress();command->BuildRaytracingAccelerationStructure(&build,0,nullptr);uav(b.result.Get());temporary.push_back(temp);builds++;
    }
-   d.cmd->Close();ID3D12CommandList* lists[]={d.cmd.Get()};d.queue->ExecuteCommandLists(1,lists);d.flush();d.uploadKeepAlive.clear();
-  }else{d.cmd->Close();vertices.Reset();indices.Reset();tlas.Reset();scratch.Reset();capacity=0;}
+   d.cmd->Close();ID3D12CommandList* lists[]={d.cmd.Get()};d.queue->ExecuteCommandLists(1,lists);d.flush();d.retireUploads();for(auto& temp:temporary)d.recycleBuffer(temp);
+  }else{d.cmd->Close();d.recycleBuffer(tlas,true);d.recycleBuffer(scratch);capacity=0;}
+  for(auto& old:cache)if(!next.count(old.first))d.recycleBuffer(old.second.result,true);
   cache=std::move(next);tlasBuilt=false;samples=0;lastHash=0;historyValid=false;previousItems.clear();
  }
  ID3D12Resource* draw(RenderDevice& d,const std::vector<DxrItem>& items,const FrameCB& light,float time,float density,const std::vector<XMFLOAT4>& smoke,bool animated){
@@ -92,13 +112,13 @@ struct DxrPass {
   }
   D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};build.Inputs.Type=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;build.Inputs.DescsLayout=D3D12_ELEMENTS_LAYOUT_ARRAY;build.Inputs.NumDescs=count;build.Inputs.InstanceDescs=descriptionUpload->GetGPUVirtualAddress()+slot*kMaxInstances*sizeof(D3D12_RAYTRACING_INSTANCE_DESC);build.Inputs.Flags=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE|D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
   D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info{};device->GetRaytracingAccelerationStructurePrebuildInfo(&build.Inputs,&info);
-  if(count>capacity){if(tlas)d.flush();tlas=buffer(info.ResultDataMaxSizeInBytes,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);scratch=buffer(std::max(info.ScratchDataSizeInBytes,info.UpdateScratchDataSizeInBytes),D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);capacity=count;tlasBuilt=false;}
+  if(count>capacity){if(tlas)d.flush();d.recycleBuffer(tlas,true);d.recycleBuffer(scratch);tlas=d.acquireBuffer(info.ResultDataMaxSizeInBytes,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);scratch=d.acquireBuffer(std::max(info.ScratchDataSizeInBytes,info.UpdateScratchDataSizeInBytes),D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);capacity=count;tlasBuilt=false;}
   if(tlasBuilt&&previousCount==count){build.Inputs.Flags|=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;build.SourceAccelerationStructureData=tlas->GetGPUVirtualAddress();refits++;}
   uav(tlas.Get());uav(scratch.Get());build.DestAccelerationStructureData=tlas->GetGPUVirtualAddress();build.ScratchAccelerationStructureData=scratch->GetGPUVirtualAddress();command->BuildRaytracingAccelerationStructure(&build,0,nullptr);uav(tlas.Get());previousCount=count;tlasBuilt=true;
   command->EndQuery(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,slot*4+1);
   Constants c{};XMStoreFloat4x4(&c.inverse,XMMatrixInverse(nullptr,d.viewProjNoJit));c.eyeTime={d.camWorld.x,d.camWorld.y,d.camWorld.z,time};c.sun=light.lightDir;c.ambient=light.ambient;for(UINT i=0;i<32;i++)if(light.spots[i].pos.w>0){UINT j=c.settings[3]++;c.pos[j]=light.spots[i].pos;c.color[j]=light.spots[i].color;c.dir[j]=light.spots[i].dir;}for(size_t i=0;i<smoke.size()&&i<16;i++)c.smoke[i]=smoke[i];c.settings[0]=active;c.settings[1]=bounces;c.frame={(float)d.w,(float)d.h,density,(float)smoke.size()};
 
-  XMMATRIX view=XMMatrixLookAtRH(XMLoadFloat3(&d.editorEye),XMLoadFloat3(&d.editorTarget),XMVectorSet(0,1,0,0));
+  XMMATRIX view=XMMatrixLookAtRH(XMLoadFloat3(&d.editorEye),XMLoadFloat3(&d.editorTarget),XMLoadFloat3(&d.editorUp));
   XMFLOAT4X4 projection;XMStoreFloat4x4(&projection,XMMatrixInverse(nullptr,view)*d.viewProjNoJit);XMStoreFloat4x4(&c.view,view);c.previousVP=previousVP;c.previousView=previousView;
   uint64_t topology=1469598103934665603ull;for(auto& item:items){topology^=item.key;topology*=1099511628211ull;}
   float dx=d.camWorld.x-previousEye.x,dy=d.camWorld.y-previousEye.y,dz=d.camWorld.z-previousEye.z;

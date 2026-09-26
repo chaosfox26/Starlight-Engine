@@ -85,6 +85,7 @@ struct Upscaler {
     virtual int  modeCount() const = 0;
     virtual const char* modeName(int i) const = 0;
     virtual int  mode() const = 0;
+    virtual bool resizeOutput(UINT, UINT) { return false; }
     virtual bool setMode(int i, UINT& renderW, UINT& renderH) = 0;
     virtual bool wantsJitter() const { return true; }       // temporal paths need sub-pixel jitter; Off does not
 

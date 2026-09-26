@@ -27,26 +27,45 @@ void preview_state(bool state)
 }
 void playback_command(int id)
 {
+    if(!carriedId.empty())finish_carry(false);
+    if(openMenu==ObjectBehaviorMenu)toggle_menu(0);
     end_stroke();
-    if (id == Play && !fullScreen && (!gamePreview || !gamePreview->visible()))
-    {
-        if (!gamePreview)
-            gamePreview = std::make_unique<GamePreview>(
-                window, instance, font, [this](bool p) { preview_state(p); }, [this](std::string e) { error(e); });
-        renderer->playback(false, true);
-        gamePreview->show(scene, camera_state(), repeat, follow && actor() ? actor()->Id : std::string{}, panSpeed,
-                          tiltSpeed);
-    }
+    // Play belongs to the existing editor canvas in both window modes.
+    // Keep the same session so entering full screen cannot restart simulation.
     bool next = id == Play ? !playing : false;
-    if (gamePreview && gamePreview->visible())
-        gamePreview->playback(next, id == Stop);
-    else
+    if(scene.Game && next && !adventure){
+        questTracker.reset();adventure.emplace();adventure->start(scene);
+        if(explorer){adventure->position=explorer->position;adventure->yaw=explorer->yaw;adventure->pitch=explorer->pitch;}
+    }
+    if(!next && explorer){
+        if(adventure){explorer->position=adventure->position;explorer->yaw=adventure->yaw;explorer->pitch=adventure->pitch;}
+        explorer->rebuild_for_authoring(scene);
+        if(id==Stop)explorer->start(scene,false);
+        renderer->scene(scene);adventure.reset();adventureHint.clear();
+    }
+    if(!next){adventureLook=false;camera();}
+    if(id==Stop){if(adventure)renderer->scene(scene);adventure.reset();adventureHint.clear();}
+    if(next && adventure){
+        renderer->gameplay_time(adventure->seconds());
+        renderer->camera({adventure->position,adventure->position+adventure->direction(),1});
+        adventure->update_rules();
+        renderer->scene(adventure->scene());
+        SetFocus(view);
+    }
     {
+        if(!adventure)renderer->gameplay_time(std::nullopt);
         inlinePlayFrame = renderer->status().frames;
         renderer->playback_options(repeat, follow && actor() ? actor()->Id : std::string{});
-        renderer->playback(next, id == Stop || (next && inlineFinished));
+        renderer->playback(next, id == Stop || (next && (inlineFinished || explorer.has_value())));
         inlineFinished = false;
         preview_state(next);
+    }
+    if(adventure)questTracker.update(scene,adventure->rules(),next);else questTracker.hide();
+    ShowWindow(adventureHudPanel,next && adventure ? SW_SHOW : SW_HIDE);
+    if(!next && explorer)explorer_hint();
+    if(next && adventure){
+        SetWindowTextW(adventureHud,adventureHint.empty() ? L"WASD: walk | Space: jump | Right-drag: look | F / E: use | Escape: pause" : wide(adventureHint).c_str());
+        SetWindowPos(adventureHudPanel,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     }
     if (id == Stop)
         SetWindowTextW(playState, L"Ready");
@@ -117,17 +136,19 @@ void music_controls()
 }
 void layout_secondary()
 {
+    layout_asset_browser();
     if (morePanel)
     {
-        int mw = std::min(740, std::max(300, width - 36)), mh = std::min(540, std::max(320, height - 100));
-        MoveWindow(morePanel, std::max(18, width - mw - 22), 58, mw, mh, TRUE);
-        int left = std::min(250, mw / 3), right = std::max(80, mw - left - 54), bottom = mh - 14;
-        MoveWindow(featureList, 20, 170, left, std::max(80, bottom - 170), TRUE);
-        MoveWindow(featureDetail, left + 34, 170, right, std::max(60, bottom - 260), TRUE);
-        MoveWindow(GetDlgItem(morePanel, FeatureCheck), left + 34, bottom - 82, std::min(200, right), 32, TRUE);
-        MoveWindow(featureResult, left + 34, bottom - 46, right, 46, TRUE);
-        MoveWindow(GetDlgItem(morePanel, CloseMore), mw - 50, 12, 32, 30, TRUE);
-        MoveWindow(musicPanel, std::max(18, width - 302), 70, 280, 250, TRUE);
+        auto p=[&](int n){return settings_px(n);};
+        unscroll_panel(morePanel);unscroll_panel(musicPanel);
+        const int mw=p(740),mh=p(540),left=p(250),right=mw-left-p(54),bottom=mh-p(14);
+        MoveWindow(featureList,p(20),p(170),left,bottom-p(170),TRUE);
+        MoveWindow(featureDetail,left+p(34),p(170),right,bottom-p(260),TRUE);
+        MoveWindow(GetDlgItem(morePanel,FeatureCheck),left+p(34),bottom-p(82),p(200),p(32),TRUE);
+        MoveWindow(featureResult,left+p(34),bottom-p(46),right,p(46),TRUE);
+        MoveWindow(GetDlgItem(morePanel,CloseMore),mw-p(50),p(12),p(32),p(30),TRUE);
+        finish_scroll_panel(morePanel,18,p(58),mw,mh);
+        finish_scroll_panel(musicPanel,std::max(18,width-p(302)),p(70),p(280),p(250));
         for (auto h : {morePanel, musicPanel})
             SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
@@ -135,7 +156,7 @@ void layout_secondary()
 void scroll_dock(int position)
 {
     int next = std::clamp(position, 0, std::max(0, dockWidth - dockViewportWidth));
-    ScrollWindowEx(dock, dockScroll - next, 0, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+    style::scrollChildren(dock, dockScroll - next, 0);
     dockScroll = next;
     SetScrollPos(dock, SB_HORZ, next, TRUE);
 }
@@ -144,6 +165,12 @@ void reveal_focus()
     HWND h = GetFocus();
     if (!h)
         return;
+    for(const auto& [host,pos]:panelScroll)if(IsChild(host,h)) {
+        RECT r{},area{};GetWindowRect(h,&r);MapWindowPoints(nullptr,host,reinterpret_cast<POINT*>(&r),2);GetClientRect(host,&area);
+        const int dx=r.left<0?r.left:r.right>area.right?r.right-area.right:0;
+        const int dy=r.top<0?r.top:r.bottom>area.bottom?r.bottom-area.bottom:0;
+        if(dx || dy)scroll_panel(host,pos.x+dx,pos.y+dy);
+    }
     if (IsChild(dock, h))
     {
         RECT r;
@@ -153,6 +180,13 @@ void reveal_focus()
             scroll_dock(dockScroll + r.left - 14);
         else if (r.right > dockViewportWidth - 14)
             scroll_dock(dockScroll + r.right - dockViewportWidth + 14);
+    }
+    if (IsChild(assetPanel, h)) {
+        RECT r{}, bounds{}; GetWindowRect(h, &r);
+        MapWindowPoints(nullptr, assetPanel, reinterpret_cast<POINT*>(&r), 2);
+        GetClientRect(assetPanel, &bounds);
+        if (r.top < 8) scroll_assets(assetScroll + r.top - 8);
+        else if (r.bottom > bounds.bottom - 8) scroll_assets(assetScroll + r.bottom - bounds.bottom + 8);
     }
     HWND host = projectWindow && IsWindowVisible(projectWindow) ? projectHost : inspector;
     if (IsChild(host, h))
@@ -166,7 +200,7 @@ void reveal_focus()
         SCROLLINFO si{sizeof(si), SIF_ALL};
         GetScrollInfo(host, SB_VERT, &si);
         int next = std::clamp(position + delta, 0, std::max(0, si.nMax - int(si.nPage) + 1));
-        ScrollWindowEx(host, 0, position - next, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+        style::scrollChildren(host, 0, position - next);
         position = next;
         SetScrollPos(host, SB_VERT, next, TRUE);
     }
@@ -176,6 +210,20 @@ static LRESULT CALLBACK card_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, 
     auto &e = *reinterpret_cast<Editor *>(data);
     try
     {
+        if (m == WM_PAINT) {
+            PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps);
+            RECT r; GetClientRect(h, &r);
+            style::childBackground(h, dc);
+            {
+                Gdiplus::Graphics g(dc); g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+                style::round(g, {0, 0, float(r.right), float(r.bottom)}, 10,
+                             Gdiplus::Color(255,38,53,80), Gdiplus::Color(255,38,53,80), Gdiplus::Color(255,38,53,80));
+            }
+            style::text(dc, e.cardFont, L"✦", {0, 10, r.right, 46}, RGB(118,201,255));
+            style::text(dc, e.font, e.characterAsset.empty() ? L"Choose a character" : e.characterAsset.stem().wstring(), {4, 48, r.right-4, 77});
+            style::text(dc, e.smallFont, L"Drag onto the floor", {4, 78, r.right-4, 106}, style::muted);
+            EndPaint(h, &ps); return 0;
+        }
         if (m == WM_LBUTTONDOWN && !e.playing && !e.characterAsset.empty())
         {
             e.cardDragging = true;
@@ -245,7 +293,7 @@ void place_character(Vec3 p)
         c.X = std::clamp(p.x, -12., 12.);
         c.Z = std::clamp(p.z, -12., 12.);
         c.Y = scene.Terrain ? scene.Terrain->height_at(c.X, c.Z) : 0;
-        snap_object(scene, c, gridSnap, objectSnap, groundSnap);
+        snap_object(scene, c, gridSnap, objectSnap, groundSnap,gridStep);
         c.X = std::clamp(c.X, -12., 12.);
         c.Z = std::clamp(c.Z, -12., 12.);
         scene.Characters.push_back(c);
@@ -254,6 +302,14 @@ void place_character(Vec3 p)
 }
 bool escape()
 {
+    if(!carriedId.empty()){finish_carry(false);return true;}
+    if(helpShown){
+        if(SendMessageW(helpPicker,CB_GETDROPPEDSTATE,0,0))SendMessageW(helpPicker,CB_SHOWDROPDOWN,FALSE,0);
+        else command(HelpClose);
+        return true;
+    }
+    if(playing && adventure){playback_command(Pause);return true;}
+    if (libraryPanel && IsWindowVisible(libraryPanel)) { ShowWindow(libraryPanel, SW_HIDE); return true; }
     auto focus = GetFocus();
     wchar_t cls[32]{};
     GetClassNameW(focus, cls, 32);
@@ -419,8 +475,8 @@ void open_project()
     GetWindowRect(window, &r);
     MONITORINFO monitor{sizeof(monitor)};
     GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
-    int pw = std::min(630L, monitor.rcWork.right - monitor.rcWork.left),
-        ph = std::min(810L, monitor.rcWork.bottom - monitor.rcWork.top);
+    int pw = std::min(LONG(settings_px(630)), monitor.rcWork.right - monitor.rcWork.left),
+        ph = std::min(LONG(settings_px(810)), monitor.rcWork.bottom - monitor.rcWork.top);
     SetWindowPos(projectWindow, HWND_TOP,
                  std::clamp((r.left + r.right - pw) / 2, monitor.rcWork.left, monitor.rcWork.right - pw),
                  std::clamp((r.top + r.bottom - ph) / 2, monitor.rcWork.top, monitor.rcWork.bottom - ph), pw, ph,
@@ -462,8 +518,7 @@ static LRESULT CALLBACK project_scroll_proc(HWND h, UINT m, WPARAM w, LPARAM l, 
                 break;
             }
         next = std::clamp(next, 0, std::max(0, si.nMax - int(si.nPage) + 1));
-        ScrollWindowEx(h, 0, e.projectScroll - next, nullptr, nullptr, nullptr, nullptr,
-                       SW_SCROLLCHILDREN | SW_INVALIDATE);
+        style::scrollChildren(h, 0, e.projectScroll - next);
         e.projectScroll = next;
         SetScrollPos(h, SB_VERT, next, TRUE);
         return 0;
@@ -477,26 +532,21 @@ void layout_project()
 {
     if (!projectHost)
         return;
-    RECT r;
-    GetClientRect(projectWindow, &r);
-    MoveWindow(projectHost, 26, 20, r.right - 52, std::max(100L, r.bottom - 124), TRUE);
-    MoveWindow(projectMessage, 26, r.bottom - 94, r.right - 52, 46, TRUE);
-    MoveWindow(GetDlgItem(projectWindow, CloseProject), r.right - 146, r.bottom - 42, 120, 32, TRUE);
-    SCROLLINFO si{sizeof(si), SIF_RANGE | SIF_PAGE};
-    si.nMax = 690;
-    si.nPage = std::max(100L, r.bottom - 124);
-    SetScrollInfo(projectHost, SB_VERT, &si, TRUE);
-    RECT content;
-    GetClientRect(projectHost, &content);
-    double scale = std::min(1., content.right / 500.);
-    projectScroll = std::clamp(projectScroll, 0, std::max(0, si.nMax - int(si.nPage) + 1));
-    SetScrollPos(projectHost, SB_VERT, projectScroll, TRUE);
-    for (size_t i = 0; i < projectControls.size(); ++i)
-    {
-        auto b = projectRects[i];
-        MoveWindow(projectControls[i], int(b.left * scale), b.top - projectScroll,
-                   std::max(1, int((b.right - b.left) * scale)), b.bottom - b.top, TRUE);
+    auto p=[&](int n){return settings_px(n);};
+    RECT r;GetClientRect(projectWindow,&r);
+    MoveWindow(projectHost,p(26),p(20),r.right-p(52),std::max(p(100),int(r.bottom)-p(124)),TRUE);
+    MoveWindow(projectMessage,p(26),r.bottom-p(94),r.right-p(52),p(46),TRUE);
+    MoveWindow(GetDlgItem(projectWindow,CloseProject),r.right-p(146),r.bottom-p(42),p(120),p(32),TRUE);
+    SCROLLINFO si{sizeof(si),SIF_RANGE|SIF_PAGE};si.nMax=p(690);si.nPage=std::max(p(100),int(r.bottom)-p(124));
+    SetScrollInfo(projectHost,SB_VERT,&si,TRUE);
+    RECT content;GetClientRect(projectHost,&content);
+    const double factor=std::min(settingsScale/100.,content.right/500.);
+    projectScroll=std::clamp(projectScroll,0,std::max(0,si.nMax-int(si.nPage)+1));SetScrollPos(projectHost,SB_VERT,projectScroll,TRUE);
+    for(size_t i=0;i<projectControls.size();++i){auto b=projectRects[i];
+        MoveWindow(projectControls[i],int(b.left*factor),p(b.top)-projectScroll,
+            std::max(1,int((b.right-b.left)*factor)),p(b.bottom-b.top),TRUE);
     }
+
 }
 void close_project()
 {
@@ -539,7 +589,7 @@ void project_form()
     };
     if (!projectHeading)
         projectHeading =
-            CreateFontW(-27, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+            CreateFontW(-settings_px(27), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
     auto heading = add(L"STATIC", L"Choose your world", 0, 0, 0, 500, 38);
     SendMessage(heading, WM_SETFONT, reinterpret_cast<WPARAM>(projectHeading), TRUE);

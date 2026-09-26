@@ -17,6 +17,9 @@ void from_json(const json &j, WalkPoint &v) {
 void to_json(json &j, const Character &v) {
     j = json::object();
     j["Id"] = v.Id;
+    if(v.GrappleMode)j["GrappleMode"]=v.GrappleMode;
+    if(v.CombatHealth>0){j["CombatHealth"]=v.CombatHealth;j["CombatSightRange"]=v.CombatSightRange;j["CombatTeam"]=v.CombatTeam;j["CombatBoss"]=v.CombatBoss;j["CombatAutoAttack"]=v.CombatAutoAttack;j["CombatPursuit"]=v.CombatPursuit;j["CombatControlEffect"]=v.CombatControlEffect;}
+    if(v.GameplayRole!="none"){j["GameplayRole"]=v.GameplayRole;j["GameplayKey"]=v.GameplayKey;}
     j["Name"] = v.Name;
     j["Asset"] = v.Asset;
     j["Shape"] = v.Shape ? json(*v.Shape) : json(nullptr);
@@ -47,6 +50,9 @@ void to_json(json &j, const Character &v) {
     j["Route"] = v.Route;
 }
 void from_json(const json &j, Character &v) {
+    v.GrappleMode=j.value("GrappleMode",0);
+    v.CombatSightRange=j.value("CombatSightRange",60.);v.CombatHealth=j.value("CombatHealth",0.);v.CombatTeam=j.value("CombatTeam",2);v.CombatBoss=j.value("CombatBoss",false);v.CombatAutoAttack=j.value("CombatAutoAttack",false);v.CombatPursuit=j.value("CombatPursuit",false);v.CombatControlEffect=j.value("CombatControlEffect",-1);
+    v.GameplayRole=j.value("GameplayRole",std::string("none"));v.GameplayKey=j.value("GameplayKey",std::string{});
     if (!j.is_object())
         throw std::runtime_error("Expected Character object");
     if (j.contains("Id"))
@@ -116,6 +122,45 @@ void from_json(const json &j, Character &v) {
     if (j.contains("Route"))
         j.at("Route").get_to(v.Route);
 }
+void to_json(json& j,const GameplayCondition& v){j={{"Type",v.Type},{"Value",v.Value}};}
+void from_json(const json& j,GameplayCondition& v){j.at("Type").get_to(v.Type);j.at("Value").get_to(v.Value);}
+void to_json(json& j,const GameplayAction& v){j={{"Type",v.Type},{"Target",v.Target}};}
+void from_json(const json& j,GameplayAction& v){j.at("Type").get_to(v.Type);v.Target=j.value("Target",std::string{});}
+void to_json(json& j,const GameplayRule& v){
+    j={{"Id",v.Id},{"Name",v.Name},{"Event",v.Event},{"Subject",v.Subject},{"X",v.X},{"Y",v.Y},{"Z",v.Z},{"Radius",v.Radius},{"Once",v.Once},{"Enabled",v.Enabled},{"Conditions",v.Conditions},{"Actions",v.Actions}};
+    if(!v.Description.empty())j["Description"]=v.Description;
+}
+void from_json(const json& j,GameplayRule& v){
+    j.at("Id").get_to(v.Id);v.Name=j.value("Name",v.Name);v.Description=j.value("Description",std::string{});j.at("Event").get_to(v.Event);
+    v.Subject=j.value("Subject",v.Subject);v.X=j.value("X",v.X);v.Y=j.value("Y",v.Y);v.Z=j.value("Z",v.Z);v.Radius=j.value("Radius",v.Radius);
+    v.Once=j.value("Once",v.Once);v.Enabled=j.value("Enabled",v.Enabled);
+    if(j.contains("Conditions")){if(!j.at("Conditions").is_array() || j.at("Conditions").size()>16)throw std::runtime_error("Too many rule conditions");j.at("Conditions").get_to(v.Conditions);}
+    if(!j.at("Actions").is_array() || j.at("Actions").size()>16)throw std::runtime_error("Too many rule actions");
+    j.at("Actions").get_to(v.Actions);v.validate();
+}
+void to_json(json& j,const QuestDefinition& q){j={{"Id",q.Id},{"Title",q.Title},{"Description",q.Description},{"RuleIds",q.RuleIds},{"Tracked",q.Tracked}};if(!q.StepSizes.empty())j["StepSizes"]=q.StepSizes;}
+void from_json(const json& j,QuestDefinition& q){
+    j.at("Id").get_to(q.Id);j.at("Title").get_to(q.Title);q.Description=j.value("Description",std::string{});q.Tracked=j.value("Tracked",true);
+    if(!j.at("RuleIds").is_array() || j.at("RuleIds").size()>16)throw std::runtime_error("Quest supports at most16 objectives");
+    j.at("RuleIds").get_to(q.RuleIds);
+    q.StepSizes.clear();if(j.contains("StepSizes")){
+        if(!j.at("StepSizes").is_array() || j.at("StepSizes").size()>16)throw std::runtime_error("Too many quest steps");
+        for(const auto& size:j.at("StepSizes")){if(!size.is_number_integer())throw std::runtime_error("Quest step sizes must be whole numbers");q.StepSizes.push_back(native_int(size));}
+    }
+}
+void to_json(json &j, const GameSettings &v) {
+    j={{"Preset",v.Preset},{"SpawnX",v.SpawnX},{"SpawnY",v.SpawnY},{"SpawnZ",v.SpawnZ},
+       {"MoveSpeed",v.MoveSpeed},{"LookSensitivity",v.LookSensitivity},{"PlayerRadius",v.PlayerRadius},{"Collision",v.Collision},{"ReducedCameraMotion",v.ReducedCameraMotion},{"SightRange",v.SightRange}};
+}
+void from_json(const json &j, GameSettings &v) {
+    if(!j.is_object())throw std::runtime_error("Expected game settings object");
+    v.Preset=j.value("Preset",v.Preset);v.SpawnX=j.value("SpawnX",v.SpawnX);
+    v.SpawnY=j.value("SpawnY",v.SpawnY);v.SpawnZ=j.value("SpawnZ",v.SpawnZ);
+    v.MoveSpeed=j.value("MoveSpeed",v.MoveSpeed);v.LookSensitivity=j.value("LookSensitivity",v.LookSensitivity);
+    v.PlayerRadius=j.value("PlayerRadius",v.PlayerRadius);v.Collision=j.value("Collision",v.Collision);
+    v.ReducedCameraMotion=j.value("ReducedCameraMotion",false);v.SightRange=j.value("SightRange",60.);
+    v.validate();
+}
 void to_json(json &j, const SceneData &v) {
     j = json::object();
     j["Hour"] = v.Hour;
@@ -127,7 +172,10 @@ void to_json(json &j, const SceneData &v) {
     j["RaytracingQuality"] = v.RaytracingQuality;
     j["PathBounces"] = v.PathBounces;
     j["FreezeRaytracingAnimation"] = v.FreezeRaytracingAnimation;
-    j["SchemaVersion"] = v.SchemaVersion;
+    j["SchemaVersion"] = std::any_of(v.Characters.begin(),v.Characters.end(),[](const auto& c){return c.CombatHealth>0;}) ? 12 : std::any_of(v.Quests.begin(),v.Quests.end(),[](const auto& q){return !q.StepSizes.empty();}) ? 11 : !v.Quests.empty() ? 10 : !v.Rules.empty() ? 9 : v.Game || std::any_of(v.Characters.begin(),v.Characters.end(),[](const auto& c){return c.GameplayRole!="none";}) ? 8 : v.SchemaVersion;
+    if(v.Game)j["Game"]=*v.Game;
+    if(!v.Rules.empty())j["Rules"]=v.Rules;
+    if(!v.Quests.empty())j["Quests"]=v.Quests;
     j["Name"] = v.Name;
     j["Characters"] = v.Characters;
     j["LiquidSources"] = v.LiquidSources;
@@ -137,6 +185,9 @@ void to_json(json &j, const SceneData &v) {
 void from_json(const json &j, SceneData &v) {
     if (!j.is_object())
         throw std::runtime_error("Expected SceneData object");
+    if(j.contains("Quests")){if(!j.at("Quests").is_array() || j.at("Quests").size()>32)throw std::runtime_error("Too many quests");j.at("Quests").get_to(v.Quests);}
+    if(j.contains("Rules")){if(!j.at("Rules").is_array() || j.at("Rules").size()>64)throw std::runtime_error("Too many gameplay rules");j.at("Rules").get_to(v.Rules);}
+    if(j.contains("Game") && !j.at("Game").is_null())v.Game=j.at("Game").get<GameSettings>();
     if (j.contains("Hour"))
         j.at("Hour").get_to(v.Hour);
     if (j.contains("DayCycle"))
