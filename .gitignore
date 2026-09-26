@@ -91,3 +91,9 @@
 *.pfx
 *.p12
 CMakeUserPresets.json
+
+# Required small GLB regression fixtures (not generated build output).
+!/migration/fixtures/
+/migration/fixtures/*
+!/migration/fixtures/triangle.glb
+!/migration/fixtures/deep-node-graph.glb
