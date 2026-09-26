@@ -38,3 +38,10 @@ Private local evidence, intentionally outside this publication repository:
 - Starlight-analysis/publication-upstream-checks.json: dependency byte comparisons.
 
 Reports and build directories may contain local machine paths and are not approved for upload. The original development Git history and private mapping files must not be pushed into this repository.
+
+## Foreground reruns — 26 September 2026
+The new rendering run at Starlight-analysis/verification-rerun-20260926/render completed: 0 failed checks, 10 bounded checks passed, 1 lifecycle control completed. Visible editor and focused presentation evidence were accepted. Internal debug/measurement stages retain their recorded offscreen modes. This is a successful bounded diagnostic run, not full Gate 0 certification (gate0Certified remains false).
+The first UI rerun completed 112 checks with only the absent starter asset failing; the menu-resource deadline passed without changing its threshold. The owner then confirmed the starter model belongs to the project and authorized its restoration. The model is restored and staged; a second UI rerun, ui-restored-result.json, is now pending. Earlier missing-model and rendering-rerun status above is historical.
+
+## Verified reruns complete — 26 September 2026
+The restored-model UI rerun passed all 114 checks with zero failures in 148641 ms. Evidence: D:/projects/Starlight-analysis/verification-rerun-20260926/ui-restored-result.json. The rendering rerun completed with zero failures, ten bounded checks passed and one control completed; visible editor and presentation evidence accepted. Evidence: D:/projects/Starlight-analysis/verification-rerun-20260926/render/audit-verdict.json. These results resolve the requested UI and rendering reruns; they do not complete deferred gameplay, clean-machine certification, licensing, or off-machine backup. No upload performed.

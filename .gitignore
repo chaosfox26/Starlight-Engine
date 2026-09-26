@@ -106,3 +106,13 @@ CMakeUserPresets.json
 !/audit-runs/run-20260917-192850/
 /audit-runs/run-20260917-192850/*
 !/audit-runs/run-20260917-192850/comparison.bin
+# Owner-confirmed starter model; other generated project content stays excluded.
+!/projects/
+/projects/*
+!/projects/SampleGame/
+/projects/SampleGame/*
+!/projects/SampleGame/build/
+/projects/SampleGame/build/*
+!/projects/SampleGame/build/models/
+/projects/SampleGame/build/models/*
+!/projects/SampleGame/build/models/fox-lead.glb
