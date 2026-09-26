@@ -97,3 +97,10 @@ CMakeUserPresets.json
 /migration/fixtures/*
 !/migration/fixtures/triangle.glb
 !/migration/fixtures/deep-node-graph.glb
+
+# Required baseline packet used by the rendering audit; other captures stay local.
+!/audit-runs/
+/audit-runs/*
+!/audit-runs/run-20260917-192850/
+/audit-runs/run-20260917-192850/*
+!/audit-runs/run-20260917-192850/comparison.bin
