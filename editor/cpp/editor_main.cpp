@@ -20,6 +20,7 @@
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
 #include "movement_hud.hpp"
+#include "pacing_hud.hpp"
 #include "combat_hud.hpp"
 #include "quest_tracker.hpp"
 #include "object_behaviors.hpp"
@@ -90,6 +91,7 @@ enum : int {
     MusicQuieter,
     MusicLouder,
     FullScreen,
+    TogglePacing,
     PourWater,
     PourLava,
     Stamp,
@@ -129,6 +131,8 @@ struct Editor {
     HWND adventureHud{},adventureHudPanel{};
     QuestTracker questTracker;
     MovementHud movementHud;
+    PacingHud pacingHud;
+    bool pacingShown=true;
     GameplayAudio gameplayAudio;
     CombatHud combatHud;
     bool mockBattle=false,mockClimb=false;
@@ -966,6 +970,7 @@ struct Editor {
             row(BehaviorQuest,L"Add quest objective");row(BehaviorStandQuest,L"Add stand-on objective");row(ObjectProperties,L"More object properties");
         } else if (id == MenuFile) {
             row(FullScreen, L"Full screen");
+            row(TogglePacing,L"Motion & frame timing (F8)");
             row(Frame, L"Frame world");
             row(MenuCamera, L"Camera settings");
             row(MenuWorld + 100, L"Atmosphere & ray tracing");
@@ -1094,12 +1099,13 @@ struct Editor {
         SetPropW(inspector, L"sl.backgroundProxy", reinterpret_cast<HANDLE>(1));
         menuPanel = panel(18, 58, 262, 360);
         questTracker.create(window);
-        movementHud.create(window);combatHud.create(window);
+        movementHud.create(window);combatHud.create(window);pacingHud.create(window);
         adventureHudPanel=panel(14,104,620,46);
         adventureHud=control(adventureHudPanel,L"STATIC",L"WASD: walk | Space: jump | Right-drag: look | F / E: use | Escape: pause",0,12,12,596,22);
         ShowWindow(adventureHudPanel,SW_HIDE);
         status = control(window, L"STATIC", L"Ready • Native performance first", 0, 14, 840, 1100, 20);
         renderer = std::make_unique<NativeSession>(view, 1200, 750);
+        renderer->pacing_enabled(pacingShown);
         SetTimer(window, 1, 16, nullptr);
         refresh();
         layout();
@@ -1944,6 +1950,7 @@ struct Editor {
             music.volume(musicVolume);music_controls();
             return;
         }
+        if(id==TogglePacing){pacingShown=!pacingShown;renderer->pacing_enabled(pacingShown);toggle_menu(0);SetFocus(view);pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);return;}
         if (id == FullScreen) {
             // Set the target mode before SetWindowPos dispatches WM_SIZE.
             // Otherwise layout requests windowed dimensions for the fullscreen
@@ -2768,6 +2775,10 @@ struct Editor {
         update_creation_guide();update_carry();
         combatHud.update(playing && adventure?&*adventure:nullptr,view,settingsScale);
         movementHud.update(playing && adventure?&adventure->movement_resources():explorer?&explorer->movement_resources():nullptr,view,settingsScale);
+        if(pacingShown){auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
+            if(mover){auto p=mover->presentation();renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});}
+            else renderer->pacing_player({},{});
+        }
         if(playing && adventure)renderer->gameplay_overlays(player_presentation(adventure->presentation()));
         else if(explorer)renderer->gameplay_overlays(player_presentation(explorer->presentation()));
         else renderer->gameplay_overlays({});
@@ -2827,6 +2838,7 @@ struct Editor {
             camera();
         } else edgeFeedback.hide();
         if (renderer) {
+            pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);
             auto s = renderer->status();
             if ((!gamePreview || !gamePreview->visible()) && playing && !adventure && s.frames>inlinePlayFrame+1 && !s.playing && s.seconds > 0) {
                 playing = false;inlineFinished=true;
@@ -3101,7 +3113,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         ACCEL keys[] = {{FCONTROL | FVIRTKEY, 'N', New},       {FCONTROL | FVIRTKEY, 'O', Open},
                         {FCONTROL | FVIRTKEY, 'S', Save},      {FCONTROL | FSHIFT | FVIRTKEY, 'S', SaveAs},
                         {FCONTROL | FVIRTKEY, 'Z', Undo},      {FCONTROL | FVIRTKEY, 'Y', Redo},
-                        {FCONTROL | FVIRTKEY, 'D', Duplicate}, {FVIRTKEY, VK_F11, FullScreen}, {FVIRTKEY, VK_F1, HelpOpen}};
+                        {FCONTROL | FVIRTKEY, 'D', Duplicate}, {FVIRTKEY, VK_F8, TogglePacing}, {FVIRTKEY, VK_F11, FullScreen}, {FVIRTKEY, VK_F1, HelpOpen}};
         auto accelerators = CreateAcceleratorTableW(keys, int(std::size(keys)));
         MSG msg;
         while (GetMessage(&msg, nullptr, 0, 0) > 0) {

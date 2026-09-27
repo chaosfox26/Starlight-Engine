@@ -99,6 +99,9 @@ RenderStatus NativeSession::status() {
     std::lock_guard lock(mutex_);
     return status_;
 }
+void NativeSession::pacing_enabled(bool enabled){std::lock_guard lock(mutex_);pacingEnabled_=enabled;if(!enabled)pacingSnapshot_={};}
+void NativeSession::pacing_player(Vec3 position,std::vector<double> pose){std::lock_guard lock(mutex_);playerPosition_=position;playerPose_=std::move(pose);}
+PacingSnapshot NativeSession::pacing_snapshot(){std::lock_guard lock(mutex_);return pacingSnapshot_;}
 void NativeSession::suspend_rendering(bool suspended) {
     { std::lock_guard lock(mutex_); suspended_ = suspended; }
     condition_.notify_all();
@@ -118,6 +121,8 @@ void NativeSession::run(std::stop_token stop) {
         bool physicsNeeded = false;
         auto previous = std::chrono::steady_clock::now();
         std::vector<uint8_t> packet;
+        FramePacingMonitor pacing;
+        bool wasPacing=false;double lastPacingPublish=0;
         auto reset = [&] {
             simulation = authored;
             seconds = 0;
@@ -155,6 +160,7 @@ void NativeSession::run(std::stop_token stop) {
             std::optional<SceneData> next;
             std::optional<double> gameplayTime;
             std::optional<fs::path> shot;
+            bool measurePacing=false;Vec3 playerPosition;std::vector<double> playerPose;
             {
                 std::unique_lock lock(mutex_);
                 if (suspended_) {
@@ -166,6 +172,7 @@ void NativeSession::run(std::stop_token stop) {
                     dt = 0;
                 }
                 camera = camera_;
+                measurePacing=pacingEnabled_;if(measurePacing){playerPosition=playerPosition_;playerPose=playerPose_;}
                 gameplayTime=gameplayTime_;
                 play = playing_;
                 repeat = repeat_;
@@ -269,6 +276,20 @@ void NativeSession::run(std::stop_token stop) {
             auto frameStart=std::chrono::steady_clock::now();
             if (!sl_frame(viewport.get(), routeTime, float(camera.distance)))
                 throw std::runtime_error(sl_error());
+            if(measurePacing){
+                if(!wasPacing){pacing={};lastPacingPublish=0;}
+                double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                pacing.frame(now);
+                pacing.pose("camera","Camera",camera.eye,{camera.eye.x,camera.eye.y,camera.eye.z,camera.target.x,camera.target.y,camera.target.z,camera.up.x,camera.up.y,camera.up.z},now);
+                if(!playerPose.empty())pacing.pose("player","Player",playerPosition,playerPose,now);
+                for(const auto& c:simulation.Characters){auto at=c.at(routeTime);
+                    std::vector<double> pose{at.X,c.Y,at.Z,c.RotationX,c.RotationY,c.RotationZ,c.Size,c.Width,c.Height,c.Depth};
+                    if(c.PhysicsRotation)pose.insert(pose.end(),c.PhysicsRotation->begin(),c.PhysicsRotation->end());
+                    pacing.pose(c.Id,c.Name,{at.X,c.Y+c.Size*c.Height,at.Z},std::move(pose),now);
+                }
+                if(now-lastPacingPublish>=.1){auto snapshot=pacing.snapshot(now);std::lock_guard lock(mutex_);pacingSnapshot_=std::move(snapshot);lastPacingPublish=now;}
+            }
+            wasPacing=measurePacing;
             {
                 std::lock_guard lock(mutex_);
                 status_.frames++;

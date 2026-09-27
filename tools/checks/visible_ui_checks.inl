@@ -188,6 +188,11 @@ int visible_ui_checks(const fs::path& output) {
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_BATTLE_ONLY",nullptr,0)){
             MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
             SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            const bool pacingTest=GetEnvironmentVariableW(L"STARLIGHT_UI_PACING",nullptr,0)>0;
+            if(pacingTest){
+                if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Pacing test requires a 2560x1440 monitor; display settings were not changed");
+                pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            }
             scene=SceneData{};scene.Name="Mock battle - live movement and cones";scene.Game.emplace();scene.Game->SpawnZ=0;
             Character enemy;enemy.Shape="cube";enemy.X=1;enemy.Z=-2.5;enemy.CombatHealth=1000;enemy.CombatBoss=true;enemy.CombatPursuit=true;enemy.CombatAutoAttack=true;scene.Characters={enemy};
             history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
@@ -203,6 +208,10 @@ int visible_ui_checks(const fs::path& output) {
                 },[&]{auto p=adventure->presentation();both|=p.showTelegraph && !p.actorTelegraphs.empty();return adventure->health()>0 && adventure->combat_actors().at(enemy.Id).health>0;});
             }
             mockBattle=false;
+            if(pacingTest){auto timing=renderer->pacing_snapshot();json objects=json::array();for(const auto& o:timing.objects)objects.push_back({{"name",o.name},{"id",o.id},{"poseUpdatesPerSecond",o.updatesPerSecond},{"unchangedMs",o.unchangedMs},{"moving",o.moving}});
+                report["pacing"]={{"renderFps",timing.fps},{"p50Ms",timing.p50},{"p95Ms",timing.p95},{"p99Ms",timing.p99},{"worstMs",timing.worst},{"frameMs",timing.frameMs},{"objects",objects},{"scope","Last two seconds; CPU render completion and object transforms"}};
+                if(timing.frameMs.size()<10 || timing.objects.size()<3)throw std::runtime_error("Pacing monitor did not collect frames and objects");
+            }
             report["simultaneousTelegraphs"]=both;
             report["playerDamaged"]=adventure->health()<100;
             report["enemyDamaged"]=adventure->combat_actors().at(enemy.Id).health<startingEnemy;

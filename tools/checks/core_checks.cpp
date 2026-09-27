@@ -11,6 +11,7 @@
 #include "grapple_motion.hpp"
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
+#include "frame_pacing.hpp"
 #include "combat_control.hpp"
 #include "quest_model.hpp"
 #include "object_behaviors.hpp"
@@ -29,6 +30,24 @@ int main(int argc, char **argv) {
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
     try {
+        {
+            FramePacingMonitor monitor;
+            for(int i=0;i<=400;i++){
+                double t=i/400.;monitor.frame(t);
+                monitor.pose("moving","Moving",{}, {double(i/8)},t);
+                monitor.pose("static","Static",{}, {0},t);
+            }
+            auto snapshot=monitor.snapshot(1);
+            require(std::abs(snapshot.fps-400)<.01,"Frame pacing samples completed frames independently of pose changes");
+            require(std::abs(snapshot.p99-2.5)<.001,"Frame pacing percentiles preserve individual intervals");
+            auto moving=std::find_if(snapshot.objects.begin(),snapshot.objects.end(),[](const auto& o){return o.id=="moving";});
+            auto stationary=std::find_if(snapshot.objects.begin(),snapshot.objects.end(),[](const auto& o){return o.id=="static";});
+            require(moving!=snapshot.objects.end() && std::abs(moving->updatesPerSecond-50)<.01,"Object monitor distinguishes 50 pose updates from 400 rendered frames");
+            require(stationary!=snapshot.objects.end() && !stationary->moving,"Static scenery is not classified as slow animation");
+            monitor.frame(1.1);require(monitor.snapshot(1.1).worst>99,"Frame pacing retains a single 100 ms hitch");
+            monitor.frame(4);require(monitor.snapshot(4).objects.empty(),"Removed object readings expire");
+        }
+
         {
             MeshPart a;a.color={.2,.4,.6};a.mesh.vertices={{{0,0,0}},{{1,0,0}},{{0,1,0}}};a.mesh.indices={0,1,2};
             auto b=a;b.mesh.vertices[0].position.z=1;auto glow=a;glow.emissive=true;
