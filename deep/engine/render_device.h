@@ -502,7 +502,7 @@ struct RenderDevice {
                 // Avoid putting the thread to sleep for the final fraction of
                 // a millisecond, where scheduler wake-up variance exceeds the
                 // requested wait. The bounded spin never changes the cap.
-                const LONGLONG guard=std::max<LONGLONG>(1,pacingFrequency/4000);
+                const LONGLONG guard=std::max<LONGLONG>(1,std::min(interval/2,pacingFrequency/2000));
                 if(deadline-now.QuadPart<=guard){YieldProcessor();QueryPerformanceCounter(&now);continue;}
                 LARGE_INTEGER due{};
                 due.QuadPart = -((deadline - now.QuadPart - guard) * 10000000 + pacingFrequency - 1) / pacingFrequency;

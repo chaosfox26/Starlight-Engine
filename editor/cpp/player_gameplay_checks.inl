@@ -24,12 +24,14 @@ int gameplay_checks(const fs::path& output){
         pass=pass && renderer->status().captures>captures && fs::exists(screenshot);
         report["checks"].push_back({{"name",name},{"pass",pass},{"foreground",true},{"frames",state.frames},{"rendererError",state.error}});
         report["checks"].back()["screenshot"]=utf8(screenshot.wstring());
+        if(!pass){const auto& tether=gameplay.grapple_motion();report["failureState"]={{"simulationSeconds",gameplay.seconds()},{"position",{gameplay.position.x,gameplay.position.y,gameplay.position.z}},{"grappleState",int(tether.state)},{"grappleHeld",tether.held},{"hookFlightRemaining",tether.flightRemaining},{"anchor",{tether.anchor.x,tether.anchor.y,tether.anchor.z}},{"velocity",{tether.velocity.x,tether.velocity.y,tether.velocity.z}}};}
         atomic_write(output,report.dump(2));if(!pass)throw std::runtime_error(name);
     };
     auto load=[&](const SceneData& scene){checkRight=checkForward=0;paused=false;gameplayAudio.stop();gameplay.start(scene);renderer->scene(gameplay.visible_scene());renderer->gameplay_time(0);renderer->playback(true,true);tick=GetTickCount64();};
     SceneData empty;empty.Game.emplace();empty.Game->SpawnZ=0;empty.Terrain.emplace();
     auto key=[&](int code){SendMessageW(window,WM_KEYDOWN,code,0);SendMessageW(window,WM_KEYUP,code,0);};
     try{
+        MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560||monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Exported gameplay acceptance requires a 2560x1440 monitor");SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;report["overlayEnabled"]=true;
         step("Packaged scene renders with third-person weapons",[&]{},[&]{return gameplay.presentation().showBody && gameplay.presentation().showWeapons;},1600);
         load(empty);double startZ=gameplay.position.z;
         step("Continuous forward movement",[&]{checkForward=1;},[&]{checkForward=0;return gameplay.position.z<startZ-1;});
@@ -76,10 +78,26 @@ int gameplay_checks(const fs::path& output){
         auto bossScene=empty;Character boss;boss.Id="acceptance-boss";boss.Shape="cube";boss.Width=2;boss.Height=2;boss.Z=-4;boss.CombatHealth=1000;boss.CombatBoss=true;bossScene.Characters={boss};load(bossScene);
         step("Repeated solo control breaks boss bar",[&]{gameplay.select_target();for(int i=0;i<4;++i)gameplay.control_actor(boss.Id,ControlEffect::Stun,{1,true});},[&]{return gameplay.combat_actors().at(boss.Id).bar.phase==BossBreakBar::Phase::Staggered;});
         step("Boss vulnerability modifies resolved damage",[&]{key('1');},[&]{return gameplay.combat_actors().at(boss.Id).health==987.5;},2800);
+        auto physicsScene=empty;Character loadBody;loadBody.Shape="cube";loadBody.Dynamic=true;loadBody.Size=.2;loadBody.Density=1000;loadBody.X=3;loadBody.Y=3;loadBody.Z=-4;loadBody.JointKind=3;loadBody.JointY=1;loadBody.JointTargetY=2.2;loadBody.JointLength=2;loadBody.JointSegments=12;physicsScene.Characters={loadBody};load(physicsScene);
+        step("Packaged segmented rope supports its moving load",[&]{},[&]{auto c=gameplay.scene().Characters[0];return c.JointRuntimePoints.size()==13&&c.Y>2.85;},1800);
+        auto ranged=empty;Character shooter;shooter.Shape="cube";shooter.Z=-6;shooter.RotationY=180;shooter.CombatHealth=100;shooter.CombatAutoAttack=true;shooter.CombatProjectileSpeed=5;ranged.Characters={shooter};load(ranged);bool travelingShot=false;
+        step("Packaged enemy projectile travels before impact",[&]{gameplayObserver=[&]{travelingShot|=!gameplay.presentation().projectiles.empty()&&gameplay.health()==100;};},[&]{gameplayObserver={};return travelingShot;},3000);
+        step("Packaged enemy impact applies player damage",[&]{},[&]{return gameplay.health()<100&&gameplay.combat_actors().at(shooter.Id).health==100;},1800);
+        auto pool=empty;pool.Terrain->WaterEnabled=true;pool.Terrain->WaterLevel=2.5;load(pool);
+        step("Packaged liquid buoyancy raises the player",[&]{},[&]{return gameplay.position.y>2.2;},6000);
+        auto storm=empty;Character bolt;bolt.Shape="chaos-lightning";bolt.X=4;bolt.TargetX=0;bolt.TargetY=0;storm.Characters={bolt};load(storm);auto beforeThunder=gameplayAudio.submitted;
+        step("Packaged lightning produces spatial thunder without audio errors",[&]{},[&]{return gameplay.presentation().lightning>0&&gameplayAudio.submitted>beforeThunder&&gameplayAudio.failed==0;},1000);
+        auto dynamicCombat=empty;Character drivenEnemy;drivenEnemy.Shape="cube";drivenEnemy.Dynamic=true;drivenEnemy.Size=.5;drivenEnemy.X=3;drivenEnemy.Y=4;drivenEnemy.Z=-4;drivenEnemy.CombatHealth=100;drivenEnemy.CombatPursuit=true;dynamicCombat.Characters={drivenEnemy};load(dynamicCombat);
+        step("Packaged pursuing dynamic enemy retains falling and contact physics",[&]{},[&]{auto c=gameplay.scene().Characters.front();return c.Y<.3&&std::hypot(c.X-3,c.Z+4)>.2&&c.PhysicsRotation.has_value();},2400);
+        auto living=empty;living.Terrain->WaterEnabled=true;living.Terrain->WaterLevel=.5;Character breakable;breakable.Shape="cube";breakable.GameplayRole="breakable";breakable.Z=-4;breakable.Y=.5;breakable.Width=breakable.Height=1.5;Character flame;flame.Shape="fire";flame.X=3;flame.Y=1;flame.Z=-3;living.Characters={breakable,flame};load(living);
+        bool sawFragments=false,sawSplash=false,sawFire=false,sawDebrisObstacles=false;
+        step("Packaged fracture, fire and water run together",[&]{gameplay.cameraPitch=-.3;gameplay.cameraDistance=7;gameplay.fire_button(true);gameplay.fire_button(false);gameplayObserver=[&]{auto state=renderer->status();auto pieces=gameplay.presentation().fragments.size();sawFragments|=pieces>=16;sawSplash|=state.liquid_splashes>0;sawFire|=state.fire_particles>0;sawDebrisObstacles|=pieces>0&&state.fog_bodies>=pieces;};},[&]{gameplayObserver={};return sawFragments&&sawSplash&&sawFire&&sawDebrisObstacles;},4000);
+        load(empty);
+        step("Packaged scene replacement clears fragments, liquid and emitted particles",[&]{},[&]{auto state=renderer->status();return gameplay.presentation().fragments.empty()&&state.fire_particles==0&&state.liquid_splashes==0&&state.liquid_volume==0;},800);
         double pausedTime=0;
         step("Pause freezes gameplay",[&]{key(VK_ESCAPE);pausedTime=gameplay.seconds();},[&]{return paused && gameplay.seconds()==pausedTime;});
         step("Restart restores original package scene",[&]{key(VK_F5);},[&]{return !paused && gameplay.health()==100 && gameplay.movement_resources().dodgeCharges==2 && gameplay.presentation().shots==0 && authored.encode()==original;});
         report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;report["authoredUnchanged"]=authored.encode()==original;report["pass"]=true;
     }catch(const std::exception& e){report["error"]=e.what();}
-    atomic_write(output,report.dump(2));bool pass=report["pass"].get<bool>();gameplayCheck=false;SendMessageW(window,WM_CLOSE,0,0);return pass?0:1;
+    atomic_write(output,report.dump(2));bool pass=report["pass"].get<bool>();gameplayCheck=false;gameplayObserver={};SendMessageW(window,WM_CLOSE,0,0);return pass?0:1;
 }

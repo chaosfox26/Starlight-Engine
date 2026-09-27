@@ -55,6 +55,7 @@ struct Character {
     int CombatTeam=2; // Viewer/player team is 1; 0 is neutral.
     bool CombatBoss=false;
     bool CombatAutoAttack=false;
+    double CombatProjectileSpeed=0,CombatProjectileGravity=0,CombatProjectileMass=.02;
     bool CombatPursuit=false;
     int GrappleMode=0; // Auto, wall attachment, or swing.
     int CombatControlEffect=-1; // None, or shared ControlEffect index.
@@ -65,12 +66,36 @@ struct Character {
     std::optional<std::string> Shape = {};
     std::optional<SculptMesh> Sculpt = {};
     std::optional<std::array<double, 4>> PhysicsRotation;
+    std::string LightningTargetId;
+    double LightningDamage=0,LightningChainRadius=3;
+    int LightningChains=0;
     double TargetX = 1;
     double TargetY = .05;
     double TargetZ = 0;
     double BranchSpread = 1;
+    double ParticleRate=40;
+    double ParticleLifetime=1;
+    double ParticleDrag=0.6;
+    double ParticleLift=14;
+    double ParticleWindX=0.3;
+    double ParticleWindY=0;
+    double ParticleWindZ=0.15;
+
     bool Dynamic = false;
     double Density = 2700;
+    double Friction = .72, Restitution = .03;
+    double VelocityX=0,VelocityY=0,VelocityZ=0;
+    double AngularVelocityX=0,AngularVelocityY=0,AngularVelocityZ=0;
+    int JointKind = 0; // None, fixed, hinge, rope, spring, ball, slider.
+    std::string JointTargetId; // Empty attaches to the world.
+    double JointX=0, JointY=0, JointZ=0;
+    double JointTargetX=0, JointTargetY=0, JointTargetZ=0;
+    double JointAxisX=0, JointAxisY=1, JointAxisZ=0;
+    double JointLength=1, JointFrequency=3, JointDamping=.5;
+    double JointAngleMin=-180,JointAngleMax=180;
+    int JointSegments=0;
+    double JointRadius=.025;
+    std::vector<std::array<double,3>> JointRuntimePoints;
     int Surface = {};
     double LightCone = 180;
     double LightIntensity = 12;
@@ -90,6 +115,7 @@ struct Character {
     double Speed = 1.5;
     std::vector<WalkPoint> Route = {};
     WalkPoint at(double seconds) const;
+    double route_yaw(double seconds) const;
     void validate() const;
 };
 void to_json(json &, const Character &);
@@ -119,6 +145,7 @@ struct QuestDefinition {
 void to_json(json&,const QuestDefinition&);
 void from_json(const json&,QuestDefinition&);
 struct GameSettings {
+    double ProjectileSpeed=0,ProjectileGravity=0,ProjectileMass=.02; // Zero speed preserves the existing instant sector attack.
     std::string Preset = "adventure";
     double SpawnX=0, SpawnY=1.7, SpawnZ=6;
     double MoveSpeed=4, LookSensitivity=.15, PlayerRadius=.3, SightRange=60;

@@ -60,7 +60,11 @@ def summarize(path, start=0):
     multicore = worker_summary([f["multicore"] for f in selected if "multicore" in f], "Renderer pool, per frame; not OS CPU utilization.")
     updates = {f["updateSequence"]: f["battleWorkers"] for f in selected if "battleWorkers" in f}
     battle = worker_summary(list(updates.values()), "Battle visual preparation, unique observed simulation updates; unobserved updates are not inferred.")
-    return dict(source=str(path), completed=ended, multicore=multicore, battleWorkers=battle,
+    gpu_effects = dict(framesWithResidentFills=sum(f.get("gpuEffectCount",0)>0 for f in selected),
+                       maximumFills=max((f.get("gpuEffectCount",0) for f in selected),default=0),
+                       maximumMeshBufferBytes=max((f.get("gpuEffectBytes",0) for f in selected),default=0),
+                       scope="Resident attack-fill buffers only, not total GPU memory usage")
+    return dict(source=str(path), completed=ended, multicore=multicore, battleWorkers=battle, gpuEffects=gpu_effects,
                 coverage=dict(recordedFrames=len(frames), selectedFrames=len(selected),
                               startSeconds=start, droppedRecords=dropped,
                               malformedLines=malformed, frameSequenceGaps=gaps),

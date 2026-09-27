@@ -1,3 +1,4 @@
+#include "solid_fixture.hpp"
 #include "commands.hpp"
 #include "geometry.hpp"
 #include "mesh.hpp"
@@ -9,6 +10,7 @@
 #include "object_template.hpp"
 #include "asset_library.hpp"
 #include "adventure.hpp"
+#include "environment_effects.hpp"
 #include "grapple_motion.hpp"
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
@@ -33,11 +35,56 @@ int main(int argc, char **argv) {
     fs::create_directories(folder);
     try {
         {
+            SceneData fire;Character emitter;emitter.Shape="fire";fire.Characters={emitter};EnvironmentEffects effects;
+            for(int i=0;i<20;++i)effects.step(fire,.025,i*.025);require(effects.flame_count()>0,"Fire emits independently moving physical flame particles");
+            auto first=render_scene(fire,nullptr,effects.geometry(fire),nullptr,true);effects.step(fire,.025,.525);require(first!=render_scene(fire,nullptr,effects.geometry(fire),nullptr,true),"Fire geometry evolves rather than retaining static cones");
+            fire.Characters.clear();for(int i=0;i<60;++i)effects.step(fire,.025,.55+i*.025);require(effects.flame_count()==0&&!effects.active(fire),"Removing a fire emitter allows existing particles to expire without endless emission");
+            effects.reset();require(effects.flame_count()==0,"Reset clears fire simulation state");
+        }
+        {
+            ProjectilePhysics shots;ProjectileTarget wall{"wall",{{-.5,0,-2.01},{.5,3,-1.99}},{{-.5,0,-2.01},{.5,3,-1.99}}};
+            shots.fire({0,1,0},{0,0,-1},500,0);auto impacts=shots.step(.02,nullptr,std::span<const ProjectileTarget>(&wall,1));
+            require(impacts.size()==1&&impacts[0].target=="wall"&&shots.shots().empty(),"Fast projectiles sweep thin walls and retire at the first impact");
+            require(shots.step(.02,nullptr,std::span<const ProjectileTarget>(&wall,1)).empty(),"A retired projectile cannot apply a duplicate impact");
+            ProjectileTarget crossing{"moving",{{-1.1,.5,-1.1},{-.9,1.5,-.9}},{{.9,.5,-1.1},{1.1,1.5,-.9}}};shots.fire({0,1,0},{0,0,-1},100,0);
+            require(shots.step(.02,nullptr,std::span<const ProjectileTarget>(&crossing,1)).size()==1,"Relative sweeps catch a moving target crossing between frame endpoints");
+            shots.fire({0,2,0},{1,0,0},5,9.81);for(int i=0;i<10;++i)shots.step(.05,nullptr,{});require(!shots.shots().empty()&&shots.shots()[0].position.y<1,"Projectile gravity changes the actual flight trajectory");
+            shots.clear();shots.fire({0,1,0},{1,0,0},500,0);shots.step(.05,nullptr,{});require(shots.shots().empty(),"Projectiles retire at their bounded travel range");
+            shots.clear();shots.fire({0,1,-2},{0,0,-1},5,0);require(shots.step(0,nullptr,std::span<const ProjectileTarget>(&wall,1)).empty()&&shots.shots().size()==1&&shots.shots()[0].age==0,"Paused projectile updates neither collide nor retire an overlapping shot");
+            TerrainData impactSlope;for(int z=0;z<TerrainData::N;++z)for(int x=0;x<TerrainData::N;++x)impactSlope.Heights[z*TerrainData::N+x]=2+(x*TerrainData::Step-TerrainData::Half)*.5;
+            shots.clear();shots.fire({0,3,0},{0,-1,0},100,0);auto slopeHits=shots.step(.02,&impactSlope,{});require(slopeHits.size()==1&&slopeHits[0].normal.dot(Vec3{-.5,1,0}.unit())>.999,"Projectile terrain contacts return the actual slope normal for outward impact effects");
+            ProjectilePhysics fastRender,slowRender;fastRender.fire({0,10,0},{1,0,0},5,9.81);slowRender.fire({0,10,0},{1,0,0},5,9.81);for(int i=0;i<240;++i)fastRender.step(1./480,nullptr,{});for(int i=0;i<10;++i)slowRender.step(.05,nullptr,{});require((fastRender.shots()[0].position-slowRender.shots()[0].position).length()<1e-8,"Projectile trajectories agree at 480Hz and slow 50ms updates");
+            SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;level.Game->ProjectileSpeed=5;
+            Character target;target.Shape="cube";target.GameplayRole="breakable";target.Z=-4;target.Height=2;level.Characters={target};AdventurePlayer player;player.start(level);player.fire_button(true);player.fire_button(false);
+            for(int i=0;i<305;++i)player.move(0,0,1./120.);
+            require(player.scene().Characters.size()==1&&!player.presentation().projectiles.empty(),"Physical shot mode leaves its target alive while the shot travels");
+            for(int i=0;i<150;++i)player.move(0,0,1./120.);
+            require(player.scene().Characters.empty()&&player.presentation().projectiles.empty(),"Projectile impact invokes gameplay destruction only on arrival");
+            auto restored=SceneData::decode(level.encode());require(restored.Game->ProjectileSpeed==5,"Projectile behavior persists through scene save and load");
+            player.start(level);require(player.presentation().projectiles.empty(),"Restart clears all projectiles");
+            Character barrier;barrier.Shape="cube";barrier.Z=-2;barrier.Width=4;barrier.Height=3;barrier.Depth=.03;level.Characters.push_back(barrier);player.start(level);player.fire_button(true);player.fire_button(false);for(int i=0;i<600;++i)player.move(0,0,1./120.);require(player.scene().Characters.size()==2,"A physical shot hits intervening scenery instead of damaging a target behind it");
+
+        }
+        {
+            Character cube;cube.Shape="cube";auto source=shape_geometry(cube).front().mesh;
+            auto volume=[](const Mesh& m){double sum=0;for(size_t i=0;i<m.indices.size();i+=3)sum+=m.vertices[m.indices[i]].position.dot(m.vertices[m.indices[i+1]].position.cross(m.vertices[m.indices[i+2]].position))/6.;return std::abs(sum);};
+            require(closed_convex_mesh(source),"Fracture recognizes closed convex topology independent of the object name");
+            auto open=source;open.indices.resize(open.indices.size()-3);require(!closed_convex_mesh(open),"Open surfaces are not falsely treated as closed fracture solids");
+            Character sculpt=cube;sculpt.Shape.reset();sculpt.Sculpt=prepare_sculpt(source);require(closed_convex_mesh(object_mesh(sculpt)),"Convex sculpted meshes qualify for physical fracture");
+            auto pieces=fracture_convex(source,{.4,.5,.6});double total=0;bool valid=true;
+            for(const auto& piece:pieces){total+=volume(piece.part->mesh);valid=valid&&piece.radius>0&&std::isfinite(piece.radius);}
+            require(pieces.size()==16&&valid,"Convex fracture creates sixteen bounded physical pieces");
+            require(std::abs(total-volume(source))<1e-6,"Closed fracture caps preserve the source cube volume");
+            for(const char* kind:{"rectangle","trapezoid","octagon"}){Character c;c.Shape=kind;auto mesh=shape_geometry(c).front().mesh;auto cut=fracture_convex(mesh,{1,1,1});double cutVolume=0;for(const auto& piece:cut)cutVolume+=volume(piece.part->mesh);require(cut.size()==16&&std::abs(cutVolume-volume(mesh))<1e-6,"Primitive fracture retains closed volume across supported shapes");}
+
+        }
+        {
             FramePacingMonitor monitor;
             for(int i=0;i<=400;i++){
                 double t=i/400.;monitor.frame(t);
                 monitor.pose("moving","Moving",{}, {double(i/8)},t);
                 monitor.pose("static","Static",{}, {0},t);
+                monitor.effect("static",{t},"rendered-effect-time",t);
             }
             auto snapshot=monitor.snapshot(1);
             require(std::abs(snapshot.fps-400)<.01,"Frame pacing samples completed frames independently of pose changes");
@@ -46,6 +93,7 @@ int main(int argc, char **argv) {
             auto stationary=std::find_if(snapshot.objects.begin(),snapshot.objects.end(),[](const auto& o){return o.id=="static";});
             require(moving!=snapshot.objects.end() && std::abs(moving->updatesPerSecond-50)<.01,"Object monitor distinguishes 50 pose updates from 400 rendered frames");
             require(stationary!=snapshot.objects.end() && !stationary->moving,"Static scenery is not classified as slow animation");
+            require(stationary!=snapshot.objects.end() && std::abs(stationary->effectUpdatesPerSecond-400)<.01 && stationary->effectMeasurement=="rendered-effect-time","Shader effect updates are recorded separately from unchanged object transforms");
             monitor.frame(1.1);require(monitor.snapshot(1.1).worst>99,"Frame pacing retains a single 100 ms hitch");
             auto hitched=monitor.snapshot(1.1);
             require(std::abs(hitched.low1-1000./22.)<.001 && std::abs(hitched.low01-10)<.001,"One-percent lows average the slowest frames rather than substituting a percentile");
@@ -87,7 +135,7 @@ int main(int argc, char **argv) {
             require(player.presentation().epoch!=initial.epoch && player.presentation().shots==0 && player.presentation().shotFlash==0,"Restart clears presentation events and changes the audio epoch");
             player.start(level,false);player.cameraDistance=0;
             require(!player.presentation().showWeapons && player_presentation(player.presentation()).empty(),"Authoring exploration does not introduce combat weapons");
-            for(auto cue:{GameplayCue::Shot,GameplayCue::Shatter,GameplayCue::Impact,GameplayCue::Chirp}){
+            for(auto cue:{GameplayCue::Shot,GameplayCue::Shatter,GameplayCue::Impact,GameplayCue::Chirp,GameplayCue::Lightning}){
                 auto pcm=gameplay_sound(cue);long energy=0;int peak=0;
                 for(auto sample:pcm){peak=std::max(peak,std::abs(int(sample)));energy+=std::abs(int(sample));}
                 require(!pcm.empty() && pcm.front()==0 && std::abs(int(pcm.back()))<2 && peak<7000 && energy>10000,"Synthesized placeholder cue is audible data with bounded gain and click-free endpoints");
@@ -413,12 +461,33 @@ int main(int argc, char **argv) {
             p.fire_button(true);for(int i=0;i<310;i++)p.move(0,0,1./120.);
             require(p.scene().Characters.empty() && level.encode()==original,"Manual area attack breaks both eligible targets and preserves authoring");
             require(p.presentation().fragments.size()==32,"Two broken targets emit sixteen cosmetic fragments each");
+            const auto presentationFragments=p.presentation().fragments;
+            require(std::all_of(presentationFragments.begin(),presentationFragments.end(),[](const auto& f){return bool(f.part);}),"Broken cubes retain cut source geometry rather than placeholder cubes");
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+            auto spinningLevel=level;spinningLevel.Game->Collision=true;spinningLevel.Characters.resize(1);auto& rotating=spinningLevel.Characters[0];rotating.Dynamic=true;rotating.VelocityX=3;rotating.AngularVelocityY=180;AdventureController movingSource(spinningLevel,{0,1.7,0});auto sample=movingSource.body_motion(rotating.Id,{rotating.X+1,rotating.Y+.5,rotating.Z});require(std::abs(sample.first.x-3)<.001&&std::abs(sample.first.z+3.141592653589793)<.001&&std::abs(sample.second.y-3.141592653589793)<.001,"Fragment velocity samples include source translation and rotation at the fracture point");
+            SceneData grappleLevel;grappleLevel.Game.emplace();grappleLevel.Game->SpawnZ=0;grappleLevel.Terrain.emplace();Character grappleWall;grappleWall.Shape="cube";grappleWall.Width=grappleWall.Height=8;grappleWall.Z=-5;grappleLevel.Characters={grappleWall};AdventurePlayer tinyFrames;tinyFrames.start(grappleLevel);tinyFrames.grapple_button(true);for(int i=0;i<600;++i){tinyFrames.move(0,0,1./480.);tinyFrames.move(0,0,.0000001);}require(tinyFrames.grapple_motion().state==GrappleMotion::State::Wall,"Grapple remains attached when timer and rendered-frame updates arrive almost together");
+            Character barrier;barrier.Shape="cube";barrier.Width=3;barrier.Height=1.2;barrier.Z=-2;grappleLevel.Characters.push_back(barrier);AdventurePlayer obstructed;obstructed.start(grappleLevel);obstructed.grapple_button(true);for(int i=0;i<240;++i)obstructed.move(0,0,1./120.);require(obstructed.grapple_motion().state==GrappleMotion::State::Free&&obstructed.position.z> -2,"A genuinely obstructed grapple still releases without crossing the blocking body");
+            auto physicalLevel=level;physicalLevel.Game->Collision=true;AdventurePlayer physical;physical.start(physicalLevel);physical.fire_button(true);physical.fire_button(false);
+            for(int i=0;i<310;++i)physical.move(0,0,1./120.);
+            auto firstPieces=physical.presentation().fragments;
+            require(firstPieces.size()==32,"Gameplay fracture registers pieces in the character collision world");
+            auto environmentBodies=physical.environment_objects();require(environmentBodies.size()==firstPieces.size(),"Physical fragments publish collision bounds for fog, particles, liquids and strikes");for(const auto& body:environmentBodies){auto b=object_bounds(body);require(std::isfinite(b.low.x)&&b.high.y>b.low.y,"Published fragment bounds remain finite and nondegenerate");}
+            for(int i=0;i<120;++i)physical.move(0,0,1./120.);
+            auto movedPieces=physical.presentation().fragments;bool tumbled=false,aboveGround=true;
+            for(size_t i=0;i<movedPieces.size();++i){const auto& f=movedPieces[i];tumbled=tumbled||std::abs(f.rotation[0])+std::abs(f.rotation[1])+std::abs(f.rotation[2])>.01;for(const auto& v:f.part->mesh.vertices){Vec3 q{f.rotation[0],f.rotation[1],f.rotation[2]};auto t=q.cross(v.position)*2;auto at=f.position+v.position+t*f.rotation[3]+q.cross(t);aboveGround=aboveGround&&at.y>-.08;}}
+            require(tumbled&&aboveGround,"Rigid fracture pieces tumble and remain above terrain after impact");
+            for(int i=0;i<1000;++i)physical.move(0,0,1./120.);
+            require(physical.presentation().fragments.empty(),"Expired rigid fragments are removed from gameplay");
+            physical.start(physicalLevel);require(physical.presentation().fragments.empty(),"Restart clears fracture presentation and replaces its collision world");
+#endif
             auto partialLevel=level;partialLevel.Characters={left};partialLevel.Characters[0].X=1.45;partialLevel.Characters[0].Z=-5;partialLevel.Characters[0].Width=.8;
             AdventurePlayer partialPlayer;partialPlayer.start(partialLevel);partialPlayer.fire_button(true);partialPlayer.fire_button(false);
             for(int i=0;i<310;i++)partialPlayer.move(0,0,1./120.);
             require(partialPlayer.scene().Characters.empty(),"Actual attack breaks a target whose edge enters the cone while its centre remains outside");
             p.fire_button(false);for(int i=0;i<300;i++)p.move(0,0,1./120.);
-            require(p.presentation().fragments.empty(),"Cosmetic shatter fragments expire after two seconds");
+            require(!p.presentation().fragments.empty(),"Physical debris remains available to collide and settle beyond the old cosmetic timeout");
+            for(int i=0;i<720;i++)p.move(0,0,1./120.);
+            require(p.presentation().fragments.empty(),"Physical debris is retired after its bounded eight-second lifetime");
             Character wall;wall.Shape="cube";wall.Width=5;wall.Height=4;wall.Depth=.2;wall.Z=-2;level.Characters.push_back(wall);
             p.start(level);p.fire_button(true);for(int i=0;i<310;i++)p.move(0,0,1./120.);
             require(p.scene().Characters.size()==3,"Solid wall blocks aimed attacks to targets behind it");
@@ -500,6 +569,9 @@ int main(int argc, char **argv) {
             require(grapple.state==GrappleMotion::State::Wall,"Wall attachment survives G release");
             auto jump=grapple.wall_jump();
             require(grapple.state==GrappleMotion::State::Free && jump.y==5 && jump.z==4,"Wall jump detaches upward and outward");
+            grapple.state=GrappleMotion::State::Wall;grapple.anchorVelocity={3,0,0};auto movingJump=grapple.wall_jump();require(movingJump.x==3&&movingJump.y==5,"Wall jump retains moving-anchor momentum");
+            grapple.release();resource={};grapple.press(resource,true,{0,2,0},{0,2,-5},{0,0,1},false);require(grapple.anchorVelocity.length()==0,"A new grapple cannot inherit stale velocity from its previous anchor");
+            GrappleMotion slowPull;MovementResources slowResources;Vec3 slowPosition{0,2,0};slowPull.press(slowResources,true,slowPosition,{0,2,-5},{0,0,1},false);bool overshot=false;for(int i=0;i<40;++i){slowPosition=slowPosition+slowPull.step(slowPosition,{},.05)*.05;overshot|=slowPosition.z< -4.500001;}require(!overshot&&slowPull.state==GrappleMotion::State::Wall,"Slow-frame grapple movement uses the full elapsed interval without overshooting its attachment point");
             grapple.reset();resource={};
             grapple.press(resource,true,{0,0,0},{0,5,0},{0,-1,0},true);
             for(int i=0;i<7;i++)grapple.step({0,0,0},{},.02);auto v=grapple.step({0,0,0},{1,0,0},.02);grapple.release();
@@ -850,11 +922,25 @@ int main(int argc, char **argv) {
                 insertedGroup.Characters.back().X - insertedGroup.Characters[priorGroupCount].X == 3,
                 "Guarded group command inserts the complete arrangement with spacing intact");
         }
-        TerrainFlow flow(TerrainData{}, {{0, 0, false, 2}, {2, 0, true, 1}});
+        auto flowFixture=std::unique_ptr<TerrainFlow>(new TerrainFlow(TerrainData{}, {{0, 0, false, 2}, {2, 0, true, 1}}));auto& flow=*flowFixture;
         for (int i = 0; i < 200; i++)
             flow.step(.025);
         require(std::abs(flow.volume() - 3) < 1e-10 && std::abs(flow.emitted - 3) < 1e-10,
                 "Closed fluid volume conserved after emission");
+        {
+            TerrainData lake;lake.WaterEnabled=true;lake.WaterLevel=.2;
+            auto waterFixture=std::unique_ptr<TerrainFlow>(new TerrainFlow(lake,{}));auto& water=*waterFixture;double volume=water.volume();
+            require(std::abs(volume-24*24*.2)<1e-8,"Authored water initializes a finite simulated volume");
+            for(int i=0;i<50;++i)water.step(.02);
+            require(std::abs(water.volume()-volume)<1e-8,"Initially resting authored water conserves mass");
+            double area=0;for(const auto& part:water.geometry())for(size_t j=0;j<part.mesh.indices.size();j+=3){auto a=part.mesh.vertices[part.mesh.indices[j]].position,b=part.mesh.vertices[part.mesh.indices[j+1]].position,c=part.mesh.vertices[part.mesh.indices[j+2]].position;area+=(b-a).cross(c-a).length()*.5;}
+            require(std::abs(area-24*24)<1e-7,"Shared liquid vertices preserve complete lake surface coverage");
+            Character pool;pool.Shape="lava";pool.X=2;pool.Y=.3;
+            std::vector<Character> pools{pool};auto moltenFixture=std::unique_ptr<TerrainFlow>(new TerrainFlow(TerrainData{}, {},pools));auto& molten=*moltenFixture;
+            double lavaVolume=molten.volume();auto initial=molten.lava;
+            for(int i=0;i<100;++i)molten.step(.01);
+            require(lavaVolume>0 && std::abs(molten.volume()-lavaVolume)<1e-8 && molten.lava!=initial,"Authored lava pool spreads while conserving its finite volume");
+        }
         FlowObstacleMask mask;
         mask.add(cubeMesh, cube);
         mask.finish();
@@ -1167,6 +1253,271 @@ int main(int argc, char **argv) {
             p.actorTelegraphs.clear();workers.build(p,reading);
             require(reading.serialBatches==1 && reading.participants==1,"Single battle job avoids waking extra workers");
         }
+        {
+            AdventurePlayer::Presentation p;p.showBody=false;p.showTelegraph=true;p.channelProgress=.6;
+            p.attackOrigin={2,0,3};p.attackAim={1,0,0};
+            auto cpu=player_presentation(p),gpu=player_presentation(p,true);
+            auto instance=std::find_if(gpu.begin(),gpu.end(),[](const auto& part){return part.gpuTelegraph.has_value();});
+            require(instance!=gpu.end() && instance->mesh.vertices.empty() && std::abs(instance->gpuTelegraph->x-2)<1e-6 && std::abs(instance->gpuTelegraph->progress-.6)<1e-6,
+                "Flat attack fills publish compact GPU instances instead of rebuilt CPU fill vertices");
+            auto countVertices=[](const auto& parts){size_t count=0;for(const auto& part:parts)count+=part.mesh.vertices.size();return count;};
+            require(countVertices(cpu)-countVertices(gpu)==size_t(24*int(std::ceil(p.telegraphRange/.5))*4),"Resident fill removes exactly the CPU fill grid and preserves outline geometry");
+            TerrainData terrain;terrain.Heights[0]=1;p.telegraphTerrain=&terrain;
+            auto sloped=player_presentation(p,true);
+            require(std::none_of(sloped.begin(),sloped.end(),[](const auto& part){return part.gpuTelegraph.has_value();}) && render_scene(render,nullptr,sloped)==render_scene(render,nullptr,player_presentation(p)),
+                "Non-flat terrain retains the identical terrain-following CPU effect");
+        }
+        {
+            PhysicalParticle debris;debris.position={0,1,0};debris.velocity={100,0,0};
+            std::vector<Bounds> obstacles{{{.5,0,-1},{.6,2,1}}};
+            step_particle(debris,.02,nullptr,obstacles);
+            require(debris.position.x<.5 && debris.velocity.x<0,"Fast debris sweeps against thin obstacles instead of tunneling");
+            PhysicalParticle pausedParticle;pausedParticle.position={.55,1,0};pausedParticle.velocity={1,2,3};auto pausedPosition=pausedParticle.position,pausedVelocity=pausedParticle.velocity;step_particle(pausedParticle,0,nullptr,obstacles);require((pausedParticle.position-pausedPosition).length()==0&&(pausedParticle.velocity-pausedVelocity).length()==0&&pausedParticle.age==0,"Paused physical particles retain position and velocity even inside an obstacle");
+            PhysicalParticle engulfed;engulfed.position={.55,1,0};step_particle(engulfed,.01,nullptr,obstacles);
+            require(engulfed.position.x<=.5-engulfed.radius || engulfed.position.x>=.6+engulfed.radius,"A moving obstacle cannot retain an engulfed particle inside its collision volume");
+            PhysicalParticle falling;falling.position={0,2,0};
+            for(int i=0;i<1200;++i)step_particle(falling,1./240,nullptr,{});
+            require(falling.position.y>=falling.radius-1e-6 && falling.position.y<falling.radius+.01 && std::abs(falling.velocity.y)<.1,
+                "Debris collides, bounces and settles on terrain instead of falling through it");
+        }
+        {
+            SceneData storm;Character bolt;bolt.Shape="chaos-lightning";bolt.TargetX=0;bolt.TargetY=-1;bolt.TargetZ=0;storm.Characters={bolt};
+            EnvironmentEffects effects;
+            for(int i=0;i<8;++i)effects.step(storm,.01,i*.01);
+            auto hit=effects.contact(bolt.Id);
+            require(hit && std::abs(hit->y)<.001 && effects.spark_count()>0,"Lightning reaches terrain and emits independently simulated impact sparks");
+            auto first=render_scene(storm,nullptr,effects.geometry(storm),nullptr,true);
+            effects.step(storm,.02,.1);
+            require(first!=render_scene(storm,nullptr,effects.geometry(storm),nullptr,true),"Lightning sparks move between rendered scene packets");
+            Character block;block.Shape="cube";block.Y=1;storm.Characters.push_back(block);
+            effects.step(storm,.01,.11);hit=effects.contact(bolt.Id);
+            auto box=object_bounds(block);
+            require(hit && std::abs(hit->y-box.high.y)<.001,"Lightning terminates at the nearest solid object before terrain");
+            RenderSceneCache effectCache;
+            render_scene(storm,nullptr,effects.geometry(storm),&effectCache,true);
+            require(render_scene(storm,nullptr,{},&effectCache,false)==render_scene(storm),"Leaving runtime effects restores authored lightning in cached scene packets");
+            effects.reset();require(!effects.contact(bolt.Id) && effects.spark_count()==0,"Scene reset clears lightning contacts and particles");
+            storm.Characters[0].LightningTargetId=block.Id;storm.Characters[0].TargetX=0;storm.Characters[0].TargetY=.5;storm.Characters[0].TargetZ=0;
+            storm.Characters[1].X=1;effects.step(storm,.03,.14);auto contact=effects.contact(bolt.Id);require(contact&&contact->x>.4,"Lightning follows a referenced moving object and contacts its surface");
+            auto saved=SceneData::decode(storm.encode());require(saved.Characters[0].LightningTargetId==block.Id,"Lightning target references persist through scene serialization");
+            auto grouped=decode_object_group(encode_object_group(storm.Characters));require(grouped[0].LightningTargetId==grouped[1].Id&&grouped[1].Id!=block.Id,"Reusable lightning groups reconnect to their copied targets");
+            auto offset=grouped[0].TargetX;SceneData placement;place_object_group(grouped,placement,4,3,false,false,false);require(grouped[0].TargetX==offset,"Moving a lightning group preserves target-local offsets");
+            bool missingTargetRejected=false;try{encode_object_template(storm.Characters[0]);}catch(...){missingTargetRejected=true;}require(missingTargetRejected,"Reusable emitters cannot silently lose required target references");
+            storm.Characters.pop_back();effects.step(storm,.03,.17);require(!effects.contact(bolt.Id),"Removing a lightning target stops the stale discharge");
+
+        }
+        {
+            SceneData moving;moving.Terrain.emplace();moving.Terrain->WaterEnabled=true;moving.Terrain->WaterLevel=.1;
+            Character fixed;fixed.Shape="grass";Character body;body.Shape="rock";body.Dynamic=true;body.Y=2;moving.Characters={fixed,body};
+            auto liquidFixture=std::unique_ptr<TerrainFlow>(new TerrainFlow(*moving.Terrain,{}));auto& liquid=*liquidFixture;RenderSceneCache cache;
+            auto first=render_scene(moving,&liquid,{},&cache);
+            require(first==render_scene(moving,&liquid),"Cached static geometry with liquid and rigid body preserves the complete packet");
+            moving.Characters[1].Y=1;
+            auto second=render_scene(moving,&liquid,{},&cache);
+            require(first!=second && second==render_scene(moving,&liquid),"Rigid-body motion updates without invalidating static terrain and grass");
+        }
+        {
+            SceneData material;Character c;c.Shape="cube";c.Friction=.2;c.Restitution=.8;material.Characters={c};auto restored=SceneData::decode(material.encode());
+            require(restored.Characters[0].Friction==.2&&restored.Characters[0].Restitution==.8,"Physical materials survive scene save and load");
+            auto old=json::parse(material.encode());old["Characters"][0].erase("Friction");old["Characters"][0].erase("Restitution");auto defaults=SceneData::decode(old.dump());
+            require(defaults.Characters[0].Friction==.72&&defaults.Characters[0].Restitution==.03,"Older scenes retain existing physical material defaults");
+            bool rejected=false;try{c.Restitution=1.1;c.validate();}catch(...){rejected=true;}require(rejected,"Invalid bounce coefficients cannot enter a scene");
+        }
+        {
+            TerrainData sloped;sloped.WaterEnabled=true;sloped.WaterLevel=2;
+            for(int z=0;z<TerrainData::N;++z)for(int x=0;x<TerrainData::N;++x)sloped.Heights[z*TerrainData::N+x]=x*.01;
+            auto water=std::make_unique<TerrainFlow>(sloped,std::vector<LiquidSource>{});bool flat=true;for(const auto& part:water->geometry())for(const auto& v:part.mesh.vertices)flat=flat&&std::abs(v.position.y-2.009)<1e-8;
+            require(flat,"A level liquid surface remains level over sloping terrain without cell-edge spikes");
+            sloped.Lava=true;auto lava=std::make_unique<TerrainFlow>(sloped,std::vector<LiquidSource>{});require(lava->snapshot().at(0,0).second==2800,"Shared liquid snapshots distinguish lava density from water");
+        }
+        #ifdef STARLIGHT_CHARACTER_CONTROLLER
+        {
+            SceneData moving;moving.Game.emplace();Character platform;platform.Shape="cube";platform.Width=platform.Depth=4;platform.Route={{10,0}};platform.Speed=2;moving.Characters={platform};AdventureController controller(moving,{0,2.7,0});Vec3 eye{0,2.7,0};
+            for(int i=0;i<90;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});
+            require(eye.x>.7&&std::abs(eye.y-2.7)<.15,"A moving platform carries a stationary character without slipping through it");
+            auto takeoff=eye;eye=controller.step(eye,{},1./120.,true,90./120.,{});for(int i=91;i<121;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});
+            require(eye.x>takeoff.x+.35&&eye.y>takeoff.y+.5,"Jumping retains platform horizontal momentum across airborne frames");
+        }
+        {
+            TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=2;auto liquidFlowFixture=std::unique_ptr<TerrainFlow>(new TerrainFlow(terrain,{}));auto& flow=*liquidFlowFixture;auto liquid=std::make_shared<const LiquidSnapshot>(flow.snapshot());
+            require(liquid->at(0,0).second==1000&&liquid->at(20,0).second==0&&flow.liquid_at(20,0).second==0,"Liquid snapshots retain density and reject positions outside the simulated domain");
+            auto floatHeight=[&](double density){SceneData scene;scene.Game.emplace();Character c;c.Shape="cube";c.Dynamic=true;c.X=3;c.Y=2;c.Density=density;scene.Characters={c};AdventurePlayer p;p.start(scene);p.liquids(liquid);for(int i=0;i<600;++i)p.move(0,0,1./120.);return p.scene().Characters.front().Y;};
+            auto light=floatHeight(500),heavy=floatHeight(5000);
+            require(light>1&&light<2.2&&heavy<.2,"Shared gameplay bodies float or sink according to liquid and body density");
+            SceneData scene;scene.Game.emplace();AdventureController controller(scene,{0,1.7,0});controller.liquids(liquid);Character cube;cube.Shape="cube";auto piece=fracture_convex(shape_geometry(cube).front().mesh,{1,1,1}).front();auto id=controller.add_debris(piece.part->mesh,{3,1,0},{},500,.72,.03);Vec3 eye{0,1.7,0},at;std::array<double,4> rotation;
+            for(int i=0;i<600;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});controller.debris_pose(id,at,rotation);
+            require(at.y>1.5&&at.y<2.5,"Fracture bodies receive buoyancy in the same character world");controller.remove_debris(id);
+            controller.liquids(nullptr);for(int i=0;i<5;++i)eye=controller.step(eye,{},1./120.,false,5+i/120.,{});
+            require(true,"Removing floating debris clears liquid-force registrations");
+        }
+        {
+            SceneData level;level.Game.emplace();Character body;body.Shape="cube";body.Dynamic=true;body.X=3;body.Y=4;body.Size=.3;body.JointKind=1;level.Characters={body};
+            AdventurePlayer player;player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);
+            require(std::abs(player.scene().Characters[0].Y-4)<.02,"Fixed world joints hold a body against gravity");
+            level.Characters[0].JointKind=3;level.Characters[0].JointTargetY=2;level.Characters[0].JointLength=2;
+            player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);
+            require(std::abs(player.scene().Characters[0].Y-4)<.05,"Rope joints enforce a maximum distance to the world anchor");
+            level.Characters[0].JointKind=4;level.Characters[0].JointLength=1;
+            player.start(level);for(int i=0;i<480;++i)player.move(0,0,1./120.);
+            require(player.scene().Characters[0].Y>4.7&&player.scene().Characters[0].Y<5.1,"Spring joints converge toward their rest length under gravity");
+            level.Characters[0].JointKind=2;level.Characters[0].JointY=1;level.Characters[0].JointX=1;level.Characters[0].JointAxisY=0;level.Characters[0].JointAxisZ=1;
+            player.start(level);for(int i=0;i<180;++i)player.move(0,0,1./120.);
+            auto pivot=world_point(player.scene().Characters[0],{1,1,0});auto original=world_point(level.Characters[0],{1,1,0});
+            require((pivot-original).length()<.03,"Hinges preserve their pivot as an offset body swings");
+            level.Characters[0].JointAngleMin=level.Characters[0].JointAngleMax=0;player.start(level);for(int i=0;i<180;++i)player.move(0,0,1./120.);
+            require(std::abs(player.scene().Characters[0].X-level.Characters[0].X)<.03&&std::abs(player.scene().Characters[0].Y-level.Characters[0].Y)<.03,"Zero-width hinge limits stop gravity-driven rotation at the authored angle");
+            level.Characters[0].JointAngleMin=-180;level.Characters[0].JointAngleMax=180;
+            level.Characters[0].JointKind=5;player.start(level);for(int i=0;i<180;++i)player.move(0,0,1./120.);
+            require((world_point(player.scene().Characters[0],{1,1,0})-original).length()<.03,"Ball joints preserve their pivot while allowing free rotation");
+            level.Characters[0].JointKind=6;level.Characters[0].JointAxisY=1;level.Characters[0].JointAxisZ=0;level.Characters[0].JointLength=1;
+            player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);
+            require(std::abs(player.scene().Characters[0].Y-3)<.04&&std::abs(player.scene().Characters[0].X-3)<.01,"Slider joints constrain translation to their axis and travel limit");
+            Character target;target.Shape="cube";target.X=3;target.Y=6;target.Size=.2;
+            level.Characters[0].JointKind=3;level.Characters[0].JointX=level.Characters[0].JointY=0;level.Characters[0].JointTargetY=0;level.Characters[0].JointTargetId=target.Id;level.Characters[0].JointLength=2;level.Characters.push_back(target);
+            auto restored=SceneData::decode(level.encode());require(restored.Characters[0].JointTargetId==target.Id&&restored.Characters[0].JointKind==3,"Joint settings and references survive save and reload");
+            auto copies=decode_object_group(encode_object_group(level.Characters));require(copies[0].JointTargetId==copies[1].Id,"Copied body groups reconnect joints to copied targets");
+            AdventureController controller(level,{0,1.7,0});Vec3 eye{0,1.7,0};for(int i=0;i<120;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});
+            controller.sync_dynamic(level);double held=level.Characters[0].Y;
+            for(int i=0;i<120;++i)eye=controller.step(eye,{},1./120.,false,1+i/120.,{target.Id});controller.sync_dynamic(level);
+            require(held>3.9&&level.Characters[0].Y<2,"Removing a joint target detaches the body without a stale constraint");
+            bool invalid=false;try{auto c=body;c.JointTargetId=c.Id;c.validate();}catch(...){invalid=true;}require(invalid,"Self-referencing joints are rejected");
+        }
+        {
+            TerrainData currentTerrain;auto movingWater=std::make_unique<TerrainFlow>(currentTerrain,std::vector<LiquidSource>{});movingWater->water.fill(1);for(int z=0;z<48;++z)for(int x=0;x<24;++x)movingWater->water[z*48+x]=2;double waterVolume=movingWater->volume();movingWater->step(.025);auto current=movingWater->velocity_at(-.25,.25);auto currentSnapshot=std::make_shared<LiquidSnapshot>(movingWater->snapshot());require(current.x>0&&std::abs(current.z)<1e-8&&std::abs(movingWater->volume()-waterVolume)<1e-8,"Liquid transport publishes conservative currents from high water toward low water");require((currentSnapshot->velocity_at(-.25,.25)-current).length()<1e-8&&currentSnapshot->velocity_at(13,0).length()==0,"Immutable liquid snapshots preserve current samples and reject dry world boundaries");
+            SceneData drivenScene;drivenScene.Game.emplace();Character driven;driven.Shape="cube";driven.Dynamic=true;driven.Size=.5;driven.Y=4;driven.X=3;driven.CombatHealth=100;drivenScene.Characters={driven};AdventureController drivenController(drivenScene,{0,1.7,0});Vec3 drivenEye{0,1.7,0};for(int i=0;i<180;++i){drivenController.sync_dynamic(drivenScene);auto c=drivenScene.Characters[0];drivenController.move_actor(c.Id,{c.X-.5/120,c.Y,c.Z},1./120.);drivenEye=drivenController.step(drivenEye,{},1./120.,false,i/120.,{});}drivenController.sync_dynamic(drivenScene);require(drivenScene.Characters[0].Y<.2&&drivenScene.Characters[0].X<2.6,"Driving a dynamic combat body preserves gravity instead of switching it to kinematic mode");
+            SceneData driftScene;driftScene.Game.emplace();Character floating;floating.Shape="cube";floating.Dynamic=true;floating.Size=.4;floating.Density=500;floating.X=3;floating.Y=1.8;driftScene.Characters={floating};AdventureController driftController(driftScene,{0,1.7,0});for(auto& cell:currentSnapshot->cells)cell={2.5,1000};for(auto& velocity:currentSnapshot->currents)velocity={1,0,0};driftController.liquids(currentSnapshot);Vec3 driftEye{0,1.7,0};for(int i=0;i<240;++i)driftEye=driftController.step(driftEye,{},1./120.,false,i/120.,{});driftController.sync_dynamic(driftScene);require(driftScene.Characters[0].X>3.4,"Shared-world floating props are carried horizontally by the simulated liquid current");require(driftEye.x>.4,"Liquid currents carry an immersed player without movement input");
+            TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=2;auto flow=std::make_unique<TerrainFlow>(terrain,std::vector<LiquidSource>{});double volume=flow->volume();
+            flow->impulse(0,0,1);double peak=flow->wave_energy();for(int i=0;i<30;++i)flow->step(1./120.);
+            require(std::abs(flow->liquid_at(.5,0).first-2)>1e-5,"Liquid impulses propagate to neighboring surface cells");
+            for(int i=0;i<1200;++i)flow->step(1./120.);
+            require(flow->wave_energy()<peak*.001&&std::abs(flow->volume()-volume)<1e-8,"Surface waves damp without creating or deleting fluid volume");
+            Character falling;falling.Shape="cube";falling.Dynamic=true;falling.Y=2.1;flow->interact(std::vector<Character>{falling},.025,0);falling.Y=1.9;flow->interact(std::vector<Character>{falling},.025,.025);
+            require(!flow->splashes().empty()&&flow->wave_energy()>0,"A body crossing the water surface generates waves and a splash");
+            auto risingWater=std::make_unique<TerrainFlow>(terrain,std::vector<LiquidSource>{});falling.Y=2.1;risingWater->interact(std::vector<Character>{falling},.025,0);risingWater->water.fill(2.3);falling.Y=1.9;risingWater->interact(std::vector<Character>{falling},.025,.025);require(!risingWater->splashes().empty(),"Falling-body contact remains detectable when displaced water rises between samples");
+            EnvironmentEffects effects;for(const auto& event:flow->splashes())effects.splash(event);require(effects.splash_count()>0,"Water impacts create independently moving droplets");
+            SceneData waterScene;waterScene.Terrain=terrain;for(int i=0;i<200;++i)effects.step(waterScene,.01,i*.01,flow.get());require(effects.splash_count()==0,"Droplets reenter liquid or expire without accumulating");
+        }
+        {
+            SceneData storm;storm.Game.emplace();Character bolt;bolt.Shape="chaos-lightning";bolt.X=3;bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.TargetZ=0;bolt.LightningDamage=7;bolt.LightningChains=1;bolt.BranchSpread=0;bolt.LightningChainRadius=3;bolt.CombatTeam=1;
+            Character target;target.Shape="cube";target.X=3;target.CombatHealth=100;target.CombatTeam=2;Character chained=target;chained.Id=new_id();chained.X=5;storm.Characters={bolt,target,chained};
+            auto path=trace_lightning(bolt,storm,0);require(path.size()==2&&path[0].hit==target.Id&&path[1].hit==chained.Id,"Lightning chains to another body without revisiting its first contact");
+            AdventurePlayer player;player.start(storm);for(int i=0;i<6;++i)player.move(0,0,.01);
+            require(player.combat_actors().at(target.Id).health==93&&player.combat_actors().at(chained.Id).health==93,"A lightning discharge damages both contacted hostile bodies once");
+            require(player.presentation().lightning==1,"Lightning audio receives one event per discharge rather than one per frame");
+            for(int i=0;i<10;++i)player.move(0,0,.01);require(player.combat_actors().at(target.Id).health==93,"Lightning damage is not multiplied by render frame rate");
+            auto restored=SceneData::decode(storm.encode());require(restored.Characters[0].LightningDamage==7&&restored.Characters[0].LightningChains==1,"Lightning damage and chain settings survive serialization");
+            player.start(storm);require(player.presentation().lightning==0,"Restart clears lightning discharge and audio history");
+        }
+        {
+            SceneData fire;Character emitter;emitter.Shape="fire";emitter.ParticleRate=0;emitter.ParticleLifetime=2;emitter.ParticleWindX=3;fire.Characters={emitter};EnvironmentEffects effects;
+            for(int i=0;i<20;++i)effects.step(fire,.025,i*.025);require(effects.flame_count()==0,"Disabled particle emission produces no particles");
+            fire.Characters[0].ParticleRate=100;for(int i=0;i<20;++i)effects.step(fire,.025,.5+i*.025);require(effects.flame_count()==50,"Authored particle emission rate is independent of frame count");
+            auto saved=SceneData::decode(fire.encode());require(saved.Characters[0].ParticleWindX==3&&saved.Characters[0].ParticleLifetime==2&&saved.Characters[0].ParticleRate==100,"Particle forces and lifetime survive save and reload");
+            fire.Characters.clear();for(int i=0;i<120;++i)effects.step(fire,.025,1+i*.025);require(effects.flame_count()==0,"Removing an emitter lets its independent particles expire");
+        }
+        {
+            SceneData level;level.Game.emplace();Character body;body.Shape="cube";body.Dynamic=true;body.Density=50;body.X=3;body.Y=2;level.Characters={body};AdventureController controller(level,{0,1.7,0});
+            controller.impulse(body.Id,{3.4,2.8,0},{400,0,0});Vec3 eye{0,1.7,0};for(int i=0;i<60;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});controller.sync_dynamic(level);auto& moved=level.Characters[0];
+            require(moved.X>3.2&&moved.PhysicsRotation&&std::abs((*moved.PhysicsRotation)[2])>.01,"Off-center impacts transfer linear and angular momentum to physical props");
+            level.Game->ProjectileMass=.1;auto saved=SceneData::decode(level.encode());require(saved.Game->ProjectileMass==.1,"Projectile mass survives scene save and reload");
+        }
+        {
+            SceneData storm;storm.Game.emplace();storm.Game->SpawnZ=0;Character bolt;bolt.Shape="chaos-lightning";bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.TargetZ=0;bolt.LightningDamage=9;bolt.CombatTeam=2;storm.Characters={bolt};AdventurePlayer player;player.start(storm);
+            auto path=trace_lightning(bolt,storm,0,player.body_bounds());require(path.front().hit==lightning_player_id&&path.front().target.y>1.7,"Lightning intersects the player's collision body before reaching the ground");
+            for(int i=0;i<6;++i)player.move(0,0,.01);require(player.health()==91,"Hostile lightning applies one discharge of damage to the player");
+            storm.Characters[0].CombatTeam=1;player.start(storm);for(int i=0;i<6;++i)player.move(0,0,.01);require(player.health()==100,"Friendly lightning preserves player team immunity");
+        }
+        {
+            auto swim=[](double dt){SceneData level;level.Game.emplace();AdventureController controller(level,{0,1.7,0});auto water=std::make_shared<LiquidSnapshot>();for(auto& c:water->cells)c={2.5,1000};controller.liquids(water);Vec3 eye{0,1.7,0};for(int i=0;i<int(12/dt);++i)eye=controller.step(eye,{},dt,false,i*dt,{});return eye;};
+            auto slow=swim(1./30.),fast=swim(1./240.);require(slow.y>2.35&&slow.y<2.65,"Submerged character rises and settles with its head above the water surface");
+            require((slow-fast).length()<.04,"Character buoyancy remains consistent across render rates");
+            SceneData level;level.Game.emplace();AdventureController controller(level,{0,2.5,0});auto water=std::make_shared<LiquidSnapshot>();for(auto& c:water->cells)c={2.5,1000};controller.liquids(water);Vec3 eye{0,2.5,0};eye=controller.step(eye,{},.025,true,0,{});require(eye.y>2.53,"Jump input provides upward swimming motion while immersed");
+            for(auto& cell:water->cells)cell={-INFINITY,0};eye=controller.step(eye,{},.025,false,.025,{});require(std::isfinite(eye.y),"Leaving a liquid through a dry snapshot cell restores gravity without an invalid height");
+            controller.liquids({});for(int i=0;i<300;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});require(eye.y<1.75,"Leaving liquid restores normal gravity and ground contact");
+        }
+        {
+            SceneData level;level.Game.emplace();Character body;body.Shape="cube";body.Dynamic=true;body.X=3;body.Y=10;body.VelocityX=2;body.AngularVelocityY=90;body.JointAngleMin=-30;body.JointAngleMax=60;level.Characters={body};
+            auto restored=SceneData::decode(level.encode());require(restored.Characters[0].VelocityX==2&&restored.Characters[0].AngularVelocityY==90&&restored.Characters[0].JointAngleMin==-30&&restored.Characters[0].JointAngleMax==60,"Authored launch velocity, spin and hinge limits survive save and reload");
+            AdventurePlayer player;player.start(level);for(int i=0;i<30;++i)player.move(0,0,1./120.);auto moved=player.scene().Characters[0];require(moved.X>3.45&&moved.PhysicsRotation&&std::abs((*moved.PhysicsRotation)[1])>.15,"Gameplay dynamic bodies begin with authored linear and angular velocity");
+            player.start(level);for(int i=0;i<30;++i)player.move(0,0,1./120.);require(std::abs(player.scene().Characters[0].X-moved.X)<.001,"Restart restores authored body momentum without carrying runtime velocity");
+        }
+        {
+            SceneData level;level.Game.emplace();Character weight;weight.Shape="cube";weight.Dynamic=true;weight.Size=.2;weight.Density=1000;weight.X=3;weight.Y=3;weight.JointKind=3;weight.JointY=1;weight.JointTargetY=2.2;weight.JointLength=2;weight.JointSegments=12;level.Characters={weight};
+            AdventurePlayer player;player.start(level);for(int i=0;i<360;++i)player.move(0,0,1./120.);auto body=player.scene().Characters[0];require(body.JointRuntimePoints.size()==13,"Segmented rope publishes every physical link endpoint");
+            double length=0;for(size_t i=1;i<body.JointRuntimePoints.size();++i){auto a=body.JointRuntimePoints[i-1],b=body.JointRuntimePoints[i];length+=Vec3{a[0]-b[0],a[1]-b[1],a[2]-b[2]}.length();}require(length>1.95&&length<2.08&&body.Y>2.9,"Segmented rope supports its load without stretching beyond solver tolerance");
+            auto saved=SceneData::decode(level.encode());require(saved.Characters[0].JointSegments==12&&saved.Characters[0].JointRuntimePoints.empty(),"Rope settings persist while simulated link positions remain runtime-only");
+            Character anchor;anchor.Shape="cube";anchor.X=3;anchor.Y=5.2;anchor.Size=.1;level.Characters.push_back(anchor);level.Characters[0].JointTargetId=anchor.Id;level.Characters[0].JointTargetY=0;AdventureController controller(level,{0,1.7,0});Vec3 eye{0,1.7,0};for(int i=0;i<30;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});for(int i=0;i<180;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{anchor.Id});controller.sync_dynamic(level);require(level.Characters[0].Y<1&&level.Characters[0].JointRuntimePoints.empty(),"Removing a rope anchor releases the load and removes its physical links");
+        }
+        {
+            SceneData level;level.Game.emplace();level.Game->SpawnZ=0;Character shooter;shooter.Shape="cube";shooter.Z=-6;shooter.RotationY=180;shooter.CombatHealth=100;shooter.CombatTeam=2;shooter.CombatAutoAttack=true;shooter.CombatProjectileSpeed=4;level.Characters={shooter};AdventurePlayer player;player.start(level);bool flying=false,delayed=false;for(int i=0;i<600;++i){player.move(0,0,1./120.);if(!flying&&!player.presentation().projectiles.empty()){flying=true;delayed=player.health()==100;}}require(flying&&delayed,"Enemy attacks launch traveling projectiles before player damage is applied");require(player.health()<100,"Enemy projectile impacts damage the contacted player");
+            auto saved=SceneData::decode(level.encode());require(saved.Characters[0].CombatProjectileSpeed==4,"Actor projectile settings survive scene save and reload");
+            ProjectilePhysics shots;shots.fire({0,1,0},{1,0,0},100,0,"owner",2,.1,3,.75);std::vector<ProjectileTarget> targets{{"owner",{{-.5,0,-.5},{.5,2,.5}},{{-.5,0,-.5},{.5,2,.5}}},{"victim",{{1,0,-.5},{2,2,.5}},{{1,0,-.5},{2,2,.5}}}};auto hits=shots.step(.02,nullptr,targets);require(hits.size()==1&&hits[0].target=="victim"&&hits[0].team==2&&hits[0].mass==.1&&hits[0].control==3&&hits[0].accuracy==.75,"Projectiles ignore their shooter and retain team, momentum and control metadata at impact");
+        }
+        {
+            auto right=spatial_sound({10,0,0},{},{0,0,-1},{0,1,0}),left=spatial_sound({-10,0,0},{},{0,0,-1},{0,1,0}),distantSound=spatial_sound({343,0,0},{},{0,0,-1},{0,1,0});require(right.pan>.99&&left.pan<-.99&&right.gain==.5&&std::abs(distantSound.delay-1)<1e-9&&distantSound.gain<right.gain,"Spatial thunder carries direction, distance attenuation and sound travel delay");
+            std::array<short,3> mono{1000,-1000,0};auto stereo=stereo_sound(mono,1,1);require(stereo.size()==6&&stereo[0]==0&&stereo[1]==1000&&stereo[3]==-1000,"Stereo panning preserves signed audio samples in the intended channel");
+            SceneData storm;storm.Game.emplace();Character bolt;bolt.Shape="chaos-lightning";bolt.X=8;bolt.TargetX=0;bolt.TargetY=0;storm.Characters={bolt};AdventurePlayer player;player.start(storm);for(int i=0;i<6;++i)player.move(0,0,.01);auto p=player.presentation();require(p.lightningSounds.size()==1&&p.lightningSounds[0].serial==p.lightning&&p.lightningSounds[0].position.x==8,"Lightning records one spatial sound event per physical discharge");player.start(storm);require(player.presentation().lightningSounds.empty(),"Scene restart clears pending lightning sound history");
+        }
+        {
+            SceneData level;level.Game.emplace();Character model;model.Asset=utf8(solid_glb_fixture(folder).wstring());model.Dynamic=true;model.X=3;model.Y=3;model.VelocityX=1;level.Characters={model};level.validate();AdventurePlayer player;player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);auto moved=player.scene().Characters[0];require(moved.Y<.2&&moved.X>3.5&&moved.PhysicsRotation.has_value(),"Imported solid models participate in shared gameplay rigid-body physics");
+            auto sculpt=model;sculpt.Asset.clear();Character cube;cube.Shape="cube";sculpt.Sculpt=sculpt_from(object_mesh(cube));sculpt.validate();require(!sculpt.Shape&&sculpt.Dynamic,"Standalone sculpt geometry can be authored as a dynamic body without a primitive shape tag");
+        }
+        {
+            auto concave=concave_solid_fixture();require(!closed_convex_mesh(concave),"Concave L-shaped solid is not mislabeled as convex");auto pieces=fracture_mesh(concave,{.4,.5,.6});double total=0;bool convex=true;for(const auto& piece:pieces){convex&=closed_convex_mesh(piece.part->mesh);double v=0;for(size_t i=0;i<piece.part->mesh.indices.size();i+=3){auto& m=piece.part->mesh;auto a=m.vertices[m.indices[i]].position,b=m.vertices[m.indices[i+1]].position,c=m.vertices[m.indices[i+2]].position;v+=a.dot(b.cross(c))/6.;}total+=std::abs(v);}require(pieces.size()==20&&convex&&std::abs(total-3)<1e-6,"Concave star-shaped fracture produces closed convex pieces conserving source volume");
+            SceneData level;level.Game.emplace();level.Game->SpawnZ=0;Character target;target.Sculpt=sculpt_from(concave);target.GameplayRole="breakable";target.X=-.5;target.Z=-4;level.Characters={target};AdventurePlayer player;player.start(level);player.fire_button(true);player.fire_button(false);for(int i=0;i<360;++i)player.move(0,0,1./120.);require(player.scene().Characters.empty()&&player.presentation().fragments.size()==20,"Concave sculpt destruction creates physical source-shaped pieces in gameplay");
+            concave.indices.resize(concave.indices.size()-3);require(fracture_star_shaped(concave,{1,1,1}).empty(),"Open surfaces are rejected by solid tetrahedral fracture");
+        }
+        {
+            Character routed;routed.Shape="cube";routed.Width=3;routed.Depth=1;routed.Route={{4,0}};routed.Speed=1;auto posed=route_pose(routed,1);auto bounds=object_bounds(posed);require(std::abs(posed.X-1)<1e-9&&std::abs(bounds.high.x-bounds.low.x-1)<1e-9&&std::abs(bounds.high.z-bounds.low.z-3)<1e-9,"Routed collision and effect bounds use the same heading as visible geometry");require(routed.X==0&&routed.Route.size()==1&&!routed.PhysicsRotation,"Sampling a routed pose preserves authored route data");
+            Mesh panel;for(auto p:{Vec3{-1,0,-1},Vec3{1,0,-1},Vec3{1,0,1},Vec3{-1,0,1}})panel.vertices.push_back({p});panel.indices={0,2,1,0,3,2};auto shards=fracture_mesh(panel,{.2,.4,.8});require(shards.size()==2,"Open surface panels create source-shaped physical shards");for(const auto& shard:shards)require(closed_convex_mesh(shard.part->mesh)&&shard.radius>0,"Thin panel shards acquire closed collision thickness");
+            auto ring=torus_fixture();auto shells=fracture_surface(ring,{.5,.6,.7},false);require(shells.size()>1&&shells.size()<=64,"Closed meshes with holes retain source-shaped physical shell fragments");size_t shellTriangles=0;bool opening=true;for(const auto& shard:shells){shellTriangles+=shard.part->mesh.indices.size()/3;for(const auto& vertex:shard.part->mesh.vertices){auto at=vertex.position+shard.center;opening&=std::hypot(at.x,at.z)>1.45;}}require(opening&&shellTriangles==ring.indices.size()/3*8,"Hollow fracture preserves the visible opening and every thickened source face");auto hollowPieces=fracture_mesh(ring,{.5,.6,.7});require(hollowPieces.size()>1,"Automatic fracture supports a closed object with a through-hole");
+            auto uShape=u_solid_fixture();require(fracture_star_shaped(uShape,{1,1,1}).empty(),"U-shaped source has no single visibility kernel");auto uPieces=fracture_mesh(uShape,{1,1,1});require(uPieces.size()>1,"Non-star-shaped concave objects decompose into physical fragments");double uVolume=0;for(const auto& piece:uPieces){require(closed_convex_mesh(piece.part->mesh),"Concave split produces watertight convex collision fragments");auto& m=piece.part->mesh;double volume=0;for(size_t i=0;i<m.indices.size();i+=3)volume+=m.vertices[m.indices[i]].position.dot(m.vertices[m.indices[i+1]].position.cross(m.vertices[m.indices[i+2]].position))/6.;uVolume+=std::abs(volume);}require(std::abs(uVolume-7)<1e-7,"Concave fracture preserves solid volume without filling the U-shaped opening");
+            SceneData meadow;Character grass;grass.Shape="grass";meadow.Characters={grass};EnvironmentEffects plants;plants.step(meadow,.025,.025);auto original=plants.geometry(meadow);Bounds contact{{-.6,0,-.6},{.6,1,.6}};
+            for(int i=0;i<40;++i)plants.step(meadow,.025,(i+2)*.025,nullptr,contact);auto pressed=plants.geometry(meadow);bool roots=true,bent=false;for(size_t i=0;i<original[0].mesh.vertices.size();++i){auto a=original[0].mesh.vertices[i].position,b=pressed[0].mesh.vertices[i].position;if(a.y<1e-9)roots&=(a-b).length()<1e-9;else bent|=(a-b).length()>.03;}require(roots&&bent,"Grass bends around contacting bodies while its roots stay fixed");
+            auto before=pressed[0].mesh.vertices.back().position;for(int i=0;i<80;++i)plants.step(meadow,.025,1.05);auto recovered=plants.geometry(meadow);require((recovered[0].mesh.vertices.back().position-before).length()>.001,"Grass releases contact deformation and recovers under wind");plants.reset();require(plants.geometry(meadow).empty(),"Scene reset clears plant deformation state");
+            PhysicalParticle coarse,fine;coarse.position=fine.position={0,20,0};coarse.velocity=fine.velocity={2,1,0};coarse.drag=fine.drag=.6;
+            for(int i=0;i<30;++i)step_particle(coarse,1./30,nullptr,{}, {.3,0,.15},{0,4.19,0});
+            for(int i=0;i<240;++i)step_particle(fine,1./240,nullptr,{}, {.3,0,.15},{0,4.19,0});
+            require((coarse.position-fine.position).length()<1e-8&&(coarse.velocity-fine.velocity).length()<1e-8,"Particle lift and wind integrate consistently at 30 and 240 updates per second");
+            auto liquid=std::make_unique<TerrainFlow>(TerrainData{},std::vector<LiquidSource>{});liquid->water.fill(1);liquid->water[TerrainFlow::index(.25,.25)]=2;
+            auto left=liquid->liquid_at(-.00001,.25),right=liquid->liquid_at(.00001,.25);require(std::abs(left.first-right.first)<.0001,"Buoyancy surface stays continuous across wet cell boundaries");
+            SceneData burning;Character burner;burner.Shape="fire";burner.ParticleRate=100;burning.Characters={burner};EnvironmentEffects burningEffects;
+            for(int i=0;i<10;++i)burningEffects.step(burning,.025,i*.025);require(burningEffects.flame_count()>0,"Dry fire emits physical flames before flooding");
+            burningEffects.step(burning,.025,.275,liquid.get());require(burningEffects.flame_count()==0,"Flooding extinguishes existing flames and submerged fire emission");
+            for(int i=0;i<40;++i)burningEffects.step(burning,.025,.3+i*.025,liquid.get());require(burningEffects.flame_count()==0,"Submerged emitters do not accumulate deferred bursts");
+            liquid->water.fill(0);liquid->lava.fill(1);burningEffects.step(burning,.025,1.325,liquid.get());require(burningEffects.flame_count()>0&&burningEffects.flame_count()<=3,"Lava permits fire without releasing a stored underwater burst");
+            burningEffects.reset();require(burningEffects.flame_count()==0,"Reset clears liquid-reactive fire state");liquid->lava.fill(0);liquid->water.fill(1);liquid->water[TerrainFlow::index(.25,.25)]=2;
+            require(std::abs(atmosphere_surface(nullptr,liquid.get(),.1,.4)-liquid->liquid_at(.1,.4).first)<1e-10,"Fog air boundary follows the actual liquid surface");
+            require(atmosphere_surface(nullptr,liquid.get(),20,0)==0,"Fog outside the liquid domain retains its ground boundary");
+            SceneData plume;Character source;source.Shape="shadowenemy-smoke";source.Route={{4,0}};source.Speed=1;plume.Characters={source};auto startSources=smoke_sources(plume,0,nullptr),movedSources=smoke_sources(plume,2,nullptr);require(movedSources.size()==1&&movedSources[0][0]>startSources[0][0]+1.9,"Transported smoke emission follows moving authored sources");
+            plume.Characters=burning.Characters;require(smoke_sources(plume,0,nullptr).size()==1&&smoke_sources(plume,0,liquid.get()).empty(),"Fire smoke emits in air and stops when water extinguishes its source");
+            plume.Characters[0].Route={{4,0}};plume.Characters[0].Speed=1;auto movingLights=environment_lights(plume,2,nullptr);require(movingLights.size()==1&&movingLights[0][0]>1.9&&environment_lights(plume,2,liquid.get()).empty(),"Fire lighting follows the moving emitter and extinguishes underwater");
+            auto windWater=std::make_unique<TerrainFlow>(TerrainData{},std::vector<LiquidSource>{});windWater->water.fill(1);auto waterVolume=windWater->volume();windWater->wind(2,1);for(int i=0;i<240;++i)windWater->step(1./120.);double windEnergy=windWater->wave_energy();require(windEnergy>1e-5&&std::abs(windWater->liquid_at(1,2).first-1)>1e-5&&std::abs(windWater->volume()-waterVolume)<1e-8,"Atmospheric wind excites the simulated water surface without changing fluid volume");windWater->wind(0,0);for(int i=0;i<1200;++i)windWater->step(1./120.);require(windWater->wave_energy()<windEnergy*.01,"Wind-driven waves dissipate after the forcing stops");
+            auto snapshot=liquid->snapshot();require(std::abs(snapshot.at(.1,.4).first-liquid->liquid_at(.1,.4).first)<1e-10,"Shared gameplay and standalone liquid sampling agree between grid points");
+            liquid->water[TerrainFlow::index(.75,.25)]=0;require(liquid->liquid_at(.75,.25).second==0,"Surface interpolation does not turn dry cells into liquid");
+            SceneData level;Character bolt;bolt.Shape="chaos-lightning";bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.BranchSpread=2;level.Characters={bolt};auto arcs=trace_lightning(bolt,level,.06);require(arcs.size()==4&&arcs[1].branch&&arcs[2].branch&&arcs[3].branch,"Lightning emits independently traced physical branch paths");bool bounded=true;for(const auto& arc:arcs)for(auto point:arc.path)bounded&=point.y>=-1e-5;require(bounded&&arcs[0].contact,"Lightning main and branch paths terminate at terrain instead of crossing it");
+            EnvironmentEffects stormEffects;stormEffects.step(level,.03,.03);require(stormEffects.lightning_sounds().size()==1&&stormEffects.lightning_sounds()[0].time==.03,"Ordinary environment playback publishes one timed thunder event");stormEffects.step(level,.02,.05);require(stormEffects.lightning_sounds().size()==1,"Environment thunder is not resubmitted every rendered frame");auto epoch=stormEffects.epoch();stormEffects.reset();require(stormEffects.lightning_sounds().empty()&&stormEffects.epoch()!=epoch,"Environment reset clears pending thunder and changes its audio epoch");
+            auto engulfed=level;Character enclosure;enclosure.Shape="cube";enclosure.Y=5;enclosure.Height=2;enclosure.Width=enclosure.Depth=2;engulfed.Characters.push_back(enclosure);auto trapped=trace_lightning(bolt,engulfed,.06);require(trapped.front().contact&&trapped.front().hit==enclosure.Id&&(trapped.front().target-trapped.front().source).length()<1e-8,"Lightning beginning inside a moving solid terminates immediately on that body");
+            auto next=trace_lightning(bolt,level,.28);require((arcs[0].path[1]-next[0].path[1]).length()>.001,"Successive discharges change their physical path topology");
+        }
+        {
+            auto rebound=[](double bounce){SceneData level;level.Game.emplace();Character c;c.Shape="cube";c.Dynamic=true;c.X=3;c.Y=3;c.Restitution=bounce;level.Characters={c};AdventurePlayer p;p.start(level);double peak=-100;for(int i=0;i<240;++i){p.move(0,0,1./120.);if(i>=100)peak=std::max(peak,p.scene().Characters.front().Y);}return peak;};
+            auto soft=rebound(0),elastic=rebound(.9);
+            require(elastic>soft+.5,"Authored restitution changes actual rigid-body rebound height");
+        }
+        {
+            SceneData level;level.Game.emplace();level.Game->SpawnZ=0;
+            Character prop;prop.Shape="cube";prop.Dynamic=true;prop.X=2;prop.Y=3;prop.Density=100;prop.Width=prop.Height=prop.Depth=.4;level.Characters={prop};
+            auto authored=level.encode();AdventurePlayer player;player.start(level);
+            for(int i=0;i<180;++i)player.move(0,0,1./120.);
+            require(player.scene().Characters.front().Y<.5 && !player.dynamic_objects().empty() && level.encode()==authored,"Gameplay dynamic props share the character world, fall and preserve authored state");
+            level.Characters.front().X=0;level.Characters.front().Y=0;level.Characters.front().Z=-1;
+            level.Characters.front().Height=1;level.Characters.front().Density=50;
+            player.start(level);for(int i=0;i<180;++i)player.move(0,1,1./120.);
+            if(player.scene().Characters.front().Z>=-1.1)std::cerr<<"Push diagnostic: body "<<player.scene().Characters.front().Z<<" player "<<player.position.z<<"\n";
+            require(player.scene().Characters.front().Z<-1.1,"Character contact pushes a lightweight dynamic prop in the shared collision world");
+        }
+        #endif
         RenderSceneCache geometryCache;
         auto overlayParts=shape_geometry(rock);
         require(render_scene(render,nullptr,overlayParts,&geometryCache)==render_scene(render,nullptr,overlayParts),

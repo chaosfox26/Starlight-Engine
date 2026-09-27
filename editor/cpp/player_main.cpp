@@ -6,6 +6,7 @@
 #include "quest_tracker.hpp"
 #include "startup_activation.hpp"
 #include "native_session.hpp"
+#include "pacing_hud.hpp"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <dwmapi.h>
@@ -18,6 +19,7 @@ struct Player {
     MovementHud movementHud;
     GameplayAudio gameplayAudio;
     CombatHud combatHud;
+    PacingHud pacingHud;bool pacingShown=true;
     HBRUSH background=CreateSolidBrush(RGB(20,25,42));
     ~Player(){if(background)DeleteObject(background);}
     SceneData authored;
@@ -25,6 +27,7 @@ struct Player {
     std::unique_ptr<NativeSession> renderer;
     bool paused=false,looking=false;
     bool gameplayCheck=false;double checkRight=0,checkForward=0;
+    std::function<void()> gameplayObserver;
     fs::path smokeOutput;ULONGLONG smokeDeadline=0;int smokeResult=1;
     fs::path combatCheckOutput;ULONGLONG combatCheckStart=0;bool combatCheckStarted=false,combatSawCone=false,combatSawDamage=false;
     POINT last{};ULONGLONG tick=0;
@@ -45,16 +48,17 @@ struct Player {
         if(m==WM_KEYUP && AbilitySlots::recognizes(static_cast<unsigned>(w))){gameplay.ability_button(static_cast<unsigned>(w),false);return 0;}
         if(m==WM_KEYUP && w=='V'){if(!paused)gameplay.mobility_button(false,0,0);return 0;}
         if(m==WM_KEYUP && w==VK_CONTROL){if(!paused)gameplay.posture_button(false,0,0);return 0;}
-        if(m==WM_SIZE){RECT r{};GetClientRect(window,&r);if(view){MoveWindow(view,0,0,r.right,std::max(1L,r.bottom-36),TRUE);MoveWindow(hud,12,std::max(0L,r.bottom-30),std::max(1L,r.right-24),24,TRUE);}questTracker.layout(r.right,r.bottom,16,MulDiv(100,GetDpiForWindow(window),96));if(renderer){renderer->size(std::max(1L,r.right),std::max(1L,r.bottom-36));renderer->suspend_rendering(w==SIZE_MINIMIZED);}return 0;}
+        if(m==WM_SIZE){RECT r{};GetClientRect(window,&r);if(view){MoveWindow(view,0,0,r.right,std::max(1L,r.bottom-(gameplayCheck?0:36)),TRUE);MoveWindow(hud,12,std::max(0L,r.bottom-30),std::max(1L,r.right-24),24,TRUE);}questTracker.layout(r.right,r.bottom,16,MulDiv(100,GetDpiForWindow(window),96));if(renderer){renderer->size(std::max(1L,r.right),std::max(1L,r.bottom-(gameplayCheck?0:36)));renderer->suspend_rendering(w==SIZE_MINIMIZED);}return 0;}
         if((m==WM_TIMER || m==NativeSession::frameUpdateMessage) && renderer){auto now=GetTickCount64();auto preciseNow=std::chrono::steady_clock::now();double dt=std::clamp(std::chrono::duration<double>(preciseNow-motionTick).count(),0.,.05);motionTick=preciseNow;tick=now;
             if(m==NativeSession::frameUpdateMessage)renderer->frame_update_handled();
-            if(!paused && GetForegroundWindow()==window){double x=gameplayCheck?checkRight:((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);double z=gameplayCheck?checkForward:((GetAsyncKeyState('W')&0x8000)?1.:0)-((GetAsyncKeyState('S')&0x8000)?1.:0);auto revision=gameplay.rules().revision;if(!gameplayCheck){gameplay.posture_button((GetAsyncKeyState(VK_CONTROL)&0x8000)!=0,x,z,dt);gameplay.mobility_button((GetAsyncKeyState('V')&0x8000)!=0,x,z,dt);gameplay.sprint((GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);}gameplay.move(x,z,dt);renderer->gameplay_time(gameplay.seconds());if(gameplay.rules().revision!=revision)renderer->scene(gameplay.visible_scene());if(!gameplay.rules().message.empty())SetWindowTextW(hud,wide(gameplay.rules().message).c_str());}
+            if(!paused && GetForegroundWindow()==window){double x=gameplayCheck?checkRight:((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);double z=gameplayCheck?checkForward:((GetAsyncKeyState('W')&0x8000)?1.:0)-((GetAsyncKeyState('S')&0x8000)?1.:0);auto revision=gameplay.rules().revision;if(!gameplayCheck){gameplay.posture_button((GetAsyncKeyState(VK_CONTROL)&0x8000)!=0,x,z,dt);gameplay.mobility_button((GetAsyncKeyState('V')&0x8000)!=0,x,z,dt);gameplay.sprint((GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);}gameplay.move(x,z,dt);if(gameplayObserver)gameplayObserver();renderer->gameplay_time(gameplay.seconds());if(gameplay.rules().revision!=revision)renderer->scene(gameplay.visible_scene(),true);if(!gameplay.rules().message.empty())SetWindowTextW(hud,wide(gameplay.rules().message).c_str());}
             if(now-hudTick>=33){hudTick=now;
             questTracker.update(authored,gameplay.rules(),true);
             movementHud.update(&gameplay.movement_resources(),view,MulDiv(100,GetDpiForWindow(window),96));
             combatHud.update(&gameplay,view,MulDiv(100,GetDpiForWindow(window),96));
+            pacingHud.update(pacingShown,*renderer,view,{gameplay.camera_eye(),gameplay.view_position()+gameplay.camera_direction(),1,gameplay.camera_up()},MulDiv(100,GetDpiForWindow(window),96));
             }
-            {double started=timing_seconds();auto p=gameplay.presentation();auto timing=gameplay.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));}
+            {renderer->player_body(gameplay.body_bounds());renderer->collision_objects(gameplay.environment_objects());gameplay.liquids(renderer->liquid_snapshot());renderer->runtime_objects(gameplay.dynamic_objects());renderer->pacing_debris(gameplay.debris_poses());double started=timing_seconds();auto p=gameplay.presentation();if(pacingShown)renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});auto timing=gameplay.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers,!authored.RaytracingEnabled));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));}
             {auto presentation=gameplay.presentation();gameplayAudio.update(&presentation,!paused && GetForegroundWindow()==window);}
             renderer->camera({gameplay.camera_eye(),gameplay.view_position()+gameplay.camera_direction(),1,gameplay.camera_up()});auto state=renderer->status();if(!state.error.empty()){SetWindowTextW(hud,wide(state.error).c_str());paused=true;}
             if(!combatCheckOutput.empty()){
@@ -83,8 +87,9 @@ struct Player {
             }
             if(w==VK_SPACE && !paused && !(l & (1LL<<30))){gameplay.jump();return 0;}
             if(w==VK_ESCAPE){gameplay.cancel_mobility_input();paused=!paused;renderer->playback(!paused);SetWindowTextW(hud,paused?L"Paused. Escape resumes; F5 restarts.":L"WASD: walk | Space: jump | Right-drag: look | F / E: use | F5: restart");}
+            else if(w==VK_F8){pacingShown=!pacingShown;renderer->pacing_enabled(pacingShown);}
             else if(w==VK_F5)reset();
-            else if((w=='E' || w=='F') && !paused){auto count=gameplay.scene().Characters.size();auto message=gameplay.interact();if(count!=gameplay.scene().Characters.size())renderer->scene(gameplay.visible_scene());SetWindowTextW(hud,wide(message).c_str());}
+            else if((w=='E' || w=='F') && !paused){auto count=gameplay.scene().Characters.size();auto message=gameplay.interact();if(count!=gameplay.scene().Characters.size())renderer->scene(gameplay.visible_scene(),true);SetWindowTextW(hud,wide(message).c_str());}
             return 0;}
         if(m==WM_MOUSEWHEEL){if(!paused)gameplay.zoom(GET_WHEEL_DELTA_WPARAM(w)/120.);return 0;}
         if(m==WM_RBUTTONDOWN || m==WM_LBUTTONDOWN){looking=true;last={GET_X_LPARAM(l),GET_Y_LPARAM(l)};SetCapture(window);return 0;}
@@ -124,7 +129,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
         player.hud=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE,12,740,1240,24,window,nullptr,instance,nullptr);
         player.questTracker.create(window);
         player.movementHud.create(window);player.combatHud.create(window);
-        player.renderer=std::make_unique<NativeSession>(player.view,1280,720);player.reset();player.renderer->frame_updates(window);player.tick=GetTickCount64();SetTimer(window,1,16,nullptr);
+        player.renderer=std::make_unique<NativeSession>(player.view,1280,720);player.reset();player.renderer->pacing_enabled(player.pacingShown);player.renderer->frame_updates(window);player.tick=GetTickCount64();SetTimer(window,1,16,nullptr);
         SendMessageW(window,WM_SIZE,0,0);if(smokeOutput.empty()){activate_startup_window(window);}
         if(!gameplayCheckOutput.empty()){result=player.gameplay_checks(gameplayCheckOutput);CoUninitialize();return result;}
         MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}result=smokeOutput.empty() && combatCheckOutput.empty()?0:player.smokeResult;

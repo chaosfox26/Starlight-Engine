@@ -1,5 +1,6 @@
 #include "object_template.hpp"
 #include "interactions.hpp"
+#include <unordered_map>
 namespace starlight::editor {
 namespace {
 constexpr size_t maximumBytes = 32 * 1024 * 1024;
@@ -11,6 +12,8 @@ void self_contained(const Character& object) {
 }
 std::string encode_object_template(const Character& object) {
     self_contained(object);
+    if(!object.JointTargetId.empty())throw std::runtime_error("Save connected bodies together as a reusable group");
+    if(!object.LightningTargetId.empty())throw std::runtime_error("Save the lightning emitter and its target together as a reusable group");
     auto saved = object;
     saved.Asset.clear(); // Sculpt geometry can be independent of its original model.
     saved.Id.clear();
@@ -42,14 +45,18 @@ void place_object_template(Character& object, double x, double z) {
     double dx = x - object.X, dz = z - object.Z;
     placed.X = x; placed.Z = z;
     for (auto& point : placed.Route) { point.X += dx; point.Z += dz; }
-    if (placed.Shape == "chaos-lightning") { placed.TargetX += dx; placed.TargetZ += dz; }
+    if (placed.Shape == "chaos-lightning" && placed.LightningTargetId.empty()) { placed.TargetX += dx; placed.TargetZ += dz; }
     placed.validate();
     object = std::move(placed);
 }
 std::string encode_object_group(const std::vector<Character>& objects) {
     if (objects.empty() || objects.size() > 4096) throw std::runtime_error("Select between 1 and 4096 native objects");
     json saved = json::array();
-    for (const auto &object : objects) saved.push_back(json::parse(encode_object_template(object)).at("Object"));
+    std::unordered_map<std::string,std::string> ids;
+    for(size_t i=0;i<objects.size();++i)ids[objects[i].Id]="member-"+std::to_string(i);
+    for(const auto& object:objects){auto copy=object;copy.LightningTargetId.clear();copy.JointTargetId.clear();auto item=json::parse(encode_object_template(copy)).at("Object");item["Id"]=ids.at(object.Id);
+        if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Include the lightning target in its reusable group");item["LightningTargetId"]=target->second;}if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Include the joint target in its reusable group");item["JointTargetId"]=target->second;}saved.push_back(std::move(item));}
+
     auto bytes = json{{"Format","starlight-object-group"},{"Version",1},{"Objects",saved}}.dump(2);
     if (bytes.size() > maximumBytes) throw std::runtime_error("Reusable group exceeds 32 MiB");
     return bytes;
@@ -63,8 +70,11 @@ std::vector<Character> decode_object_group(std::string_view bytes) {
     if (!objects.is_array() || objects.empty() || objects.size() > 4096)
         throw std::runtime_error("Reusable groups require between 1 and 4096 objects");
     std::vector<Character> result;
-    for (const auto &object : objects)
-        result.push_back(decode_object_template(json{{"Format","starlight-object"},{"Version",1},{"Object",object}}.dump()));
+    std::unordered_map<std::string,std::string> ids;
+    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",1},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty())ids[old]=decoded.Id;result.push_back(std::move(decoded));}
+    for(auto& object:result)if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Reusable group lightning target is missing");object.LightningTargetId=target->second;}
+
+    for(auto& object:result)if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Reusable group joint target is missing");object.JointTargetId=target->second;}
     return result;
 }
 void save_object_group(const std::vector<Character>& objects, const fs::path& path) {
@@ -87,7 +97,7 @@ void place_object_group(std::vector<Character>& objects, SceneData& scene, doubl
     for (auto &object : placed) {
         place_object_template(object, object.X + dx, object.Z + dz);
         object.Y += dy;
-        if (object.Shape == "chaos-lightning") object.TargetY += dy;
+        if (object.Shape == "chaos-lightning" && object.LightningTargetId.empty()) object.TargetY += dy;
     }
     // Lift the arrangement together instead of independently snapping each member.
     double lift = 0;
@@ -98,7 +108,7 @@ void place_object_group(std::vector<Character>& objects, SceneData& scene, doubl
     }
     for (auto &object : placed) {
         object.Y += lift;
-        if (object.Shape == "chaos-lightning") object.TargetY += lift;
+        if (object.Shape == "chaos-lightning" && object.LightningTargetId.empty()) object.TargetY += lift;
         object.validate();
     }
     objects = std::move(placed);

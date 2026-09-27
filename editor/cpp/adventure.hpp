@@ -1,5 +1,10 @@
 #pragma once
+#include "environment_events.hpp"
 #include "runtime_timing.hpp"
+#include "particle_physics.hpp"
+#include "fracture.hpp"
+#include "projectile_physics.hpp"
+#include "lightning_physics.hpp"
 #include "interactions.hpp"
 #include "gameplay_rules.hpp"
 #include "movement_resources.hpp"
@@ -14,6 +19,7 @@
 #endif
 #include <unordered_set>
 namespace starlight::editor {
+
 // Play state is separate from the authored scene. Collision bounds are cached
 // at session start; static geometry uses conservative world-space boxes.
 class AdventurePlayer {
@@ -27,6 +33,7 @@ class AdventurePlayer {
     bool sprintHeld_=false;
     MovementResources movement_;
     GrappleMotion grapple_;
+    double grappleBlockedSeconds_=0;
     std::string grappleTarget_;
     Vec3 grappleOffset_{},grappleLocalNormal_{};
     Mesh grappleTerrain_;
@@ -46,12 +53,19 @@ class AdventurePlayer {
     std::optional<ControlEffect> lastDisplayControl_;
     std::unordered_set<std::string> lastVisibleIds_;
     double health_=100;
+    std::unordered_map<std::string,int64_t> lightningCycles_;
+    uint64_t lightningSerial_=0;
+    std::vector<LightningSoundEvent> lightningSounds_;
     Vec3 controlOrigin_{},controlVelocity_{};
     bool launchAirborne_=false;
     double tetherPull_=0,tetherCooldown_=0;
     std::string selectedTarget_;
-    struct Fragment {Vec3 position,velocity;double age=0;};
+    struct Fragment : PhysicalParticle {Bounds localBounds;std::shared_ptr<const MeshPart> part;std::array<double,4> rotation{0,0,0,1};uint32_t body=UINT32_MAX;uint64_t serial=0;};
     std::vector<Fragment> fragments_;
+    uint64_t fragmentSerial_=0;
+    ProjectilePhysics projectiles_;
+    std::unordered_map<std::string,Bounds> projectileBounds_;
+    std::shared_ptr<const LiquidSnapshot> liquidSnapshot_;
     std::unordered_map<std::string,CombatActor> combatActors_;
     double dodgeRemaining_=0;
     double dodgeRollSign_=1;
@@ -84,6 +98,13 @@ class AdventurePlayer {
     Vec3 position{};
     bool finished=false;
     const SceneData& scene() const {return playScene_;}
+    std::vector<Character> dynamic_objects()const{
+        std::vector<Character> result;
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+        if(controller_)for(const auto& c:playScene_.Characters)if(c.Dynamic)result.push_back(c);
+#endif
+        return result;
+    }
     double sight_range()const{return settings_.SightRange*(control_.active==ControlEffect::Blind?.5:1.);}
     bool perceived(const Character& c)const{
         auto it=combatActors_.find(c.Id);
@@ -100,6 +121,7 @@ class AdventurePlayer {
     const BasicAttack& basic_attack()const{return attack_;}
     const CombatControl& crowd_control()const{return control_;}
     double health()const{return health_;}
+    Bounds body_bounds()const{auto feet=position-Vec3{0,1.7,0};double height=posture_==0?1.8:posture_==2?.5:1.;return {feet-Vec3{settings_.PlayerRadius,0,settings_.PlayerRadius},feet+Vec3{settings_.PlayerRadius,height,settings_.PlayerRadius}};}
     struct CombatDisplay {
         double health=100,targetHealth=0,targetMaximum=0,breakStrength=0,breakMaximum=1000,effectSeconds=0,immunitySeconds=0,phaseSeconds=0;
         bool hasTarget=false,boss=false,waking=false;
@@ -133,7 +155,7 @@ class AdventurePlayer {
     bool unobstructed(Vec3 origin,Vec3 point,const std::string& caster,const std::string& target)const{
         auto delta=point-origin;double distance=delta.length();if(distance<.01)return true;
         for(const auto& c:playScene_.Characters)if(c.Id!=caster && c.Id!=target && !rules_.removed.contains(c.Id)){
-            auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+            auto moved=route_pose(c,seconds_);
             auto hit=mesh_hit(object_mesh(moved),moved,origin,delta.unit());if(hit && hit->distance<distance-.01)return false;
         }
         if(terrain_)for(double d=.1;d<distance;d+=.1){auto at=origin+delta.unit()*d;if(at.y<terrain_->height_at(at.x,at.z))return false;}
@@ -146,14 +168,14 @@ class AdventurePlayer {
             else {
                 auto it=combatActors_.find(h.caster);if(it==combatActors_.end()){h.cycle.clear();continue;}
                 auto& actor=it->second;h.team=actor.team;blocked=actor.health<=0 || rules_.removed.contains(h.caster) || actor.control.blocks_skills() || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered);rate=actor.control.firing_factor();
-                for(const auto& c:playScene_.Characters)if(c.Id==h.caster){auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}auto b=object_bounds(moved);h.origin={(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5};}
+                for(const auto& c:playScene_.Characters)if(c.Id==h.caster){auto moved=route_pose(c,seconds_);auto b=object_bounds(moved);h.origin={(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5};}
                 h.aim=actor.attackAim.length()>.1?actor.attackAim:Vec3{0,0,-1};
             }
             if(!h.cycle.advance(dt,blocked,rate))continue;
             auto feet=position-Vec3{0,1.7,0},playerContact=feet+Vec3{0,.85,0};
             if(h.team==1 && surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,feet-Vec3{.3,0,.3},feet+Vec3{.3,posture_==0?1.8:posture_==2?.5:1.,.3},playerContact,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},playerContact,h.caster,""))restore_health(20);
             for(const auto& c:playScene_.Characters)if(auto it=combatActors_.find(c.Id);it!=combatActors_.end() && it->second.team==h.team){
-                auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}auto b=object_bounds(moved);auto point=(b.low+b.high)*.5;if(surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,b.low,b.high,point,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},point,h.caster,c.Id))it->second.heal(20,h.team);
+                auto moved=route_pose(c,seconds_);auto b=object_bounds(moved);auto point=(b.low+b.high)*.5;if(surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,b.low,b.high,point,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},point,h.caster,c.Id))it->second.heal(20,h.team);
             }
         }
     }
@@ -211,7 +233,7 @@ class AdventurePlayer {
         if(std::abs(change)<1e-8)return;
         auto candidate=c;candidate.RotationY=std::remainder(c.RotationY+change,360.);auto proposed=object_bounds(candidate);
         for(const auto& other:playScene_.Characters)if(other.Id!=c.Id && !rules_.removed.contains(other.Id)){
-            auto moved=other;if(!other.Route.empty()){auto at=other.at(seconds_);moved.X=at.X;moved.Z=at.Z;}auto b=object_bounds(moved);
+            auto moved=route_pose(other,seconds_);auto b=object_bounds(moved);
             if(proposed.low.x<b.high.x && proposed.high.x>b.low.x && proposed.low.z<b.high.z && proposed.high.z>b.low.z && proposed.low.y<b.high.y-1e-5 && proposed.high.y>b.low.y+1e-5)return;
         }
         c.RotationY=candidate.RotationY;interactionBounds_[c.Id]=proposed;++rules_.revision;
@@ -232,7 +254,7 @@ class AdventurePlayer {
         for(const auto& c:playScene_.Characters){
             auto it=combatActors_.find(c.Id);
             if(c.Id==caster.Id || it==combatActors_.end() || it->second.health<=0 || !actor.hostile_to(it->second.team) || rules_.removed.contains(c.Id))continue;
-            auto moved=c;if(!c.Route.empty()){auto location=c.at(seconds_);moved.X=location.X;moved.Z=location.Z;}
+            auto moved=route_pose(c,seconds_);
             auto b=object_bounds(moved);consider(c.Id,{(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5},combat_identity(c.Id));
         }
         return result;
@@ -347,7 +369,7 @@ class AdventurePlayer {
         for(auto& c:playScene_.Characters){
             auto it=combatActors_.find(c.Id);if(it==combatActors_.end())continue;
             auto& actor=it->second;
-            auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+            auto moved=route_pose(c,seconds_);
             auto bounds=object_bounds(moved);
             Vec3 origin{(bounds.low.x+bounds.high.x)*.5,bounds.low.y,(bounds.low.z+bounds.high.z)*.5};
             auto victim=actor_target(c,actor);
@@ -357,14 +379,15 @@ class AdventurePlayer {
             if(eligible && !actor.control.blocks_basic())turn_actor(c,delta,dt);
             double facing=c.RotationY*.0174532925199433;
             actor.attackOrigin=origin;actor.attackAim={-std::sin(facing),0,-std::cos(facing)}; // Cone and hit share current bounded actor facing.
-            actor.attack.press(eligible && delta.length()<=3);
+            actor.attack.press(eligible && delta.length()<=(c.CombatProjectileSpeed>0?20:3));
             if(!actor.attack.advance(dt,blocked,actor.control.firing_factor()))continue;
             auto point=victim->feet+Vec3{0,.85,0};
             Vec3 targetLow=victim->feet-Vec3{.3,0,.3},targetHigh=victim->feet+Vec3{.3,posture_==0?1.8:posture_==2?.5:1.,.3};
             if(!victim->id.empty())for(const auto& target:playScene_.Characters)if(target.Id==victim->id){
-                auto moved=target;if(!target.Route.empty()){auto at=target.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+                auto moved=route_pose(target,seconds_);
                 auto targetBounds=object_bounds(moved);targetLow=targetBounds.low;targetHigh=targetBounds.high;break;
             }
+            if(c.CombatProjectileSpeed>0){auto eye=origin+Vec3{0,1,0};auto aim=actor.attackAim*std::max(.1,delta.length());aim.y=point.y-eye.y;projectiles_.fire(eye,aim.unit(),c.CombatProjectileSpeed,c.CombatProjectileGravity,c.Id,actor.team,c.CombatProjectileMass,c.CombatControlEffect,actor.control.hit_factor());++shotSerial_;continue;}
             if(!surface_telegraph_contact(terrain_?&*terrain_:nullptr,actor.attackOrigin,actor.attackAim,targetLow,targetHigh,point,3,.7853981633974483))continue;
             auto eye=actor.attackOrigin+Vec3{0,1,0};
             if(unobstructed(eye,point,c.Id,victim->id) && hitChance_.roll(actor.control.hit_factor())){
@@ -395,8 +418,21 @@ class AdventurePlayer {
         advance_pursuit(dt);
         advance_enemy_attacks(dt);
         advance_healing(dt);
-        for(auto& f:fragments_){f.age+=dt;f.velocity.y-=9.81*dt;f.position=f.position+f.velocity*dt;}
-        std::erase_if(fragments_,[](const auto& f){return f.age>=2;});
+        advance_projectiles(dt);
+        advance_lightning();
+        if(!fragments_.empty()){
+            std::vector<Bounds> obstacles;obstacles.reserve(playScene_.Characters.size()+fragments_.size()+1);
+            for(const auto& object:playScene_.Characters)if(lightning_solid(object)&&!rules_.removed.contains(object.Id)&&object.GameplayRole!="key"&&object.GameplayRole!="exit")obstacles.push_back(object_bounds(route_pose(object,seconds_)));
+            for(const auto& body:environment_objects())obstacles.push_back(object_bounds(body));
+            obstacles.push_back(body_bounds());
+            for(auto& f:fragments_){
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                if(controller_ && f.body!=UINT32_MAX){f.age+=dt;controller_->debris_pose(f.body,f.position,f.rotation);if(f.age>=f.lifetime)controller_->remove_debris(f.body);continue;}
+#endif
+                step_particle(f,dt,terrain_?&*terrain_:nullptr,obstacles);
+            }
+            std::erase_if(fragments_,[](const auto& f){return f.age>=f.lifetime;});
+        }
         if(!launchAirborne_)control_.advance(dt);
         if(control_.active==ControlEffect::Taunt){
             bool valid=false;for(const auto& [id,a]:combatActors_)if(combat_identity(id)==control_.source.id && a.health>0 && a.hostile_to(1))valid=true;
@@ -412,27 +448,98 @@ class AdventurePlayer {
         if(visibleIds!=lastVisibleIds_){lastVisibleIds_=std::move(visibleIds);++rules_.revision;}
         if(!rulesEnabled_ || !attack_.advance(dt,health_<=0 || dodging() || tetherPull_>0 || control_.blocks_basic(),control_.firing_factor()))return;
         ++shotSerial_;lastShotTime_=seconds_;
+        if(settings_.ProjectileSpeed>0){projectiles_.fire(position-Vec3{0,.7,0},attack_direction(),settings_.ProjectileSpeed,settings_.ProjectileGravity,projectile_player_id,1,settings_.ProjectileMass,-1,control_.hit_factor());advance_projectiles(0);return;}
         std::vector<std::string> hit;
         for(const auto& c:playScene_.Characters)if((c.GameplayRole=="breakable" || (combatActors_.contains(c.Id) && combatActors_.at(c.Id).hostile_to(1))) && !rules_.removed.contains(c.Id) && perceived(c)){
-            auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+            auto moved=route_pose(c,seconds_);
             auto b=object_bounds(moved);auto point=(b.low+b.high)*.5;
             if(!surface_telegraph_contact(terrain_?&*terrain_:nullptr,position-Vec3{0,1.7,0},attack_direction(),b.low,b.high,point))continue;
             if(unobstructed(position-Vec3{0,.7,0},point,"",c.Id) && hitChance_.roll(control_.hit_factor()))hit.push_back(c.Id);
         }
+        apply_attack_hits(hit);
+        finished=rules_.finished;
+    }
+    void advance_lightning(){
+        if(!rulesEnabled_)return;
+        if(std::none_of(playScene_.Characters.begin(),playScene_.Characters.end(),[](const auto& c){return c.Shape=="chaos-lightning";}))return;
+        auto scene=playScene_;std::erase_if(scene.Characters,[&](const auto& c){return rules_.removed.contains(c.Id);});
+        auto debris=environment_objects();scene.Characters.insert(scene.Characters.end(),debris.begin(),debris.end());
+        int64_t cycle=int64_t(std::floor((seconds_-.025)/.22));if(cycle<0)return;
+        for(const auto& emitter:scene.Characters)if(emitter.Shape=="chaos-lightning"){
+            auto [it,fresh]=lightningCycles_.try_emplace(emitter.Id,-1);if(it->second>=cycle)continue;it->second=cycle;
+            auto playerBox=body_bounds();
+            auto arcs=trace_lightning(emitter,scene,seconds_,health_>0?std::optional<Bounds>{playerBox}:std::nullopt);if(arcs.empty())continue;++lightningSerial_;lightningSounds_.push_back({lightningSerial_,arcs.front().target,seconds_});if(lightningSounds_.size()>128)lightningSounds_.erase(lightningSounds_.begin());
+            if(emitter.LightningDamage<=0)continue;
+            std::unordered_set<std::string> contacted;for(const auto& arc:arcs)if(!arc.hit.empty()&&contacted.insert(arc.hit).second){if(arc.hit==lightning_player_id){if(emitter.CombatTeam!=1&&emitter.CombatTeam!=0)take_damage(emitter.LightningDamage);continue;}for(const auto& body:scene.Characters)if(body.Id==arc.hit&&(body.GameplayRole=="breakable"||combatActors_.contains(body.Id))){apply_attack_hits({body.Id},emitter.LightningDamage,emitter.CombatTeam);break;}}
+        }
+    }
+    void apply_attack_hits(const std::vector<std::string>& hit,double damage=10,int sourceTeam=1){
         for(const auto& id:hit){
+            if(rules_.removed.contains(id))continue;
             if(auto it=combatActors_.find(id);it!=combatActors_.end()){
-                if(!it->second.hostile_to(1))continue;
-                it->second.damage(10,1);if(it->second.health>0)continue;
+                if(!it->second.hostile_to(sourceTeam))continue;
+                it->second.damage(damage,sourceTeam);if(it->second.health>0)continue;
             }
-            for(const auto& c:playScene_.Characters)if(c.Id==id){auto b=object_bounds(c);auto center=(b.low+b.high)*.5;
-                for(int i=0;i<16;i++){double angle=i*2.3999632297;fragments_.push_back({center,{std::cos(angle)*(1+i%3),2.+i%4,std::sin(angle)*(1+i%3)},0});}
-                if(fragments_.size()>256)fragments_.erase(fragments_.begin(),fragments_.begin()+(fragments_.size()-256));break;
+            for(const auto& c:playScene_.Characters)if(c.Id==id){auto b=object_bounds(route_pose(c,seconds_));auto center=(b.low+b.high)*.5;
+                auto fractureParts=object_parts(c);
+                std::vector<FracturePiece> physicalPieces;bool fractureSupported=!fractureParts.empty();auto moved=route_pose(c,seconds_);
+                for(auto part:fractureParts){for(auto& v:part.mesh.vertices)v.position=world_point(moved,v.position);auto pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){fractureSupported=false;break;}physicalPieces.insert(physicalPieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
+                if(fractureSupported){
+                    {
+                        for(auto piece:physicalPieces){
+                            Fragment f;f.position=piece.center;auto outward=(piece.center-center).unit();f.velocity=outward*2+Vec3{0,3,0};f.radius=piece.radius;f.restitution=c.Restitution;f.part=std::move(piece.part);for(const auto& vertex:f.part->mesh.vertices){auto p=vertex.position;f.localBounds.low={std::min(f.localBounds.low.x,p.x),std::min(f.localBounds.low.y,p.y),std::min(f.localBounds.low.z,p.z)};f.localBounds.high={std::max(f.localBounds.high.x,p.x),std::max(f.localBounds.high.y,p.y),std::max(f.localBounds.high.z,p.z)};}
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                            if(controller_){auto motion=controller_->body_motion(c.Id,piece.center);f.velocity=f.velocity+motion.first;f.body=controller_->add_debris(f.part->mesh,f.position,f.velocity,c.Density,c.Friction,c.Restitution,motion.second+Vec3{outward.z,1,-outward.x});}
+#endif
+                            f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));
+                        }
+                    }
+                }else for(int i=0;i<16;i++){double angle=i*2.3999632297;Fragment f;f.position=center;f.velocity={std::cos(angle)*(1+i%3),2.+i%4,std::sin(angle)*(1+i%3)};f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));}
+                if(fragments_.size()>256){auto excess=fragments_.size()-256;
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                    if(controller_)for(size_t i=0;i<excess;++i)if(fragments_[i].body!=UINT32_MAX)controller_->remove_debris(fragments_[i].body);
+#endif
+                    fragments_.erase(fragments_.begin(),fragments_.begin()+excess);
+                }break;
             }
             rules_.remove_object(playScene_,id);rules_.emit("object-broken",id,playScene_);if(selectedTarget_==id)selectedTarget_.clear();
             ++shatterSerial_;
         }
+    }
+    void advance_projectiles(double dt){
+        if(projectiles_.shots().empty()){projectileBounds_.clear();return;}
+        std::vector<ProjectileTarget> targets;
+        for(auto object:playScene_.Characters){auto kind=object.Shape.value_or("");if(rules_.removed.contains(object.Id)||object.GameplayRole=="key"||object.GameplayRole=="exit"||kind=="light-shard"||kind=="grass"||kind=="fire"||kind=="light"||kind=="lava"||kind=="chaos-lightning"||kind=="shadowenemy-smoke")continue;
+            object=route_pose(object,seconds_);auto after=object_bounds(object);auto before=projectileBounds_.contains(object.Id)?projectileBounds_.at(object.Id):after;targets.push_back({object.Id,before,after});projectileBounds_[object.Id]=after;
+        }
+        for(const auto& c:environment_objects()){auto bounds=object_bounds(c);auto before=projectileBounds_.contains(c.Id)?projectileBounds_.at(c.Id):bounds;targets.push_back({c.Id,before,bounds});projectileBounds_[c.Id]=bounds;}
+        if(health_>0){auto bounds=body_bounds();auto before=projectileBounds_.contains(projectile_player_id)?projectileBounds_.at(projectile_player_id):bounds;targets.push_back({projectile_player_id,before,bounds});projectileBounds_[projectile_player_id]=bounds;}
+        for(const auto& impact:projectiles_.step(dt,terrain_?&*terrain_:nullptr,targets)){
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+            if(controller_&&!impact.target.empty()){controller_->impulse(impact.target,impact.position,impact.velocity*impact.mass);for(const auto& fragment:fragments_)if(fragment.body!=UINT32_MAX&&impact.target=="debris-"+std::to_string(fragment.serial))controller_->impulse_body(fragment.body,impact.position,impact.velocity*impact.mass);}
+#endif
+            ++impactSerial_;
+            static const auto sparkPart=[](){Character c;c.Shape="cube";auto part=std::make_shared<MeshPart>(shape_geometry(c).front());part->color={1,.65,.15};part->emissive=true;for(auto& v:part->mesh.vertices)v.position=(v.position-Vec3{0,.5,0})*.025;return part;}();
+            for(int i=0;i<6&&fragments_.size()<256;++i){Fragment f;f.position=impact.position+impact.normal*.05;double angle=i*2.3999632297;f.velocity=impact.normal*1.5+Vec3{std::cos(angle),.5+double(i%3)*.5,std::sin(angle)};f.radius=.015;f.lifetime=.4;f.part=sparkPart;f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));}
+            if(!hitChance_.roll(impact.accuracy))continue;
+            if(impact.target==projectile_player_id){if(impact.team!=0&&impact.team!=1){take_damage(impact.damage);if(impact.control>=0)apply_control(static_cast<ControlEffect>(impact.control),{combat_identity(impact.source),false},true,false,impact.position);}continue;}
+            for(const auto& object:playScene_.Characters)if(object.Id==impact.target&&(object.GameplayRole=="breakable"||(combatActors_.contains(object.Id)&&combatActors_.at(object.Id).hostile_to(impact.team)))){if(impact.control>=0)if(auto actor=combatActors_.find(object.Id);actor!=combatActors_.end())actor->second.apply(static_cast<ControlEffect>(impact.control),{combat_identity(impact.source),false},impact.team);apply_attack_hits({object.Id},impact.damage,impact.team);break;}
+        }
         finished=rules_.finished;
     }
+    std::vector<Character> environment_objects()const{
+        std::vector<Character> result;for(const auto& f:fragments_)if(f.part&&std::isfinite(f.localBounds.low.x)){
+            Bounds box;Vec3 q{f.rotation[0],f.rotation[1],f.rotation[2]};for(double x:{f.localBounds.low.x,f.localBounds.high.x})for(double y:{f.localBounds.low.y,f.localBounds.high.y})for(double z:{f.localBounds.low.z,f.localBounds.high.z}){Vec3 p{x,y,z};p=p+q.cross(q.cross(p)+p*f.rotation[3])*2+f.position;box.low={std::min(box.low.x,p.x),std::min(box.low.y,p.y),std::min(box.low.z,p.z)};box.high={std::max(box.high.x,p.x),std::max(box.high.y,p.y),std::max(box.high.z,p.z)};}
+            Character c;c.Id="debris-"+std::to_string(f.serial);c.Shape="cube";c.Dynamic=true;c.X=(box.low.x+box.high.x)*.5;c.Y=box.low.y;c.Z=(box.low.z+box.high.z)*.5;c.Width=std::max(.001,box.high.x-box.low.x);c.Height=std::max(.001,box.high.y-box.low.y);c.Depth=std::max(.001,box.high.z-box.low.z);result.push_back(std::move(c));
+        }return result;
+    }
+    std::vector<std::pair<std::string,std::array<double,7>>> debris_poses()const{
+        std::vector<std::pair<std::string,std::array<double,7>>> out;out.reserve(fragments_.size());
+        for(const auto& f:fragments_)out.push_back({"debris-"+std::to_string(f.serial),{f.position.x,f.position.y,f.position.z,f.rotation[0],f.rotation[1],f.rotation[2],f.rotation[3]}});
+        for(const auto& p:projectiles_.shots())out.push_back({"projectile-"+std::to_string(p.serial),{p.position.x,p.position.y,p.position.z,0,0,0,1}});
+        return out;
+    }
+    void liquids(std::shared_ptr<const LiquidSnapshot> value){liquidSnapshot_=std::move(value);}
     double yaw=0,pitch=0;
     int posture() const {return posture_;} // 0 standing, 1 crouched, 2 prone, 3 sliding
     // Asset-independent animation input, derived from actual controller movement.
@@ -445,7 +552,7 @@ class AdventurePlayer {
         bool showBody=true,showTether=false;
         bool showWeapons=false,audioActive=false;
         Vec3 eye{},viewAim{0,0,-1},viewUp{0,1,0};
-        uint64_t epoch=0,shots=0,shatters=0,impacts=0;
+        uint64_t epoch=0,shots=0,shatters=0,impacts=0,lightning=0;
         double shotFlash=0;
         bool showTelegraph=false;
         const TerrainData* telegraphTerrain=nullptr;
@@ -454,8 +561,12 @@ class AdventurePlayer {
         TelegraphKind telegraphKind=TelegraphKind::Friendly;
         Vec3 attackOrigin{},attackAim{};
         std::optional<Bounds> targetBounds;
-        std::vector<Vec3> fragments;
-        struct ActorTelegraph {Vec3 origin,aim;double progress;TelegraphKind kind;};
+        struct FragmentView {Vec3 position;std::shared_ptr<const MeshPart> part;std::array<double,4> rotation;uint64_t serial=0;};
+        std::vector<FragmentView> fragments;
+        std::vector<PhysicalProjectile> projectiles;
+        std::vector<LightningSoundEvent> lightningSounds;
+        struct ActorTelegraph {Vec3 origin,aim;double progress;TelegraphKind kind;std::string identity;};
+        uint64_t telegraphIdentity=1;
         std::vector<ActorTelegraph> actorTelegraphs;
         std::optional<ControlEffect> control;
         double poseTime=0;
@@ -464,20 +575,21 @@ class AdventurePlayer {
         Presentation p;p.telegraphTerrain=terrain_?&*terrain_:nullptr;
         p.showWeapons=rulesEnabled_ && health_>0;p.audioActive=health_>0;
         p.eye=camera_eye();p.viewAim=camera_direction();p.viewUp=camera_up();
-        p.epoch=presentationEpoch_;p.shots=shotSerial_;p.shatters=shatterSerial_;p.impacts=impactSerial_;
+        p.epoch=presentationEpoch_;p.shots=shotSerial_;p.shatters=shatterSerial_;p.impacts=impactSerial_;p.lightning=lightningSerial_;
         p.shotFlash=health_>0 && lastShotTime_>=0?std::clamp(1-(seconds_-lastShotTime_)/.12,0.,1.):0;
         p.control=control_.active;p.poseTime=seconds_;
         auto casterVisible=[&](const std::string& id){if(id.empty())return true;for(const auto& c:playScene_.Characters)if(c.Id==id)return perceived(c);return false;};
-        for(const auto& h:healingCasts_)if(h.cycle.winding && casterVisible(h.caster))p.actorTelegraphs.push_back({h.origin,h.aim,std::clamp(1-h.cycle.windup/h.cycle.cycleSeconds,0.,1.),telegraph_kind(h.team==1,true)});
+        for(const auto& h:healingCasts_)if(h.cycle.winding && casterVisible(h.caster))p.actorTelegraphs.push_back({h.origin,h.aim,std::clamp(1-h.cycle.windup/h.cycle.cycleSeconds,0.,1.),telegraph_kind(h.team==1,true),h.caster+"-healing"});
         for(const auto& [id,actor]:combatActors_)if(casterVisible(id) && actor.attack.winding && actor.health>0 && !rules_.removed.contains(id))
-            p.actorTelegraphs.push_back({actor.attackOrigin,actor.attackAim,std::clamp(1-actor.attack.windup/actor.attack.cycleSeconds,0.,1.),telegraph_kind(actor.team==1,false)});
+            p.actorTelegraphs.push_back({actor.attackOrigin,actor.attackAim,std::clamp(1-actor.attack.windup/actor.attack.cycleSeconds,0.,1.),telegraph_kind(actor.team==1,false),id+"-attack"});
         p.feet=position-Vec3{0,1.7,0};p.velocity=presentationVelocity_;p.facing=yaw;
         p.bodyHeight=posture_==0?1.8:posture_==2?.5:1.;p.showBody=cameraDistance>.001;
         p.showTether=grapple_.state!=GrappleMotion::State::Free;p.tetherAnchor=grapple_.hook_position();
         p.showTelegraph=rulesEnabled_ && attack_.winding;p.attackOrigin=p.feet;p.attackAim=attack_direction();
         p.channelProgress=attack_.winding?std::clamp(1-attack_.windup/attack_.cycleSeconds,0.,1.):0;
-        for(const auto& f:fragments_)p.fragments.push_back(f.position);
-        for(const auto& c:playScene_.Characters)if(c.Id==selectedTarget_ && perceived(c)){auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}p.targetBounds=object_bounds(moved);break;}
+        p.projectiles=projectiles_.shots();p.lightningSounds=lightningSounds_;
+        for(const auto& f:fragments_)p.fragments.push_back({f.position,f.part,f.rotation,f.serial});
+        for(const auto& c:playScene_.Characters)if(c.Id==selectedTarget_ && perceived(c)){auto moved=route_pose(c,seconds_);p.targetBounds=object_bounds(moved);break;}
         using M=Presentation::Motion;
         const double horizontal=std::hypot(p.velocity.x,p.velocity.z);
         if(dodging())p.motion=M::Dodge;
@@ -552,7 +664,7 @@ class AdventurePlayer {
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
         for(const auto& object:playScene_.Characters){
             if(object.GameplayRole=="key" || object.GameplayRole=="exit")continue;
-            auto moved=object;if(!object.Route.empty()){auto point=object.at(seconds_);moved.X=point.X;moved.Z=point.Z;}
+            auto moved=route_pose(object,seconds_);
             auto hit=mesh_hit(object_mesh(moved),moved,view_position(),backward);
             if(hit)distance=std::min(distance,std::max(0.,hit->distance-.2));
         }
@@ -582,7 +694,7 @@ class AdventurePlayer {
         std::optional<MeshHit> nearest;std::string id;Vec3 offset{},localNormal{};int grappleMode=0;
         for(const auto& object:playScene_.Characters){
             if(rules_.removed.contains(object.Id) || (object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="shadowenemy-smoke")))continue;
-            auto moved=object;if(!object.Route.empty()){auto at=object.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+            auto moved=route_pose(object,seconds_);
             auto hit=mesh_hit(object_mesh(moved),moved,view_position(),camera_direction());
             if(hit && hit->distance<=25 && (!nearest || hit->distance<nearest->distance)){nearest=hit;id=object.Id;grappleMode=object.GrappleMode;offset=local_point(moved,hit->point);localNormal=local_point(moved,hit->point+hit->normal)-offset;}
         }
@@ -591,7 +703,7 @@ class AdventurePlayer {
             if(hit && hit->distance<=25 && (!nearest || hit->distance<nearest->distance)){nearest=hit;id="@terrain";grappleMode=0;offset=hit->point;localNormal=hit->normal;}
         }
         if(grapple_.press(movement_,nearest.has_value(),position,nearest?nearest->point:Vec3{},nearest?nearest->normal:Vec3{0,1,0},nearest && (grappleMode==2 || (grappleMode==0 && nearest->normal.y<-.5)))){
-            grapple_.velocity=presentationVelocity_;grappleTarget_=id;grappleOffset_=offset;grappleLocalNormal_=localNormal;grappleFalling_=false;mantleRemaining_=0;
+            grapple_.velocity=presentationVelocity_;grappleBlockedSeconds_=0;grappleTarget_=id;grappleOffset_=offset;grappleLocalNormal_=localNormal;grappleFalling_=false;mantleRemaining_=0;
         }
     }
     void sprint(bool held){sprintHeld_=held;}
@@ -658,11 +770,12 @@ class AdventurePlayer {
     }}
     void start(const SceneData& scene,bool gameplayRules=true){
         if(!scene.Game)throw std::runtime_error("Choose an adventure preset first");
+        lightningCycles_.clear();lightningSerial_=0;lightningSounds_.clear();
         ++presentationEpoch_;shotSerial_=shatterSerial_=impactSerial_=0;lastShotTime_=-1;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
-        controller_.reset();
+        controller_.reset();liquidSnapshot_.reset();
 #endif
-        grapple_.reset();grappleTarget_.clear();grappleFalling_=false;
+        projectiles_.clear();projectileBounds_.clear();grappleBlockedSeconds_=0;grapple_.reset();grappleTarget_.clear();grappleFalling_=false;
         grappleTerrain_={};mantleRemaining_=0;
         if(scene.Terrain)for(const auto& part:terrain_geometry(*scene.Terrain)){int offset=int(grappleTerrain_.vertices.size());grappleTerrain_.vertices.insert(grappleTerrain_.vertices.end(),part.mesh.vertices.begin(),part.mesh.vertices.end());for(int index:part.mesh.indices)grappleTerrain_.indices.push_back(index+offset);}
         seconds_=0;jumpRequested_=false;sprintHeld_=false;movement_={};
@@ -721,13 +834,13 @@ class AdventurePlayer {
             if(grapple_.state!=GrappleMotion::State::Free){
                 bool found=grappleTarget_=="@terrain";
                 for(const auto& object:playScene_.Characters)if(object.Id==grappleTarget_ && !rules_.removed.contains(object.Id) && (!combatActors_.contains(object.Id) || combatActors_.at(object.Id).health>0)){
-                    auto moved=object;if(!object.Route.empty()){auto at=object.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
+                    auto moved=route_pose(object,seconds_);
                     grapple_.move_anchor(world_point(moved,grappleOffset_),dt);grapple_.normal=(world_point(moved,grappleOffset_+grappleLocalNormal_)-world_point(moved,grappleOffset_)).unit();if(grapple_.state==GrappleMotion::State::Free)grappleFalling_=true;found=true;break;
                 }
                 if(!found){grapple_.detach();grappleFalling_=true;}
                 if(grapple_.state==GrappleMotion::State::Wall && forward>0 && !control_.blocks_mobility()){
                     for(const auto& object:playScene_.Characters)if(object.Id==grappleTarget_){
-                        auto moved=object;if(!object.Route.empty()){auto at=object.at(seconds_);moved.X=at.X;moved.Z=at.Z;}auto bounds=object_bounds(moved);
+                        auto moved=route_pose(object,seconds_);auto bounds=object_bounds(moved);
                         if(position.y-1.7>=bounds.high.y+.04 && controller_->traverse(position,grapple_.normal*(-.8*control_.movement_factor())+Vec3{0,.2,0})){mantleRemaining_=.4;grapple_.velocity=grapple_.normal*(-2*control_.movement_factor())+Vec3{0,.5,0};grapple_.detach();grappleFalling_=true;break;}
                     }
                 }
@@ -744,15 +857,22 @@ class AdventurePlayer {
                 if(mantleRemaining_>0)mantleRemaining_=std::max(0.,mantleRemaining_-dt);else grapple_.velocity.y-=9.81*dt;velocity=grapple_.velocity;forced=true;
             }
             auto before=position;
-            {ScopedTiming timer{lastTiming.physicsMs};position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);}
+            {ScopedTiming timer{lastTiming.physicsMs};controller_->liquids(liquidSnapshot_);position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);}
+            controller_->sync_dynamic(playScene_);
+            for(const auto& c:playScene_.Characters)if(c.Dynamic){auto bounds=object_bounds(c);interactionBounds_[c.Id]=bounds;for(auto& solid:solids_)if(solid.first==c.Id){solid.second=bounds;break;}}
             presentationVelocity_=(position-before)*(1./dt);
             if(launchAirborne_ && controller_->grounded && controlVelocity_.y<=0){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}
             if(grappleFalling_ && controller_->grounded && velocity.y<=0){grappleFalling_=false;grapple_.velocity={};}
-            if(grapple_.state==GrappleMotion::State::Pulling && !grapple_.flying() && forced && velocity.length()>.1 && (position-before).length()<velocity.length()*dt*.1){grapple_.detach();grappleFalling_=true;}
+            if(grapple_.state==GrappleMotion::State::Pulling && !grapple_.flying() && forced && velocity.length()>.1){
+                // A tiny timer/render interval can fall below the collision solver's
+                // movement precision. Release only after sustained obstruction.
+                if((position-before).length()<velocity.length()*dt*.1)grappleBlockedSeconds_+=dt;else grappleBlockedSeconds_=0;
+                if(grappleBlockedSeconds_>=.12){grapple_.detach();grappleFalling_=true;grappleBlockedSeconds_=0;}
+            }else grappleBlockedSeconds_=0;
 
             jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
             for(const auto& object:playScene_.Characters)if(!object.Route.empty()){
-                auto moved=object;auto at=object.at(seconds_);moved.X=at.X;moved.Z=at.Z;
+                auto moved=route_pose(object,seconds_);
                 interactionBounds_[object.Id]=object_bounds(moved);
             }
             update_rules();return;

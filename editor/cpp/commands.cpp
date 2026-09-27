@@ -111,13 +111,16 @@ json apply_commands(const fs::path &file) {
                 throw std::runtime_error("Source scene changed; inspect it again before merging");
             auto objects = SceneData::decode(bytes).Characters;
             if (objects.empty()) throw std::runtime_error("Source scene contains no objects");
+            std::unordered_map<std::string,std::string> mergedIds;
             for (auto &object : objects) {
-                object.Id = new_id();
+                auto oldId=object.Id;object.Id = new_id();mergedIds[oldId]=object.Id;
                 if (!object.Asset.empty()) {
                     auto asset = fs::path(wide(object.Asset));
                     if (asset.is_relative()) object.Asset = utf8((source.parent_path() / asset).lexically_normal().wstring());
                 }
             }
+            for(auto& object:objects)if(auto target=mergedIds.find(object.JointTargetId);target!=mergedIds.end())object.JointTargetId=target->second;
+            for(auto& object:objects)if(auto target=mergedIds.find(object.LightningTargetId);target!=mergedIds.end())object.LightningTargetId=target->second;
             place_object_group(objects, scene, op.value("x", objects.front().X), op.value("z", objects.front().Z));
             for (auto &object : objects) scene.Characters.push_back(std::move(object));
             continue;
@@ -269,7 +272,8 @@ json apply_commands(const fs::path &file) {
         } else if (kind == "remove") {
             keys(op, {"op", "id"});
             auto index = &c - scene.Characters.data();
-            scene.Characters.erase(scene.Characters.begin() + index);
+            auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
+            for(auto& object:scene.Characters)if(object.JointTargetId==removedId){object.JointKind=0;object.JointTargetId.clear();}
         } else
             throw std::runtime_error("Unsupported editor operation: " + kind);
     }

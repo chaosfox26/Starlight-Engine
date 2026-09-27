@@ -110,6 +110,174 @@ int visible_ui_checks(const fs::path& output) {
             throw std::runtime_error("Automatic visible editor foreground precondition unavailable");
         }
         report["automaticStart"]=true;
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_FOG_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560||monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Fog test requires a 2560x1440 monitor");SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Physical fog transport and terrain exclusion";scene.FogDensity=0;scene.Terrain.emplace();if(GetEnvironmentVariableW(L"STARLIGHT_UI_FOG_WATER",nullptr,0)){scene.Terrain->WaterEnabled=true;scene.Terrain->WaterLevel=2;report["liquidAirBoundary"]=true;}for(int z=0;z<TerrainData::N;++z)for(int x=0;x<TerrainData::N;++x)scene.Terrain->Heights[z*TerrainData::N+x]=1.+.035*(x*TerrainData::Step-12);Character smoke;smoke.Shape=GetEnvironmentVariableW(L"STARLIGHT_UI_FOG_FIRE",nullptr,0)?"fire":"shadowenemy-smoke";smoke.Y=2;smoke.Size=2;if(smoke.Shape=="fire")report["fireSmokeSource"]=true;Character obstacle;obstacle.Shape="cube";obstacle.Height=3;scene.Characters={smoke,obstacle};if(GetEnvironmentVariableW(L"STARLIGHT_UI_FOG_DENSE",nullptr,0)){scene.Characters.clear();for(int i=0;i<16;++i){auto emitter=smoke;emitter.Id="moving-smoke-"+std::to_string(i);emitter.X=-6+(i%4)*2;emitter.Z=-3+(i/4)*2;emitter.Route={{emitter.X+7,emitter.Z}};emitter.Speed=.7;scene.Characters.push_back(emitter);}for(int i=0;i<8;++i){auto body=obstacle;body.Id="fog-obstacle-"+std::to_string(i);body.X=-5+i*1.5;body.Z=-1;body.Width=.6;body.Route={{body.X,4}};body.Speed=.3;scene.Characters.push_back(body);}report["denseMovingSources"]=16;}
+            history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            step("Warm transported smoke density",[&]{},[&]{return renderer->status().playing;});auto probes=renderer->status().fog_probes;step("Read emitted smoke field",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});auto first=renderer->status().fog_sample;report["emittedField"]=first;if(first[1]<1||first[5]>.001||first[6]<.1||first[3]<1.)throw std::runtime_error("Fog source, obstacle exclusion or velocity field is missing");
+            step("Pause physical smoke transport",[&]{renderer->playback(false);},[&]{return !renderer->status().playing;});probes=renderer->status().fog_probes;
+            step("Read paused density",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});auto paused=renderer->status().fog_sample;probes=renderer->status().fog_probes;
+            step("Verify paused density stays unchanged",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});auto held=renderer->status().fog_sample;for(int i=0;i<7;++i)if(std::abs(held[i]-paused[i])>1e-8)throw std::runtime_error("Paused atmosphere continued evolving on wall-clock time");report["pausedFieldUnchanged"]=true;
+            step("Resume physical smoke transport",[&]{renderer->playback(true);},[&]{return renderer->status().playing;});probes=renderer->status().fog_probes;
+            step("Read resumed density",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});first=renderer->status().fog_sample;report["resumedField"]=first;
+            step("Remove emitter while preserving transported smoke",[&]{std::erase_if(scene.Characters,[](const auto& c){return c.Shape=="shadowenemy-smoke"||c.Shape=="fire";});renderer->scene(scene,true);},[&]{return renderer->status().error.empty();});probes=renderer->status().fog_probes;step("Read drifting and dissipating smoke",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});auto after=renderer->status().fog_sample;report["advectedField"]=after;if(after[1]<=.01||after[1]>=first[1]||after[2]<=first[2]+.02||after[5]>.001)throw std::runtime_error("Smoke did not persist, drift, dissipate or avoid solids after emitter removal");
+            step("Reset smoke runtime",[&]{renderer->scene(scene);renderer->playback(false,true);},[&]{return !renderer->status().playing;});probes=renderer->status().fog_probes;step("Read cleared smoke field",[&]{renderer->probe_fog();},[&]{return renderer->status().fog_probes>probes;});auto reset=renderer->status().fog_sample;report["resetField"]=reset;if(reset[1]>.001)throw std::runtime_error("Fog reset retained old density");report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_MOTION_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_RT_MOTION_ONLY",nullptr,0)){
+            bool rtMotion=GetEnvironmentVariableW(L"STARLIGHT_UI_RT_MOTION_ONLY",nullptr,0)!=0;
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Motion test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="GPU rigid motion-vector verification";scene.RaytracingEnabled=rtMotion;scene.RaytracingQuality=1;scene.RayReconstructionEnabled=GetEnvironmentVariableW(L"STARLIGHT_UI_RR_MOTION",nullptr,0)!=0;Character mover;mover.Shape="cube";mover.Name="Moving object";mover.X=-4;mover.Route={{10,0}};mover.Speed=.6;Character still;still.Shape="cube";still.X=3;still.Z=-2;scene.Characters={mover,still};history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            step("Warm motion history",[&]{},[&]{return renderer->status().playing;});
+            auto probes=renderer->status().motion_probes;
+            step("Read moving GPU vectors",[&]{renderer->probe_motion();},[&]{return renderer->status().motion_probes>probes;});
+            if(rtMotion&&renderer->status().tier==0)throw std::runtime_error("Ray-traced motion test fell back to raster");if(GetEnvironmentVariableW(L"STARLIGHT_UI_RR_MOTION",nullptr,0)&&!renderer->status().rr)throw std::runtime_error("Ray Reconstruction motion test used a fallback denoiser");report["rayReconstructionActive"]=renderer->status().rr;report["raytracedMotion"]=rtMotion;auto moving=renderer->status().motion_sample;report["movingVectors"]=moving;if(moving[2]<10||moving[0]<.001||moving[0]>30)throw std::runtime_error("GPU motion texture does not contain bounded object movement");
+            probes=renderer->status().motion_probes;
+            step("Reorder objects with preserved history",[&]{std::reverse(scene.Characters.begin(),scene.Characters.end());renderer->scene(scene,true);renderer->probe_motion();},[&]{return renderer->status().motion_probes>probes;});
+            auto reordered=renderer->status().motion_sample;report["reorderedVectors"]=reordered;if(reordered[2]<10||reordered[0]>30)throw std::runtime_error("Reordering changed or erased object motion history");
+            step("Pause scene motion",[&]{renderer->playback(false);},[&]{return !renderer->status().playing;});probes=renderer->status().motion_probes;
+            step("Read stationary GPU vectors",[&]{renderer->probe_motion();},[&]{return renderer->status().motion_probes>probes;});
+            auto stationary=renderer->status().motion_sample;report["stationaryVectors"]=stationary;if(stationary[0]>.001)throw std::runtime_error("Stationary objects retain incorrect motion vectors");
+            step("Warm independent particle motion",[&]{scene.Characters.clear();Character fire;fire.Shape="fire";fire.ParticleRate=100;scene.Characters.push_back(fire);renderer->scene(scene);renderer->playback(true,true);},[&]{return renderer->status().fire_particles>0;});
+            probes=renderer->status().motion_probes;
+            step("Read particle GPU vectors",[&]{renderer->probe_motion();},[&]{return renderer->status().motion_probes>probes;});auto particles=renderer->status().motion_sample;report["particleVectors"]=particles;if(particles[2]<10||particles[0]<.001||particles[0]>100)throw std::runtime_error("Particle vertices do not carry bounded GPU motion vectors");
+            step("Warm physically bending grass",[&]{scene.Characters.clear();Character grass;grass.Shape="grass";grass.Size=2;scene.Characters={grass};renderer->scene(scene);renderer->playback(true,true);},[&]{return renderer->status().playing;});probes=renderer->status().motion_probes;
+            step("Read grass deformation vectors",[&]{renderer->probe_motion();},[&]{return renderer->status().motion_probes>probes;});auto grassVectors=renderer->status().motion_sample;report["grassVectors"]=grassVectors;if(grassVectors[2]<10||grassVectors[0]<.001||grassVectors[0]>100)throw std::runtime_error("Physical grass deformation is missing bounded rendered motion vectors");
+            if(rtMotion){report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;}
+            auto fill=[&](float progress){MeshPart part;part.gpuTelegraph=GpuTelegraph{0,.05f,0,0,-1,3,.785398163f,progress,.2f,.8f,.3f};part.gpuTelegraph->identity=vertex_motion_identity(11,991,UINT64_MAX);return part;};
+            step("Warm resident attack fill",[&]{scene.Characters.clear();renderer->scene(scene);renderer->playback(false);renderer->gameplay_overlays({fill(.25f)});},[&]{return renderer->status().error.empty();});probes=renderer->status().motion_probes;
+            step("Read expanding GPU fill vectors",[&]{renderer->gameplay_overlays({fill(.5f)},true);},[&]{return renderer->status().motion_probes>probes;});auto attack=renderer->status().motion_sample;report["attackFillVectors"]=attack;if(attack[2]<100||attack[0]<.01||attack[0]>500)throw std::runtime_error("Resident attack fill does not preserve GPU motion history");
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_LIGHTNING_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Lightning test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Lightning contact, chains and damage";scene.Game.emplace();scene.Game->SpawnZ=0;
+            Character bolt;bolt.Shape="chaos-lightning";bolt.X=-1;bolt.Z=-5;bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.TargetZ=0;bolt.LightningDamage=7;bolt.LightningChains=1;bolt.LightningChainRadius=3;bolt.CombatTeam=1;
+            Character body;body.Shape="cube";body.X=-1;body.Z=-5;body.CombatHealth=1000;Character second=body;second.Id=new_id();second.X=1;scene.Characters={bolt,body,second};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);adventure->cameraPitch=-.2;adventure->cameraDistance=8;bool sparks=false;
+            for(int i=0;i<6;++i)step(("Lightning discharge "+std::to_string(i+1)).c_str(),[&]{},[&]{sparks|=renderer->status().effect_sparks>0;return scene.encode()==authored;});
+            auto& actors=adventure->combat_actors();if(actors.at(body.Id).health>=1000||actors.at(second.Id).health>=1000||!sparks||adventure->presentation().lightning==0)throw std::runtime_error("Lightning did not produce chain damage, sparks and sound events");
+            report["primaryHealth"]=actors.at(body.Id).health;report["chainHealth"]=actors.at(second.Id).health;report["strikeEvents"]=adventure->presentation().lightning;report["impactSparksObserved"]=sparks;report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_JOINTS_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Joint test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Fixed, hinge, rope and spring bodies";scene.Game.emplace();scene.Game->SpawnZ=0;
+            for(int kind=1;kind<=4;++kind){Character c;c.Shape="cube";c.Name=std::vector<std::string>{"","Fixed","Hinge","Rope","Spring"}[kind];c.Dynamic=true;c.Size=.5;c.X=(kind-2.5)*2;c.Y=3;c.Z=-5;c.JointKind=kind;c.JointTargetY=2;c.JointLength=kind==4?1:2;if(kind==3){c.JointSegments=16;c.JointY=1;c.JointTargetY=2.5;c.Density=1000;}if(kind==2){c.JointX=1;c.JointY=1;c.JointAxisY=0;c.JointAxisZ=1;}scene.Characters.push_back(c);}
+            auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);adventure->cameraPitch=-.2;adventure->cameraDistance=8;
+            for(int i=0;i<6;++i)step(("Constrained bodies "+std::to_string(i+1)).c_str(),[&]{},[&]{return scene.encode()==authored;});
+            auto runtime=adventure->scene();if(std::abs(runtime.Characters[0].Y-3)>.05||std::abs(runtime.Characters[2].Y-3)>.1||runtime.Characters[3].Y<3.7)throw std::runtime_error("Visible constrained bodies did not remain attached");
+            if(runtime.Characters[2].JointRuntimePoints.size()!=17)throw std::runtime_error("Visible physical rope has no simulated link path");report["physicalRopeLinks"]=16;report["fixedHeld"]=true;report["ropeHeld"]=true;report["springResponded"]=true;report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_ENEMY_PROJECTILE_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560||monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Enemy projectile test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Enemy traveling shots and player impacts";scene.Game.emplace();scene.Game->SpawnZ=0;Character enemy;enemy.Shape="cube";enemy.Name="Projectile attacker";enemy.Z=-6;enemy.RotationY=180;enemy.CombatHealth=100;enemy.CombatAutoAttack=true;enemy.CombatProjectileSpeed=5;enemy.CombatProjectileGravity=.25;enemy.CombatProjectileMass=.1;scene.Characters={enemy};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);adventure->cameraPitch=-.2;adventure->cameraDistance=6;bool flying=false,monitored=false;
+            for(int i=0;i<7;++i)step(("Enemy shot and impact "+std::to_string(i+1)).c_str(),[&]{},[&]{for(const auto& shot:adventure->presentation().projectiles)flying|=shot.source==enemy.Id&&shot.team==2;for(const auto& object:renderer->pacing_snapshot().objects)monitored|=object.id.starts_with("projectile-");return scene.encode()==authored;});
+            if(!flying||!monitored||adventure->health()>=100||adventure->combat_actors().at(enemy.Id).health!=100)throw std::runtime_error("Enemy shot flight, player damage or owner immunity failed");report["enemyShotFlight"]=flying;report["projectileMonitor"]=monitored;report["playerHealth"]=adventure->health();report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_PROJECTILE_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Projectile test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Traveling projectile and physical impact";scene.Game.emplace();scene.Game->SpawnZ=0;scene.Game->ProjectileSpeed=5;
+            Character target;target.Shape="cube";target.Name="Projectile target";target.GameplayRole="breakable";target.Z=-8;target.Height=2;target.Color="#C58542";scene.Characters={target};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            adventure->cameraPitch=-.2;adventure->cameraDistance=6;adventure->fire_button(true);adventure->fire_button(false);bool flying=false,monitored=false,fractured=false;
+            for(int i=0;i<7;++i)step(("Traveling shot and impact "+std::to_string(i+1)).c_str(),[&]{},[&]{auto p=adventure->presentation();flying|=!p.projectiles.empty()&&!adventure->scene().Characters.empty();fractured|=p.fragments.size()>=16;for(const auto& object:renderer->pacing_snapshot().objects)monitored|=object.id.starts_with("projectile-");return scene.encode()==authored;});
+            if(!flying||!monitored||!fractured||!adventure->scene().Characters.empty())throw std::runtime_error("Visible projectile did not travel, register motion and fracture its target on impact");
+            report["projectileFlightObserved"]=flying;report["projectileMonitoringObserved"]=monitored;report["impactFractureObserved"]=fractured;report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_LIQUID_PHYSICS_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Liquid physics test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Shared gameplay liquid forces";scene.Game.emplace();scene.Game->SpawnZ=0;scene.Terrain.emplace();scene.Terrain->WaterEnabled=true;scene.Terrain->WaterLevel=1.5;
+            Character light;light.Shape="cube";light.Name="Floating low-density prop";light.Dynamic=true;light.Density=500;light.X=-2;light.Z=-4;light.Y=2;light.Color="#D2AC60";
+            Character heavy=light;heavy.Id="heavy-liquid-prop";heavy.Name="Sinking dense prop";heavy.Density=5000;heavy.X=2;heavy.Color="#646B78";
+            scene.Characters={light,heavy};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            adventure->cameraPitch=-.25;adventure->cameraDistance=8;
+            for(int i=0;i<8;++i)step(("Shared liquid forces "+std::to_string(i+1)).c_str(),[&]{},[&]{return scene.encode()==authored && renderer->liquid_snapshot()!=nullptr;});
+            auto runtime=adventure->scene();report["lightY"]=runtime.Characters[0].Y;report["heavyY"]=runtime.Characters[1].Y;
+            if(runtime.Characters[0].Y<.5 || runtime.Characters[0].Y>2.2 || runtime.Characters[1].Y>.2)throw std::runtime_error("Shared liquid forces did not produce stable floating and sinking props");
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_HOLLOW_FRACTURE_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_PANEL_FRACTURE_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_U_FRACTURE_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_CONCAVE_FRACTURE_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_FRACTURE_ONLY",nullptr,0)||GetEnvironmentVariableW(L"STARLIGHT_UI_SCULPT_FRACTURE_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Fracture test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Physical cube fracture";scene.Game.emplace();scene.Game->SpawnZ=0;if(GetEnvironmentVariableW(L"STARLIGHT_UI_FRACTURE_WATER",nullptr,0)){scene.Terrain.emplace();scene.Terrain->WaterEnabled=true;scene.Terrain->WaterLevel=.5;report["liquidFracture"]=true;}
+            Character block;block.Shape="cube";block.Name="Breakable block";block.GameplayRole="breakable";block.Z=-4;block.Y=.5;block.Width=1.5;block.Height=1.5;block.Color="#C58542";
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_SCULPT_FRACTURE_ONLY",nullptr,0)){block.Sculpt=prepare_sculpt(object_mesh(block));block.Shape.reset();report["sculptFracture"]=true;}
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_CONCAVE_FRACTURE_ONLY",nullptr,0)){block.Sculpt=sculpt_from(concave_solid_fixture());block.Shape.reset();block.X=-.5;block.Width=block.Height=1;report["concaveFracture"]=true;}
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_U_FRACTURE_ONLY",nullptr,0)){block.Sculpt=sculpt_from(u_solid_fixture());block.Shape.reset();block.X=-1.5;block.Width=block.Height=1;scene.Name="Physical U-shaped fracture";report["uShapedFracture"]=true;}
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_PANEL_FRACTURE_ONLY",nullptr,0)){block.Sculpt=sculpt_from(panel_fixture());block.Shape.reset();block.Width=block.Height=1;scene.Name="Physical open-panel fracture";report["panelFracture"]=true;}
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_HOLLOW_FRACTURE_ONLY",nullptr,0)){block.Sculpt=sculpt_from(torus_fixture());block.Shape.reset();block.Width=block.Height=1;scene.Name="Physical hollow-object fracture";report["hollowFracture"]=true;}
+            scene.Characters={block};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            adventure->cameraPitch=-.3;adventure->cameraDistance=7;adventure->fire_button(true);adventure->fire_button(false);
+            bool sawPieces=false,tumbled=false,monitored=false,environmentBodies=false,liquidResponse=false;
+            for(int i=0;i<6;++i)step(("Physical fracture "+std::to_string(i+1)).c_str(),[&]{},[&]{auto fragments=adventure->presentation().fragments;liquidResponse|=renderer->status().liquid_splashes>0;environmentBodies|=fragments.size()>0&&renderer->status().fog_bodies>=fragments.size();for(const auto& object:renderer->pacing_snapshot().objects)monitored|=object.id.starts_with("debris-");sawPieces|=GetEnvironmentVariableW(L"STARLIGHT_UI_HOLLOW_FRACTURE_ONLY",nullptr,0)?fragments.size()>1:fragments.size()==(GetEnvironmentVariableW(L"STARLIGHT_UI_PANEL_FRACTURE_ONLY",nullptr,0)?2:GetEnvironmentVariableW(L"STARLIGHT_UI_U_FRACTURE_ONLY",nullptr,0)?3:GetEnvironmentVariableW(L"STARLIGHT_UI_CONCAVE_FRACTURE_ONLY",nullptr,0)?20:16);for(const auto& f:fragments)tumbled|=bool(f.part)&&(std::abs(f.rotation[0])+std::abs(f.rotation[1])+std::abs(f.rotation[2])>.01);return scene.encode()==authored;});
+            if(!sawPieces || !tumbled || !monitored || !environmentBodies || !adventure->scene().Characters.empty())throw std::runtime_error("Visible fracture did not produce tumbling source pieces");
+            if(GetEnvironmentVariableW(L"STARLIGHT_UI_FRACTURE_WATER",nullptr,0)&&!liquidResponse)throw std::runtime_error("Fracture bodies did not create liquid entry splashes");report["liquidResponseObserved"]=liquidResponse;
+            report["debrisEnvironmentBodiesObserved"]=environmentBodies;report["debrisMonitoringObserved"]=monitored;report["cutPiecesObserved"]=sawPieces;report["rigidRotationObserved"]=tumbled;report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_PROP_PHYSICS_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Prop physics test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            scene=SceneData{};scene.Name="Shared player and prop physics";scene.Game.emplace();scene.Game->SpawnZ=0;
+            Character prop;prop.Shape="cube";prop.Name="Pushable prop";prop.Dynamic=true;prop.Density=50;prop.Width=prop.Depth=.4;prop.Z=-1;
+            Character rock;rock.Shape="rock";rock.Name="Falling rock";rock.Dynamic=true;rock.X=2;rock.Z=-3;rock.Y=3;
+            scene.Characters={prop,rock};auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            adventure->cameraPitch=-.4;adventure->cameraDistance=7;mockPush=true;
+            for(int i=0;i<5;++i)step(("Player pushes physical prop "+std::to_string(i+1)).c_str(),[&]{if(i==3)mockPush=false;},[&]{return adventure->scene().Characters.size()==2 && scene.encode()==authored;});
+            mockPush=false;const auto& runtime=adventure->scene();
+            if(runtime.Characters[0].Z>=-1.1 || runtime.Characters[1].Y>=1)throw std::runtime_error("Shared collision world did not push and drop its props");
+            auto timing=renderer->pacing_snapshot();bool displayed=false;
+            for(const auto& object:timing.objects)if(object.id==prop.Id)displayed=std::abs(object.position.z-runtime.Characters[0].Z)<.2;
+            if(!displayed)throw std::runtime_error("Rendered prop did not follow authoritative physics position");
+            report["propZ"]=runtime.Characters[0].Z;report["rockY"]=runtime.Characters[1].Y;report["renderedPhysicsPositionMatches"]=displayed;
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_ENVIRONMENT_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Environment test requires a 2560x1440 monitor");
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;report["scope"]="Dynamic environment integration; visual quality acceptance remains open";
+            scene=SceneData{};scene.Name="Moving environment verification";scene.FogDensity=.08;
+            scene.Terrain.emplace();scene.Terrain->WaterEnabled=true;scene.Terrain->WaterLevel=.08;
+            Character block;block.Shape="cube";block.Width=2;block.Height=1.2;block.X=-2;block.Route={{2,0}};block.Speed=.4;
+            Character bolt;bolt.Shape="chaos-lightning";bolt.X=-2;bolt.Y=.3;bolt.LightningTargetId=block.Id;bolt.TargetX=0;bolt.TargetY=.5;bolt.TargetZ=0;
+            Character smoke;smoke.Shape="shadowenemy-smoke";smoke.X=-3;smoke.Z=-2;smoke.Size=2;
+            Character lava;lava.Shape="lava";lava.X=4;lava.Z=2;lava.Y=.18;
+            Character falling;falling.Shape="rock";falling.Name="Falling rigid body";falling.X=2;falling.Z=-3;falling.Y=3;falling.Dynamic=true;
+            Character flame;flame.Shape="fire";flame.Name="Moving fire particles";flame.X=3;flame.Z=-2;flame.Color="#FF7433";
+            scene.Characters={block,bolt,smoke,lava,falling,flame};
+            for(int i=0;i<8;++i){Character grass;grass.Shape="grass";grass.Name="Wind grass "+std::to_string(i+1);grass.Color="#4C8F30";grass.X=-3+i*.8;grass.Z=3;scene.Characters.push_back(grass);}
+            history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            double firstVolume=0;bool sparks=false,flames=false,movingFog=false;
+            for(int i=0;i<8;++i)step(("Dynamic fog, lightning, sparks and liquids "+std::to_string(i+1)).c_str(),[&]{},[&]{auto s=renderer->status();sparks|=s.effect_sparks>0;flames|=s.fire_particles>0;movingFog|=s.fog_moving_bodies>0;if(!i)firstVolume=s.liquid_volume;return s.playing && s.liquid_volume>0 && std::abs(s.liquid_volume-firstVolume)<1e-7;});
+            report["environmentThunderBuffers"]=gameplayAudio.submitted;report["environmentAudioErrors"]=gameplayAudio.failed;if(gameplayAudio.submitted==0||gameplayAudio.failed)throw std::runtime_error("Ordinary environment thunder did not reach the audio device");
+            report["movingFogObstaclesObserved"]=movingFog;if(!movingFog)throw std::runtime_error("Moving bodies were not delivered to fog transport");
+            report["fireParticlesObserved"]=flames;if(!flames)throw std::runtime_error("Fire particles were not emitted");report["impactSparksObserved"]=sparks;report["liquidVolume"]=firstVolume;
+            if(!sparks)throw std::runtime_error("No lightning impact sparks during environment run");
+            auto observed=renderer->pacing_snapshot();bool fell=false,animated=false;double effectRate=0;
+            for(const auto& object:observed.objects){if(object.id==falling.Id)fell=object.position.y<falling.Y;animated|=object.effectUpdatesPerSecond>0;effectRate=std::max(effectRate,object.effectUpdatesPerSecond);}
+            report["rigidBodyFell"]=fell;report["effectUpdatesObserved"]=animated;report["renderFps"]=observed.fps;report["effectUpdatesPerSecond"]=effectRate;
+            if(effectRate<observed.fps*.85)throw std::runtime_error("Effect time is not advancing at the rendered frame rate");
+            if(!fell || !animated)throw std::runtime_error("Missing rigid-body fall or effect-update telemetry");
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_NAVIGATION_ONLY",nullptr,0)){
             scene=SceneData{};scene.Name="NPC obstacle routing";scene.Game.emplace();scene.Game->SpawnZ=0;
             Character a;a.Shape="cube";a.Id="routing-enemy";a.Z=-8;a.CombatHealth=100;a.CombatPursuit=true;
@@ -637,4 +805,3 @@ int visible_ui_checks(const fs::path& output) {
     SendMessageW(window,WM_CLOSE,0,0);
     return report["pass"].get<bool>() ? 0 : 1;
 }
-

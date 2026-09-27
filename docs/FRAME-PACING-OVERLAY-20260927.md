@@ -83,3 +83,52 @@ The simple battle is insufficient evidence about physics scalability in heavy sc
 
 
 Publication checkpoint: the anonymized publication copy also passed its own Release build, all 542 native core checks, and the audit analyzer contract suite. These checks do not certify that remaining frame-pacing issues are resolved. The current source checkpoint includes Step 4/4A and subsequent performance work; the earlier clean-Windows export evidence applies to its earlier tested binary.
+
+
+### Subsequent local experiments (after the published checkpoint)
+
+Transient raster meshes now use fresh identities rather than hashing every changing
+vertex/index byte; static meshes retain content caching. Existing fenced upload-buffer
+reuse is preserved. Overlay paint buffers are retained across paints and resized only
+with the viewport. The final pacing spin guard is now at most0.5ms and at most half a
+frame interval; this increases bounded CPU busy-waiting without changing the500FPS cap.
+
+Full-run results, startup included: transient identities avg482.07/1%330.53/.1%206.93;
+overlay buffer reuse avg482.61/1%350.05/.1%242.28; half-ms guard repeat avg497.52/
+1%383.89/.1%241.47. The first half-ms run suffered a24ms startup timing wait and had
+.1%168.95; it is retained, not hidden. All recorded logs remain under Starlight-analysis.
+
+GPU attack fills: flat-terrain horizontal effects use reusable default-heap meshes,
+preloaded for the standard player/boss templates. Per-update instances contain only
+position, aim, range, angle, progress and color (44 bytes). The existing GPU vertex
+shader positions/scales the fill; no CPU readback or additional compute dispatch.
+CPU outlines, combat hit tests, non-flat terrain effects and raytraced scene presentation
+retain their existing paths. This is targeted GPU offload, not a complete effects rewrite.
+The native template cache is bounded to64 variants; retired templates are flushed before
+release. Instance count and logical mesh-buffer bytes appear in the overlay and schema4
+JSONL. These bytes are not total device VRAM usage or committed heap accounting.
+STARLIGHT_GPU_TELEGRAPHS=0 selects the CPU control. Core545 passed, including compact
+GPU-instance generation, removed CPU fill-grid vertices and unchanged terrain fallback.
+Visible GPU comparison is in progress; do not claim a performance gain before its result.
+
+
+GPU-fill same-build comparison completed (one run per mode):
+
+| Full-run metric | GPU fills on | CPU control |
+|---|---:|---:|
+| Average FPS | 498.19 | 497.46 |
+| 1% low | 407.48 | 383.48 |
+| 0.1% low | 259.93 | 237.69 |
+| Mean scene build/upload | 0.2610 ms | 0.6511 ms |
+| Mean presentation | 0.1194 ms | 0.1825 ms |
+| Frames drawing resident fills | 20,177 | 0 |
+| Foreground battle checks | 44 passed | 44 passed |
+
+Both logs complete without dropped records. The control truly disabled resident fills;
+templates were still preloaded in both modes (229,632 logical mesh-buffer bytes), so
+memory presence alone does not mean that path ran. The overlay is a rolling two-second
+window and can rise/fall in either mode; it is not the full-run summary. The owner noted
+this variation. The stage-cost reduction and this pair favor offload, but one A/B pair
+is not proof of repeatable low-percentile improvement or stable pacing. Startup is
+included. Evidence: pacing-gpu-fill-20260927 and pacing-gpu-fill-cpu-control-20260927.
+GPU ui-4.bmp inspected at2560x1440: fills and overlay visible. No physics expansion yet.

@@ -134,6 +134,10 @@ WalkPoint Character::at(double seconds) const {
     }
     return p;
 }
+double Character::route_yaw(double seconds) const {
+    if(seconds<=0||PhysicsRotation)return 0;WalkPoint p{X,Z};double remaining=seconds*Speed,yaw=0;
+    for(const auto& q:Route){double dx=q.X-p.X,dz=q.Z-p.Z,length=std::hypot(dx,dz);if(length>1e-8)yaw=std::atan2(dx,dz);if(length>remaining&&length>0)break;remaining-=length;p=q;}return yaw;
+}
 void Character::validate() const {
     require(GrappleMode>=0 && GrappleMode<=2,"Invalid grapple attachment mode");
     require(std::isfinite(CombatSightRange) && CombatSightRange>=1 && CombatSightRange<=1000 && std::isfinite(CombatHealth) && CombatHealth>=0 && CombatHealth<=1000000000 && CombatTeam>=0 && CombatTeam<=255 && CombatControlEffect>=-1 && CombatControlEffect<14 && (!CombatBoss || CombatHealth>0),"Invalid combat actor settings");
@@ -148,13 +152,25 @@ void Character::validate() const {
     require(BranchSpread >= 0 && BranchSpread <= 5 &&
                 std::max({std::abs(TargetX), std::abs(TargetY), std::abs(TargetZ)}) <= 30,
             "Invalid lightning target");
+    require(finite({LightningDamage,LightningChainRadius})&&LightningDamage>=0&&LightningDamage<=100000&&LightningChainRadius>0&&LightningChainRadius<=100&&LightningChains>=0&&LightningChains<=16,"Invalid lightning behavior");
+    require(finite({ParticleRate,ParticleLifetime,ParticleDrag,ParticleLift,ParticleWindX,ParticleWindY,ParticleWindZ})&&ParticleRate>=0&&ParticleRate<=1000&&ParticleLifetime>.01&&ParticleLifetime<=30&&ParticleDrag>=0&&ParticleDrag<=20&&std::abs(ParticleLift)<=100&&std::abs(ParticleWindX)<=100&&std::abs(ParticleWindY)<=100&&std::abs(ParticleWindZ)<=100,"Invalid particle settings");
+    require(finite({VelocityX,VelocityY,VelocityZ,AngularVelocityX,AngularVelocityY,AngularVelocityZ})&&std::max({std::abs(VelocityX),std::abs(VelocityY),std::abs(VelocityZ)})<=500&&std::max({std::abs(AngularVelocityX),std::abs(AngularVelocityY),std::abs(AngularVelocityZ)})<=3600,"Invalid body starting velocity");
+    require(finite({JointAngleMin,JointAngleMax})&&JointAngleMin>=-180&&JointAngleMax<=180&&JointAngleMin<=JointAngleMax,"Invalid hinge angle limits");
+    require((JointSegments==0||(JointSegments>=2&&JointSegments<=64))&&finite({JointRadius})&&JointRadius>=.005&&JointRadius<=.5,"Invalid rope segment settings");
+    require(finite({CombatProjectileSpeed,CombatProjectileGravity,CombatProjectileMass})&&CombatProjectileSpeed>=0&&CombatProjectileSpeed<=500&&CombatProjectileGravity>=0&&CombatProjectileGravity<=40&&CombatProjectileMass>0&&CombatProjectileMass<=100,"Invalid actor projectile settings");
+    require(JointKind>=0 && JointKind<=6,"Invalid joint kind");
+    require(finite({JointX,JointY,JointZ,JointTargetX,JointTargetY,JointTargetZ,JointAxisX,JointAxisY,JointAxisZ,JointLength,JointFrequency,JointDamping}),"Invalid joint values");
+    require(JointLength>0 && JointLength<=1000 && JointFrequency>0 && JointFrequency<=120 && JointDamping>=0 && JointDamping<=2,"Invalid joint limits");
+    require((JointKind!=2 && JointKind!=6) || JointAxisX*JointAxisX+JointAxisY*JointAxisY+JointAxisZ*JointAxisZ>1e-8,"Hinge axis must be nonzero");
+    require(JointKind==0 || (Dynamic && JointTargetId!=Id),"A joint requires a dynamic body and a different target");
+    require(finite({Friction,Restitution}) && Friction>=0 && Friction<=2 && Restitution>=0 && Restitution<=1,"Invalid physical material");
     require(Density >= 50 && Density <= 20000 && LightCone >= 5 && LightCone <= 180 && LightIntensity >= 0 &&
                 LightIntensity <= 100 && LightRange >= .1 && LightRange <= 50 && Surface >= 0 &&
                 Surface <= 11,
             "Invalid material or physics setting");
     if (Dynamic)
-        require(Shape && *Shape != "grass" && *Shape != "fire" && *Shape != "light" && *Shape != "lava" &&
-                    *Shape != "chaos-lightning" && *Shape != "light-shard" && *Shape != "shadowenemy-smoke",
+        require((Shape || Sculpt || !Asset.empty()) && (!Shape || (*Shape != "grass" && *Shape != "fire" && *Shape != "light" && *Shape != "lava" &&
+                    *Shape != "chaos-lightning" && *Shape != "light-shard" && *Shape != "shadowenemy-smoke")),
                 "Dynamic body needs a solid shape");
     for (const auto &p : Route)
         require(finite({p.X, p.Z}), "Invalid route point");
@@ -172,6 +188,7 @@ void GameplayRule::validate() const {
     for(const auto& a:Actions)require((a.Type=="open-door" || a.Type=="complete-objective" || a.Type=="finish-game") && a.Target.size()<=128 && (a.Type=="finish-game" || !a.Target.empty()),"Invalid rule action");
 }
 void GameSettings::validate() const {
+    require(finite({ProjectileSpeed,ProjectileGravity,ProjectileMass})&&ProjectileMass>0&&ProjectileMass<=100&&ProjectileSpeed>=0&&ProjectileSpeed<=500&&ProjectileGravity>=0&&ProjectileGravity<=40,"Invalid projectile speed or gravity");
     require(Preset=="adventure", "Unsupported game preset");
     require(finite({SpawnX,SpawnY,SpawnZ,MoveSpeed,LookSensitivity,PlayerRadius}) &&
         std::abs(SpawnX)<=100000 && std::abs(SpawnY)<=100000 && std::abs(SpawnZ)<=100000 &&

@@ -6,6 +6,9 @@ namespace starlight::editor {
 class PacingHud {
     HWND window_{};PacingSnapshot snapshot_;CameraState camera_;int scale_=100;
     ULONGLONG refreshed_=0;
+    HDC paintBuffer_{};HBITMAP paintBitmap_{};HGDIOBJ paintOriginal_{};int paintWidth_=0,paintHeight_=0;
+    void release_buffer(){if(paintBuffer_){SelectObject(paintBuffer_,paintOriginal_);DeleteObject(paintBitmap_);DeleteDC(paintBuffer_);}paintBuffer_=nullptr;paintBitmap_=nullptr;paintOriginal_=nullptr;}
+
     int px(int n)const{return MulDiv(n,scale_,100);}
     static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
         auto p=reinterpret_cast<PacingHud*>(GetWindowLongPtrW(h,GWLP_USERDATA));
@@ -17,9 +20,18 @@ class PacingHud {
     }
     void paint(){
         PAINTSTRUCT ps{};auto target=BeginPaint(window_,&ps);RECT r{};GetClientRect(window_,&r);
-        auto dc=CreateCompatibleDC(target);auto bitmap=CreateCompatibleBitmap(target,std::max(1L,r.right),std::max(1L,r.bottom));auto oldBitmap=SelectObject(dc,bitmap);
+        if(!paintBuffer_ || paintWidth_!=r.right || paintHeight_!=r.bottom){
+            release_buffer();paintWidth_=r.right;paintHeight_=r.bottom;
+            paintBuffer_=CreateCompatibleDC(target);paintBitmap_=CreateCompatibleBitmap(target,std::max(1L,r.right),std::max(1L,r.bottom));
+            if(!paintBuffer_ || !paintBitmap_){
+                if(paintBitmap_)DeleteObject(paintBitmap_);if(paintBuffer_)DeleteDC(paintBuffer_);
+                paintBitmap_=nullptr;paintBuffer_=nullptr;EndPaint(window_,&ps);return;
+            }
+            paintOriginal_=SelectObject(paintBuffer_,paintBitmap_);
+        }
+        auto dc=paintBuffer_;
         auto fill=[&](RECT box,COLORREF color){auto b=CreateSolidBrush(color);FillRect(dc,&box,b);DeleteObject(b);};
-        fill(r,RGB(1,2,3));fill({px(14),px(14),px(700),px(395)},RGB(18,25,38));
+        fill(r,RGB(1,2,3));fill({px(14),px(14),px(700),px(420)},RGB(18,25,38));
         SetBkMode(dc,TRANSPARENT);auto font=CreateFontW(-px(15),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");auto oldFont=SelectObject(dc,font);
         auto text=[&](int x,int y,const std::wstring& s,COLORREF color=RGB(236,243,251)){SetTextColor(dc,color);TextOutW(dc,x,y,s.c_str(),int(s.size()));};
         auto number=[](double n){std::wostringstream s;s<<std::fixed<<std::setprecision(1)<<n;return s.str();};
@@ -36,7 +48,7 @@ class PacingHud {
         if(points.size()>1)Polyline(dc,points.data(),int(points.size()));SelectObject(dc,oldPen);DeleteObject(pen);
         text(px(26),px(180),L"Last 2 seconds | 0 - "+number(ceiling)+L" ms | CPU frame intervals");
         text(px(26),px(201),L"1% low: "+number(snapshot_.low1)+L" FPS   0.1% low: "+number(snapshot_.low01)+L" FPS");
-        text(px(26),px(222),L"Object labels: pose updates/s. Still objects show STATIC.");
+        text(px(26),px(222),L"Labels: pose updates/s; FX = effect parameter updates/s.");
         if(snapshot_.logFailed || snapshot_.droppedLogRecords)text(px(26),px(244),L"Timing log incomplete - check disk / dropped samples",RGB(255,120,100));
         const auto& work=snapshot_.multicore;
         text(px(26),px(266),L"Renderer pool (last frame): "+std::to_wstring(work.parallelBatches)+L" parallel / "+std::to_wstring(work.serialBatches)+L" serial batches");
@@ -46,6 +58,7 @@ class PacingHud {
         text(px(26),px(334),L"Battle visuals: "+std::to_wstring(battle.participants)+L" participants   "+number(battle.wallMs)+L" ms   Join: "+number(battle.callerWaitMs)+L" ms");
         text(px(26),px(355),L"Player/boss effects: "+std::to_wstring(battle.parallelBatches)+L" parallel / "+std::to_wstring(battle.serialBatches)+L" serial batches");
         std::wstring chunks=L"Worker slots (caller first): ";for(double ms:battle.chunkMs)chunks+=number(ms)+L" ms  ";text(px(26),px(376),chunks);
+        text(px(26),px(398),L"GPU attack fills: "+std::to_wstring(snapshot_.gpuEffectCount)+L"   Resident mesh buffers: "+number(snapshot_.gpuEffectBytes/1024.)+L" KiB");
         const auto forward=(camera_.target-camera_.eye).unit();const auto right=forward.cross({0,1,0}).unit();const auto up=right.cross(forward).unit();
         const double focal=r.right/(2*std::tan(48.*3.141592653589793/360));
         int labelCount=0;
@@ -55,13 +68,15 @@ class PacingHud {
             int x=int(r.right*.5+delta.dot(right)*focal/depth),y=int(r.bottom*.5-delta.dot(up)*focal/depth);
             if(x<0||x>=r.right||y<0||y>=r.bottom)continue;
             std::wstring label=wide(o.name)+L": "+(o.moving?number(o.updatesPerSecond)+L" updates/s":L"STATIC");
+            if(!o.effectMeasurement.empty())label+=L" | FX "+number(o.effectUpdatesPerSecond)+L"/s";
             SIZE extent{};GetTextExtentPoint32W(dc,label.c_str(),int(label.size()),&extent);
             x=std::clamp(x-int(extent.cx)/2,0,std::max(0,int(r.right-extent.cx-px(12))));y=std::clamp(y-px(28),0,std::max(0,int(r.bottom-px(27))));
             fill({x,y,x+extent.cx+px(12),y+px(25)},RGB(18,25,38));text(x+px(6),y+px(3),label,o.moving?RGB(255,211,107):RGB(189,203,220));++labelCount;
         }
-        BitBlt(target,0,0,r.right,r.bottom,dc,0,0,SRCCOPY);SelectObject(dc,oldFont);DeleteObject(font);SelectObject(dc,oldBitmap);DeleteObject(bitmap);DeleteDC(dc);EndPaint(window_,&ps);
+        BitBlt(target,0,0,r.right,r.bottom,dc,0,0,SRCCOPY);SelectObject(dc,oldFont);DeleteObject(font);EndPaint(window_,&ps);
     }
 public:
+    ~PacingHud(){release_buffer();}
     void create(HWND parent){WNDCLASSW wc{};wc.lpfnWndProc=proc;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=L"StarlightPacingHud";RegisterClassW(&wc);
         window_=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE,wc.lpszClassName,L"Motion and frame timing",WS_CHILD,0,0,1,1,parent,nullptr,wc.hInstance,this);
         SetLayeredWindowAttributes(window_,RGB(1,2,3),215,LWA_COLORKEY|LWA_ALPHA);

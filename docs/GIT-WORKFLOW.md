@@ -1,6 +1,10 @@
 # Git checkpoints
 
-This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Step 4/4A remains open, performance work follows its completion, and 4B (abilities, stats, traits) follows performance verification.
+## Development versus publication — 27 September 2026
+
+This is the anonymized publication repository for the private GitHub project. It has separate history from the original development checkout. Publish reviewed source deltas; never merge the original private history, recovery archives or private assets. Chaos is the first-party publication identity. Preserve upstream attribution and external SDK licensing requirements. The current collaborator entry point is PHYSICS-HANDOFF.md.
+
+This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Current order is physics acceptance, mesh/texture quality, then performance optimization. See PHYSICS-AND-MOTION-TASK-LIST.md and PHYSICS-HANDOFF.md; older milestone-order notes are historical.
 
 ## Working together
 
@@ -20,6 +24,6 @@ The native build requires the external Windows/Visual Studio/DXC/Python toolchai
 
 The 24 September full GUI audit passed all 13 stages, including 924 core checks. A 26 September file-integrity review confirmed all 173 indexed source files unchanged. Two environment-related failures in the 25 September audit were rerun successfully on 26 September. This Git setup changes tracking and documentation, not gameplay, and does not rerun or close all gameplay acceptance gates.
 
-Detailed local evidence: `D:/projects/Starlight-analysis/file-integrity-20260926/REVIEW.md`. Current continuation: `D:/projects/_recovery/STARLIGHT-TUESDAY-HANDOFF-20260929.md`. These external locations are local references, not files restored by cloning this repository.
+Detailed local evidence: `D:/projects/Starlight-analysis/file-integrity-20260926/REVIEW.md`. Current continuation: PHYSICS-HANDOFF.md. These external locations are local references, not files restored by cloning this repository.
 
-No remote is configured at this checkpoint. Local commits and local backups protect against editing mistakes, but not loss of the entire drive. Choose a private remote destination separately before uploading code.
+This publication repository uses the private GitHub origin remote. The separate development checkout has no remote; its history must not be pushed here.

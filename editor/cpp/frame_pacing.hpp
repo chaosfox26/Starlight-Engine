@@ -10,6 +10,8 @@ struct MotionReading {
     Vec3 position{};
     double updatesPerSecond=0, unchangedMs=0;
     bool moving=false;
+    double effectUpdatesPerSecond=0;
+    std::string effectMeasurement;
 };
 struct PacingSnapshot {
     std::vector<double> frameMs;
@@ -17,7 +19,7 @@ struct PacingSnapshot {
     double fps=0,p50=0,p95=0,p99=0,worst=0,low1=0,low01=0;
     ParallelWorkReading multicore,battleWorkers;
     bool logFailed=false;
-    uint64_t droppedLogRecords=0;
+    uint64_t droppedLogRecords=0,gpuEffectCount=0,gpuEffectBytes=0;
 };
 class FramePacingMonitor {
     struct Motion {
@@ -27,6 +29,10 @@ class FramePacingMonitor {
         Vec3 position{};
         double first=0,lastSeen=0,lastChange=0;
         bool initialized=false;
+        std::vector<double> effect;
+        std::deque<double> effectChanges;
+        std::string effectMeasurement;
+        bool effectInitialized=false;
     };
     std::map<std::string,Motion> motion_;
     std::deque<std::pair<double,double>> frames_;
@@ -42,10 +48,18 @@ public:
     }
     void pose(const std::string& id,const std::string& name,Vec3 position,std::vector<double> value,double now) {
         auto& m=motion_[id];m.name=name;m.position=position;m.lastSeen=now;
+        m.effectMeasurement.clear();
+        while(!m.effectChanges.empty() && m.effectChanges.front()<now-2)m.effectChanges.pop_front();
         if(!m.initialized){m.first=m.lastChange=now;m.initialized=true;}
         else if(m.pose!=value){m.changes.push_back(now);m.lastChange=now;}
         m.pose=std::move(value);
         while(!m.changes.empty() && m.changes.front()<now-2)m.changes.pop_front();
+    }
+    void effect(const std::string& id,std::vector<double> value,std::string measurement,double now){
+        auto& m=motion_[id];m.effectMeasurement=std::move(measurement);
+        if(m.effectInitialized && m.effect!=value)m.effectChanges.push_back(now);
+        m.effect=std::move(value);m.effectInitialized=true;
+        while(!m.effectChanges.empty() && m.effectChanges.front()<now-2)m.effectChanges.pop_front();
     }
     PacingSnapshot snapshot(double now) const {
         PacingSnapshot out;double total=0;
@@ -61,6 +75,8 @@ public:
         for(const auto& [id,m]:motion_){
             double window=std::min(2.,std::max(0.,now-m.first));
             out.objects.push_back({id,m.name,m.position,window>0?m.changes.size()/window:0,(now-m.lastChange)*1000,!m.changes.empty()});
+            out.objects.back().effectUpdatesPerSecond=window>0?m.effectChanges.size()/window:0;
+            out.objects.back().effectMeasurement=m.effectMeasurement;
         }
         return out;
     }
