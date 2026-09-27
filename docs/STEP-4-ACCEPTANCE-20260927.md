@@ -1,6 +1,6 @@
 # Step 4/4A requirement sign-off — 27 September 2026
 
-Local gameplay acceptance passed for the current agreed placeholder scope. **The overall milestone is not certified complete:** genuinely clean-Windows dependencies remain unverified. The combined-combat performance fix passed its measured local workload; see [performance evidence](STEP-4-PERFORMANCE-20260927.md). Final rigs/animation libraries and final health/damage balancing remain deferred by the owner. Steps 1–3 remain closed. No 4B work is authorized in this continuation.
+Local gameplay acceptance passed for the current agreed placeholder scope. The clean-Windows dependency gate now passed in a fresh Sandbox guest; see [guest evidence](STEP-4-CLEAN-WINDOWS-20260927.md). The combined-combat performance fix passed its measured local workload; see [performance evidence](STEP-4-PERFORMANCE-20260927.md). Final rigs/animation libraries and final health/damage balancing remain deferred by the owner. Steps 1–3 remain closed. No 4B work is authorized in this continuation.
 
 Final validation after the performance change: normal editor/player build passed;937 core checks passed; `D:/projects/Starlight-analysis/task4-export-final-20260927/gameplay-report.json` passed all33 foreground checks with captures, zero audio errors and unchanged authored content. The earlier evidence below is retained as history. The normal installed editor uses these final binaries.
 
@@ -52,7 +52,7 @@ Final validation after the performance change: normal editor/player build passed
 | Boss 1,000 bar, 1.25 damage, up to 8s stagger and 90s protected refill | Accepted locally: varied-rate core boundaries; current packaged boss break and real vulnerability damage. |
 | Death/reset/fall boundary, pause and focus input cleanup | Accepted locally: lifecycle/controller core; current exported pause/restart, authored preservation. All current foreground tests held focus; no fabricated focus-loss pass. |
 | Creator settings save/load/Undo and Play isolation | Accepted locally: current serialization core; historical seven creator foreground checks `task4-visible-combat-authoring-20260924`. |
-| Clean-Windows dependencies | **Blocked/unverified.** WindowsSandbox.exe still absent on 27 September. Prior VM query was denied. No bypass and no clean environment established. Local packages are not a substitute. |
+| Clean-Windows dependencies | **Passed in a fresh Windows Sandbox guest.** Exact final export hashes verified; content validation, 33 foreground gameplay checks and live combat exchange passed with no extra runtime installation. See STEP-4-CLEAN-WINDOWS-20260927.md. |
 | Combined fullscreen battle performance | Accepted for the measured local workload: same44-exchange fullscreen test,7.47 FPS before /398.01 after; all foreground checks passed, damage/healing retained. This is not an arbitrary-scene guarantee or a new target FPS. |
 
 ## Preserved failures and limits

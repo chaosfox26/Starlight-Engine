@@ -1,3 +1,7 @@
+## Latest clean-Windows result — 27 September 2026
+
+PASS: fresh Windows Sandbox guest, final export hashes verified, content validation and all 33 gameplay checks plus combat exchange passed. Zero audio errors; captures reviewed. See docs/STEP-4-CLEAN-WINDOWS-20260927.md (or STEP-4-CLEAN-WINDOWS-20260927.md from docs). This supersedes older clean-Windows blockers below. 4B remains untouched.
+
 ## Current checkpoint — 27 September 2026
 
 Final follow-up: cosmetic material batching fixed the measured fullscreen battle bottleneck. Same44 checks averaged7.47FPS before /398.01FPS after, minimum paced-check353.26FPS after, GPU median~0.4ms both. All44 passed foreground with damage/healing; screenshot reviewed. Normal build and937 core checks passed. Final export `task4-export-final-20260927/gameplay-report.json`:33 foreground checks passed with captures, zero audio errors, authored content unchanged. Analyzer grapple false-negative rule corrected; four contract scripts passed; historical raw reports preserved. See STEP-4-PERFORMANCE-20260927.md. Clean-Windows remains unverified, so no unconditional milestone-complete claim;4B untouched.

@@ -1,3 +1,7 @@
+## Latest clean-Windows result — 27 September 2026
+
+PASS: fresh Windows Sandbox guest, final export hashes verified, content validation and all 33 gameplay checks plus combat exchange passed. Zero audio errors; captures reviewed. See docs/STEP-4-CLEAN-WINDOWS-20260927.md (or STEP-4-CLEAN-WINDOWS-20260927.md from docs). This supersedes older clean-Windows blockers below. 4B remains untouched.
+
 # Starlight Engine: ten-task implementation checklist
 
 ## Current override — 27 September 2026
