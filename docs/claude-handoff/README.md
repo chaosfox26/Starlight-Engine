@@ -86,3 +86,41 @@
 3. Visible tests must stay foreground. Stop on focus loss. Do not concurrently run heavy builds/tests with visible performance checks.
 4. Finish builds before running binaries from that build directory. Use fresh output folders and record exact revisions.
 5. This handoff does not schedule work or send a message to another assistant. The owner will point Claude at the folder after the weekly reset.
+
+## 10. What we can build using the existing foundation
+
+1. Combat encounters with traveling player/enemy shots, impacts, control effects, moving enemies and reactive scenery. New weapons and encounter rules still need gameplay design and verification; engine support is not a finished game.
+2. Traversal challenges using jumps, moving platforms, grappling, swinging and release momentum.
+3. Physical puzzles using pushable or buoyant objects, constrained platforms, hinges, springs and ropes. Author each combination and check stability before treating it as supported gameplay.
+4. Destructible scenery using supported fracture shapes and rigid debris. Choose compatible assets; arbitrary meshes still have the documented generic-debris fallback.
+5. Reactive environments combining liquid currents, floating objects, moving grass, fog, fire, sparks and lightning. Existing interactions do not imply unspecified behavior such as electrical conductivity through water.
+6. Saved and exported demonstrations with the timing overlay and recorded statistics, so both collaborators can compare visible behavior and measured results.
+
+## 11. Improvements to the systems already present
+
+1. First resolve the fullscreen telemetry overlap assertion and the denoiser object-motion assertion. Determine whether each problem is in implementation, fixture or measurement; retain evidence and do not weaken assertions to obtain a pass.
+2. Improve destruction fidelity: make unsupported inputs discoverable during authoring, expand supported topology deliberately and reduce reliance on generic debris. Accurate arbitrary-mesh fracture remains additional work.
+3. Improve collision fidelity where gameplay needs it, especially complex shapes and fast projectile/particle contacts. Keep physical collision and visible geometry aligned; measure costs before expanding expensive shape handling.
+4. Improve fluid coverage and interactions within explicit budgets: domain edges, source/obstacle overflow, transitions, splashes and combined workloads. Larger regions and richer coupling need design and validation, not only larger constants.
+5. Expand authoring coverage beyond representative values: invalid inputs, joint targets, extreme settings, undo/redo, scene replacement and export combinations. Existing checks are not exhaustive.
+6. Improve asset quality in Task 2: convincing rock silhouettes, grass blades/clumps, detail where it helps, and real textures/materials. Higher polygon counts alone are not visual acceptance.
+7. Improve frame pacing in Task 3: target spikes and the gap between average FPS and 1%/0.1% lows on representative moving, textured scenes. Preserve stable physics and smooth displayed motion; do not treat high GPU usage or allocated memory as success by itself.
+8. Recheck long-running behavior, resource cleanup and clean-machine exports at appropriate milestones. These are future verification needs, not already completed acceptance.
+
+## 12. Optional future systems requiring new implementation
+
+1. Cloth for flags, clothing or hanging fabric: deformation, attachment and collision behavior beyond rigid bodies.
+2. Ragdolls: articulated character bodies, animation-to-physics transitions and recovery behavior. Existing joints alone are not a finished ragdoll system.
+3. Soft bodies: deformable objects that squash, bend or recover their shape; distinct from rigid-body motion and mesh fracture.
+4. Full three-dimensional fluids for overturning waves and liquid filling arbitrary volumes. This is a substantially different solver and rendering problem from the current surface heightfield.
+5. Additional electrical/material interaction rules, powered joints and break-force behavior, if the owner specifies how they should work.
+6. These are possible development directions, not promises, completed features or automatic additions to the current task. Discuss priorities with the owner before replacing the agreed order. A good game does not require every possible physics system.
+
+## 13. Alternating Codex and Claude work
+
+1. The owner intends to alternate the assistants to maintain momentum. This document supports that workflow; it does not create a schedule or authorize unattended background runs.
+2. At the start of each work period, read this handoff, the current Git status and the latest commits. Identify the active checkout and the other collaborator's unfinished changes before editing.
+3. Have one writer own a given file/change at a time. If concurrent work is requested, agree on separate files or isolated worktrees and the integration point; do not overwrite another assistant's work.
+4. At each handoff, record the exact revision, files changed, what passed, what failed or was not run, evidence locations, active processes, and the single next concrete action. Label assumptions and unresolved causes clearly.
+5. Keep development and anonymized publication histories separate. Commit coherent verified changes; publish sanitized deltas through the existing workflow when authorized. Preserve failed reports and avoid repeat whole-engine checks without a reason.
+6. Current state remains paused for the owner to resume implementation. The next concrete investigation is the two recorded full-audit failures. No new engine implementation or test run was requested by this documentation update.
