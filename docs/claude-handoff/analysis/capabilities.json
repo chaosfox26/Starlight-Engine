@@ -1,0 +1,1011 @@
+[
+  {
+    "title": "Dynamic world physics closeout",
+    "interpretation": "Movement, physical props, constraints, fracture, traveling projectiles, lightning, particles and bounded fluids share gameplay and presentation. The closeout report records core, visible editor and mixed exported-world checks.",
+    "status": "incomplete source support—do not assume implemented",
+    "evidence": [
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 421,
+        "matched": "advance_projectiles",
+        "excerpt": "        advance_projectiles(dt);"
+      },
+      {
+        "file": "editor/cpp/body_constraints.hpp",
+        "line": 9,
+        "matched": "JointSegments",
+        "excerpt": "inline void update_rope_path(void* world,uint32_t body,Character& c,bool interpolate){c.JointRuntimePoints.clear();if(c.JointKind!=3||!c.JointSegments)return;float path[65*3]{};int count=slp_rope_path(world,body,path,65,interpolate);if(count<0)throw std::runtime_error(slp_error());for(int i=0;i<count;++i)c.JointRuntimePoints.push_back({path[i*3],path[i*3+1],path[i*3+2]});}"
+      },
+      {
+        "file": "tools/checks/physics_boundary_checks.inl",
+        "line": 12,
+        "matched": "Unsupported gameplay fracture",
+        "excerpt": "    require(broken.scene().Characters.empty()&&debris.size()==16&&std::all_of(debris.begin(),debris.end(),[](const auto& f){return !f.part;}),\"Unsupported gameplay fracture removes source and emits sixteen generic non-rigid fragments\");"
+      }
+    ],
+    "missing": [
+      {
+        "file": "docs/PHYSICS-CLOSEOUT-CHECKS-20260927.md",
+        "pattern": "772"
+      }
+    ],
+    "limits": "Bounded acceptance only. Unsupported fracture uses generic debris; conservative collision, heightfield liquids and fixed fog domains remain. Cloth, soft bodies and ragdolls are absent."
+  },
+  {
+    "title": "Character movement and grappling",
+    "interpretation": "Shared player controller provides sprint resources, double jump, directional dodge, lunge, crouch, prone, slide and grapple traversal with collision.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/adventure_controller.hpp",
+        "line": 8,
+        "matched": "class AdventureController",
+        "excerpt": "class AdventureController {"
+      },
+      {
+        "file": "editor/cpp/grapple_motion.hpp",
+        "line": 8,
+        "matched": "class GrappleMotion",
+        "excerpt": "class GrappleMotion {"
+      },
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 852,
+        "matched": "grapple_.step",
+        "excerpt": "                    bool hookFlying=grapple_.flying();auto grappleVelocity=grapple_.step(position,steer,dt,control_.movement_factor());if(!hookFlying){velocity=grappleVelocity;forced=true;}"
+      }
+    ],
+    "missing": [],
+    "limits": "Source presence is not complete visible or clean-machine validation. Consult the current requirement sign-off for acceptance and remaining gates."
+  },
+  {
+    "title": "Telegraph combat and combat actors",
+    "interpretation": "Runtime attacks, healing, health, target selection, pursuit and caster-attached cone presentation share the adventure runtime.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 25,
+        "matched": "class AdventurePlayer",
+        "excerpt": "class AdventurePlayer {"
+      },
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 176,
+        "matched": "surface_telegraph_contact",
+        "excerpt": "            if(h.team==1 && surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,feet-Vec3{.3,0,.3},feet+Vec3{.3,posture_==0?1.8:posture_==2?.5:1.,.3},playerContact,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},playerContact,h.caster,\"\"))restore_health(20);"
+      },
+      {
+        "file": "editor/cpp/combat_control.hpp",
+        "line": 118,
+        "matched": "struct CombatActor",
+        "excerpt": "struct CombatActor {"
+      }
+    ],
+    "missing": [],
+    "limits": "Damage and health values are provisional. Finished character assets and complete milestone sign-off remain deferred or open; see current evidence."
+  },
+  {
+    "title": "Crowd control and boss break bars",
+    "interpretation": "Fourteen control effects, player anti-chain immunity and boss break/stagger/recovery states have explicit runtime representations.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/combat_control.hpp",
+        "line": 32,
+        "matched": "struct CombatControl",
+        "excerpt": "struct CombatControl {"
+      },
+      {
+        "file": "editor/cpp/combat_control.hpp",
+        "line": 80,
+        "matched": "struct BossBreakBar",
+        "excerpt": "struct BossBreakBar {"
+      },
+      {
+        "file": "editor/cpp/combat_control.hpp",
+        "line": 10,
+        "matched": "ControlEffect",
+        "excerpt": "enum class ControlEffect { Stun, Knockback, Pull, Launch, Knockdown, Root, Slow, Silence, Fear, Taunt, Sleep, Blind, Disorient, Tether };"
+      }
+    ],
+    "missing": [],
+    "limits": "Boss behavior is distinct from PvP immunity. Per-effect source and tests must be inspected; this catalogue does not certify balance or full gameplay completion."
+  },
+  {
+    "title": "Discoverable editor help",
+    "interpretation": "Optional searchable lessons share one visible entry point across editing modes.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/tutorials.inl",
+        "line": 112,
+        "matched": "void show_help",
+        "excerpt": "void show_help() {"
+      },
+      {
+        "file": "editor/cpp/tutorial_progress.hpp",
+        "line": 24,
+        "matched": "decode_tutorial_progress",
+        "excerpt": "inline TutorialProgress decode_tutorial_progress(const std::vector<TutorialSection>& catalog,"
+      },
+      {
+        "file": "editor/cpp/editor_main.cpp",
+        "line": 121,
+        "matched": "HelpOpen",
+        "excerpt": "    CopyObjects, PasteObjects, AdventurePreset, ApplyGameplay, ExportGame, NewAdventure, InteractiveBuild, CheckGameplay, HelpOpen, HelpClose, HelpLesson, HelpBack, HelpNext, HelpRestart, HelpSearch, AddGameplayRule, RemoveGameplayRule, SaveQuest, LoadQuest, RemoveQuest, NewQuestAdventure, ObjectBehaviorMenu, BehaviorOpen, BehaviorBreak, BehaviorCollect, BehaviorNone, BehaviorQuest, BehaviorStandQuest, LearnOpen, LearnBreak, EndCreationGuide, BehaviorCarry, LearnWorkshop"
+      }
+    ],
+    "missing": [],
+    "limits": "Text guidance with saved reading positions; live appearance and input verification pending. Not interactive task tracking."
+  },
+  {
+    "title": "Walk and build preview",
+    "interpretation": "Exploration and the existing editing tools operate on the same authored scene; gameplay tests use a separate temporary copy.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/editor_main.cpp",
+        "line": 121,
+        "matched": "InteractiveBuild",
+        "excerpt": "    CopyObjects, PasteObjects, AdventurePreset, ApplyGameplay, ExportGame, NewAdventure, InteractiveBuild, CheckGameplay, HelpOpen, HelpClose, HelpLesson, HelpBack, HelpNext, HelpRestart, HelpSearch, AddGameplayRule, RemoveGameplayRule, SaveQuest, LoadQuest, RemoveQuest, NewQuestAdventure, ObjectBehaviorMenu, BehaviorOpen, BehaviorBreak, BehaviorCollect, BehaviorNone, BehaviorQuest, BehaviorStandQuest, LearnOpen, LearnBreak, EndCreationGuide, BehaviorCarry, LearnWorkshop"
+      },
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 677,
+        "matched": "rebuild_for_authoring",
+        "excerpt": "    void rebuild_for_authoring(const SceneData& scene){"
+      },
+      {
+        "file": "editor/cpp/classic_completion.inl",
+        "line": 42,
+        "matched": "explorer->rebuild_for_authoring",
+        "excerpt": "        explorer->rebuild_for_authoring(scene);"
+      }
+    ],
+    "missing": [],
+    "limits": "Experimental preview. Physical input, complete visual acceptance, objectives, XP and unlocks are not established."
+  },
+  {
+    "title": "Adventure gameplay foundation",
+    "interpretation": "Saved bounded events, conditions and actions share one runtime across editor Play and Windows export; authoring supports Undo and independent Play state.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/adventure.hpp",
+        "line": 25,
+        "matched": "class AdventurePlayer",
+        "excerpt": "class AdventurePlayer {"
+      },
+      {
+        "file": "editor/cpp/gameplay_rules.hpp",
+        "line": 8,
+        "matched": "class GameplayRulesRuntime",
+        "excerpt": "class GameplayRulesRuntime {"
+      },
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 125,
+        "matched": "GameplayRule",
+        "excerpt": "struct GameplayRule {"
+      },
+      {
+        "file": "editor/cpp/editor_main.cpp",
+        "line": 1368,
+        "matched": "gameplay_rule_command",
+        "excerpt": "    bool gameplay_rule_command(int id) {"
+      }
+    ],
+    "missing": [],
+    "limits": "Collection, interaction and spherical area events with item/objective conditions and objective/door/finish actions. Shared character movement and combat now exist; final Step 4/4A acceptance remains open. No arbitrary scripting. Check current validation evidence separately."
+  },
+  {
+    "title": "Windows adventure export",
+    "interpretation": "Packages the standalone player, engine and C++ runtime libraries with an integrity-checked portable scene.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/game_export.cpp",
+        "line": 4,
+        "matched": "export_playable_game",
+        "excerpt": "json export_playable_game(const SceneData& source,const fs::path& destination,const fs::path& runtime){"
+      },
+      {
+        "file": "editor/cpp/player_main.cpp",
+        "line": 107,
+        "matched": "wWinMain",
+        "excerpt": "int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){"
+      },
+      {
+        "file": "CMakeLists.txt",
+        "line": 75,
+        "matched": "Starlight.NativePlayer",
+        "excerpt": " add_executable(Starlight.NativePlayer WIN32 editor/cpp/player_main.cpp editor/cpp/editor.manifest)"
+      }
+    ],
+    "missing": [],
+    "limits": "Package validation does not prove visible play, clean-machine compatibility, code signing, or non-Windows support."
+  },
+  {
+    "title": "Native application and build",
+    "interpretation": "The active build assembles a native Win32 editor, core library, session library, renderer and physics DLLs, native project host, project modules and checks. Python orchestrates compilation; it is not the editor runtime.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "CMakeLists.txt",
+        "line": 72,
+        "matched": "add_executable(Starlight.NativeEditor",
+        "excerpt": " add_executable(Starlight.NativeEditor WIN32 editor/cpp/editor_main.cpp editor/cpp/editor.manifest)"
+      },
+      {
+        "file": "editor/cpp/editor_main.cpp",
+        "line": 3152,
+        "matched": "wWinMain",
+        "excerpt": "int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {"
+      },
+      {
+        "file": "Build-Native.py",
+        "line": 1,
+        "matched": "CMake/Ninja",
+        "excerpt": "\"\"\"Compatibility entry point for the canonical Starlight CMake/Ninja or tool workflow.\"\"\""
+      }
+    ],
+    "missing": [],
+    "limits": "Windows/D3D12 is the current build contract. Compiling successfully does not validate runtime behavior or portable packaging."
+  },
+  {
+    "title": "Classic creator interface",
+    "interpretation": "The native editor keeps floating controls over the canvas, beginner/advanced settings, terrain and shape tools, named colors and a full feature catalogue. The catalogue describes both experimental tools and unimplemented ambitions.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/editor_main.cpp",
+        "line": 117,
+        "matched": "Advanced",
+        "excerpt": "    DockStrength, Advanced, BuildDetails, BodyDetails, PlaceCharacter, ClearRoute,"
+      },
+      {
+        "file": "tools/checks/classic_ui_checks.inl",
+        "line": 158,
+        "matched": "beginner hides",
+        "excerpt": "    check(\"beginner hides transforms, physics and irrelevant lightning\", inputs.contains(\"size\") && !inputs.contains(\"x\") && !inputs.contains(\"dynamic\") && !inputs.contains(\"tx\"));"
+      },
+      {
+        "file": "editor/cpp/classic_completion.inl",
+        "line": 16,
+        "matched": "catalog",
+        "excerpt": "const nlohmann::json catalogue = nlohmann::json::parse(feature_catalog);"
+      },
+      {
+        "file": "editor/cpp/named_colors.hpp",
+        "line": 44,
+        "matched": "pink",
+        "excerpt": "    {\"deeppink\", \"#FFFF1493\"},"
+      }
+    ],
+    "missing": [],
+    "limits": "A catalogue entry is not proof of a working subsystem. Latest saved UI evidence is described separately."
+  },
+  {
+    "title": "Independent game preview",
+    "interpretation": "Current Play uses the main editor renderer/session in both window modes. Retained GamePreview code can own a secondary session but is not the current Play command path.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/classic_completion.inl",
+        "line": 28,
+        "matched": "void playback_command",
+        "excerpt": "void playback_command(int id)"
+      },
+      {
+        "file": "editor/cpp/classic_completion.inl",
+        "line": 59,
+        "matched": "renderer->playback(next",
+        "excerpt": "        renderer->playback(next, id == Stop || (next && (inlineFinished || explorer.has_value())));"
+      },
+      {
+        "file": "editor/cpp/game_preview.hpp",
+        "line": 16,
+        "matched": "NativeSession",
+        "excerpt": "    std::unique_ptr<NativeSession> session_;"
+      }
+    ],
+    "missing": [],
+    "limits": "Independent views consume additional resources; this is not a demonstrated shared GPU resource pool or a packaged game exporter."
+  },
+  {
+    "title": "Scene data and compatibility",
+    "interpretation": "SceneData models authored objects, terrain, liquid sources, environment and ray-tracing preferences. Character records also represent props. JSON serialization and validation are native C++.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 171,
+        "matched": "SchemaVersion = 7",
+        "excerpt": "    int SchemaVersion = 7;"
+      },
+      {
+        "file": "editor/cpp/scene_json.cpp",
+        "line": 9,
+        "matched": "from_json",
+        "excerpt": "void from_json(const json &j, WalkPoint &v) {"
+      },
+      {
+        "file": "editor/cpp/scene.cpp",
+        "line": 23,
+        "matched": "validate",
+        "excerpt": "    v.validate();"
+      }
+    ],
+    "missing": [],
+    "limits": "This is a record/vector model, not evidence of a general archetype ECS. Saved authored state differs from a simulation checkpoint."
+  },
+  {
+    "title": "Scene packet ABI",
+    "interpretation": "The writer emits NativeScene V7 and the viewport accepts versions V1–V7. The binary packet is distinct from JSON scene schema and project/preset schemas.",
+    "status": "incomplete source support—do not assume implemented",
+    "evidence": [
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 178,
+        "matched": "0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53",
+        "excerpt": "  Reader r{bytes,(size_t)length};auto version=r.get<uint32_t>();if(version!=0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53&&version!=0x38564c53&&version!=0x39564c53&&version!=0x41564c53)throw std::runtime_error(\"Unsupported viewport scene version\");"
+      }
+    ],
+    "missing": [
+      {
+        "file": "editor/cpp/render_scene.cpp",
+        "pattern": "0x37564c53"
+      }
+    ],
+    "limits": "Native exports remain active ABI boundaries even though the managed editor was retired."
+  },
+  {
+    "title": "Local automation",
+    "interpretation": "The native command layer provides describe/inspect and transactional add, move, route, rename, remove, configure, shape, transform and terrain operations with expected scene hashes.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/commands.cpp",
+        "line": 44,
+        "matched": "starlight-editor-local",
+        "excerpt": "            {\"protocol\", \"starlight-editor-local\"},"
+      },
+      {
+        "file": "editor/cpp/commands.cpp",
+        "line": 89,
+        "matched": "expectedSha256",
+        "excerpt": "    keys(request, {\"schemaVersion\", \"scenePath\", \"expectedSha256\", \"operations\"});"
+      },
+      {
+        "file": "editor/cpp/command_runner.cpp",
+        "line": 19,
+        "matched": "--describe",
+        "excerpt": "        if (args.size() == 1 && args[0] == L\"--describe\")"
+      }
+    ],
+    "missing": [],
+    "limits": "This is local command automation. It is not an embedded AI model, cloud service, or complete GUI command parity."
+  },
+  {
+    "title": "Persistence and editing safety",
+    "interpretation": "Platform and command code implement native file handling, hashed scene revisions and save protection; editor history supports undo/redo and canceled edits.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/platform.cpp",
+        "line": 113,
+        "matched": "ReplaceFile",
+        "excerpt": "            if (!ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr))"
+      },
+      {
+        "file": "editor/cpp/mesh.hpp",
+        "line": 46,
+        "matched": "SceneHistory",
+        "excerpt": "class SceneHistory {"
+      },
+      {
+        "file": "editor/cpp/commands.cpp",
+        "line": 89,
+        "matched": "expectedSha256",
+        "excerpt": "    keys(request, {\"schemaVersion\", \"scenePath\", \"expectedSha256\", \"operations\"});"
+      }
+    ],
+    "missing": [],
+    "limits": "Whole-scene history and asset portability need separate memory and distribution policies. No unlimited-history safety claim is made."
+  },
+  {
+    "title": "Terrain authoring",
+    "interpretation": "Editable terrain has 97×97 height samples at 0.25 m spacing over a 24 m span. It supports brushes, surface painting and denser preview geometry.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 24,
+        "matched": "N = 97",
+        "excerpt": "    static constexpr int N = 97;"
+      },
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 25,
+        "matched": "Step = .25, Half = 12",
+        "excerpt": "    static constexpr double Step = .25, Half = 12;"
+      },
+      {
+        "file": "editor/cpp/geometry.cpp",
+        "line": 221,
+        "matched": "193",
+        "excerpt": "    constexpr int n = 193;"
+      }
+    ],
+    "missing": [],
+    "limits": "A heightfield cannot encode caves or stacked surfaces. Rendering currently rebuilds geometry; this is not world streaming."
+  },
+  {
+    "title": "Object geometry and sculpting",
+    "interpretation": "Native mesh code provides transforms, bounds/picking and sculpt operations on authored mesh copies, with scene history integration.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/mesh.cpp",
+        "line": 32,
+        "matched": "Sculpt",
+        "excerpt": "Mesh mesh_from(const SculptMesh &s) {"
+      },
+      {
+        "file": "editor/cpp/interactions.cpp",
+        "line": 13,
+        "matched": "snap",
+        "excerpt": "double snap_increment(double value,double step) {"
+      },
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 18,
+        "matched": "SculptMesh",
+        "excerpt": "struct SculptMesh {"
+      }
+    ],
+    "missing": [],
+    "limits": "Do not infer topology repair, adaptive remeshing, UV authoring or a production sculpting package."
+  },
+  {
+    "title": "Props and effects",
+    "interpretation": "The scene shape list includes basic solids, rocks, pebbles, grass, fire/light/lava, Chaos Lightning, Chaos Rock, Light-Bound Shard and Craxis Smoke.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 185,
+        "matched": "chaos-lightning",
+        "excerpt": "                                                \"boulder\",    \"pebbles\",     \"grass\",       \"chaos-lightning\","
+      },
+      {
+        "file": "editor/cpp/geometry.cpp",
+        "line": 2,
+        "matched": "chaos",
+        "excerpt": "#include \"../../deep/engine/chaos_lightning.h\""
+      },
+      {
+        "file": "deep/engine/chaos_lightning.h",
+        "line": 21,
+        "matched": "subdivide",
+        "excerpt": " auto subdivide=[&](auto&& self,ArcPoint a,ArcPoint b,int depth,float jitter,float width)->void{"
+      }
+    ],
+    "missing": [],
+    "limits": "Procedural props are not a world scatter, foliage simulation, fracture or particle system."
+  },
+  {
+    "title": "Static model import",
+    "interpretation": "The native asset path parses GLB geometry and validates accessors, buffers and graph structure for preview meshes.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/assets.cpp",
+        "line": 28,
+        "matched": "load_glb",
+        "excerpt": "std::vector<MeshPart> load_glb(const fs::path &path) {"
+      },
+      {
+        "file": "editor/cpp/assets.cpp",
+        "line": 60,
+        "matched": "accessor",
+        "excerpt": "        const auto &a = root.at(\"accessors\").at(index);"
+      }
+    ],
+    "missing": [],
+    "limits": "Creator static import must not inherit the separate game project crowd runtime’s skinning/animation capability. Full imported material/animation authoring is not established."
+  },
+  {
+    "title": "Reusable assets and scene composition",
+    "interpretation": "Search asset folders by name and type; insert models, native objects, groups and scene objects. Save native templates/groups, copy selections between scenes, repair missing models, and export portable scene or selection folders with integrity manifests.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/asset_browser.inl",
+        "line": 82,
+        "matched": "asset_browser_command",
+        "excerpt": "bool asset_browser_command(int id) {"
+      },
+      {
+        "file": "editor/cpp/selection_clipboard.inl",
+        "line": 3,
+        "matched": "selection_clipboard_command",
+        "excerpt": "bool selection_clipboard_command(int id) {"
+      },
+      {
+        "file": "editor/cpp/object_template.cpp",
+        "line": 52,
+        "matched": "encode_object_group",
+        "excerpt": "std::string encode_object_group(const std::vector<Character>& objects) {"
+      },
+      {
+        "file": "editor/cpp/portable_scene.cpp",
+        "line": 17,
+        "matched": "export_portable_scene",
+        "excerpt": "json export_portable_scene(const SceneData &source, const fs::path &destination) {"
+      }
+    ],
+    "missing": [],
+    "limits": "Text browser has no thumbnails. Native templates exclude imported models; portable scene folders support embedded GLB dependencies. This is editor-content reuse, not standalone game export. GUI visual acceptance and clean-machine validation remain separate."
+  },
+  {
+    "title": "Render ownership and updates",
+    "interpretation": "NativeSession owns a worker thread with coalesced scene/camera/control input. It exposes status, capture, playback and suspend/resume. Viewport and physics work are owned by the session path.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/native_session.hpp",
+        "line": 39,
+        "matched": "std::jthread",
+        "excerpt": "    std::jthread thread_;"
+      },
+      {
+        "file": "editor/cpp/native_session.cpp",
+        "line": 105,
+        "matched": "NativeSession::run",
+        "excerpt": "void NativeSession::runtime_objects(std::vector<Character> objects){"
+      },
+      {
+        "file": "editor/cpp/native_session.cpp",
+        "line": 54,
+        "matched": "condition_",
+        "excerpt": "    condition_.notify_all();"
+      }
+    ],
+    "missing": [],
+    "limits": "Resize now preserves the viewport/device and replaces size-dependent images; scene changes can still rebuild geometry. Worker ownership is not a proof of race freedom."
+  },
+  {
+    "title": "Native rendering contract",
+    "interpretation": "The viewport explicitly selects native output and disables the upscaler request. HDR rendering, spatial edge AA and presentation use the shared D3D12 renderer.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 162,
+        "matched": "modeRequest=\"native\"",
+        "excerpt": "  d.editorKeyedHistory=true;d.d3dDebug=GetEnvironmentVariableW(L\"STARLIGHT_D3D_DEBUG\",nullptr,0)>0;d.linearHdrScene=true;d.frameRateLimit=500;d.vsync=false;d.upsRequest=\"off\";d.modeRequest=\"native\";d.fgRequest=false;d.cullOn=false;d.editorCameraDistance=13;"
+      },
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 162,
+        "matched": "upsRequest=\"off\"",
+        "excerpt": "  d.editorKeyedHistory=true;d.d3dDebug=GetEnvironmentVariableW(L\"STARLIGHT_D3D_DEBUG\",nullptr,0)>0;d.linearHdrScene=true;d.frameRateLimit=500;d.vsync=false;d.upsRequest=\"off\";d.modeRequest=\"native\";d.fgRequest=false;d.cullOn=false;d.editorCameraDistance=13;"
+      },
+      {
+        "file": "editor/native/edge_aa.h",
+        "line": 14,
+        "matched": "numthreads",
+        "excerpt": "[numthreads(8,8,1)]void main(uint3 id:SV_DispatchThreadID){uint w,h;outputColor.GetDimensions(w,h);if(id.x>=w||id.y>=h)return;int2 size=int2(w,h),p=int2(id.xy);"
+      }
+    ],
+    "missing": [],
+    "limits": "No super resolution or frame generation is allowed for current acceptance. Native resolution does not guarantee alias-free output."
+  },
+  {
+    "title": "Inline hardware ray tracing",
+    "interpretation": "DxrPass builds acceleration structures and executes compute inline RayQuery, with selectable tiers and raster fallback. The shader build targets cs_6_5.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/dxr.hlsl",
+        "line": 30,
+        "matched": "TraceRayInline",
+        "excerpt": " RayQuery<RAY_FLAG_FORCE_OPAQUE> q;q.TraceRayInline(scene,0,255,ray);while(q.Proceed()){}"
+      },
+      {
+        "file": "deep/engine/dxr.h",
+        "line": 94,
+        "matched": "BuildRaytracingAccelerationStructure",
+        "excerpt": "    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};build.Inputs.Type=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;build.Inputs.DescsLayout=D3D12_ELEMENTS_LAYOUT_ARRAY;build.Inputs.NumDescs=1;build.Inputs.pGeometryDescs=&g;build.Inputs.Flags=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info{};device->GetRaytracingAccelerationStructurePrebuildInfo(&build.Inputs,&info);if(!info.ResultDataMaxSizeInBytes)throw std::runtime_error(\"Invalid BLAS prebuild size\");b.result=d.acquireBuffer(info.ResultDataMaxSizeInBytes,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);auto temp=d.acquireBuffer(info.ScratchDataSizeInBytes,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);build.DestAccelerationStructureData=b.result->GetGPUVirtualAddress();build.ScratchAccelerationStructureData=temp->GetGPUVirtualAddress();command->BuildRaytracingAccelerationStructure(&build,0,nullptr);uav(b.result.Get());temporary.push_back(temp);builds++;"
+      },
+      {
+        "file": "tools/build/cmake_shaders.py",
+        "line": 14,
+        "matched": "cs_6_5",
+        "excerpt": "    subprocess.run([dxc,'-T','cs_6_5','-E',entry,'-O3',*defines,'-Fo',str(binary),str(root/'deep/engine'/source)], check=True)"
+      }
+    ],
+    "missing": [],
+    "limits": "This is not an RT state-object/shader-table pipeline. Historical device-loss failures remain dated evidence; current throughput requires a successful run with explicit workload, native dimensions and presentation conditions."
+  },
+  {
+    "title": "Native temporal denoiser",
+    "interpretation": "The native wavelet path implements prefilter, temporal reconstruction, atrous filtering and composition, with history/guide resources.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/svgf.hlsl",
+        "line": 14,
+        "matched": "Prefilter",
+        "excerpt": "[numthreads(8,8,1)] void Prefilter(uint3 id:SV_DispatchThreadID){"
+      },
+      {
+        "file": "deep/engine/svgf.hlsl",
+        "line": 26,
+        "matched": "Temporal",
+        "excerpt": "[numthreads(8,8,1)] void Temporal(uint3 id:SV_DispatchThreadID){"
+      },
+      {
+        "file": "deep/engine/svgf.hlsl",
+        "line": 50,
+        "matched": "Atrous",
+        "excerpt": "[numthreads(8,8,1)] void Atrous(uint3 id:SV_DispatchThreadID){"
+      },
+      {
+        "file": "deep/engine/svgf.hlsl",
+        "line": 1,
+        "matched": "composite",
+        "excerpt": "// Shared image slots: 0 composite, 1 normal/roughness, 2 diffuse albedo,"
+      }
+    ],
+    "missing": [],
+    "limits": "ABI mode 0 is native wavelet. Existence of the implementation is not fresh runtime validation or proof of zero ghosting."
+  },
+  {
+    "title": "Optional native Ray Reconstruction",
+    "interpretation": "Direct NGX integration supplies optional Ray Reconstruction and capability/failure handling. The denoiser API maps mode 1 to RR and mode 0 to wavelet.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/ray_reconstruction.h",
+        "line": 30,
+        "matched": "DLAA",
+        "excerpt": "  create.InPerfQualityValue=NVSDK_NGX_PerfQuality_Value_DLAA;create.InDenoiseMode=NVSDK_NGX_DLSS_Denoise_Mode_DLUnified;"
+      },
+      {
+        "file": "deep/engine/ray_reconstruction.h",
+        "line": 24,
+        "matched": "NGX_D3D12",
+        "excerpt": "  auto result=NVSDK_NGX_D3D12_Init_with_ProjectID(\"79fbc6b8-9bc7-4d0c-a29d-7cd39bef2321\",NVSDK_NGX_ENGINE_TYPE_CUSTOM,\"Starlight-native-RR-1\",directory.c_str(),dev,&info);"
+      },
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 298,
+        "matched": "mode==1?1:0",
+        "excerpt": "API void sl_denoiser(void* handle,int mode){auto& rt=static_cast<Viewport*>(handle)->rt;rt.denoiserMode=mode==1?1:0;rt.historyValid=false;}"
+      }
+    ],
+    "missing": [],
+    "limits": "RR must remain 1:1. Vendor capability, local SDK/DLL paths and fallback behavior require explicit validation; no super-resolution authorization follows from RR."
+  },
+  {
+    "title": "Atmosphere and lighting",
+    "interpretation": "Atmosphere compute shaders provide injection, integration and composition; scene settings include time of day, day cycle and fog. Local lights and smoke are packet inputs.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/atmosphere.hlsl",
+        "line": 81,
+        "matched": "Inject",
+        "excerpt": "[numthreads(8,5,4)] void Inject(uint3 id:SV_DispatchThreadID){"
+      },
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 163,
+        "matched": "DayCycle",
+        "excerpt": "    bool DayCycle = false;"
+      },
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 181,
+        "matched": "Too many smoke volumes",
+        "excerpt": "  float hour=15,cycle=0,dayLength=180,density=.018f;std::vector<XMFLOAT4> smoke;if(version>=0x35564c53){hour=r.get<float>();cycle=r.get<float>();dayLength=r.get<float>();density=r.get<float>();if(!std::isfinite(hour)||!std::isfinite(cycle)||!std::isfinite(dayLength)||!std::isfinite(density)||hour<0||hour>24||dayLength<10||density<0||density>.3f)throw std::runtime_error(\"Invalid atmosphere\");auto n=r.get<uint32_t>();if(n>16)throw std::runtime_error(\"Too many smoke volumes\");smoke=r.array<XMFLOAT4>(n);}"
+      }
+    ],
+    "missing": [],
+    "limits": "Bounded froxel fog and procedural skies are not a full weather or fluid-smoke solver. Raster and ray visibility differ."
+  },
+  {
+    "title": "Rigid-body simulation",
+    "interpretation": "The native physics DLL integrates Jolt with fixed stepping, collision shape preparation and a job system. The editor wrapper consumes body poses and liquid data.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/Physics/PhysicsWorld.cpp",
+        "line": 5,
+        "matched": "JobSystemThreadPool",
+        "excerpt": "#include <Jolt/Core/JobSystemThreadPool.h>"
+      },
+      {
+        "file": "deep/Physics/PhysicsWorld.cpp",
+        "line": 166,
+        "matched": "async",
+        "excerpt": "  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error(\"Invalid terrain height\");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.pending=std::async(std::launch::async,[data,tx,tz]{return Cook(data,tx,tz);});cooks++;}"
+      },
+      {
+        "file": "editor/cpp/physics.cpp",
+        "line": 6,
+        "matched": "Liquid",
+        "excerpt": "struct Liquid {"
+      }
+    ],
+    "missing": [],
+    "limits": "Async collision cooks and four-worker Jolt scheduling are not a global concurrency budget. High-density coupled performance remains unverified."
+  },
+  {
+    "title": "Water and lava flow",
+    "interpretation": "TerrainFlow maintains separate water/lava arrays on a 48×48 grid, with 0.5 m cells, obstacle coverage and geometry extraction.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/flow.hpp",
+        "line": 60,
+        "matched": "N = 48",
+        "excerpt": "    static constexpr int N = 48;"
+      },
+      {
+        "file": "editor/cpp/flow.hpp",
+        "line": 61,
+        "matched": "Cell = .5",
+        "excerpt": "    static constexpr double Cell = .5, Area = .25;"
+      },
+      {
+        "file": "editor/cpp/flow.cpp",
+        "line": 125,
+        "matched": "transport",
+        "excerpt": "    transport(water, dt, 3);"
+      },
+      {
+        "file": "editor/cpp/flow.hpp",
+        "line": 6,
+        "matched": "FlowObstacleMask",
+        "excerpt": "struct FlowObstacleMask {"
+      }
+    ],
+    "missing": [],
+    "limits": "This is terrain-bound surface transport, not a general 3D incompressible fluid solver or guaranteed two-way pressure coupling."
+  },
+  {
+    "title": "Routes and simulation controls",
+    "interpretation": "Objects carry X/Z route points and speed; NativeSession implements repeat/follow and playback/reset behavior.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/scene.hpp",
+        "line": 46,
+        "matched": "WalkPoint",
+        "excerpt": "struct WalkPoint {"
+      },
+      {
+        "file": "editor/cpp/native_session.cpp",
+        "line": 110,
+        "matched": "repeat_",
+        "excerpt": "    repeat_ = repeat;"
+      },
+      {
+        "file": "editor/cpp/native_session.cpp",
+        "line": 111,
+        "matched": "follow_",
+        "excerpt": "    follow_ = std::move(follow);"
+      }
+    ],
+    "missing": [],
+    "limits": "Route playback is distinct from navigation, skeletal locomotion, collision-aware character controllers and animation graphs."
+  },
+  {
+    "title": "Local music",
+    "interpretation": "Native music controls use Windows MCI with playlist/playback/volume behavior.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "editor/cpp/music.hpp",
+        "line": 11,
+        "matched": "mciSendString",
+        "excerpt": "        auto error = mciSendStringW(text.c_str(), output, 512, nullptr);"
+      },
+      {
+        "file": "editor/cpp/classic_completion.inl",
+        "line": 3,
+        "matched": "music",
+        "excerpt": "HWND morePanel{}, featureList{}, featureDetail{}, featureResult{}, musicPanel{}, musicTrack{}, musicToggle{},"
+      }
+    ],
+    "missing": [],
+    "limits": "Editor music is not a spatial audio engine or exported game soundtrack system."
+  },
+  {
+    "title": "Texture foundation",
+    "interpretation": "The shared texture loader supports DDS block-compressed textures, mip selection and format-aware GPU uploads, alongside existing image loading.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/model/texture.cpp",
+        "line": 28,
+        "matched": "loadTextureDDS",
+        "excerpt": "bool loadTextureDDS(const std::string& path, uint32_t maxRes, TexImage& out, std::string& err) {"
+      },
+      {
+        "file": "deep/engine/model/texture.cpp",
+        "line": 17,
+        "matched": "BC5",
+        "excerpt": "    const bool bc = format == DXGI_FORMAT_BC5_UNORM || format == DXGI_FORMAT_BC7_UNORM || format == DXGI_FORMAT_BC7_UNORM_SRGB;"
+      },
+      {
+        "file": "deep/engine/model/texture.cpp",
+        "line": 17,
+        "matched": "BC7",
+        "excerpt": "    const bool bc = format == DXGI_FORMAT_BC5_UNORM || format == DXGI_FORMAT_BC7_UNORM || format == DXGI_FORMAT_BC7_UNORM_SRGB;"
+      }
+    ],
+    "missing": [],
+    "limits": "A BC5/BC7 loader is not a complete editor PBR material library, offline cooker or asynchronous residency manager."
+  },
+  {
+    "title": "Project host boundary",
+    "interpretation": "The native host loads project modules through StarlightRunProject; editor project handling validates schema 3 manifests and launches/reconciles presets.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/src/runtime.cpp",
+        "line": 59,
+        "matched": "StarlightRunProject",
+        "excerpt": "        using Run=int(WINAPI*)(HINSTANCE,LPWSTR,int);auto run=reinterpret_cast<Run>(GetProcAddress(library,\"StarlightRunProject\"));if(!run){FreeLibrary(library);throw std::runtime_error(\"Project entry point missing\");}int result=run(instance,command.data(),show);FreeLibrary(library);return result;"
+      },
+      {
+        "file": "editor/cpp/projects.cpp",
+        "line": 48,
+        "matched": "schemaVersion",
+        "excerpt": "    if (!data.is_object() || native_int(data.at(\"schemaVersion\")) != 3)"
+      },
+      {
+        "file": "CMakeLists.txt",
+        "line": 98,
+        "matched": "foreach(project_name IN ITEMS Empty GameProject",
+        "excerpt": "  foreach(project_name IN ITEMS Empty GameProject)"
+      }
+    ],
+    "missing": [],
+    "limits": "Creator scene Play and project-DLL execution are separate workflows. See current publication and closeout evidence for tested export cases; project-host and editor-player workflows remain distinct."
+  },
+  {
+    "title": "Crowd runtime",
+    "interpretation": "The separate game project contains crowd gathering, pose evaluation and instance-bucket emission using renderer parallel preparation.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/projects/GameProject/project.cpp",
+        "line": 682,
+        "matched": "poolThreads",
+        "excerpt": "            const unsigned pt = parallelGather ? poolThreads : 1;"
+      },
+      {
+        "file": "deep/projects/GameProject/project.cpp",
+        "line": 192,
+        "matched": "pose",
+        "excerpt": "    // PHASE A (serial): record a DrawItem — assign palette slot, compute transforms (+ mvec history). No pose, no emit."
+      },
+      {
+        "file": "deep/projects/GameProject/project.cpp",
+        "line": 189,
+        "matched": "bucket",
+        "excerpt": "    // UNIFIED instancing: collect one InstData per shown submesh into (model,variant,submesh) buckets."
+      }
+    ],
+    "missing": [],
+    "limits": "Do not attribute large-crowd figures to the editor or to independent gameplay entities; inherited results are workload-specific."
+  },
+  {
+    "title": "Persistent CPU workers",
+    "interpretation": "PersistentWorkers uses contiguous ranges, caller participation, condition variables and a shared completion count. Threads are joined on destruction.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/persistent_workers.h",
+        "line": 51,
+        "matched": "const int per",
+        "excerpt": "        const int per = (count + static_cast<int>(threads) - 1) / static_cast<int>(threads);"
+      },
+      {
+        "file": "deep/engine/persistent_workers.h",
+        "line": 61,
+        "matched": "done_.wait",
+        "excerpt": "        done_.wait(lock, [&] { return pending_ == 0; });"
+      },
+      {
+        "file": "deep/engine/persistent_workers.h",
+        "line": 41,
+        "matched": "thread.join",
+        "excerpt": "        for (auto& thread : workers_) thread.join();"
+      }
+    ],
+    "missing": [],
+    "limits": "This class does not implement a general task DAG, fibers or work stealing. Wider thread counts require measured gains, not utilization alone."
+  },
+  {
+    "title": "Command recording and GPU lifetime",
+    "interpretation": "The renderer owns command lists/allocators, barriers, submission and frame retirement. CPU parallel preparation does not automatically imply concurrent D3D12 recording.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/render_device.h",
+        "line": 964,
+        "matched": "CreateCommandList",
+        "excerpt": "        must(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc.Get(), nullptr, IID_PPV_ARGS(&cmd)), \"CreateCommandList\");"
+      },
+      {
+        "file": "deep/engine/render_device.h",
+        "line": 962,
+        "matched": "CreateCommandAllocator",
+        "excerpt": "        for (UINT i = 0; i < kFrameCount; ++i) must(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocs[i])), \"CreateCommandAllocator\");"
+      },
+      {
+        "file": "deep/engine/render_device.h",
+        "line": 722,
+        "matched": "ExecuteCommandLists",
+        "excerpt": "        // Ordinary buffers decay to COMMON after completed ExecuteCommandLists."
+      }
+    ],
+    "missing": [],
+    "limits": "Future parallel recording needs per-worker/per-slot ownership, reserved bindings and ordered resource transitions."
+  },
+  {
+    "title": "Diagnostics and existing audits",
+    "interpretation": "Native checks cover core data, controlled diagnostics, textures, UI, sessions and render harnesses. The audit GUI coordinates checks and preserves result files.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "CMakeLists.txt",
+        "line": 37,
+        "matched": "native-diagnostics",
+        "excerpt": "add_test(NAME native-diagnostics COMMAND Starlight.NativeDiagnosticChecks \"${CMAKE_BINARY_DIR}/diagnostic-checks/$<CONFIG>\")"
+      },
+      {
+        "file": "CMakeLists.txt",
+        "line": 74,
+        "matched": "native-classic-ui",
+        "excerpt": " add_test(NAME native-classic-ui COMMAND Starlight.NativeEditor --ui-check \"${CMAKE_BINARY_DIR}/classic-ui-$<CONFIG>.json\")"
+      },
+      {
+        "file": "tools/audit/audit.cpp",
+        "line": 1084,
+        "matched": "wWinMain",
+        "excerpt": "int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {"
+      }
+    ],
+    "missing": [],
+    "limits": "Checks are evidence for their exact run, not blanket certification. This analyzer does not run them or change failed assertions."
+  },
+  {
+    "title": "Diagnostic benchmark path",
+    "interpretation": "The current source contains auditOffscreen and optional benchmark exports. These are committed diagnostic facilities, not an accepted gameplay rendering mode.",
+    "status": "source markers found; interpretation requires review",
+    "evidence": [
+      {
+        "file": "deep/engine/render_device.h",
+        "line": 461,
+        "matched": "auditOffscreen",
+        "excerpt": "    bool auditOffscreen = false;"
+      },
+      {
+        "file": "editor/native/viewport.cpp",
+        "line": 152,
+        "matched": "sl_benchmark",
+        "excerpt": "API int sl_benchmark_contract(){return 2;} // owned offscreen target; no swapchain writes"
+      }
+    ],
+    "missing": [],
+    "limits": "Historical renderer failures are preserved; newer Gate 0 evidence and the reliability checkpoint record an isolated output-target correction. A source scan alone does not certify matched performance or lifecycle reliability."
+  }
+]

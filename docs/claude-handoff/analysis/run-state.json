@@ -1,0 +1,78 @@
+{
+  "analyzerVersion": "2.1",
+  "root": "D:\\projects\\Starlight-Engine",
+  "startedUtc": "2026-09-27T19:08:44.394071+00:00",
+  "issues": [],
+  "gitStart": {
+    "head": {
+      "args": [
+        "rev-parse",
+        "HEAD"
+      ],
+      "exitCode": 0,
+      "stdout": "43496450dcb529519b0b3b8b1153dc655d107711\n",
+      "stderr": ""
+    },
+    "status": {
+      "args": [
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "submodules": {
+      "args": [
+        "submodule",
+        "status"
+      ],
+      "exitCode": 0,
+      "stdout": "-0373ec0dd762e4bc2f6acdb08371ee84fa23c6db deep/third_party/JoltPhysics\n",
+      "stderr": ""
+    },
+    "diff": {
+      "args": [
+        "diff",
+        "--stat"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "treeChanges": [],
+  "bytesRead": 26064742795,
+  "streams": 0,
+  "streamBytes": 0,
+  "stableFiles": 17506,
+  "manifestSha256": "d2f22290f4b7875c3e356edd8d45aeae5f6a3f5680b92be41df9557e6cd086cc",
+  "finishedUtc": "2026-09-27T19:09:05.428459+00:00",
+  "gitEnd": {
+    "head": {
+      "args": [
+        "rev-parse",
+        "HEAD"
+      ],
+      "exitCode": 0,
+      "stdout": "43496450dcb529519b0b3b8b1153dc655d107711\n",
+      "stderr": ""
+    },
+    "status": {
+      "args": [
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "missingCapabilityMarkers": [
+    "Dynamic world physics closeout",
+    "Scene packet ABI"
+  ],
+  "result": "completed with limitations"
+}
