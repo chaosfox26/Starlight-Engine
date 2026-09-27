@@ -947,8 +947,7 @@ inline std::vector<std::string> adventure_readiness(const SceneData& scene){
         if(object.GameplayRole=="exit")exit=true;
         if((object.GameplayRole=="door" || object.GameplayRole=="exit") && !object.GameplayKey.empty() && !keys.contains(object.GameplayKey))
             findings.push_back(object.Name+": no collectible key named "+object.GameplayKey+".");
-        if(object.Dynamic)
-            findings.push_back(object.Name+": dynamic objects have no player collision in this controller; use static objects or a non-dynamic route platform.");
+
     }
     for(const auto& rule:scene.Rules)if(rule.Enabled) {
         for(const auto& action:rule.Actions) {

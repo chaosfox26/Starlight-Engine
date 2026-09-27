@@ -4,7 +4,7 @@ int gameplay_checks(const fs::path& output){
     json report{{"pass",false},{"scope","Packaged foreground movement, combat, control and lifecycle; not clean-Windows certification"},{"checks",json::array()}};
     fs::create_directories(output.parent_path());gameplayCheck=true;
     const auto original=authored.encode();
-    auto pump=[&]{MSG msg{};while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){
+    auto pump=[&]{MSG msg{};for(int n=0;n<32 && PeekMessageW(&msg,nullptr,0,0,PM_REMOVE);++n){
         if(msg.message==WM_QUIT || msg.message==WM_CLOSE || (msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE))throw std::runtime_error("Gameplay acceptance cancelled");
         TranslateMessage(&msg);DispatchMessageW(&msg);
     }};
@@ -32,6 +32,16 @@ int gameplay_checks(const fs::path& output){
     auto key=[&](int code){SendMessageW(window,WM_KEYDOWN,code,0);SendMessageW(window,WM_KEYUP,code,0);};
     try{
         MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560||monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Exported gameplay acceptance requires a 2560x1440 monitor");SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,2560,1440,SWP_FRAMECHANGED|SWP_SHOWWINDOW);pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;report["overlayEnabled"]=true;
+        if(GetEnvironmentVariableW(L"STARLIGHT_MIXED_PHYSICS_ONLY",nullptr,0)){
+            load(authored);bool fragments=false,fire=false,splash=false,shot=false,rope=false,fall=false,lightning=false,grass=false;
+            step("Saved mixed world starts with every required system",[&]{},[&]{return authored.Characters.size()>=22&&renderer->status().liquid_volume>0;},1200);
+            step("Mixed combat, destruction, liquids, ropes and atmosphere",[&]{gameplay.fire_button(true);gameplay.fire_button(false);gameplayObserver=[&]{auto p=gameplay.presentation();auto state=renderer->status();fragments|=p.fragments.size()>=16;fire|=state.fire_particles>0;splash|=state.liquid_splashes>0;shot|=!p.projectiles.empty();lightning|=p.lightning>0;for(const auto& c:gameplay.scene().Characters){if(c.Id=="mixed-rope")rope|=c.JointRuntimePoints.size()==13;if(c.Id=="mixed-fall")fall|=c.Y<1;}for(const auto& o:renderer->pacing_snapshot().objects)if(o.id=="mixed-grass")grass|=o.effectUpdatesPerSecond>0;};},[&]{gameplayObserver={};report["observed"]={{"fragments",fragments},{"fire",fire},{"splashes",splash},{"projectiles",shot},{"rope",rope},{"fall",fall},{"lightning",lightning},{"grass",grass}};return fragments&&fire&&splash&&shot&&rope&&fall&&lightning&&grass;},6500);
+            auto probes=renderer->status().fog_probes;step("Mixed-world GPU fog remains finite and excludes bodies",[&]{renderer->probe_fog();},[&]{auto a=renderer->status().fog_sample;report["fogField"]=a;return renderer->status().fog_probes>probes&&a[1]>0&&a[5]<.001&&std::all_of(a.begin(),a.end(),[](double v){return std::isfinite(v);});});
+            double at=0;step("Mixed-world pause freezes simulation",[&]{key(VK_ESCAPE);at=gameplay.seconds();},[&]{return paused&&gameplay.seconds()==at;});
+            step("Mixed-world restart restores broken object and authored settings",[&]{key(VK_F5);},[&]{return !paused&&gameplay.presentation().fragments.empty()&&gameplay.scene().Characters.size()==authored.Characters.size()&&authored.encode()==original;},100);
+            load(empty);step("Mixed-world replacement clears runtime effects",[&]{},[&]{auto st=renderer->status();return gameplay.presentation().fragments.empty()&&gameplay.presentation().projectiles.empty()&&st.fire_particles==0&&st.liquid_volume==0&&st.liquid_splashes==0;});
+            report["authoredUnchanged"]=authored.encode()==original;report["pass"]=true;atomic_write(output,report.dump(2));gameplayCheck=false;SendMessageW(window,WM_CLOSE,0,0);return 0;
+        }
         step("Packaged scene renders with third-person weapons",[&]{},[&]{return gameplay.presentation().showBody && gameplay.presentation().showWeapons;},1600);
         load(empty);double startZ=gameplay.position.z;
         step("Continuous forward movement",[&]{checkForward=1;},[&]{checkForward=0;return gameplay.position.z<startZ-1;});

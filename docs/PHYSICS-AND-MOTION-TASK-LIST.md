@@ -2,7 +2,7 @@
 
 Reconciled 27 September 2026 against source, current test reports and Step 4 acceptance. This replaces the duplicate incremental lists and stale unchecked entries. A checked item means implemented and tested within the coverage document's stated limits, not unlimited physical realism or every possible scene.
 
-**Position:** all twelve named physics feature groups have working implementations and passing evidence. The remaining work for the current supported scope is three closeout verification items below. There is no defensible hours estimate or measured completion percentage; feature implementation is substantially complete, final acceptance is open.
+**Position:** the twelve supported feature groups and the bounded closeout fixtures now pass. See [closeout results](PHYSICS-CLOSEOUT-CHECKS-20260927.md) for tested scope and retained limitations. This is not a claim of arbitrary-scene correctness or every possible editor setting combination.
 
 [Coverage and evidence](PHYSICS-COVERAGE-20260927.md) · [Collaborator handoff](PHYSICS-HANDOFF.md) · [Implementation history](DYNAMIC-ENVIRONMENT-IMPLEMENTATION-20260927.md)
 
@@ -26,20 +26,20 @@ Reconciled 27 September 2026 against source, current test reports and Step 4 acc
 ### Integration already verified
 
 - [x] Serialization and runtime/authored-state separation have core coverage; packaged scene replacement, pause and restart pass.
-- [x] Current release build and 755 core checks pass.
+- [x] Current release build and 772 core checks pass (17 new boundary checks).
 - [x] Standalone physics: 28 checks; fullscreen liquid: 8; fullscreen battle: 44.
 - [x] Current exported game: 12 packaging and 41 fullscreen 2560x1440 gameplay checks. Includes dynamic-enemy pursuit/falling and simultaneous fracture/fire/water with cleanup.
 - [x] Actual GPU fog fields: terrain, liquid, fire, dense moving sources, obstacle exclusion, pause/reset. Actual raster, ray tracing and reconstruction motion checks are retained.
 - [x] Fixed-tick presentation: 120 render samples, 15 physics ticks, 112 presented pose changes.
 - [x] Failed runs and bounded solver/collision assumptions are documented; no blanket clean-Windows or performance claim for this new build.
 
-### Remaining closeout work for the current supported scope
+### Closeout verification results
 
-- [ ] **One comprehensive mixed-world acceptance run:** combine combat/projectiles, dynamic and constrained bodies, destruction, water/lava, grass, lightning, fire and dense fog in the same saved/exported scene. Existing tests cover these individually and in subsets, not one complete simultaneous workload. Verify pause/restart/scene replacement and authored-state preservation in that same run.
-- [ ] **Focused editor authoring acceptance:** visibly edit the new material, initial velocity/spin, joint, particle, lightning and projectile settings; verify undo/redo, save/reopen and export. Core serialization and older authoring tests exist, but they do not replace a current end-to-end UI pass over every newly added control.
-- [ ] **Boundary/coverage closure:** map each documented size, topology, collision and simulation-domain limit to an explicit expected outcome and existing/new test; record unsupported inputs clearly. Then reconcile the final mixed-scene and authoring results into the coverage table and close acceptance only if they pass.
+- [x] **Comprehensive mixed-world acceptance fixture:** six saved/exported fullscreen checks pass with all named systems present, observed motion/effects, GPU fog sampling, pause/restart and scene replacement.
+- [x] **Focused editor authoring fixture:** thirteen visible checks pass across new material, velocity/spin, rope, particle, lightning and projectile control groups, including undo/redo and save/reopen. Export preserves the scene exactly. Representative values were exercised; this does not certify every field value/combination.
+- [x] **Targeted boundary closure:** 17 new core checks and seven fullscreen GPU checks cover the identified fracture, liquid, projectile, emitter, droplet, rope and fog cases. Unsupported fracture's generic-debris fallback is confirmed and documented.
 
-These are verification/integration gates and can uncover additional fixes. They are not a promise of exactly three small coding changes.
+[Exact assertions, failures retained and evidence](PHYSICS-CLOSEOUT-CHECKS-20260927.md). These bounded acceptance fixtures are complete; the fidelity limits below remain real limitations.
 
 ### Explicit fidelity limits and undefined extensions
 

@@ -36,3 +36,11 @@ Finish builds before launching checks that load the same binaries. Run visible c
 ## Ownership and publication
 
 Coordinate changes to shared files; do not discard another worker's edits. The publication repository contains anonymized source and separate history. Never merge the original private development history or private archives into it. Preserve dependency credits and licensing boundaries. Use the public sample identifiers already in this checkout.
+
+## Boundary review update
+
+Release build and 771 core checks pass, including 16 new boundary checks. See [boundary review](PHYSICS-BOUNDARY-REVIEW-20260927.md) for tested limits, source-reviewed behavior and three remaining regression gaps. Unsupported fracture can remove the object and emit generic debris; it does not guarantee source-shaped physical pieces. Mixed-world and editor authoring acceptance remain open. This update is local and has not been published to GitHub.
+
+## Closeout check results
+
+The targeted boundary checks, representative new editor-control groups and comprehensive saved/exported mixed-world run now pass. See [closeout report](PHYSICS-CLOSEOUT-CHECKS-20260927.md) for evidence, retained failures and exact scope. This supersedes the initial boundary-review gaps above. The checklist must retain fidelity limitations; passing these fixtures is not universal physics certification.
