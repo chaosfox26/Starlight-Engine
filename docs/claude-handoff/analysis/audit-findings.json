@@ -1,0 +1,18 @@
+[
+  {
+    "file": "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\denoiser-quality\\result.json",
+    "detail": "dynamic transform produces object motion vectors"
+  },
+  {
+    "file": "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\native-diagnostics\\audit-verdict.json",
+    "detail": "visible-editor"
+  },
+  {
+    "file": "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\native-diagnostics\\visible-editor\\result.json",
+    "detail": "Visible editor step failed: Fullscreen live telemetry"
+  },
+  {
+    "file": "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\native-diagnostics\\visible-editor\\result.json",
+    "detail": "Fullscreen live telemetry"
+  }
+]

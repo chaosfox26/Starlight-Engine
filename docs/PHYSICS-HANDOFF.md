@@ -1,3 +1,5 @@
+Full numbered handoff: [Claude handoff](claude-handoff/README.md). Local folder: `D:/projects/Starlight-Claude-Handoff-20260927`. Testing is paused at the owner's request.
+
 # Physics collaborator handoff — current checkpoint
 
 ## Current position

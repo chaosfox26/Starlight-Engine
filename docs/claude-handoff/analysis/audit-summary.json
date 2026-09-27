@@ -1,0 +1,164 @@
+{
+  "root": "D:\\projects\\Starlight-Engine",
+  "mode": "both",
+  "stages": [
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "C:\\Users\\Chaos\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+        "D:\\projects\\Starlight-Engine\\Build-Native.py",
+        "--build-dir",
+        "D:\\projects\\Starlight-Engine\\out\\audit-engine"
+      ],
+      "seconds": 31.16388189999998,
+      "name": "build"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "D:/projects/Starlight-Engine/out/audit-engine/Release/Starlight.AuditContractChecks.exe"
+      ],
+      "seconds": 0.5285561999990023,
+      "name": "audit-contract"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "D:/projects/Starlight-Engine/out/audit-engine/Release/Starlight.NativeCoreChecks.exe",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-1",
+        "D:/projects/Starlight-Engine/migration/geometry-reference.json"
+      ],
+      "seconds": 2.0443625999978394,
+      "name": "native-core"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "D:/projects/Starlight-Engine/out/audit-engine/Release/Starlight.NativeDiagnosticChecks.exe",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-2"
+      ],
+      "seconds": 0.5368619000000763,
+      "name": "native-diagnostics"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "C:/Users/Chaos/AppData/Local/Programs/Python/Python314/python.exe",
+        "D:/projects/Starlight-Engine/tools/checks/verify_no_managed.py",
+        "--output",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-3\\result.json"
+      ],
+      "seconds": 0.5052423000015551,
+      "name": "native-no-managed"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "C:/Users/Chaos/AppData/Local/Programs/Python/Python314/python.exe",
+        "D:/projects/Starlight-Engine/tools/checks/test_verify_no_managed.py"
+      ],
+      "seconds": 0.5042466999948374,
+      "name": "native-no-managed-policy"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "D:/projects/Starlight-Engine/out/audit-engine/Release/Starlight.NativeTextureChecks.exe",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-5"
+      ],
+      "seconds": 0.6587205999967409,
+      "name": "native-textures"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "D:/projects/Starlight-Engine/out/audit-engine/Release/Starlight.NativeEditor.exe",
+        "--ui-check",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-6\\result.json"
+      ],
+      "seconds": 135.24443990000145,
+      "name": "native-classic-ui"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "C:/Users/Chaos/AppData/Local/Programs/Python/Python314/python.exe",
+        "D:/projects/Starlight-Engine/tools/checks/check_adventure_export.py",
+        "--runtime",
+        "D:/projects/Starlight-Engine/out/audit-engine/Release",
+        "--output",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\test-7"
+      ],
+      "seconds": 7.517644999999902,
+      "name": "native-adventure-export"
+    },
+    {
+      "name": "native-session",
+      "outcome": "pass",
+      "reason": "Executed by Gate 0 lifecycle-traced with diagnostic controls; not run twice",
+      "evidence": "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\native-diagnostics\\lifecycle-traced"
+    },
+    {
+      "outcome": "fail",
+      "exitCode": 1,
+      "command": [
+        "D:\\projects\\Starlight-Engine\\out\\audit-engine\\Release\\audit\\starlight_audit_tool.exe",
+        "D:\\projects\\Starlight-Engine",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\native-diagnostics",
+        "--gate0",
+        "--batch"
+      ],
+      "seconds": 379.6710639000012,
+      "name": "native-render-lifecycle-visible"
+    },
+    {
+      "outcome": "pass",
+      "exitCode": 0,
+      "command": [
+        "C:\\Users\\Chaos\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+        "D:\\projects\\Starlight-Engine\\tools\\render\\validate_native.py",
+        "--build-dir",
+        "D:\\projects\\Starlight-Engine\\out\\audit-engine",
+        "--packet",
+        "D:\\projects\\Starlight-Engine\\audit-runs\\run-20260917-192850\\comparison.bin",
+        "--output",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\renderer-fallbacks"
+      ],
+      "seconds": 95.65563470000052,
+      "name": "renderer-fallbacks",
+      "packet": "D:\\projects\\Starlight-Engine\\audit-runs\\run-20260917-192850\\comparison.bin",
+      "packetSha256": "8c1f65801d1c6ddafb3210714102b0d4b7e8ab160066bb9f473621daf44f0810"
+    },
+    {
+      "outcome": "fail",
+      "exitCode": 1,
+      "command": [
+        "C:\\Users\\Chaos\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+        "D:\\projects\\Starlight-Engine\\tools\\render\\check_denoise.py",
+        "--build-dir",
+        "D:\\projects\\Starlight-Engine\\out\\audit-engine",
+        "--packet",
+        "D:\\projects\\Starlight-Engine\\editor\\checks\\denoise\\regression\\chaos-rt.packet",
+        "--output",
+        "D:\\projects\\Starlight-analysis\\run-20260927-145737-11584-42661687\\denoiser-quality"
+      ],
+      "seconds": 12.522801700004493,
+      "name": "denoiser-quality",
+      "packet": "D:\\projects\\Starlight-Engine\\editor\\checks\\denoise\\regression\\chaos-rt.packet",
+      "packetSha256": "6751c0f9912dc75da4e3fe77f3a8e0d8d3bff3425c4fe8c06fe3b53ed6daf95f"
+    }
+  ],
+  "runtimeExecuted": true,
+  "reusedRuntime": null,
+  "allRequestedStagesPassed": false,
+  "limits": "Bounded checks only. Not all features, visual states, hardware or long-soak conditions are tested. Gate 0 certification remains separate."
+}
