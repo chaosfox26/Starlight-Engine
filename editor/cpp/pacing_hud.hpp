@@ -19,7 +19,7 @@ class PacingHud {
         PAINTSTRUCT ps{};auto target=BeginPaint(window_,&ps);RECT r{};GetClientRect(window_,&r);
         auto dc=CreateCompatibleDC(target);auto bitmap=CreateCompatibleBitmap(target,std::max(1L,r.right),std::max(1L,r.bottom));auto oldBitmap=SelectObject(dc,bitmap);
         auto fill=[&](RECT box,COLORREF color){auto b=CreateSolidBrush(color);FillRect(dc,&box,b);DeleteObject(b);};
-        fill(r,RGB(1,2,3));fill({px(14),px(14),px(555),px(235)},RGB(18,25,38));
+        fill(r,RGB(1,2,3));fill({px(14),px(14),px(700),px(395)},RGB(18,25,38));
         SetBkMode(dc,TRANSPARENT);auto font=CreateFontW(-px(15),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");auto oldFont=SelectObject(dc,font);
         auto text=[&](int x,int y,const std::wstring& s,COLORREF color=RGB(236,243,251)){SetTextColor(dc,color);TextOutW(dc,x,y,s.c_str(),int(s.size()));};
         auto number=[](double n){std::wostringstream s;s<<std::fixed<<std::setprecision(1)<<n;return s.str();};
@@ -35,7 +35,17 @@ class PacingHud {
         std::vector<POINT> points;for(size_t i=0;i<snapshot_.frameMs.size();++i)points.push_back({left+int(i*width/std::max(size_t(1),snapshot_.frameMs.size()-1)),top+height-int(height*snapshot_.frameMs[i]/ceiling)});
         if(points.size()>1)Polyline(dc,points.data(),int(points.size()));SelectObject(dc,oldPen);DeleteObject(pen);
         text(px(26),px(180),L"Last 2 seconds | 0 - "+number(ceiling)+L" ms | CPU frame intervals");
-        text(px(26),px(201),L"Object labels: pose updates/s. Still objects show STATIC.");
+        text(px(26),px(201),L"1% low: "+number(snapshot_.low1)+L" FPS   0.1% low: "+number(snapshot_.low01)+L" FPS");
+        text(px(26),px(222),L"Object labels: pose updates/s. Still objects show STATIC.");
+        if(snapshot_.logFailed || snapshot_.droppedLogRecords)text(px(26),px(244),L"Timing log incomplete - check disk / dropped samples",RGB(255,120,100));
+        const auto& work=snapshot_.multicore;
+        text(px(26),px(266),L"Renderer pool (last frame): "+std::to_wstring(work.parallelBatches)+L" parallel / "+std::to_wstring(work.serialBatches)+L" serial batches");
+        text(px(26),px(287),L"Participants incl. caller: "+std::to_wstring(work.participants)+L"   Work: "+number(work.wallMs)+L" ms   Join: "+number(work.callerWaitMs)+L" ms");
+        text(px(26),px(308),work.parallelBatches+work.serialBatches==0?L"No renderer pool work this frame (not whole-CPU utilization)":L"Per-worker elapsed times are saved in the timing log.");
+        const auto& battle=snapshot_.battleWorkers;
+        text(px(26),px(334),L"Battle visuals: "+std::to_wstring(battle.participants)+L" participants   "+number(battle.wallMs)+L" ms   Join: "+number(battle.callerWaitMs)+L" ms");
+        text(px(26),px(355),L"Player/boss effects: "+std::to_wstring(battle.parallelBatches)+L" parallel / "+std::to_wstring(battle.serialBatches)+L" serial batches");
+        std::wstring chunks=L"Worker slots (caller first): ";for(double ms:battle.chunkMs)chunks+=number(ms)+L" ms  ";text(px(26),px(376),chunks);
         const auto forward=(camera_.target-camera_.eye).unit();const auto right=forward.cross({0,1,0}).unit();const auto up=right.cross(forward).unit();
         const double focal=r.right/(2*std::tan(48.*3.141592653589793/360));
         int labelCount=0;

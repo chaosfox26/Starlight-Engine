@@ -1,6 +1,7 @@
 #include "native_session.hpp"
 #include "interactions.hpp"
 #include "physics.hpp"
+#include "pacing_log.hpp"
 #include <chrono>
 namespace {
 extern "C" {
@@ -15,6 +16,9 @@ __declspec(dllimport) void sl_shot(void *, const wchar_t *);
 __declspec(dllimport) void sl_scene_resources(void *, unsigned long long *, unsigned long long *, unsigned long long *);
 __declspec(dllimport) void sl_upload_pool_stats(void *, unsigned long long *, unsigned long long *, unsigned long long *, unsigned long long *);
 __declspec(dllimport) const char *sl_error();
+__declspec(dllimport) void sl_multicore_begin(void*,int);
+__declspec(dllimport) int sl_multicore_read(void*,double*,int);
+__declspec(dllimport) void sl_wait_timings(void*,double*,double*,double*);
 __declspec(dllimport) double sl_gpu_ms(void *);
 __declspec(dllimport) double sl_ray_ms(void *);
 __declspec(dllimport) double sl_denoise_ms(void *);
@@ -99,7 +103,11 @@ RenderStatus NativeSession::status() {
     std::lock_guard lock(mutex_);
     return status_;
 }
-void NativeSession::pacing_enabled(bool enabled){std::lock_guard lock(mutex_);pacingEnabled_=enabled;if(!enabled)pacingSnapshot_={};}
+void NativeSession::pacing_enabled(bool enabled){std::lock_guard lock(mutex_);pacingEnabled_=enabled;if(!enabled){pacingSnapshot_={};timingEvents_.clear();}}
+void NativeSession::frame_updates(HWND window){std::lock_guard lock(mutex_);updateWindow_=window;}
+void NativeSession::runtime_timing(RuntimeTiming timing,int count){std::lock_guard lock(mutex_);runtimeTiming_=timing;++runtimeSequence_;if(count!=attackCount_){if(pacingEnabled_)timingEvents_.push_back("attack-area-count:"+std::to_string(count));attackCount_=count;}}
+void NativeSession::input_event(){std::lock_guard lock(mutex_);inputEventTime_=timing_seconds();++inputSequence_;}
+void NativeSession::frame_update_handled(){std::lock_guard lock(mutex_);updatePosted_=false;}
 void NativeSession::pacing_player(Vec3 position,std::vector<double> pose){std::lock_guard lock(mutex_);playerPosition_=position;playerPose_=std::move(pose);}
 PacingSnapshot NativeSession::pacing_snapshot(){std::lock_guard lock(mutex_);return pacingSnapshot_;}
 void NativeSession::suspend_rendering(bool suspended) {
@@ -116,6 +124,7 @@ void NativeSession::run(std::stop_token stop) {
         std::unique_ptr<PhysicsSession> physics;
         std::unique_ptr<TerrainFlow> flow;
         SceneData authored, simulation;
+        RenderSceneCache sceneCache;
         int w = 0, h = 0;
         double seconds = 0;
         bool physicsNeeded = false;
@@ -123,7 +132,12 @@ void NativeSession::run(std::stop_token stop) {
         std::vector<uint8_t> packet;
         FramePacingMonitor pacing;
         bool wasPacing=false;double lastPacingPublish=0;
+        std::unique_ptr<PacingLog> pacingLog;
+        std::vector<PacingFrameRecord> pacingFrames;
+        double logStart=0,lastLoggedFrame=0;
+        uint64_t logFrame=0;double priorFence=0,priorPacing=0,priorPresent=0;
         auto reset = [&] {
+            sceneCache.clear();
             simulation = authored;
             seconds = 0;
             physics.reset();
@@ -160,7 +174,7 @@ void NativeSession::run(std::stop_token stop) {
             std::optional<SceneData> next;
             std::optional<double> gameplayTime;
             std::optional<fs::path> shot;
-            bool measurePacing=false;Vec3 playerPosition;std::vector<double> playerPose;
+            bool measurePacing=false;Vec3 playerPosition;std::vector<double> playerPose;RuntimeTiming timing;uint64_t updateSequence=0,inputSequence=0;double inputEvent=0;std::vector<std::string> events;
             {
                 std::unique_lock lock(mutex_);
                 if (suspended_) {
@@ -172,7 +186,7 @@ void NativeSession::run(std::stop_token stop) {
                     dt = 0;
                 }
                 camera = camera_;
-                measurePacing=pacingEnabled_;if(measurePacing){playerPosition=playerPosition_;playerPose=playerPose_;}
+                measurePacing=pacingEnabled_;if(measurePacing){playerPosition=playerPosition_;playerPose=playerPose_;timing=runtimeTiming_;updateSequence=runtimeSequence_;inputSequence=inputSequence_;inputEvent=inputEventTime_;events.swap(timingEvents_);}
                 gameplayTime=gameplayTime_;
                 play = playing_;
                 repeat = repeat_;
@@ -192,8 +206,13 @@ void NativeSession::run(std::stop_token stop) {
                 shot = std::move(capture_);
                 capture_.reset();
             }
+            double sceneCostMs=0;
             bool rebuild = toolsDirty;
             if (next) {
+                if(measurePacing){
+                    for(const auto& c:next->Characters)if(std::none_of(authored.Characters.begin(),authored.Characters.end(),[&](const auto& old){return old.Id==c.Id;}))events.push_back("object-added:"+c.Id);
+                    for(const auto& c:authored.Characters)if(std::none_of(next->Characters.begin(),next->Characters.end(),[&](const auto& fresh){return fresh.Id==c.Id;}))events.push_back("object-removed:"+c.Id);
+                }
                 authored = std::move(*next);
                 reset();
                 obstacles();
@@ -216,7 +235,7 @@ void NativeSession::run(std::stop_token stop) {
                         obstacles();
                     // Publish the current simulation on this rendered frame;
                     // do not hold moving objects behind a 20 Hz visual throttle.
-                    if (flow || physics) rebuild = true;
+                    if (flow || physics) {rebuild = true;sceneCache.clear();}
                 }
             }
             if (viewport && (w != requestedW || h != requestedH)) {
@@ -232,14 +251,16 @@ void NativeSession::run(std::stop_token stop) {
                     throw std::runtime_error(sl_error());
                 rebuild = true;
             }
+            sl_multicore_begin(viewport.get(),measurePacing?1:0);
             if (rebuild || packet.empty()) {
                 auto uploadStart=std::chrono::steady_clock::now();
                 auto overlays = editor_overlays(simulation, selected, tool, play);
                 overlays.insert(overlays.end(),gameplayOverlays.begin(),gameplayOverlays.end());
-                packet = render_scene(simulation, flow.get(), overlays);
+                packet = render_scene(simulation, flow.get(), overlays, &sceneCache);
                 if (packet.size() > INT_MAX || !sl_scene(viewport.get(), packet.data(), int(packet.size())))
                     throw std::runtime_error(sl_error());
-                {std::lock_guard lock(mutex_);status_.scene_cpu_total_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();++status_.scene_updates;}
+                sceneCostMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();
+                {std::lock_guard lock(mutex_);status_.scene_cpu_total_ms+=sceneCostMs;++status_.scene_updates;}
             }
             double duration = 0;
             for (const auto &c : authored.Characters) {
@@ -276,9 +297,30 @@ void NativeSession::run(std::stop_token stop) {
             auto frameStart=std::chrono::steady_clock::now();
             if (!sl_frame(viewport.get(), routeTime, float(camera.distance)))
                 throw std::runtime_error(sl_error());
+            const double frameCallMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStart).count();
             if(measurePacing){
                 if(!wasPacing){pacing={};lastPacingPublish=0;}
                 double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                if(!pacingLog){
+                    wchar_t requested[32768]{};DWORD count=GetEnvironmentVariableW(L"STARLIGHT_PACING_LOG",requested,32768);
+                    fs::path path=count && count<32768?fs::path(requested):application_data()/L"Diagnostics/FramePacing"/(L"frame-pacing-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(reinterpret_cast<uintptr_t>(window_))+L".jsonl");
+                    pacingLog=std::make_unique<PacingLog>(path);logStart=now;
+                }
+                double fence=0,pacingWait=0,present=0;sl_wait_timings(viewport.get(),&fence,&pacingWait,&present);
+                if(wasPacing && lastLoggedFrame>0){
+                    PacingFrameRecord record{++logFrame,now-logStart,(now-lastLoggedFrame)*1000,sceneCostMs,frameCallMs,sl_gpu_ms(viewport.get())};
+                    record.battleWorkers=timing.battleWorkers;record.simulationMs=timing.simulationMs;record.combatAiMs=timing.combatAiMs;record.physicsMs=timing.physicsMs;record.presentationMs=timing.presentationMs;
+                    record.fenceWaitMs=fence-priorFence;record.pacingWaitMs=pacingWait-priorPacing;record.presentWaitMs=present-priorPresent;
+                    record.inputSampleAgeMs=timing.inputSampleTime>0?(now-timing.inputSampleTime)*1000:-1;record.inputEventAgeMs=inputEvent>0?(now-inputEvent)*1000:-1;
+                    record.updateSequence=updateSequence;record.inputSequence=inputSequence;record.events=std::move(events);pacingFrames.push_back(std::move(record));
+                }
+                std::vector<double> workerValues(sl_multicore_read(viewport.get(),nullptr,0));
+                sl_multicore_read(viewport.get(),workerValues.data(),int(workerValues.size()));
+                ParallelWorkReading work;
+                work.parallelBatches=unsigned(workerValues[0]);work.serialBatches=unsigned(workerValues[1]);work.participants=unsigned(workerValues[2]);work.items=static_cast<unsigned long long>(workerValues[3]);work.wallMs=workerValues[4];work.callerWaitMs=workerValues[5];work.chunkMs.assign(workerValues.begin()+6,workerValues.end());
+                if(wasPacing && !pacingFrames.empty())pacingFrames.back().multicore=work;
+                priorFence=fence;priorPacing=pacingWait;priorPresent=present;
+                lastLoggedFrame=now;
                 pacing.frame(now);
                 pacing.pose("camera","Camera",camera.eye,{camera.eye.x,camera.eye.y,camera.eye.z,camera.target.x,camera.target.y,camera.target.z,camera.up.x,camera.up.y,camera.up.z},now);
                 if(!playerPose.empty())pacing.pose("player","Player",playerPosition,playerPose,now);
@@ -287,7 +329,7 @@ void NativeSession::run(std::stop_token stop) {
                     if(c.PhysicsRotation)pose.insert(pose.end(),c.PhysicsRotation->begin(),c.PhysicsRotation->end());
                     pacing.pose(c.Id,c.Name,{at.X,c.Y+c.Size*c.Height,at.Z},std::move(pose),now);
                 }
-                if(now-lastPacingPublish>=.1){auto snapshot=pacing.snapshot(now);std::lock_guard lock(mutex_);pacingSnapshot_=std::move(snapshot);lastPacingPublish=now;}
+                if(now-lastPacingPublish>=.1){auto snapshot=pacing.snapshot(now);snapshot.multicore=work;snapshot.battleWorkers=timing.battleWorkers;snapshot.logFailed=pacingLog->failed();snapshot.droppedLogRecords=pacingLog->dropped();pacingLog->push(snapshot,std::move(pacingFrames),now-logStart);pacingFrames.clear();std::lock_guard lock(mutex_);pacingSnapshot_=std::move(snapshot);lastPacingPublish=now;}
             }
             wasPacing=measurePacing;
             {
@@ -306,11 +348,15 @@ void NativeSession::run(std::stop_token stop) {
                 status_.tier = sl_rt_active(viewport.get());
                 status_.rr = sl_rr_active(viewport.get()) != 0;
                 status_.width = sl_render_width(viewport.get());
+                // Coalesce to one UI update. Simulation remains on its owning
+                // thread, but is no longer held behind a 16 ms window timer.
+                if(updateWindow_ && !updatePosted_)updatePosted_=PostMessageW(updateWindow_,frameUpdateMessage,0,0)!=0;
             }
             // Match the reference editor's continuous native render loop.
             // Suspension and stop handling remain at the top of the loop;
             // GPU fences/presentation provide rendering backpressure.
         }
+        if(pacingLog && !pacingFrames.empty())pacingLog->push(pacing.snapshot(lastLoggedFrame),std::move(pacingFrames),lastLoggedFrame-logStart);
         auto report = status();
         atomic_write(application_data() / L"Diagnostics/NativeEditor" /
                          (L"session-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(reinterpret_cast<uintptr_t>(window_)) + L".json"),

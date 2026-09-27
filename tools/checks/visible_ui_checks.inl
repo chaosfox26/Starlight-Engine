@@ -65,12 +65,12 @@ int visible_ui_checks(const fs::path& output) {
         ULONGLONG newFramesMs=0;
         while (GetTickCount64()<end) { pump(false); stayedForeground &= foreground();
             if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
-            Sleep(10); }
+            MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         // Require new rendered frames after a transition,
         // rather than capturing a blank intermediate surface and calling it done.
         const auto renderDeadline=GetTickCount64()+10000;
         while(renderer->status().frames<initialFrames+3 && renderer->status().error.empty() &&
-              GetTickCount64()<renderDeadline) { pump(false); stayedForeground &= foreground(); Sleep(10); }
+              GetTickCount64()<renderDeadline) { pump(false); stayedForeground &= foreground(); MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
         auto screenshot=output.parent_path()/("ui-"+std::to_string(report["checks"].size())+".bmp");
         const bool behavior=valid(), captured=stayedForeground && capture(screenshot);
@@ -97,7 +97,7 @@ int visible_ui_checks(const fs::path& output) {
             if(!foreground())throw std::runtime_error("Test window lost focus; stopped without retry. User direction required.");
             if(renderer->status().frames<3)stableSince=GetTickCount64();
             if (GetTickCount64()-stableSince>=1500) break;
-            Sleep(10);
+            MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
         }
         const auto startup = renderer->status();
         DWORD foregroundProcess = 0;

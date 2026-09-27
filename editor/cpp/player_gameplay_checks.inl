@@ -11,16 +11,16 @@ int gameplay_checks(const fs::path& output){
     auto step=[&](const char* name,auto action,auto valid,int ms=650){
         if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");
         action();auto frames=renderer->status().frames;auto deadline=GetTickCount64()+ms;
-        while(GetTickCount64()<deadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");Sleep(8);}
+        while(GetTickCount64()<deadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}
         const auto renderDeadline=GetTickCount64()+10000;
         while(renderer->status().frames<frames+3 && renderer->status().error.empty() && GetTickCount64()<renderDeadline){
-            pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");Sleep(8);
+            pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
         }
         auto state=renderer->status();bool pass=valid() && state.frames>=frames+3 && state.error.empty();
         auto screenshot=output.parent_path()/("gameplay-"+std::to_string(report["checks"].size())+".bmp");
         const auto captures=state.captures;renderer->capture(screenshot);
         auto captureDeadline=GetTickCount64()+5000;
-        while(renderer->status().captures==captures && GetTickCount64()<captureDeadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");Sleep(8);}
+        while(renderer->status().captures==captures && GetTickCount64()<captureDeadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}
         pass=pass && renderer->status().captures>captures && fs::exists(screenshot);
         report["checks"].push_back({{"name",name},{"pass",pass},{"foreground",true},{"frames",state.frames},{"rendererError",state.error}});
         report["checks"].back()["screenshot"]=utf8(screenshot.wstring());

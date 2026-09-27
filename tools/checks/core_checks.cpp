@@ -3,6 +3,7 @@
 #include "mesh.hpp"
 #include "platform.hpp"
 #include "render_scene.hpp"
+#include "../../deep/engine/persistent_workers.h"
 #include "assets.hpp"
 #include "interactions.hpp"
 #include "object_template.hpp"
@@ -12,6 +13,7 @@
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
 #include "frame_pacing.hpp"
+#include "pacing_log.hpp"
 #include "combat_control.hpp"
 #include "quest_model.hpp"
 #include "object_behaviors.hpp"
@@ -45,6 +47,14 @@ int main(int argc, char **argv) {
             require(moving!=snapshot.objects.end() && std::abs(moving->updatesPerSecond-50)<.01,"Object monitor distinguishes 50 pose updates from 400 rendered frames");
             require(stationary!=snapshot.objects.end() && !stationary->moving,"Static scenery is not classified as slow animation");
             monitor.frame(1.1);require(monitor.snapshot(1.1).worst>99,"Frame pacing retains a single 100 ms hitch");
+            auto hitched=monitor.snapshot(1.1);
+            require(std::abs(hitched.low1-1000./22.)<.001 && std::abs(hitched.low01-10)<.001,"One-percent lows average the slowest frames rather than substituting a percentile");
+            auto logPath=folder/"pacing-roundtrip.jsonl";
+            {PacingLog log(logPath);log.push(hitched,{{1,1.1,100,3,4,.5}},1.1);}
+            std::ifstream timingFile(logPath);std::string headerLine,sampleLine,endLine;std::getline(timingFile,headerLine);std::getline(timingFile,sampleLine);std::getline(timingFile,endLine);
+            auto sample=json::parse(sampleLine),end=json::parse(endLine);
+            require(sample["frames"].size()==1 && sample["overlay"]["graphMs"].size()==401 && end["type"]=="end" && end["droppedRecords"]==0,"Timing logger drains every queued frame and overlay sample before shutdown");
+
             monitor.frame(4);require(monitor.snapshot(4).objects.empty(),"Removed object readings expire");
         }
 
@@ -1126,6 +1136,48 @@ int main(int argc, char **argv) {
         Character rock;
         rock.Shape = "chaos-rock";
         render.Characters.push_back(rock);
+        {
+            ParallelMetrics metrics;PersistentWorkers workers;metrics.enabled=true;
+            std::vector<int> visited(300,0);
+            metrics.run(300,3,[&](const auto& callback){workers.run(300,3,callback);},
+                [&](int lo,int hi,int){for(int i=lo;i<hi;++i)++visited[i];});
+            require(std::all_of(visited.begin(),visited.end(),[](int n){return n==1;}) && metrics.reading.parallelBatches==1 && metrics.reading.participants==3 && metrics.reading.items==300 && metrics.reading.chunkMs.size()==3,
+                "Multicore monitor records actual dispatched participants and work without changing results");
+            metrics.reset();
+            metrics.run(10,1,[&](const auto& callback){callback(0,10,0);},[](int,int,int){});
+            require(metrics.reading.serialBatches==1 && metrics.reading.parallelBatches==0 && metrics.reading.participants==1 && metrics.reading.callerWaitMs==0,
+                "Multicore monitor distinguishes serial fallback from parallel execution");
+            metrics.reset();metrics.enabled=false;
+            metrics.run(10,1,[&](const auto& callback){callback(0,10,0);},[](int,int,int){});
+            require(metrics.reading.items==0 && metrics.reading.chunkMs.empty(),"Disabled multicore monitor leaves collection off");
+            PacingSnapshot recorded;recorded.multicore.parallelBatches=2;recorded.multicore.chunkMs={.1,.2};
+            PacingFrameRecord raw;raw.multicore=recorded.multicore;
+            auto logPath=folder/"multicore-roundtrip.jsonl";
+            {PacingLog log(logPath);log.push(recorded,{raw},1);}
+            std::ifstream file(logPath);std::string line;std::getline(file,line);std::getline(file,line);auto sample=json::parse(line);
+            require(sample["overlay"]["multicore"]["parallelBatches"]==2 && sample["frames"][0][18]["chunkMs"][1]==.2,
+                "Continuous log preserves per-frame and overlay worker readings");
+        }
+        {
+            AdventurePlayer::Presentation p;p.showTelegraph=true;p.channelProgress=.6;p.actorTelegraphs.push_back({{2,0,3},{0,0,-1},.5,TelegraphKind::Enemy});
+            BattlePresentationWorkers workers;ParallelWorkReading reading;
+            auto parallel=workers.build(p,reading);
+            require(render_scene(render,nullptr,parallel)==render_scene(render,nullptr,player_presentation(p)) && reading.parallelBatches==1 && reading.participants==2,
+                "Parallel player and boss effects preserve the serial render packet exactly");
+            p.actorTelegraphs.clear();workers.build(p,reading);
+            require(reading.serialBatches==1 && reading.participants==1,"Single battle job avoids waking extra workers");
+        }
+        RenderSceneCache geometryCache;
+        auto overlayParts=shape_geometry(rock);
+        require(render_scene(render,nullptr,overlayParts,&geometryCache)==render_scene(render,nullptr,overlayParts),
+                "Cached static scene plus dynamic effects matches complete render packet");
+        overlayParts.front().mesh.vertices.front().position.x+=.75;
+        require(render_scene(render,nullptr,overlayParts,&geometryCache)==render_scene(render,nullptr,overlayParts),
+                "Changing effects preserve cached scene and identical geometry");
+        render.Characters.front().X+=2;
+        geometryCache.clear();
+        require(render_scene(render,nullptr,{},&geometryCache)==render_scene(render),
+                "Scene edit invalidation refreshes cached geometry");
         auto packet = render_scene(render);
         atomic_write(folder / "native-scene.bin",
                      std::string_view(reinterpret_cast<const char *>(packet.data()), packet.size()));

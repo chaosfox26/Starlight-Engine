@@ -133,6 +133,8 @@ struct Editor {
     MovementHud movementHud;
     PacingHud pacingHud;
     bool pacingShown=true;
+    std::chrono::steady_clock::time_point motionTick=std::chrono::steady_clock::now();
+    ULONGLONG hudTick=0;
     GameplayAudio gameplayAudio;
     CombatHud combatHud;
     bool mockBattle=false,mockClimb=false;
@@ -2713,7 +2715,8 @@ struct Editor {
         music.play();musicPlaying=true;music_controls();
     }
 
-    void tick() {
+    void tick(bool frameDriven=false) {
+        if(!frameDriven){
         poll_asset_browser();
         if (music.ended() && !songs.empty()) {
             songIndex = (songIndex + 1) % songs.size();
@@ -2734,8 +2737,10 @@ struct Editor {
                 if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
             }
         }
+        }
         auto now = GetTickCount64();
-        double dt = std::min(.05, (now - lastTick) * .001);
+        auto preciseNow=std::chrono::steady_clock::now();
+        double dt=std::clamp(std::chrono::duration<double>(preciseNow-motionTick).count(),0.,.05);motionTick=preciseNow;
         lastTick = now;
         if (stroke && (currentMode == "Sculpt" || currentMode == "Terrain") && now - brushTick >= 35) {
             brushTick = now;
@@ -2772,19 +2777,11 @@ struct Editor {
             }
         }
 
+        if(now-hudTick>=33){hudTick=now;
         update_creation_guide();update_carry();
         combatHud.update(playing && adventure?&*adventure:nullptr,view,settingsScale);
         movementHud.update(playing && adventure?&adventure->movement_resources():explorer?&explorer->movement_resources():nullptr,view,settingsScale);
-        if(pacingShown){auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
-            if(mover){auto p=mover->presentation();renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});}
-            else renderer->pacing_player({},{});
         }
-        if(playing && adventure)renderer->gameplay_overlays(player_presentation(adventure->presentation()));
-        else if(explorer)renderer->gameplay_overlays(player_presentation(explorer->presentation()));
-        else renderer->gameplay_overlays({});
-        {auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
-         auto presentation=mover?mover->presentation():AdventurePlayer::Presentation{};
-         gameplayAudio.update(mover?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
         if(playing && adventure){
             if(GetForegroundWindow()==window && GetFocus()==view){
                 double right=((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);
@@ -2837,6 +2834,18 @@ struct Editor {
             edgeFeedback.update(window, view, x, z);
             camera();
         } else edgeFeedback.hide();
+        if(pacingShown){auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
+            if(mover){auto p=mover->presentation();renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});}
+            else renderer->pacing_player({},{});
+        }
+        auto publishPresentation=[&](AdventurePlayer& mover){double started=timing_seconds();auto p=mover.presentation();auto timing=mover.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));};
+        if(playing && adventure)publishPresentation(*adventure);
+        else if(explorer)publishPresentation(*explorer);
+        else renderer->gameplay_overlays({});
+        {auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
+         auto presentation=mover?mover->presentation():AdventurePlayer::Presentation{};
+         gameplayAudio.update(mover?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
+        renderer->frame_updates((playing && adventure) || explorer?window:nullptr);
         if (renderer) {
             pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);
             auto s = renderer->status();
@@ -2868,6 +2877,7 @@ struct Editor {
     #include "visible_ui_checks.inl"
 
     LRESULT message(UINT m, WPARAM w, LPARAM l) {
+        if(renderer && ((m>=WM_KEYFIRST && m<=WM_KEYLAST)||(m>=WM_MOUSEFIRST && m<=WM_MOUSELAST)))renderer->input_event();
         switch (m) {
         case WM_HSCROLL:
             if (rebuildingInspector) return 0;
@@ -2968,6 +2978,9 @@ struct Editor {
         }
         case WM_GETMINMAXINFO:
             reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {MulDiv(720,GetDpiForWindow(window),96),MulDiv(540,GetDpiForWindow(window),96)};
+            return 0;
+        case NativeSession::frameUpdateMessage:
+            tick(true);renderer->frame_update_handled();
             return 0;
         case WM_TIMER:
             tick();

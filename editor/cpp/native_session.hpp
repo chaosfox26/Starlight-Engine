@@ -2,6 +2,7 @@
 #include "platform.hpp"
 #include "render_scene.hpp"
 #include "frame_pacing.hpp"
+#include "runtime_timing.hpp"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -43,9 +44,21 @@ class NativeSession {
     std::vector<double> playerPose_;
     Vec3 playerPosition_{};
     PacingSnapshot pacingSnapshot_;
+    HWND updateWindow_=nullptr;
+    bool updatePosted_=false;
+    RuntimeTiming runtimeTiming_;
+    uint64_t runtimeSequence_=0,inputSequence_=0;
+    double inputEventTime_=0;
+    int attackCount_=-1;
+    std::vector<std::string> timingEvents_;
     void run(std::stop_token);
 
   public:
+    static constexpr UINT frameUpdateMessage=WM_APP+142;
+    void frame_updates(HWND);
+    void frame_update_handled();
+    void runtime_timing(RuntimeTiming,int attackCount);
+    void input_event();
     NativeSession(HWND, int, int);
     ~NativeSession();
     NativeSession(const NativeSession &) = delete;

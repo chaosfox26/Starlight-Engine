@@ -3,6 +3,7 @@
 #include "mesh.hpp"
 #include <deque>
 #include <map>
+#include "../../deep/engine/parallel_metrics.h"
 namespace starlight::editor {
 struct MotionReading {
     std::string id,name;
@@ -13,7 +14,10 @@ struct MotionReading {
 struct PacingSnapshot {
     std::vector<double> frameMs;
     std::vector<MotionReading> objects;
-    double fps=0,p50=0,p95=0,p99=0,worst=0;
+    double fps=0,p50=0,p95=0,p99=0,worst=0,low1=0,low01=0;
+    ParallelWorkReading multicore,battleWorkers;
+    bool logFailed=false;
+    uint64_t droppedLogRecords=0;
 };
 class FramePacingMonitor {
     struct Motion {
@@ -51,6 +55,8 @@ public:
         if(!sorted.empty()){
             auto q=[&](double p){return sorted[std::min(sorted.size()-1,size_t(std::ceil(p*sorted.size()))-1)];};
             out.p50=q(.5);out.p95=q(.95);out.p99=q(.99);out.worst=sorted.back();
+            auto low=[&](double fraction){size_t count=std::max(size_t(1),size_t(std::ceil(sorted.size()*fraction)));double sum=0;for(size_t i=sorted.size()-count;i<sorted.size();++i)sum+=sorted[i];return sum>0?1000*count/sum:0;};
+            out.low1=low(.01);out.low01=low(.001);
         }
         for(const auto& [id,m]:motion_){
             double window=std::min(2.,std::max(0.,now-m.first));

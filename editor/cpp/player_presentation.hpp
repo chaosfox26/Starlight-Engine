@@ -1,5 +1,8 @@
 #pragma once
 #include "adventure.hpp"
+#include <windows.h>
+#include "../../deep/engine/persistent_workers.h"
+#include "../../deep/engine/parallel_metrics.h"
 namespace starlight::editor {
 // Cosmetic geometry shares world coordinates. Batch equal materials so every
 // moving cone edge does not allocate its own pair of GPU buffers and draw call.
@@ -132,4 +135,38 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
     }
     return batch_presentation(std::move(parts));
 }
+// Workers read one immutable presentation snapshot and own separate mesh lists.
+// The owner joins them and merges in actor order; combat/physics are not mutated.
+class BattlePresentationWorkers {
+    PersistentWorkers workers_;
+    ParallelMetrics metrics_;
+public:
+    std::vector<MeshPart> build(const AdventurePlayer::Presentation& snapshot,
+                               ParallelWorkReading& reading,bool parallel=true){
+        metrics_.reset();metrics_.enabled=true;
+        const int count=1+int(snapshot.actorTelegraphs.size());
+        unsigned threads=parallel?std::min({unsigned(count),4u,std::max(1u,std::thread::hardware_concurrency())}):1u;
+        std::vector<std::vector<MeshPart>> output(count);
+        metrics_.run(count,threads,[&](const auto& callback){workers_.run(count,threads,callback);},
+            [&](int lo,int hi,int){for(int i=lo;i<hi;++i){
+                if(i==0){auto player=snapshot;player.actorTelegraphs.clear();output[i]=player_presentation(player);}
+                else {const auto& actor=snapshot.actorTelegraphs[i-1];
+                    AdventurePlayer::Presentation effect;effect.showBody=false;effect.showTelegraph=true;
+                    effect.telegraphTerrain=snapshot.telegraphTerrain;effect.telegraphRange=3;effect.telegraphHalfAngle=.7853981633974483;
+                    effect.attackOrigin=actor.origin;effect.attackAim=actor.aim;effect.channelProgress=actor.progress;effect.telegraphKind=actor.kind;
+                    output[i]=player_presentation(effect);
+                }
+            }});
+        reading=metrics_.reading;
+        std::vector<MeshPart> combined;
+        for(auto& parts:output)combined.insert(combined.end(),std::make_move_iterator(parts.begin()),std::make_move_iterator(parts.end()));
+        return batch_presentation(std::move(combined));
+    }
+};
+inline std::vector<MeshPart> battle_presentation(const AdventurePlayer::Presentation& p,ParallelWorkReading& reading){
+    thread_local BattlePresentationWorkers workers;
+    thread_local const bool enabled=[] {wchar_t value[8]{};return !(GetEnvironmentVariableW(L"STARLIGHT_BATTLE_WORKERS",value,8) && value[0]==L'0');}();
+    return workers.build(p,reading,enabled);
+}
+
 }

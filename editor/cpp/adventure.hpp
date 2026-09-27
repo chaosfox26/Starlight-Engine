@@ -1,4 +1,5 @@
 #pragma once
+#include "runtime_timing.hpp"
 #include "interactions.hpp"
 #include "gameplay_rules.hpp"
 #include "movement_resources.hpp"
@@ -79,6 +80,7 @@ class AdventurePlayer {
         return false;
     }
   public:
+    RuntimeTiming lastTiming;
     Vec3 position{};
     bool finished=false;
     const SceneData& scene() const {return playScene_;}
@@ -685,12 +687,13 @@ class AdventurePlayer {
         orbit_camera(horizontal,vertical);yaw=cameraYaw;pitch=cameraPitch;
     }
     void move(double right,double forward,double seconds){
+        lastTiming={};lastTiming.inputSampleTime=timing_seconds();ScopedTiming simulationTimer{lastTiming.simulationMs};
         if(!std::isfinite(right)||!std::isfinite(forward)||!std::isfinite(seconds)||seconds<=0)return;
         right=std::clamp(right,-1.,1.);forward=std::clamp(forward,-1.,1.);
         double length=std::max(1.,std::hypot(right,forward));
         const double dt=std::min(seconds,.05);
         if(position.y<settings_.SpawnY-100 && health_>0)defeat();
-        advance_combat(dt);
+        {ScopedTiming timer{lastTiming.combatAiMs};advance_combat(dt);}
         if(health_<=0 || control_.blocks_mobility()){right=forward=0;jumpRequested_=false;}
         const double sprintFraction=movement_.advance(dt,sprintHeld_,right!=0 || forward!=0);
         const double moveSpeed=settings_.MoveSpeed*(1.+.5*sprintFraction)*(posture_==2?.25:posture_==1?.5:1.)*control_.movement_factor();
@@ -741,7 +744,7 @@ class AdventurePlayer {
                 if(mantleRemaining_>0)mantleRemaining_=std::max(0.,mantleRemaining_-dt);else grapple_.velocity.y-=9.81*dt;velocity=grapple_.velocity;forced=true;
             }
             auto before=position;
-            position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);
+            {ScopedTiming timer{lastTiming.physicsMs};position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);}
             presentationVelocity_=(position-before)*(1./dt);
             if(launchAirborne_ && controller_->grounded && controlVelocity_.y<=0){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}
             if(grappleFalling_ && controller_->grounded && velocity.y<=0){grappleFalling_=false;grapple_.velocity={};}

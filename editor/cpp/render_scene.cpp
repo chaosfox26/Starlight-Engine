@@ -36,13 +36,18 @@ Mesh object_mesh(const Character &c) {
     return m;
 }
 std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flow,
-                                  const std::vector<MeshPart> &overlays) {
-    scene.validate();
+                                  const std::vector<MeshPart> &overlays, RenderSceneCache *cache) {
+    // Fluid geometry changes independently, so it retains the uncached path.
+    if(flow)cache=nullptr;
+    if(cache && cache->packet.empty())cache->packet=render_scene(scene);
+    if(!cache)scene.validate();
     struct Draw {
         MeshPart part;
         const Character *actor;
+        bool transient=false;
     };
     std::vector<Draw> draws;
+    if (!cache) {
     if (scene.Terrain) {
         for (auto &p : terrain_geometry(*scene.Terrain))
             draws.push_back({std::move(p), nullptr});
@@ -58,17 +63,33 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
     }
     if (flow)
         for (auto &p : flow->geometry())
-            draws.push_back({std::move(p), nullptr});
+            draws.push_back({std::move(p), nullptr, true});
     for (const auto &c : scene.Characters)
         for (auto &p : parts(c))
             if (!p.mesh.indices.empty())
                 draws.push_back({std::move(p), &c});
+    }
     for (const auto &part : overlays)
-        draws.push_back({part, nullptr});
-    if (draws.size() >= 8192)
+        draws.push_back({part, nullptr, true});
+    uint32_t baseDraws=0;
+    if(cache)std::memcpy(&baseDraws,cache->packet.data()+4,sizeof(baseDraws));
+    if (baseDraws + draws.size() >= 8192)
         throw std::runtime_error("Native draw capacity exceeded");
     Writer w;
-    w.put(uint32_t(0x37564c53));
+    // Reserve once: changing attack meshes otherwise grow this byte buffer
+    // repeatedly on the render thread. This is capacity only, not a format change.
+    size_t packetCapacity = 256 + scene.Characters.size() * 64;
+    for (const auto& draw : draws)
+        packetCapacity += 160 + (draw.actor ? draw.actor->Route.size() * 8 : 0)
+                        + draw.part.mesh.vertices.size() * 40
+                        + draw.part.mesh.indices.size() * 4;
+    w.bytes.reserve(packetCapacity + (cache ? cache->packet.size() : 0));
+    if(cache){
+        w.bytes.insert(w.bytes.end(),cache->packet.begin(),cache->packet.end());
+        uint32_t total=baseDraws+uint32_t(draws.size());
+        std::memcpy(w.bytes.data()+4,&total,sizeof(total));
+    } else {
+    w.put(uint32_t(0x38564c53));
     w.put(uint32_t(draws.size()));
     std::vector<const Character *> lights, smoke;
     for (const auto &c : scene.Characters) {
@@ -109,8 +130,10 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
     w.put(int32_t(scene.PathBounces));
     w.put(int32_t(scene.FreezeRaytracingAnimation));
     w.put(int32_t(scene.RayReconstructionEnabled));
+    }
     for (const auto &draw : draws) {
         const auto *c = draw.actor;
+        w.put(uint32_t(draw.transient));
         auto kind = c ? c->Shape.value_or("") : "";
         w.f(draw.part.emissive ? 1 : 0);
         w.put(int32_t(kind == "craxis-smoke" ? 4 : kind == "fire" ? 1 : kind == "lava" ? 2 : 0));

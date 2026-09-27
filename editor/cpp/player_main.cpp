@@ -28,6 +28,8 @@ struct Player {
     fs::path smokeOutput;ULONGLONG smokeDeadline=0;int smokeResult=1;
     fs::path combatCheckOutput;ULONGLONG combatCheckStart=0;bool combatCheckStarted=false,combatSawCone=false,combatSawDamage=false;
     POINT last{};ULONGLONG tick=0;
+    std::chrono::steady_clock::time_point motionTick=std::chrono::steady_clock::now();
+    ULONGLONG hudTick=0;
     void reset(){questTracker.reset();gameplay.start(authored);gameplay.update_rules();renderer->gameplay_time(0);renderer->scene(gameplay.visible_scene());renderer->playback(true,true);paused=false;
         SetWindowTextW(hud,L"WASD: walk | Space: jump | Right-drag: look | F / E: use | Escape: pause | F5: restart");}
     static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
@@ -37,18 +39,22 @@ struct Player {
         return DefWindowProcW(h,m,w,l);
     }
     LRESULT message(UINT m,WPARAM w,LPARAM l){
+        if(renderer && ((m>=WM_KEYFIRST && m<=WM_KEYLAST)||(m>=WM_MOUSEFIRST && m<=WM_MOUSELAST)))renderer->input_event();
         if(m==WM_KILLFOCUS || (m==WM_ACTIVATEAPP && !w))gameplay.cancel_mobility_input();
         if(m==WM_KEYUP && w=='G'){gameplay.grapple_button(false);return 0;}
         if(m==WM_KEYUP && AbilitySlots::recognizes(static_cast<unsigned>(w))){gameplay.ability_button(static_cast<unsigned>(w),false);return 0;}
         if(m==WM_KEYUP && w=='V'){if(!paused)gameplay.mobility_button(false,0,0);return 0;}
         if(m==WM_KEYUP && w==VK_CONTROL){if(!paused)gameplay.posture_button(false,0,0);return 0;}
         if(m==WM_SIZE){RECT r{};GetClientRect(window,&r);if(view){MoveWindow(view,0,0,r.right,std::max(1L,r.bottom-36),TRUE);MoveWindow(hud,12,std::max(0L,r.bottom-30),std::max(1L,r.right-24),24,TRUE);}questTracker.layout(r.right,r.bottom,16,MulDiv(100,GetDpiForWindow(window),96));if(renderer){renderer->size(std::max(1L,r.right),std::max(1L,r.bottom-36));renderer->suspend_rendering(w==SIZE_MINIMIZED);}return 0;}
-        if(m==WM_TIMER && renderer){auto now=GetTickCount64();double dt=std::min(.05,(now-tick)*.001);tick=now;
+        if((m==WM_TIMER || m==NativeSession::frameUpdateMessage) && renderer){auto now=GetTickCount64();auto preciseNow=std::chrono::steady_clock::now();double dt=std::clamp(std::chrono::duration<double>(preciseNow-motionTick).count(),0.,.05);motionTick=preciseNow;tick=now;
+            if(m==NativeSession::frameUpdateMessage)renderer->frame_update_handled();
             if(!paused && GetForegroundWindow()==window){double x=gameplayCheck?checkRight:((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);double z=gameplayCheck?checkForward:((GetAsyncKeyState('W')&0x8000)?1.:0)-((GetAsyncKeyState('S')&0x8000)?1.:0);auto revision=gameplay.rules().revision;if(!gameplayCheck){gameplay.posture_button((GetAsyncKeyState(VK_CONTROL)&0x8000)!=0,x,z,dt);gameplay.mobility_button((GetAsyncKeyState('V')&0x8000)!=0,x,z,dt);gameplay.sprint((GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);}gameplay.move(x,z,dt);renderer->gameplay_time(gameplay.seconds());if(gameplay.rules().revision!=revision)renderer->scene(gameplay.visible_scene());if(!gameplay.rules().message.empty())SetWindowTextW(hud,wide(gameplay.rules().message).c_str());}
+            if(now-hudTick>=33){hudTick=now;
             questTracker.update(authored,gameplay.rules(),true);
             movementHud.update(&gameplay.movement_resources(),view,MulDiv(100,GetDpiForWindow(window),96));
             combatHud.update(&gameplay,view,MulDiv(100,GetDpiForWindow(window),96));
-            renderer->gameplay_overlays(player_presentation(gameplay.presentation()));
+            }
+            {double started=timing_seconds();auto p=gameplay.presentation();auto timing=gameplay.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));}
             {auto presentation=gameplay.presentation();gameplayAudio.update(&presentation,!paused && GetForegroundWindow()==window);}
             renderer->camera({gameplay.camera_eye(),gameplay.view_position()+gameplay.camera_direction(),1,gameplay.camera_up()});auto state=renderer->status();if(!state.error.empty()){SetWindowTextW(hud,wide(state.error).c_str());paused=true;}
             if(!combatCheckOutput.empty()){
@@ -118,7 +124,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
         player.hud=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE,12,740,1240,24,window,nullptr,instance,nullptr);
         player.questTracker.create(window);
         player.movementHud.create(window);player.combatHud.create(window);
-        player.renderer=std::make_unique<NativeSession>(player.view,1280,720);player.reset();player.tick=GetTickCount64();SetTimer(window,1,16,nullptr);
+        player.renderer=std::make_unique<NativeSession>(player.view,1280,720);player.reset();player.renderer->frame_updates(window);player.tick=GetTickCount64();SetTimer(window,1,16,nullptr);
         SendMessageW(window,WM_SIZE,0,0);if(smokeOutput.empty()){activate_startup_window(window);}
         if(!gameplayCheckOutput.empty()){result=player.gameplay_checks(gameplayCheckOutput);CoUninitialize();return result;}
         MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}result=smokeOutput.empty() && combatCheckOutput.empty()?0:player.smokeResult;

@@ -14,13 +14,29 @@ struct Reader {
  template<class T>T get(){if(left<sizeof(T))throw std::runtime_error("Incomplete viewport scene");T v;memcpy(&v,p,sizeof(v));p+=sizeof(v);left-=sizeof(v);return v;}
  template<class T>std::vector<T> array(uint32_t n){if(n>left/sizeof(T))throw std::runtime_error("Invalid viewport array");std::vector<T> v(n);memcpy(v.data(),p,n*sizeof(T));p+=n*sizeof(T);left-=n*sizeof(T);return v;}
 };
-struct Part { std::shared_ptr<Mesh> source;GpuMesh gpu; uint64_t meshKey=0; XMFLOAT3 color; float x,z,size,speed; float emissive=0,baseY=0;int effect=0; XMFLOAT4X4 local{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}; std::vector<XMFLOAT2> route; };
+struct Part { std::shared_ptr<Mesh> source;GpuMesh gpu; uint64_t meshKey=0; bool streaming=false; XMFLOAT3 color; float x,z,size,speed; float emissive=0,baseY=0;int effect=0; XMFLOAT4X4 local{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}; std::vector<XMFLOAT2> route; };
 struct Viewport {
  DxrPass rt;std::vector<DxrItem> rtItems;bool freeze=false;float frozenTime=0;
  float visualTime()const{return freeze?frozenTime:(float)(GetTickCount64()-started)*.001f;}
  AtmospherePass atmosphere;FrameCB frameLights{};float hour=15,cycle=0,dayLength=180,fogDensity=.018f;std::vector<XMFLOAT4> smoke;ULONGLONG started=GetTickCount64();
  std::unique_ptr<RenderDevice> renderer;
  std::vector<Part> parts;std::vector<SpotLight> localLights;std::vector<XMFLOAT4> shadowBounds;
+
+ struct RetiredStream {GpuMesh mesh;UINT64 fence=0;};
+ std::vector<RetiredStream> streams;
+ GpuMesh streamMesh(const Mesh& mesh){
+  auto& d=*renderer;GpuMesh gpu;const UINT64 vb=mesh.verts.size()*sizeof(Vertex),ib=mesh.indices.size()*sizeof(uint32_t);
+  const UINT64 completed=d.fence->GetCompletedValue();
+  for(auto it=streams.begin();it!=streams.end();++it)if(it->fence<=completed && it->mesh.vb->GetDesc().Width>=vb && it->mesh.ib->GetDesc().Width>=ib){gpu=std::move(it->mesh);streams.erase(it);break;}
+  auto buffer=[&](UINT64 bytes){ComPtr<ID3D12Resource> resource;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=std::max<UINT64>(256,bytes);desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;d.must(d.device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&resource)),"create transient geometry buffer");return resource;};
+  if(!gpu.vb){gpu.vb=buffer(vb);gpu.ib=buffer(ib);}
+  auto write=[&](ID3D12Resource* resource,const void* data,size_t bytes){void* mapped=nullptr;D3D12_RANGE read{0,0};d.must(resource->Map(0,&read,&mapped),"map transient geometry");memcpy(mapped,data,bytes);D3D12_RANGE written{0,bytes};resource->Unmap(0,&written);};
+  write(gpu.vb.Get(),mesh.verts.data(),size_t(vb));write(gpu.ib.Get(),mesh.indices.data(),size_t(ib));
+  gpu.indexCount=UINT(mesh.indices.size());gpu.vbv={gpu.vb->GetGPUVirtualAddress(),UINT(vb),UINT(sizeof(Vertex))};gpu.ibv={gpu.ib->GetGPUVirtualAddress(),UINT(ib),DXGI_FORMAT_R32_UINT};
+  // Only completed spare buffers may be evicted. Live draws retain their resources.
+  UINT64 retained=0;for(auto it=streams.begin();it!=streams.end();){UINT64 bytes=it->mesh.vb->GetDesc().Width+it->mesh.ib->GetDesc().Width;if(it->fence<=completed && (streams.size()>48 || retained+bytes>32ull*1024*1024))it=streams.erase(it);else{retained+=bytes;++it;}}
+  return gpu;
+ }
  double seconds=0;uint64_t uploads=0;
  HWND window=nullptr;
  std::string error;
@@ -76,7 +92,7 @@ API int sl_resize(void* handle,int width,int height){
 API int sl_scene(void* handle,const uint8_t* bytes,int length){
  try{
   if(!handle||!bytes||length<8)throw std::runtime_error("Missing viewport scene");
-  Reader r{bytes,(size_t)length};auto version=r.get<uint32_t>();if(version!=0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53)throw std::runtime_error("Unsupported viewport scene version");
+  Reader r{bytes,(size_t)length};auto version=r.get<uint32_t>();if(version!=0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53&&version!=0x38564c53)throw std::runtime_error("Unsupported viewport scene version");
   auto count=r.get<uint32_t>();if(count>=kMaxInstances)throw std::runtime_error("Scene exceeds native draw capacity");
   std::vector<SpotLight> localLights;if(version>=0x32564c53){auto lightCount=r.get<uint32_t>();if(lightCount>32)throw std::runtime_error("Too many lights");localLights=r.array<SpotLight>(lightCount);}
   float hour=15,cycle=0,dayLength=180,density=.018f;std::vector<XMFLOAT4> smoke;if(version>=0x35564c53){hour=r.get<float>();cycle=r.get<float>();dayLength=r.get<float>();density=r.get<float>();if(!std::isfinite(hour)||!std::isfinite(cycle)||!std::isfinite(dayLength)||!std::isfinite(density)||hour<0||hour>24||dayLength<10||density<0||density>.3f)throw std::runtime_error("Invalid atmosphere");auto n=r.get<uint32_t>();if(n>16)throw std::runtime_error("Too many smoke volumes");smoke=r.array<XMFLOAT4>(n);}
@@ -84,7 +100,7 @@ API int sl_scene(void* handle,const uint8_t* bytes,int length){
   int rrMode=1;if(version>=0x37564c53){rrMode=r.get<int>();if(rrMode<0||rrMode>1)throw std::runtime_error("Invalid denoiser setting");}
   struct Incoming {Part part;Mesh mesh;};std::vector<Incoming> incoming;
   for(uint32_t i=0;i<count;i++){
-   Incoming in;if(version>=0x32564c53){in.part.emissive=r.get<float>();in.part.effect=r.get<int>();in.part.baseY=r.get<float>();}in.part.color=r.get<XMFLOAT3>();in.part.x=r.get<float>();in.part.z=r.get<float>();in.part.size=r.get<float>();in.part.speed=r.get<float>();
+   Incoming in;if(version>=0x38564c53){auto transient=r.get<uint32_t>();if(transient>1)throw std::runtime_error("Invalid transient geometry flag");in.part.streaming=transient && rtTier==0;}if(version>=0x32564c53){in.part.emissive=r.get<float>();in.part.effect=r.get<int>();in.part.baseY=r.get<float>();}in.part.color=r.get<XMFLOAT3>();in.part.x=r.get<float>();in.part.z=r.get<float>();in.part.size=r.get<float>();in.part.speed=r.get<float>();
    in.part.route=r.array<XMFLOAT2>(r.get<uint32_t>());if(version>=0x33564c53)in.part.local=r.get<XMFLOAT4X4>();auto vertices=r.get<uint32_t>();if(version>=0x34564c53)in.mesh.verts=r.array<Vertex>(vertices);else{struct OldVertex{float x,y,z,nx,ny,nz;};for(auto p:r.array<OldVertex>(vertices))in.mesh.verts.push_back({p.x,p.y,p.z,p.nx,p.ny,p.nz});}in.mesh.indices=r.array<uint32_t>(r.get<uint32_t>());
    auto finite=[](const float* p,size_t count){for(size_t k=0;k<count;k++)if(!std::isfinite(p[k]))return false;return true;};
    if(!finite(&in.part.color.x,3)||!finite(&in.part.local._11,16)||!std::isfinite(in.part.x)||!std::isfinite(in.part.z)||!std::isfinite(in.part.size)||!std::isfinite(in.part.speed)||!std::isfinite(in.part.emissive)||!std::isfinite(in.part.baseY)||in.part.size<=0)throw std::runtime_error("Invalid mesh transform/material");
@@ -94,23 +110,25 @@ API int sl_scene(void* handle,const uint8_t* bytes,int length){
    if(in.mesh.verts.empty()||in.mesh.indices.empty())throw std::runtime_error("Empty mesh");
    for(auto index:in.mesh.indices)if(index>=in.mesh.verts.size())throw std::runtime_error("Invalid mesh index");
    uint64_t hash=1469598103934665603ull;auto mix=[&](const void* bytes,size_t count){auto ptr=(const uint8_t*)bytes;for(size_t j=0;j<count;j++){hash^=ptr[j];hash*=1099511628211ull;}};
-   mix(in.mesh.verts.data(),in.mesh.verts.size()*sizeof(Vertex));mix(in.mesh.indices.data(),in.mesh.indices.size()*sizeof(uint32_t));in.part.meshKey=hash;incoming.push_back(std::move(in));
+   mix(&in.part.streaming,sizeof(in.part.streaming));mix(in.mesh.verts.data(),in.mesh.verts.size()*sizeof(Vertex));mix(in.mesh.indices.data(),in.mesh.indices.size()*sizeof(uint32_t));in.part.meshKey=hash;incoming.push_back(std::move(in));
   }
   if(r.left)throw std::runtime_error("Unexpected viewport scene data");
   auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
   v.shadowBounds.clear();for(const auto& in:incoming){if(in.part.speed<=0||in.part.emissive>0||in.mesh.verts.empty()||in.mesh.verts[0].kind==1)continue;XMFLOAT3 lo{1e20f,1e20f,1e20f},hi{-1e20f,-1e20f,-1e20f};auto matrix=XMLoadFloat4x4(&in.part.local)*XMMatrixScaling(in.part.size,in.part.size,in.part.size)*XMMatrixTranslation(in.part.x,0,in.part.z);for(const auto& vertex:in.mesh.verts){XMFLOAT3 p;XMStoreFloat3(&p,XMVector3TransformCoord(XMVectorSet(vertex.px,vertex.py,vertex.pz,1),matrix));lo.x=std::min(lo.x,p.x);lo.y=std::min(lo.y,p.y);lo.z=std::min(lo.z,p.z);hi.x=std::max(hi.x,p.x);hi.y=std::max(hi.y,p.y);hi.z=std::max(hi.z,p.z);}float radius=std::min((hi.y-lo.y)*.48f,std::max(hi.x-lo.x,hi.z-lo.z)*.35f);if(radius>.01f&&v.shadowBounds.size()<16)v.shadowBounds.emplace_back((lo.x+hi.x)*.5f,lo.y+radius,(lo.z+hi.z)*.5f,radius);}
   std::unordered_map<uint64_t,std::shared_ptr<Mesh>> sources;for(auto& p:v.parts)sources.emplace(p.meshKey,p.source);
   std::unordered_map<uint64_t,GpuMesh> cache;for(auto& p:v.parts)cache.emplace(p.meshKey,p.gpu);
-  bool changed=false;for(auto& in:incoming)if(!cache.count(in.part.meshKey))changed=true;
+  bool changed=false;for(auto& in:incoming)if(!in.part.streaming && !cache.count(in.part.meshKey))changed=true;
   if(changed){d.flush();d.alloc->Reset();d.cmd->Reset(d.alloc.Get(),nullptr);}
-  std::vector<Part> next;for(auto& in:incoming){auto found=cache.find(in.part.meshKey);if(found==cache.end()){in.part.gpu=d.uploadMesh(in.mesh);v.uploads++;cache.emplace(in.part.meshKey,in.part.gpu);}else in.part.gpu=found->second;auto source=sources.find(in.part.meshKey);if(source!=sources.end())in.part.source=source->second;else{in.part.source=std::make_shared<Mesh>(std::move(in.mesh));sources.emplace(in.part.meshKey,in.part.source);}next.push_back(std::move(in.part));}
+  std::vector<Part> next;for(auto& in:incoming){auto found=cache.find(in.part.meshKey);if(found==cache.end()){in.part.gpu=in.part.streaming?v.streamMesh(in.mesh):d.uploadMesh(in.mesh);v.uploads++;cache.emplace(in.part.meshKey,in.part.gpu);}else in.part.gpu=found->second;auto source=sources.find(in.part.meshKey);if(source!=sources.end())in.part.source=source->second;else{in.part.source=std::make_shared<Mesh>(std::move(in.mesh));sources.emplace(in.part.meshKey,in.part.source);}next.push_back(std::move(in.part));}
   if(changed){d.cmd->Close();ID3D12CommandList* lists[]={d.cmd.Get()};d.queue->ExecuteCommandLists(1,lists);d.flush();d.retireUploads();}
   // Retire removed buffers only after their previous frame has completed.
-  bool removed=false;for(const auto& old:v.parts)if(std::none_of(next.begin(),next.end(),[&](const Part& p){return p.meshKey==old.meshKey;}))removed=true;
+  bool removed=false;for(const auto& old:v.parts)if(!old.streaming && std::none_of(next.begin(),next.end(),[&](const Part& p){return p.meshKey==old.meshKey;}))removed=true;
   if(removed&&!changed)d.flush();
   if(removed){v.rt.retireGeometry(d);v.rtItems.clear();d.prevModelByKey.clear();d.curModelByKey.clear();}
   for(auto& old:cache)if(std::none_of(next.begin(),next.end(),[&](const Part& p){return p.meshKey==old.first;})){
-   d.recycleBuffer(old.second.vb);d.recycleBuffer(old.second.ib);
+   auto original=std::find_if(v.parts.begin(),v.parts.end(),[&](const Part& p){return p.meshKey==old.first;});
+   if(original!=v.parts.end() && original->streaming)v.streams.push_back({old.second,d.fenceVal});
+   else{d.recycleBuffer(old.second.vb);d.recycleBuffer(old.second.ib);}
   }
   v.parts=std::move(next);v.localLights=std::move(localLights);v.hour=hour;v.cycle=cycle;v.dayLength=dayLength;v.fogDensity=density;v.smoke=std::move(smoke);v.rt.denoiserMode=rrMode;v.rt.requested=rtTier;v.rt.bounces=rtBounces;if(rtFreeze&&!v.freeze)v.frozenTime=v.visualTime();v.freeze=rtFreeze!=0;d.resetHistory=true;return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
@@ -119,6 +137,15 @@ API int sl_frame(void* handle,double seconds,float distance){
  try{if(!handle||!std::isfinite(seconds)||!std::isfinite(distance))throw std::runtime_error("Invalid frame input");auto& v=*static_cast<Viewport*>(handle);v.seconds=seconds;v.renderer->editorTime=v.visualTime();v.renderer->editorCameraDistance=distance;std::vector<DxrItem> geometry;for(auto& p:v.parts)if(p.effect!=4)geometry.push_back({p.meshKey,p.source.get(),{}, {}});try{v.rt.prepare(*v.renderer,geometry);}catch(const std::exception& ex){v.rt.active=0;v.rt.supported=false;v.rt.status=std::string("DXR initialization failed; raster fallback: ")+ex.what();}v.renderer->editorRaytracing=v.rt.active>0;v.renderer->renderEmpty(v.window);if(FAILED(v.renderer->device->GetDeviceRemovedReason())){v.renderer->reportDeviceLoss();throw std::runtime_error("Native graphics device lost");}return 1;}
  catch(const std::exception& e){failure=e.what();return 0;}
 }
+// Read on the render owner thread; no cross-DLL containers or borrowed pointers.
+API void sl_multicore_begin(void* handle,int enabled){auto& p=static_cast<Viewport*>(handle)->renderer->parallelMetrics;p.enabled=enabled!=0;p.reset();}
+API int sl_multicore_read(void* handle,double* output,int capacity){
+ auto& r=static_cast<Viewport*>(handle)->renderer->parallelMetrics.reading;
+ int required=6+int(r.chunkMs.size());if(capacity<required)return required;
+ output[0]=r.parallelBatches;output[1]=r.serialBatches;output[2]=r.participants;output[3]=double(r.items);output[4]=r.wallMs;output[5]=r.callerWaitMs;
+ for(size_t i=0;i<r.chunkMs.size();++i)output[6+i]=r.chunkMs[i];return required;
+}
+API void sl_wait_timings(void* handle,double* fence,double* pacing,double* present){auto& d=*static_cast<Viewport*>(handle)->renderer;*fence=d.measuredFenceWaitMs;*pacing=d.measuredPacingWaitMs;*present=d.measuredPresentWaitMs;}
 API double sl_gpu_ms(void* handle){return static_cast<Viewport*>(handle)->renderer->lastGpuMs;}
 API int sl_render_width(void* handle){return static_cast<Viewport*>(handle)->renderer->rw;}
 API int sl_render_height(void* handle){return static_cast<Viewport*>(handle)->renderer->rh;}
