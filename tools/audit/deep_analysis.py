@@ -75,6 +75,7 @@ def dump(path, value):
 def category(rel):
     parts = rel.split('/')
     if parts[0] == '.git': return 'git metadata'
+    if parts[:2] == ['Starlight Documents','Current']: return 'current project documentation'
     if parts[0] == 'Starlight Documents': return 'outdated historical documents (user-designated)'
     if 'third_party' in parts or rel == 'deep/src/json.hpp': return 'third-party dependency'
     if any(x in parts for x in ('backups', '_backups', 'results', 'source-snapshot')) or '.before-' in rel or rel.lower().endswith(('.bak','.backup')) or parts[0] == 'deep-incomplete-first': return 'historical snapshot/experiment'
@@ -320,7 +321,7 @@ def report(root,out,state,files,index,capabilities,build,evidence,binaries):
     lines=['# Starlight Engine — current implementation deep dive','',f'Generated {state["finishedUtc"]} by repository analyzer {VERSION}. Repository: `{root}`.','',
       '## What this snapshot represents','',
       'Starlight is a native Windows scene creator and D3D12 rendering/simulation toolkit, plus a separate native project-module runtime. Its current source covers classic world-building controls, authored scenes, static model import, terrain/sculpting, routes/playback, Jolt integration, surface liquids, atmosphere, inline ray tracing and denoising. It is not established here as a complete general-purpose game exporter, streaming world engine, or production-certified runtime. Each subsystem below carries source evidence and limits.','',
-      'This describes the **dirty working tree**, not only the last commit. Historical documents—including everything in `Starlight Documents`—are inventoried but never promoted to current implementation truth. Static source markers establish the presence of code; they do not establish successful runtime execution. Existing validation is dated evidence, not new test results.','',
+      'This describes the **dirty working tree**, not only the last commit. Historical documents outside `Starlight Documents/Current`—are inventoried but never promoted to current implementation truth. Static source markers establish the presence of code; they do not establish successful runtime execution. Existing validation is dated evidence, not new test results.','',
       '## Exact coverage and snapshot limitations','',
       f'- Files inventoried: **{len(files):,}**; default-stream bytes actually read: **{state["bytesRead"]:,}**.',
       f'- Named NTFS data streams hashed: **{state["streams"]:,}**; bytes: **{state["streamBytes"]:,}**.',
@@ -424,7 +425,7 @@ def main():
         sources,index=source_analysis(root,files,out); capabilities=capability_analysis(sources); build=build_analysis(root,sources)
         dump(out/'capabilities.json',capabilities); dump(out/'build-graph.json',build)
         data=contracts(sources); dump(out/'contracts-index.json',data); contract_report(root,out,data)
-        dump(out/'analysis-rules.json',{'version':VERSION,'lexicalRules':TOKEN_RULES,'capabilities':CAPABILITIES,'currentSourcePrefixes':LIVE_PREFIX,'historicalRule':'Starlight Documents is outdated unless user says otherwise'})
+        dump(out/'analysis-rules.json',{'version':VERSION,'lexicalRules':TOKEN_RULES,'capabilities':CAPABILITIES,'currentSourcePrefixes':LIVE_PREFIX,'historicalRule':'Starlight Documents/Current holds current project documentation; other existing documents there remain historical'})
         for s in index:
             if s.get('error') or s.get('matches_inventory') is False: state['issues'].append({'phase':'source','path':s['path'],'error':s.get('error','Source changed since hashing')})
         progress(76,'Inspecting PE binaries without executing them and reading saved test evidence...')

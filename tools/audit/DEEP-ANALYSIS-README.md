@@ -54,7 +54,7 @@ python tools/audit/knowledge_report.py --from-run D:/projects/Starlight-analysis
 This verifies required saved-artifact hashes and rehashes indexed product source/build inputs, then writes a separate knowledge pack. It refuses changed/missing product inputs or an existing output folder. It does not discover new/unindexed product files or perform new runtime tests; that limitation is recorded in the generated provenance. Use a fresh full scan after implementation changes. Original evidence remains unchanged.
 # User product direction
 
-If the repository contains `STARLIGHT-PRODUCT-DIRECTION.md`, the knowledge generator copies it into the pack and includes its text, capture time and SHA-256 in `engine-knowledge.json`. The overview links it as proposed direction, separately from implemented features. This input may be newer than a reused source/test snapshot. Update the repository document when the user refines the plan; do not change implementation counts based on product intent.
+If the repository contains `Starlight Documents/Current/STARLIGHT-PRODUCT-DIRECTION.md` (or the legacy root path), the knowledge generator copies it into the pack and includes its text, capture time and SHA-256 in `engine-knowledge.json`. The overview links it as proposed direction, separately from implemented features. This input may be newer than a reused source/test snapshot. Update the repository document when the user refines the plan; do not change implementation counts based on product intent.
 
 ## Connected reporting — 23 September
 

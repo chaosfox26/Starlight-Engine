@@ -52,6 +52,6 @@ The byte manifest, source atlas and binary indexes are supporting evidence. They
 
 Everything in `Starlight Documents` remains outdated historical context until the user says otherwise. New user instructions and verified newer source/test evidence supersede this snapshot. Do not equate stored catalogue status, source markers or a passing bounded test with universal feature completeness.
 
-Generator and update instructions: [tools/audit/DEEP-ANALYSIS-README.md](tools/audit/DEEP-ANALYSIS-README.md). Refresh the pack and this pointer after product changes; it is not an automatically current view of future versions.
+Generator and update instructions: [tools/audit/DEEP-ANALYSIS-README.md](../../tools/audit/DEEP-ANALYSIS-README.md). Refresh the pack and this pointer after product changes; it is not an automatically current view of future versions.
 
 Future direction recorded 18 September 2026: [Interactive, Beginner and Advanced modes](STARLIGHT-PRODUCT-DIRECTION.md). This proposal and its competitor comparison are separate from implemented features; each refreshed pack captures its own dated copy.

@@ -25,6 +25,7 @@ def main():
         assert blob['sha256']==hashlib.sha256(data).hexdigest() and blob['stable']
         assert blob['streams'][0]['sha256']==hashlib.sha256(b'named stream').hexdigest()
         assert a.category('Starlight Documents/old.cpp').startswith('outdated')
+        assert a.category('Starlight Documents/Current/README.md') == 'current project documentation'
         # Deleting a file after enumeration must surface an explicit failure.
         gone=root/'gone.bin';gone.write_bytes(b'x'); item=(gone,1,gone.stat().st_mtime_ns);gone.unlink()
         assert 'error' in a.hash_entry(root,item)

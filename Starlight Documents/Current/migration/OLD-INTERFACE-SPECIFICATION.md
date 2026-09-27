@@ -35,10 +35,10 @@ The reference analysis covers the 47 authored top-level C# files and both XAML f
 
 ### Companion evidence
 
-- [Complete control, source, and catalogue inventory](D:/projects/Starlight-Engine/migration/OLD-INTERFACE-CONTROLS.md): 130 XAML declarations, 56 resolved event bindings, 49 source hashes, all 20 catalogue detail records, and dynamic control constructor references.
+- [Complete control, source, and catalogue inventory](D:/projects/Starlight-Engine/Starlight Documents/Current/migration/OLD-INTERFACE-CONTROLS.md): 130 XAML declarations, 56 resolved event bindings, 49 source hashes, all 20 catalogue detail records, and dynamic control constructor references.
 - [Visual reference gallery](D:/projects/Starlight-Engine/migration/old-interface-reference/index.html): actual application captures, including detached popup images.
 - [Machine-readable inventory](D:/projects/Starlight-Engine/migration/old-interface-reference/source-inventory.json).
-- [Earlier native appearance pass](D:/projects/Starlight-Engine/migration/INTERFACE-RESTORATION.md): historical partial restoration, superseded by this more complete parity assessment.
+- [Earlier native appearance pass](D:/projects/Starlight-Engine/Starlight Documents/Current/migration/INTERFACE-RESTORATION.md): historical partial restoration, superseded by this more complete parity assessment.
 
 **Evidence terminology:** “Live” means opened/observed in the running original; “source” means traced implementation. Every control is mapped, but this documentation pass is not an assertion that every destructive action, file type, numeric boundary, project launch, or shader mode was exercised. No engine performance certification follows from FPS text visible in screenshots.
 

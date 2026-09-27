@@ -104,3 +104,8 @@ CMakeUserPresets.json
 !/audit-runs/run-20260917-192850/
 /audit-runs/run-20260917-192850/*
 !/audit-runs/run-20260917-192850/comparison.bin
+
+# Owner-designated current project documentation.
+!/Starlight Documents/
+/Starlight Documents/*
+!/Starlight Documents/Current/

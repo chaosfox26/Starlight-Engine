@@ -13,7 +13,7 @@ This is a current implementation specification, not a description of a finished 
 
 “Implemented” means there is an execution path; “verified” means the named saved tests exercise it; neither means production-scale coverage. “Proposed” means future work, not a committed milestone. Earlier development history is reconstructed from retained records; there is no complete commit-by-commit history available for this workspace. Exact dates are stated only where recorded. This document covers the known modules and milestones rather than inventing an exhaustive historical ledger.
 
-The current document supersedes outdated feature-status claims in `STARLIGHT-TECHNICAL-SPECIFICATION.md` (16 September snapshot). That document remains useful for older implementation detail, but its assertions that physics, DXR, day/night, or volumetrics are absent are now obsolete. The authoritative release evidence is `editor/checks/dxr/final-validation.json`, supported by `editor/DXR-RELEASE.md`, `editor/CHAOS-RELEASE.md`, and `editor/WORLD-QUALITY-RELEASE.md`.
+The current document supersedes outdated feature-status claims in `STARLIGHT-TECHNICAL-SPECIFICATION.md` (16 September snapshot). That document remains useful for older implementation detail, but its assertions that physics, DXR, day/night, or volumetrics are absent are now obsolete. The authoritative release evidence is `editor/checks/dxr/final-validation.json`, supported by `Starlight Documents/Current/editor/DXR-RELEASE.md`, `Starlight Documents/Current/editor/CHAOS-RELEASE.md`, and `Starlight Documents/Current/editor/WORLD-QUALITY-RELEASE.md`.
 
 ### Essential corrections for future prompts
 
