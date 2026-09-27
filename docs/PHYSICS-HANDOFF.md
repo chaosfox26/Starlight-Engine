@@ -20,7 +20,7 @@ Unsupported fracture produces generic debris. Liquids are heightfields, fog has 
 
 ## Full analysis and publication
 
-A fresh full Starlight Analysis Tool run is requested for this checkpoint. Its result is pending until the run finishes; consult the new analysis report rather than assuming earlier audit results apply. Publish only anonymized deltas to the separate publication repository. Never push private development history or raw recovery archives. Handoff updates are repository documentation, not a message sent to Claude.
+The full Run both analysis finished: 11 of 13 stages passed. Fullscreen live telemetry and denoiser dynamic-transform motion vectors failed. Investigate those before claiming full audit acceptance; see FULL-ANALYSIS-20260927.md. The separate physics closeout fixtures remain passing evidence for their stated scope. Publish only anonymized deltas to the separate publication repository. Never push private development history or raw recovery archives. Handoff updates are repository documentation, not a message sent to Claude.
 
 ## Build and focused checks
 
@@ -38,4 +38,3 @@ Finish builds before launching checks that load the same binaries. Run visible c
 ## Ownership and publication
 
 Coordinate changes to shared files; do not discard another worker's edits. The publication repository contains anonymized source and separate history. Never merge the original private development history or private archives into it. Preserve dependency credits and licensing boundaries. Use the public sample identifiers already in this checkout.
-
