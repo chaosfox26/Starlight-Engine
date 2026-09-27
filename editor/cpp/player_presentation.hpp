@@ -62,6 +62,30 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         }
     };
     for(auto at:p.fragments)box(at,{.12,.12,.12},{.65,.8,.9});
+    if(p.showWeapons){
+        // Original temporary dual pistols. First-person geometry follows the
+        // camera basis, while third-person weapons follow the attack facing.
+        const auto forward=(p.showBody?p.attackAim:p.viewAim).unit();
+        auto right=forward.cross(p.showBody?Vec3{0,1,0}:p.viewUp).unit();
+        if(right.length()<.5)right={1,0,0};
+        const auto up=right.cross(forward).unit();
+        const auto base=p.showBody?p.feet+Vec3{0,p.bodyHeight*.68,0}:p.eye-up*.23;
+        auto weaponBox=[&](Vec3 center,Vec3 size,Vec3 color,bool glow=false){
+            Character c;c.Shape="cube";
+            for(auto part:shape_geometry(c)){
+                part.color=color;part.emissive=glow;
+                for(auto& v:part.mesh.vertices){auto q=v.position;v.position=center+right*(q.x*size.x)+up*((q.y-.5)*size.y)+forward*(q.z*size.z);}
+                part.mesh.normals();parts.push_back(std::move(part));
+            }
+        };
+        for(double side:{-1.,1.}){
+            auto grip=base+right*(side*(p.showBody?.32:.24))+forward*(.48-p.shotFlash*.055);
+            weaponBox(grip,{.09,.21,.12},{.10,.14,.20});
+            weaponBox(grip+up*.11+forward*.10,{.12,.12,.34},{.35,.43,.55});
+            weaponBox(grip+up*.12+forward*.29,{.08,.075,.07},{.12,.75,.95},true);
+            if(p.shotFlash>0)weaponBox(grip+up*.12+forward*.37,{.11*p.shotFlash,.11*p.shotFlash,.15},{1,.78,.25},true);
+        }
+    }
     if(p.showBody){
         double height=p.control==ControlEffect::Sleep?.35:p.control==ControlEffect::Knockdown?p.bodyHeight*.6:p.bodyHeight;
         Vec3 sway{};if(p.control==ControlEffect::Stun || p.control==ControlEffect::Disorient)sway={std::sin(p.poseTime*5)*.07,0,std::cos(p.poseTime*5)*.07};

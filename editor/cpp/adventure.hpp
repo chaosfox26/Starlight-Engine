@@ -33,6 +33,8 @@ class AdventurePlayer {
     bool grappleFalling_=false;
     Vec3 presentationVelocity_{};
     BasicAttack attack_;
+    uint64_t presentationEpoch_=0,shotSerial_=0,shatterSerial_=0,impactSerial_=0;
+    double lastShotTime_=-1;
     AbilitySlots abilitySlots_;
     struct HealingCast {std::string caster;BasicAttack cycle;Vec3 origin{},aim{};int team=1;};
     std::vector<HealingCast> healingCasts_;
@@ -407,6 +409,7 @@ class AdventurePlayer {
         for(const auto& c:playScene_.Characters)if(!rules_.removed.contains(c.Id) && perceived(c))visibleIds.insert(c.Id);
         if(visibleIds!=lastVisibleIds_){lastVisibleIds_=std::move(visibleIds);++rules_.revision;}
         if(!rulesEnabled_ || !attack_.advance(dt,health_<=0 || dodging() || tetherPull_>0 || control_.blocks_basic(),control_.firing_factor()))return;
+        ++shotSerial_;lastShotTime_=seconds_;
         std::vector<std::string> hit;
         for(const auto& c:playScene_.Characters)if((c.GameplayRole=="breakable" || (combatActors_.contains(c.Id) && combatActors_.at(c.Id).hostile_to(1))) && !rules_.removed.contains(c.Id) && perceived(c)){
             auto moved=c;if(!c.Route.empty()){auto at=c.at(seconds_);moved.X=at.X;moved.Z=at.Z;}
@@ -424,6 +427,7 @@ class AdventurePlayer {
                 if(fragments_.size()>256)fragments_.erase(fragments_.begin(),fragments_.begin()+(fragments_.size()-256));break;
             }
             rules_.remove_object(playScene_,id);rules_.emit("object-broken",id,playScene_);if(selectedTarget_==id)selectedTarget_.clear();
+            ++shatterSerial_;
         }
         finished=rules_.finished;
     }
@@ -437,6 +441,10 @@ class AdventurePlayer {
         Vec3 feet{},velocity{},tetherAnchor{};
         double facing=0,bodyHeight=1.8;
         bool showBody=true,showTether=false;
+        bool showWeapons=false,audioActive=false;
+        Vec3 eye{},viewAim{0,0,-1},viewUp{0,1,0};
+        uint64_t epoch=0,shots=0,shatters=0,impacts=0;
+        double shotFlash=0;
         bool showTelegraph=false;
         const TerrainData* telegraphTerrain=nullptr;
         double channelProgress=0;
@@ -452,6 +460,10 @@ class AdventurePlayer {
     };
     Presentation presentation() const {
         Presentation p;p.telegraphTerrain=terrain_?&*terrain_:nullptr;
+        p.showWeapons=rulesEnabled_ && health_>0;p.audioActive=health_>0;
+        p.eye=camera_eye();p.viewAim=camera_direction();p.viewUp=camera_up();
+        p.epoch=presentationEpoch_;p.shots=shotSerial_;p.shatters=shatterSerial_;p.impacts=impactSerial_;
+        p.shotFlash=health_>0 && lastShotTime_>=0?std::clamp(1-(seconds_-lastShotTime_)/.12,0.,1.):0;
         p.control=control_.active;p.poseTime=seconds_;
         auto casterVisible=[&](const std::string& id){if(id.empty())return true;for(const auto& c:playScene_.Characters)if(c.Id==id)return perceived(c);return false;};
         for(const auto& h:healingCasts_)if(h.cycle.winding && casterVisible(h.caster))p.actorTelegraphs.push_back({h.origin,h.aim,std::clamp(1-h.cycle.windup/h.cycle.cycleSeconds,0.,1.),telegraph_kind(h.team==1,true)});
@@ -644,6 +656,7 @@ class AdventurePlayer {
     }}
     void start(const SceneData& scene,bool gameplayRules=true){
         if(!scene.Game)throw std::runtime_error("Choose an adventure preset first");
+        ++presentationEpoch_;shotSerial_=shatterSerial_=impactSerial_=0;lastShotTime_=-1;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
         controller_.reset();
 #endif
@@ -730,7 +743,7 @@ class AdventurePlayer {
             auto before=position;
             position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);
             presentationVelocity_=(position-before)*(1./dt);
-            if(launchAirborne_ && controller_->grounded && controlVelocity_.y<=0){launchAirborne_=false;control_.remaining=1;controlVelocity_={};}
+            if(launchAirborne_ && controller_->grounded && controlVelocity_.y<=0){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}
             if(grappleFalling_ && controller_->grounded && velocity.y<=0){grappleFalling_=false;grapple_.velocity={};}
             if(grapple_.state==GrappleMotion::State::Pulling && !grapple_.flying() && forced && velocity.length()>.1 && (position-before).length()<velocity.length()*dt*.1){grapple_.detach();grappleFalling_=true;}
 

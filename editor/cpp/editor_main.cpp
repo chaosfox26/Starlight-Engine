@@ -18,6 +18,7 @@
 #include "asset_library.hpp"
 #include "adventure.hpp"
 #include "player_presentation.hpp"
+#include "gameplay_audio.hpp"
 #include "movement_hud.hpp"
 #include "combat_hud.hpp"
 #include "quest_tracker.hpp"
@@ -128,6 +129,7 @@ struct Editor {
     HWND adventureHud{},adventureHudPanel{};
     QuestTracker questTracker;
     MovementHud movementHud;
+    GameplayAudio gameplayAudio;
     CombatHud combatHud;
     bool mockBattle=false,mockClimb=false;
     CreationGuide creationGuide;std::string behaviorTarget,carriedId;Vec3 carryPoint{};
@@ -2769,6 +2771,9 @@ struct Editor {
         if(playing && adventure)renderer->gameplay_overlays(player_presentation(adventure->presentation()));
         else if(explorer)renderer->gameplay_overlays(player_presentation(explorer->presentation()));
         else renderer->gameplay_overlays({});
+        {auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
+         auto presentation=mover?mover->presentation():AdventurePlayer::Presentation{};
+         gameplayAudio.update(mover?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
         if(playing && adventure){
             if(GetForegroundWindow()==window && GetFocus()==view){
                 double right=((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);

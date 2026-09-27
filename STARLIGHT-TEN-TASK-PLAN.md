@@ -1,5 +1,9 @@
 # Starlight Engine: ten-task implementation checklist
 
+## Current override — 27 September 2026
+
+ChaosFox resumed Step4/4A autonomously. Steps1–3 stay closed; earlier instructions below to reopen them are superseded. Local gameplay acceptance for the agreed placeholder scope passed: normal build,935 core checks,11 installed movement checks,6 weapon/audio checks and33 exported foreground gameplay checks. See docs/STEP-4-ACCEPTANCE-20260927.md for individual requirements and evidence. Clean-Windows validation remains unavailable; do not mark the whole milestone complete. Combined combat performance is next and must be verified before4B (abilities, stats, traits). No4B work yet, and noTask5 advancement.
+
 Updated: 23 September 2026. Owner: ChaosFox. This is the durable execution record for the approved Gemini plan.
 
 ## Current working mode

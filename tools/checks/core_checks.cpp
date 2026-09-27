@@ -10,6 +10,7 @@
 #include "adventure.hpp"
 #include "grapple_motion.hpp"
 #include "player_presentation.hpp"
+#include "gameplay_audio.hpp"
 #include "combat_control.hpp"
 #include "quest_model.hpp"
 #include "object_behaviors.hpp"
@@ -28,6 +29,32 @@ int main(int argc, char **argv) {
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
     try {
+        {
+            SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+            AdventurePlayer player;player.start(level);
+            player.cameraDistance=0;
+            auto initial=player.presentation();
+            require(!initial.showBody && initial.showWeapons && !player_presentation(initial).empty(),"First person shows dual pistols without a body");
+            player.fire_button(true);player.fire_button(false);
+            for(int i=0;i<49;++i)player.move(0,0,.05);
+            require(player.presentation().shots==0 && player.presentation().shotFlash==0,"Weapon effects wait for the committed attack to resolve");
+            player.move(0,0,.05);
+            require(player.presentation().shots==1 && player.presentation().shotFlash>0,"Resolved shot emits one event and a muzzle flash even on a miss");
+            for(int i=0;i<5;++i)player.move(0,0,.05);
+            require(player.presentation().shots==1 && player.presentation().shotFlash==0,"Released attack does not repeat and muzzle flash expires");
+            player.fire_button(true);player.move(0,0,.05);player.cancel_mobility_input();
+            for(int i=0;i<60;++i)player.move(0,0,.05);
+            require(player.presentation().shots==1,"Cancelled windup produces no phantom sound or muzzle flash");
+            player.start(level);
+            require(player.presentation().epoch!=initial.epoch && player.presentation().shots==0 && player.presentation().shotFlash==0,"Restart clears presentation events and changes the audio epoch");
+            player.start(level,false);player.cameraDistance=0;
+            require(!player.presentation().showWeapons && player_presentation(player.presentation()).empty(),"Authoring exploration does not introduce combat weapons");
+            for(auto cue:{GameplayCue::Shot,GameplayCue::Shatter,GameplayCue::Impact,GameplayCue::Chirp}){
+                auto pcm=gameplay_sound(cue);long energy=0;int peak=0;
+                for(auto sample:pcm){peak=std::max(peak,std::abs(int(sample)));energy+=std::abs(int(sample));}
+                require(!pcm.empty() && pcm.front()==0 && std::abs(int(pcm.back()))<2 && peak<7000 && energy>10000,"Synthesized placeholder cue is audible data with bounded gain and click-free endpoints");
+            }
+        }
         {
             GrappleMotion g;MovementResources resources;g.press(resources,true,{0,0,0},{0,0,-20},{0,0,1},false);
             for(int i=0;i<15;i++)g.step({0,0,0},{},1./60.);

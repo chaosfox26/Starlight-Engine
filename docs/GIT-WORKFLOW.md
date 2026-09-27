@@ -1,5 +1,9 @@
 # Git checkpoints
 
+## Development versus publication — 27 September 2026
+
+This is the original private development history. Never push it to the separate anonymized publication repository. The latter lives at D:/projects/Starlight-Publish and was published privately to https://github.com/ChaosFox/Starlight-Engine with ChaosFox first-party identity and preserved upstream credits. Review/anonymize future deltas before publication; do not copy private lore, identities, recovery archives or original history into it. No blanket MIT grant was made; the external NVIDIA SDK retains its separate license/prerequisite status. Detailed private recovery context is D:/projects/_recovery/STARLIGHT-RESUMED-20260927.md. Google Drive upload was cancelled and its uploaded folder deleted at the owner's request; do not treat Drive as a backup or restart uploads.
+
 This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Step 4/4A remains open, performance work follows its completion, and 4B (abilities, stats, traits) follows performance verification.
 
 ## Working together

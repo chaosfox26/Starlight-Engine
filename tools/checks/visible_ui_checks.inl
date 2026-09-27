@@ -261,6 +261,21 @@ int visible_ui_checks(const fs::path& output) {
             step("Fragments expire without gameplay objects",[&]{},[&]{return adventure->presentation().fragments.empty() && adventure->scene().Characters.empty();});
             report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
         }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_WEAPONS_ONLY",nullptr,0)){
+            scene=SceneData{};scene.Name="Weapon and sound presentation";scene.Game.emplace();scene.Game->SpawnZ=0;scene.Terrain.emplace();
+            Character target;target.Shape="cube";target.Width=2;target.Height=2;target.Depth=1;target.Z=-4;target.GameplayRole="breakable";scene.Characters={target};
+            auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            step("Third-person dual pistols",[&]{adventure->cameraDistance=4;adventure->cameraPitch=-.25;},[&]{return adventure->presentation().showBody && adventure->presentation().showWeapons;});
+            step("First-person pistols below aim",[&]{adventure->cameraDistance=0;},[&]{return !adventure->presentation().showBody && adventure->presentation().showWeapons;});
+            auto soundsBefore=gameplayAudio.submitted;
+            step("Committed attack begins",[&]{adventure->fire_button(true);adventure->fire_button(false);},[&]{return adventure->basic_attack().winding && adventure->presentation().shots==0;});
+            step("Committed attack continues",[&]{},[&]{return adventure->basic_attack().winding;});
+            step("Shot and shatter submit original sounds",[&]{},[&]{return adventure->presentation().shots==1 && adventure->presentation().shatters==1 && gameplayAudio.submitted>=soundsBefore+2 && gameplayAudio.failed==0 && scene.encode()==authored;});
+            soundsBefore=gameplayAudio.submitted;
+            step("Stun birds submit chirps",[&]{adventure->cameraDistance=4;adventure->apply_control(ControlEffect::Stun,{2,true},true);},[&]{return gameplayAudio.submitted>soundsBefore && gameplayAudio.failed==0;});
+            report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_MOVEMENT_ONLY",nullptr,0)){
             scene=SceneData{};scene.Name="Movement presentation test";scene.Game.emplace();scene.Terrain.emplace();
             Character wall;wall.Shape="cube";wall.Width=8;wall.Height=8;wall.Depth=1;wall.Z=-5;scene.Characters={wall};
