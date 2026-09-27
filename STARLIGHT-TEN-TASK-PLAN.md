@@ -2,6 +2,8 @@
 
 ## Current override — 27 September 2026
 
+Final follow-up: combined fullscreen performance verified after cosmetic batching (7.47 to398.01 average FPS in the same44-exchange workload).937 core checks and33 final-export foreground gameplay checks passed. See docs/STEP-4-PERFORMANCE-20260927.md. Clean-Windows validation remains the unverified environment gate;4B andTask5 have not begun. This supersedes the earlier “performance next” sentence below.
+
 ChaosFox resumed Step4/4A autonomously. Steps1–3 stay closed; earlier instructions below to reopen them are superseded. Local gameplay acceptance for the agreed placeholder scope passed: normal build,935 core checks,11 installed movement checks,6 weapon/audio checks and33 exported foreground gameplay checks. See docs/STEP-4-ACCEPTANCE-20260927.md for individual requirements and evidence. Clean-Windows validation remains unavailable; do not mark the whole milestone complete. Combined combat performance is next and must be verified before4B (abilities, stats, traits). No4B work yet, and noTask5 advancement.
 
 Updated: 23 September 2026. Owner: ChaosFox. This is the durable execution record for the approved Gemini plan.

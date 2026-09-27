@@ -1,6 +1,21 @@
 #pragma once
 #include "adventure.hpp"
 namespace starlight::editor {
+// Cosmetic geometry shares world coordinates. Batch equal materials so every
+// moving cone edge does not allocate its own pair of GPU buffers and draw call.
+inline std::vector<MeshPart> batch_presentation(std::vector<MeshPart> parts){
+    std::vector<MeshPart> batches;
+    for(auto& part:parts){
+        auto match=std::find_if(batches.begin(),batches.end(),[&](const MeshPart& b){
+            return b.emissive==part.emissive && b.color.x==part.color.x && b.color.y==part.color.y && b.color.z==part.color.z;
+        });
+        if(match==batches.end()){batches.push_back(std::move(part));continue;}
+        const int offset=static_cast<int>(match->mesh.vertices.size());
+        match->mesh.vertices.insert(match->mesh.vertices.end(),std::make_move_iterator(part.mesh.vertices.begin()),std::make_move_iterator(part.mesh.vertices.end()));
+        for(int index:part.mesh.indices)match->mesh.indices.push_back(index+offset);
+    }
+    return batches;
+}
 // Temporary geometry only: never inserted into gameplay, collision or saved scenes.
 inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presentation& p){
     std::vector<MeshPart> parts;
@@ -115,6 +130,6 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         overlay.attackOrigin=actor.origin;overlay.attackAim=actor.aim;overlay.channelProgress=actor.progress;overlay.telegraphKind=actor.kind;
         auto rendered=player_presentation(overlay);parts.insert(parts.end(),std::make_move_iterator(rendered.begin()),std::make_move_iterator(rendered.end()));
     }
-    return parts;
+    return batch_presentation(std::move(parts));
 }
 }

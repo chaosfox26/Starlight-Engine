@@ -30,6 +30,15 @@ int main(int argc, char **argv) {
     fs::create_directories(folder);
     try {
         {
+            MeshPart a;a.color={.2,.4,.6};a.mesh.vertices={{{0,0,0}},{{1,0,0}},{{0,1,0}}};a.mesh.indices={0,1,2};
+            auto b=a;b.mesh.vertices[0].position.z=1;auto glow=a;glow.emissive=true;
+            auto merged=batch_presentation({a,b,glow});
+            require(merged.size()==2 && merged[0].mesh.vertices.size()==6 && merged[0].mesh.indices==std::vector<int>({0,1,2,3,4,5}) && merged[0].mesh.vertices[3].position.z==1 && merged[1].emissive,"Presentation batching preserves triangle offsets, world positions and emissive separation");
+            AdventurePlayer::Presentation p;p.showBody=false;p.showTelegraph=true;p.attackAim={0,0,-1};p.channelProgress=.5;
+            auto cone=player_presentation(p);for(auto& part:cone)part.mesh.validate();
+            require(cone.size()==2,"Moving cone uses two material batches instead of one allocation per edge");
+        }
+        {
             SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
             AdventurePlayer player;player.start(level);
             player.cameraDistance=0;
