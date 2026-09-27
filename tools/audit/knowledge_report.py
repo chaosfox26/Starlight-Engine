@@ -153,7 +153,8 @@ def generate(root,out,state,index,capabilities,contract,evidence,provenance=None
     model=knowledge_model(capabilities,contract,evidence,index,provenance)
     validation=model['validation']; features=model['features']
     # User direction is a separately dated input, never implementation evidence.
-    direction=root/'STARLIGHT-PRODUCT-DIRECTION.md'
+    direction=root/'Starlight Documents/Current/STARLIGHT-PRODUCT-DIRECTION.md'
+    if not direction.is_file(): direction=root/'STARLIGHT-PRODUCT-DIRECTION.md'
     dirty=state.get('gitEnd',state.get('gitStart',{})).get('status',{}).get('stdout','').splitlines()
     model['changed_source_review_required']=[line[3:] for line in dirty if line[3:].startswith(('editor/','deep/'))]
     model['product_direction']=None
@@ -171,7 +172,7 @@ def generate(root,out,state,index,capabilities,contract,evidence,provenance=None
     feature_evidence.write_report(out,graph)
     write_json(out/'engine-knowledge.json',model)
     engine_comparison.generate(out,model,graph)
-    policy='Treat `Starlight Documents` as outdated historical context until the user explicitly changes that instruction. The current source snapshot and dated validation take precedence. A roadmap entry, source marker and passing test are three different kinds of evidence.'
+    policy='Current project documentation lives in `Starlight Documents/Current`; older documents outside Current remain historical. The current source snapshot and dated validation take precedence. A roadmap entry, source marker and passing test are three different kinds of evidence.'
     purpose='Starlight is a native Windows world/scene creator and D3D12 rendering/simulation toolkit, accompanied by a separate native project-module runtime. Its purpose is approachable creation: place content, shape a world, adjust its appearance, save it and preview its behavior through a familiar classic interface.'
     supported=sum(f['source_supported'] for f in features)
     start=['# Starlight — start here','',purpose,'', '[Engine comparison](ENGINE-COMPARISON.md): documented capabilities, dated references, and explicitly unmeasured performance.', '',

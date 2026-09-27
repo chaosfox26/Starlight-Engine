@@ -8,7 +8,6 @@
 
 Chaos reports that earlier sorting across successive projects involved moving, retaining and deleting files, and she is concerned some projects may have been mixed accidentally. This is a concern to investigate, not a confirmed finding. Folder placement and filenames alone must not be treated as proof of project ownership.
 
-SampleServer needs particular care. Chaos described prior work involving an existing game and Nexus Forever code, a GPL/AGPL-versus-MIT licensing decision (the exact license was uncertain in her recollection), and an intention to remove the Nexus Forever code and replace it with her own. Neither the completeness of that removal nor the origins or licensing of the remaining files have been verified here. Do not infer that a rename, relocation or stated rewrite settles those questions.
 
 When this deferred organization task is explicitly resumed, begin with a read-only inventory and provenance map: repository history/remotes, file hashes and backup versions, license/copyright headers and notices, dependency/build references, and relevant saved records. Distinguish project-specific code, shared components, third-party material, historical copies and unresolved origins. Mark uncertain files for review in the inventory rather than guessing, moving or deleting them. Preserve evidence and backups before proposing any reorganization. Any licensing conclusions need separate source-grounded review of the actual material; this note makes no legal determination.
 
@@ -36,7 +35,7 @@ Saved results:
 - Full SampleGame opening plan, original clarifications and Codex connections: D:/SampleGame/Design/first-scene-brainstorm-notes.md
 - Shareable second-person opening: D:/SampleGame/Design/SampleGame-The-Shattered-World-Opening-Readthrough.txt
 
-The latest narrative ends with the reality-fracturing clash, **SampleGame, the Sample World**, then a fade to black and **Powered by the Starlight Engine**. Chaos approved how the read-through expressed her vision. The intended first environment is selected; detailed gameplay, branching, assets, physics and VR presentation still contain explicitly marked open decisions. The light-faction name heard as “LightOrder” is not resolved against the Codex's LightFaction. No production implementation was performed during this scene-planning portion.
+The latest narrative ends with the reality-fracturing clash, **SampleGame, the Shattered World**, then a fade to black and **Powered by the Starlight Engine**. Chaos approved how the read-through expressed her vision. The intended first environment is selected; detailed gameplay, branching, assets, physics and VR presentation still contain explicitly marked open decisions. The light-faction name heard as “LightOrder” is not resolved against the Codex's LightFaction. No production implementation was performed during this scene-planning portion.
 
 
 

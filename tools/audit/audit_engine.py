@@ -321,7 +321,9 @@ def main():
         if (out/name).exists(): lines += ['', (out/name).read_text(encoding='utf-8')]
     if args.audit_mode != 'errors':
         for name in ('STARLIGHT-PRODUCT-DIRECTION.md','STARLIGHT-SCULPTING-FEASIBILITY-2026-09-18.md'):
-            if (root/name).exists(): lines += ['', '# Planned scope — not implementation proof', '', (root/name).read_text(encoding='utf-8')]
+            document=root/'Starlight Documents/Current'/name
+            if not document.exists(): document=root/name
+            if document.exists(): lines += ['', '# Planned scope — not implementation proof', '', document.read_text(encoding='utf-8')]
     (out/'AUDIT-SHAREABLE-REPORT.md').write_text('\n'.join(lines), encoding='utf-8')
     if args.audit_mode == 'errors':
         (out/'STARLIGHT-START-HERE.md').write_text('# Error-check audit\n\nSee [shareable report](AUDIT-SHAREABLE-REPORT.md).\n', encoding='utf-8')

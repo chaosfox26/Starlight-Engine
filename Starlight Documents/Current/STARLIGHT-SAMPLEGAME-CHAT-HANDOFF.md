@@ -10,7 +10,6 @@
 
 Chaos reports that earlier sorting across successive projects involved moving, retaining and deleting files, and she is concerned some projects may have been mixed accidentally. This is a concern to investigate, not a confirmed finding. Folder placement and filenames alone must not be treated as proof of project ownership.
 
-SampleServer needs particular care. Chaos described prior work involving an existing game and Nexus Forever code, a GPL/AGPL-versus-MIT licensing decision (the exact license was uncertain in her recollection), and an intention to remove the Nexus Forever code and replace it with her own. Neither the completeness of that removal nor the origins or licensing of the remaining files have been verified here. Do not infer that a rename, relocation or stated rewrite settles those questions.
 
 When this deferred organization task is explicitly resumed, begin with a read-only inventory and provenance map: repository history/remotes, file hashes and backup versions, license/copyright headers and notices, dependency/build references, and relevant saved records. Distinguish project-specific code, shared components, third-party material, historical copies and unresolved origins. Mark uncertain files for review in the inventory rather than guessing, moving or deleting them. Preserve evidence and backups before proposing any reorganization. Any licensing conclusions need separate source-grounded review of the actual material; this note makes no legal determination.
 
@@ -38,7 +37,7 @@ Saved results:
 - Full SampleGame opening plan, original clarifications and Codex connections: D:/SampleGame/Design/first-scene-brainstorm-notes.md
 - Shareable second-person opening: D:/SampleGame/Design/SampleGame-The-Shattered-World-Opening-Readthrough.txt
 
-The latest narrative ends with the reality-fracturing clash, **SampleGame, the Sample World**, then a fade to black and **Powered by the Starlight Engine**. Chaos approved how the read-through expressed her vision. The intended first environment is selected; detailed gameplay, branching, assets, physics and VR presentation still contain explicitly marked open decisions. The light-faction name heard as “LightOrder” is not resolved against the Codex's LightFaction. No production implementation was performed during this scene-planning portion.
+The latest narrative ends with the reality-fracturing clash, **SampleGame, the Shattered World**, then a fade to black and **Powered by the Starlight Engine**. Chaos approved how the read-through expressed her vision. The intended first environment is selected; detailed gameplay, branching, assets, physics and VR presentation still contain explicitly marked open decisions. The light-faction name heard as “LightOrder” is not resolved against the Codex's LightFaction. No production implementation was performed during this scene-planning portion.
 
 
 
@@ -76,13 +75,13 @@ Do not reinterpret Starlight as a one-scene engine, an SampleGame-only engine, o
 
 ## The selected SampleGame opening, in brief
 
-A social evening in a neon nightclub becomes an attack by the six-purple-eyed ShadowEnemy. The protagonist's unusual Sample Bow draws attention before the attack. As the fight begins, friends join her and the combat music responds to bow actions.
+A social evening in a neon nightclub becomes an attack by the six-purple-eyed ShadowEnemy. The protagonist's unusual Elemental Bow draws attention before the attack. As the fight begins, friends join her and the combat music responds to bow actions.
 
 The lesser enemies retreat in fear. Music stops; enormous footsteps approach. A giant ShadowEnemy commander tears the building open, leaving the protagonist overwhelmed and injured. People are still inside. Her objective is to defend them until all are out of harm's way, despite being far below the commander's power.
 
 The player is offered a flee/stand choice. Chaos's proposed fleeing path eventually leads toward darkness after rejection by SampleGame; intermediate events and mechanics are undecided. Standing means choosing to protect people and a better future. On that narrated path, her resistance buys time for the forces of light to arrive as she nears death.
 
-The light and dark commanders clash. Their swords fracture reality, echoing the world's origin. The title appears: **SampleGame, the Sample World.** The presentation then fades to black with **Powered by the Starlight Engine**.
+The light and dark commanders clash. Their swords fracture reality, echoing the world's origin. The title appears: **SampleGame, the Shattered World.** The presentation then fades to black with **Powered by the Starlight Engine**.
 
 The Codex's creation account includes Chaos binding light, dark and matter into SampleGame after reality tears. Preserve that role; the world is more nuanced than an instruction to eradicate an entire playable people. Scene dialogue, branching mechanics, asset details and presentation timing still have open decisions.
 

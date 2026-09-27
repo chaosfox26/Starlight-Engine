@@ -481,7 +481,7 @@ All relative paths below are beneath `D:/projects/Starlight-Engine/`.
 | `editor/ProjectWindow.cs` | Project/preset GUI and external runtime launch. |
 | `editor/EditorCommands.cs` / `AI-INTERFACE.md` | Local AI protocol; document contains older build/schema references. |
 | `editor/FeatureCatalog.cs` | Mixed roadmap/discovery statuses, not full capability truth. |
-| `editor/WORLD-QUALITY-RELEASE.md` | Latest rendering/sculpt/nature release details and limitations. |
+| `Starlight Documents/Current/editor/WORLD-QUALITY-RELEASE.md` | Latest rendering/sculpt/nature release details and limitations. |
 | `INTERACTION-RESEARCH.md` | Previously saved editor/game interaction research. |
 
 ## Saved current editor checks

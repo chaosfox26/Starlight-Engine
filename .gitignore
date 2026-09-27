@@ -116,3 +116,8 @@ CMakeUserPresets.json
 !/projects/SampleGame/build/models/
 /projects/SampleGame/build/models/*
 !/projects/SampleGame/build/models/fox-lead.glb
+
+# Owner-designated current project documentation.
+!/Starlight Documents/
+/Starlight Documents/*
+!/Starlight Documents/Current/
