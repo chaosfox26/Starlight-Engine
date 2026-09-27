@@ -144,7 +144,9 @@ std::vector<MeshPart> shape_geometry(const Character &c) {
         for (auto v : starlight::Lightning({float(c.TargetX), float(c.TargetY), float(c.TargetZ)},
                                            float(c.BranchSpread))) {
             m.indices.push_back(int(m.vertices.size()));
-            m.vertices.push_back({{v.x, v.y, v.z}, {}, {v.edge < 0 ? 0. : 1., 1, 1}, 9});
+            Vec3 point{v.x,v.y,v.z};
+            double anchor=std::clamp(std::min((point-Vec3{0,3,0}).length(),(point-Vec3{c.TargetX,c.TargetY,c.TargetZ}).length())/.35,0.,1.);
+            m.vertices.push_back({point, {}, {v.edge < 0 ? 0. : 1., anchor, 1}, 9});
         }
         m.normals();
         return {{std::move(m), {1, 1, 1}, false}};

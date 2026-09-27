@@ -4,7 +4,7 @@
 
 This is the original private development history. Never push it to the separate anonymized publication repository. The latter lives at D:/projects/Starlight-Publish and was published privately to https://github.com/ChaosFox/Starlight-Engine with ChaosFox first-party identity and preserved upstream credits. Review/anonymize future deltas before publication; do not copy private lore, identities, recovery archives or original history into it. No blanket MIT grant was made; the external NVIDIA SDK retains its separate license/prerequisite status. Detailed private recovery context is D:/projects/_recovery/STARLIGHT-RESUMED-20260927.md. Google Drive upload was cancelled and its uploaded folder deleted at the owner's request; do not treat Drive as a backup or restart uploads.
 
-This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Step 4/4A remains open, performance work follows its completion, and 4B (abilities, stats, traits) follows performance verification.
+This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Current order is physics acceptance, mesh/texture quality, then performance optimization. See PHYSICS-AND-MOTION-TASK-LIST.md and PHYSICS-HANDOFF.md; older milestone-order notes are historical.
 
 ## Working together
 
@@ -26,4 +26,4 @@ The 24 September full GUI audit passed all 13 stages, including 924 core checks.
 
 Detailed local evidence: `D:/projects/Starlight-analysis/file-integrity-20260926/REVIEW.md`. Current continuation: `D:/projects/_recovery/STARLIGHT-TUESDAY-HANDOFF-20260929.md`. These external locations are local references, not files restored by cloning this repository.
 
-No remote is configured at this checkpoint. Local commits and local backups protect against editing mistakes, but not loss of the entire drive. Choose a private remote destination separately before uploading code.
+The development repository has no remote. The separate anonymized publication repository has the private GitHub remote described above. Publish reviewed source deltas there; never push this original development history.

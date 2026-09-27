@@ -16,10 +16,12 @@ struct Vec3 {
         return n > 1e-15 ? *this / n : Vec3{};
     }
 };
+inline uint64_t vertex_motion_identity(uint64_t domain,uint64_t instance,uint64_t vertex){uint64_t hash=1469598103934665603ull;for(auto value:{domain,instance,vertex})for(int i=0;i<8;++i){hash^=(value>>(i*8))&255;hash*=1099511628211ull;}return hash?hash:1;}
 struct Vertex {
     Vec3 position, normal;
     Vec3 color{1, 1, 1};
     float kind = 0;
+    uint64_t motionIdentity=0;
 };
 struct Mesh {
     std::vector<Vertex> vertices;
@@ -29,6 +31,7 @@ struct Mesh {
 };
 Mesh mesh_from(const SculptMesh &);
 SculptMesh sculpt_from(const Mesh &);
+Character route_pose(const Character &,double seconds);
 Vec3 world_point(const Character &, Vec3);
 Vec3 local_point(const Character &, Vec3);
 struct MeshHit {

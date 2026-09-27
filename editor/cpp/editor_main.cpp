@@ -1,3 +1,4 @@
+#include "solid_fixture.hpp"
 #include "../../deep/engine/crash_diagnostics.h"
 
 #include "commands.hpp"
@@ -114,7 +115,7 @@ enum : int {
     BuildSculpt,
     DockRadius,
     DockStrength, Advanced, BuildDetails, BodyDetails, PlaceCharacter, ClearRoute,
-    ClearPours, DockSettings, ApplyExact, ApplyBuild, ApplyBody, ApplyLightning, ApplyExtras,
+    ClearPours, DockSettings, ApplyExact, ApplyBuild, ApplyBody, ApplyLightning, ApplyParticles, ApplyExtras,
     SaveObject, LoadObject, ExportPortable, SaveGroup, LoadGroup, ReplaceModel, MergeScene, ExportSelection,
     BrowseAssets, CloseAssets, ChooseAssets, RefreshAssets, SearchAssets, AssetList, AssetType, InsertAsset,
     CopyObjects, PasteObjects, AdventurePreset, ApplyGameplay, ExportGame, NewAdventure, InteractiveBuild, CheckGameplay, HelpOpen, HelpClose, HelpLesson, HelpBack, HelpNext, HelpRestart, HelpSearch, AddGameplayRule, RemoveGameplayRule, SaveQuest, LoadQuest, RemoveQuest, NewQuestAdventure, ObjectBehaviorMenu, BehaviorOpen, BehaviorBreak, BehaviorCollect, BehaviorNone, BehaviorQuest, BehaviorStandQuest, LearnOpen, LearnBreak, EndCreationGuide, BehaviorCarry, LearnWorkshop
@@ -133,11 +134,12 @@ struct Editor {
     MovementHud movementHud;
     PacingHud pacingHud;
     bool pacingShown=true;
+    bool gameplayPresentationActive=false;
     std::chrono::steady_clock::time_point motionTick=std::chrono::steady_clock::now();
     ULONGLONG hudTick=0;
     GameplayAudio gameplayAudio;
     CombatHud combatHud;
-    bool mockBattle=false,mockClimb=false;
+    bool mockBattle=false,mockClimb=false,mockPush=false;
     CreationGuide creationGuide;std::string behaviorTarget,carriedId;Vec3 carryPoint{};
     bool startupActivated=false;
     ULONG_PTR graphicsToken = 0;
@@ -454,7 +456,7 @@ struct Editor {
                     const auto before=self->adventure->scene().Characters.size();
                     self->adventureHint=self->adventure->interact();
                     if(self->adventure->scene().Characters.size()!=before)
-                        self->renderer->scene(self->adventure->visible_scene());
+                        self->renderer->scene(self->adventure->visible_scene(),true);
                     SetWindowTextW(self->adventureHud,wide(self->adventureHint).c_str());
                     return 0;
                 }
@@ -1442,6 +1444,9 @@ struct Editor {
                 field("combatHealth","Combat health (0 = scenery)",std::to_string(c->CombatHealth));field("combatSight","Sight range (m)",c->CombatSightRange);
                 choice("combatTeam","Combat affiliation",c->CombatTeam==1?1:c->CombatTeam==0?0:2,{L"Neutral",L"Friendly",L"Enemy"});
                 field("combatBoss","Boss break bar",c->CombatBoss?"1":"0",true);
+                field("CombatProjectileSpeed","Shot speed (0 = contact attack)",c->CombatProjectileSpeed);
+                field("CombatProjectileGravity","Shot gravity (m/s squared)",c->CombatProjectileGravity);
+                field("CombatProjectileMass","Shot mass (kg)",c->CombatProjectileMass);
                 field("combatAutoAttack","Attack nearby enemies",c->CombatAutoAttack?"1":"0",true);
                 field("combatPursuit","Follow nearby enemies",c->CombatPursuit?"1":"0",true);
                 choice("combatControl","Swipe control effect",c->CombatControlEffect+1,{L"None",L"Stun",L"Knockback",L"Pull",L"Launch",L"Knockdown",L"Root",L"Slow",L"Silence",L"Fear",L"Taunt",L"Sleep",L"Blind",L"Disorient",L"Tether"});
@@ -1474,11 +1479,52 @@ struct Editor {
                     if (bodyDetails) {
                         field("dynamic", "Simulate during Play", c->Dynamic ? "1" : "0", true);
                         field("density", "Density (kg/m³; water = 1000)", c->Density);
+                        field("friction", "Friction (0 to 2)", c->Friction);
+                        field("restitution", "Bounce (0 to 1)", c->Restitution);
+                        choice("jointKind","Joint",c->JointKind,{L"None",L"Fixed",L"Hinge",L"Rope",L"Spring",L"Ball",L"Slider"});
+                        choice("jointTarget","Attach to",0,{});
+                        SendMessageW(inputs.at("jointTarget"),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"World"));int jointTargetIndex=0;
+                        for(size_t i=0;i<scene.Characters.size();++i){auto name=wide(scene.Characters[i].Name);SendMessageW(inputs.at("jointTarget"),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name.c_str()));if(scene.Characters[i].Id==c->JointTargetId)jointTargetIndex=int(i)+1;}
+                        SendMessageW(inputs.at("jointTarget"),CB_SETCURSEL,jointTargetIndex,0);
+                        number_row({{"jointX","Anchor X",c->JointX},{"jointY","Anchor Y",c->JointY},{"jointZ","Anchor Z",c->JointZ}});
+                        number_row({{"jointTargetX","Target X",c->JointTargetX},{"jointTargetY","Target Y",c->JointTargetY},{"jointTargetZ","Target Z",c->JointTargetZ}});
+                        number_row({{"jointAxisX","Axis X",c->JointAxisX},{"jointAxisY","Axis Y",c->JointAxisY},{"jointAxisZ","Axis Z",c->JointAxisZ}});
+                        field("VelocityX","Velocity X (m/s)",c->VelocityX);
+                        field("VelocityY","Velocity Y (m/s)",c->VelocityY);
+                        field("VelocityZ","Velocity Z (m/s)",c->VelocityZ);
+                        field("AngularVelocityX","Spin X (degrees/s)",c->AngularVelocityX);
+                        field("AngularVelocityY","Spin Y (degrees/s)",c->AngularVelocityY);
+                        field("AngularVelocityZ","Spin Z (degrees/s)",c->AngularVelocityZ);
+                        field("JointAngleMin","Hinge minimum angle",c->JointAngleMin);
+                        field("JointAngleMax","Hinge maximum angle",c->JointAngleMax);
+                        field("JointSegments","Physical rope segments (0 = distance only)",c->JointSegments);
+                        field("JointRadius","Rope collision radius (m)",c->JointRadius);
+                        field("jointLength","Rope / spring length or slider limit (m)",c->JointLength);
+                        field("jointFrequency","Spring frequency (Hz)",c->JointFrequency);
+                        field("jointDamping","Spring damping",c->JointDamping);
                         form_button(ApplyBody, L"Apply body settings");
                     }
                 auto kind = c->Shape.value_or("");
+                if(kind=="fire"){
+                    field("ParticleRate","Particles per second",c->ParticleRate);
+                    field("ParticleLifetime","Particle lifetime (s)",c->ParticleLifetime);
+                    field("ParticleDrag","Particle drag",c->ParticleDrag);
+                    field("ParticleLift","Upward acceleration",c->ParticleLift);
+                    field("ParticleWindX","Wind X",c->ParticleWindX);
+                    field("ParticleWindY","Wind Y",c->ParticleWindY);
+                    field("ParticleWindZ","Wind Z",c->ParticleWindZ);
+                    form_button(ApplyParticles,L"Apply particles");
+                }
                 if (kind == "chaos-lightning") {
+                    std::vector<std::wstring> targets{L"Fixed offset from emitter"};int targetIndex=0;
+                    for(size_t i=0;i<scene.Characters.size();++i){targets.push_back(wide(scene.Characters[i].Name));if(scene.Characters[i].Id==c->LightningTargetId)targetIndex=int(i)+1;}
+                    choice("lightningTarget", "Follow target object",0,{});
+                    for(const auto& name:targets)SendMessageW(inputs.at("lightningTarget"),CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name.c_str()));
+                    SendMessageW(inputs.at("lightningTarget"),CB_SETCURSEL,targetIndex,0);
                     number_row({{"tx", "Target X", c->TargetX}, {"ty", "Target Y", c->TargetY}, {"tz", "Target Z", c->TargetZ}});
+                    field("lightningDamage","Strike damage (0 = visual only)",c->LightningDamage);
+                    field("lightningChains","Additional chain targets (0 to 16)",c->LightningChains);
+                    field("lightningRadius","Chain radius (m)",c->LightningChainRadius);
                     field("spread", "Branch spread (0–5 m)", c->BranchSpread);
                     form_button(ApplyLightning, L"Apply lightning");
                 }
@@ -1525,6 +1571,9 @@ struct Editor {
             }
             auto settings=scene.Game.value_or(GameSettings{});
             field("moveSpeed","Walking speed (m/s)",settings.MoveSpeed);
+            field("projectileSpeed","Shot speed (0 = instant area attack)",settings.ProjectileSpeed);
+            field("projectileMass","Shot mass (kg)",settings.ProjectileMass);
+            field("projectileGravity","Shot gravity (m/s squared)",settings.ProjectileGravity);
             field("lookSpeed","Look sensitivity",settings.LookSensitivity);field("sightRange","Sight range (m)",settings.SightRange);
             field("reducedCameraMotion","Reduce camera motion",settings.ReducedCameraMotion ? "1" : "0",true);
             form_button(Advanced,advanced ? L"Show beginner controls" : L"Show advanced controls");
@@ -1726,8 +1775,40 @@ struct Editor {
                 n("rx", c->RotationX); n("ry", c->RotationY); n("rz", c->RotationZ);
                 if (inputs.contains("color")) c->Color = text(inputs.at("color"));
                 if (inputs.contains("surface")) c->Surface = integer("surface");
-                b("floor", c->KeepAboveFloor); b("dynamic", c->Dynamic); n("density", c->Density);
+                if(inputs.contains("jointKind")){c->JointKind=integer("jointKind");int target=integer("jointTarget");c->JointTargetId=target>0&&size_t(target)<=scene.Characters.size()?scene.Characters[target-1].Id:"";}
+                n("jointX", c->JointX);
+                n("jointY", c->JointY);
+                n("jointZ", c->JointZ);
+                n("jointTargetX", c->JointTargetX);
+                n("jointTargetY", c->JointTargetY);
+                n("jointTargetZ", c->JointTargetZ);
+                n("jointAxisX", c->JointAxisX);
+                n("jointAxisY", c->JointAxisY);
+                n("jointAxisZ", c->JointAxisZ);
+                n("VelocityX",c->VelocityX);
+                n("VelocityY",c->VelocityY);
+                n("VelocityZ",c->VelocityZ);
+                n("AngularVelocityX",c->AngularVelocityX);
+                n("AngularVelocityY",c->AngularVelocityY);
+                n("AngularVelocityZ",c->AngularVelocityZ);
+                n("JointAngleMin",c->JointAngleMin);
+                n("JointAngleMax",c->JointAngleMax);
+                if(inputs.contains("JointSegments"))c->JointSegments=integer("JointSegments");
+                n("JointRadius",c->JointRadius);
+                n("jointLength", c->JointLength);
+                n("jointFrequency", c->JointFrequency);
+                n("jointDamping", c->JointDamping);
+                b("floor", c->KeepAboveFloor); b("dynamic", c->Dynamic); n("density", c->Density); n("friction", c->Friction); n("restitution", c->Restitution);
                 n("intensity", c->LightIntensity); n("range", c->LightRange); n("cone", c->LightCone);
+                n("ParticleRate",c->ParticleRate);
+                n("ParticleLifetime",c->ParticleLifetime);
+                n("ParticleDrag",c->ParticleDrag);
+                n("ParticleLift",c->ParticleLift);
+                n("ParticleWindX",c->ParticleWindX);
+                n("ParticleWindY",c->ParticleWindY);
+                n("ParticleWindZ",c->ParticleWindZ);
+                n("lightningDamage",c->LightningDamage);n("lightningRadius",c->LightningChainRadius);if(inputs.contains("lightningChains"))c->LightningChains=integer("lightningChains");
+                if(inputs.contains("lightningTarget")){int target=integer("lightningTarget");c->LightningTargetId=target>0&&size_t(target)<=scene.Characters.size()?scene.Characters[target-1].Id:"";}
                 n("tx", c->TargetX); n("ty", c->TargetY); n("tz", c->TargetZ); n("spread", c->BranchSpread);
             } else if (page == 1) {
                 scene.Name = text(inputs.at("name"));
@@ -1736,7 +1817,7 @@ struct Editor {
                 scene.PathBounces = integer("bounces"); b("rr", scene.RayReconstructionEnabled); b("freeze", scene.FreezeRaytracingAnimation);
             } else if(page==6){
                 if(!scene.Game)scene.Game.emplace();
-                n("sightRange",scene.Game->SightRange);n("moveSpeed",scene.Game->MoveSpeed);n("lookSpeed",scene.Game->LookSensitivity);
+                n("projectileMass",scene.Game->ProjectileMass);n("projectileSpeed",scene.Game->ProjectileSpeed);n("projectileGravity",scene.Game->ProjectileGravity);n("sightRange",scene.Game->SightRange);n("moveSpeed",scene.Game->MoveSpeed);n("lookSpeed",scene.Game->LookSensitivity);
                 b("reducedCameraMotion",scene.Game->ReducedCameraMotion);
                 n("spawnX",scene.Game->SpawnX);n("spawnY",scene.Game->SpawnY);n("spawnZ",scene.Game->SpawnZ);
                 n("playerRadius",scene.Game->PlayerRadius);b("playerCollision",scene.Game->Collision);
@@ -1777,10 +1858,10 @@ struct Editor {
             auto candidate=*actor();int role=integer("gameRole");
             if(role<0||role>4)throw std::runtime_error("Choose an interaction");
             candidate.GameplayRole=std::array<std::string,5>{"none","key","door","exit","breakable"}[role];
-            candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");candidate.CombatTeam=integer("combatTeam");candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.validate();
+            candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");candidate.CombatTeam=integer("combatTeam");candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.CombatProjectileSpeed=number("CombatProjectileSpeed");candidate.CombatProjectileGravity=number("CombatProjectileGravity");candidate.CombatProjectileMass=number("CombatProjectileMass");candidate.validate();
             edit([&]{*actor()=candidate;});return;
         }
-        if (id == ApplyExact || id == ApplyBuild || id == ApplyBody || id == ApplyLightning || id == ApplyExtras) {
+        if (id == ApplyExact || id == ApplyBuild || id == ApplyBody || id == ApplyLightning || id == ApplyParticles || id == ApplyExtras) {
             if (!actor()) return;
             auto candidate = *actor();
             const bool requestedFollow = id == ApplyExtras && inputs.contains("follow") ? checked("follow") : follow;
@@ -1807,8 +1888,41 @@ struct Editor {
                 candidate.validate();
                 snap_object(scene, candidate, false, false, false);
             } else if (id == ApplyBody) {
-                candidate.Dynamic = checked("dynamic"); candidate.Density = number("density");
+                candidate.JointKind=integer("jointKind");int target=integer("jointTarget");candidate.JointTargetId=target>0&&size_t(target)<=scene.Characters.size()?scene.Characters[target-1].Id:"";
+                candidate.JointX=number("jointX");
+                candidate.JointY=number("jointY");
+                candidate.JointZ=number("jointZ");
+                candidate.JointTargetX=number("jointTargetX");
+                candidate.JointTargetY=number("jointTargetY");
+                candidate.JointTargetZ=number("jointTargetZ");
+                candidate.JointAxisX=number("jointAxisX");
+                candidate.JointAxisY=number("jointAxisY");
+                candidate.JointAxisZ=number("jointAxisZ");
+                candidate.VelocityX=number("VelocityX");
+                candidate.VelocityY=number("VelocityY");
+                candidate.VelocityZ=number("VelocityZ");
+                candidate.AngularVelocityX=number("AngularVelocityX");
+                candidate.AngularVelocityY=number("AngularVelocityY");
+                candidate.AngularVelocityZ=number("AngularVelocityZ");
+                candidate.JointAngleMin=number("JointAngleMin");
+                candidate.JointAngleMax=number("JointAngleMax");
+                candidate.JointSegments=integer("JointSegments");
+                candidate.JointRadius=number("JointRadius");
+                candidate.JointLength=number("jointLength");
+                candidate.JointFrequency=number("jointFrequency");
+                candidate.JointDamping=number("jointDamping");
+                candidate.Dynamic = checked("dynamic"); candidate.Density = number("density"); candidate.Friction=number("friction"); candidate.Restitution=number("restitution");
+            } else if(id==ApplyParticles){
+                candidate.ParticleRate=number("ParticleRate");
+                candidate.ParticleLifetime=number("ParticleLifetime");
+                candidate.ParticleDrag=number("ParticleDrag");
+                candidate.ParticleLift=number("ParticleLift");
+                candidate.ParticleWindX=number("ParticleWindX");
+                candidate.ParticleWindY=number("ParticleWindY");
+                candidate.ParticleWindZ=number("ParticleWindZ");
             } else if (id == ApplyLightning) {
+                candidate.LightningDamage=number("lightningDamage");candidate.LightningChainRadius=number("lightningRadius");candidate.LightningChains=integer("lightningChains");
+                int target=integer("lightningTarget");candidate.LightningTargetId=target>0&&size_t(target)<=scene.Characters.size()?scene.Characters[target-1].Id:"";
                 candidate.TargetX = number("tx"); candidate.TargetY = number("ty");
                 candidate.TargetZ = number("tz"); candidate.BranchSpread = number("spread");
             } else {
@@ -2325,6 +2439,7 @@ struct Editor {
             try {
                 edit([&] {
                     std::erase_if(scene.Characters, [&](const Character &object) { return ids.contains(object.Id); });
+                    for(auto& object:scene.Characters)if(ids.contains(object.JointTargetId)){object.JointKind=0;object.JointTargetId.clear();}
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
@@ -2786,7 +2901,7 @@ struct Editor {
             if(GetForegroundWindow()==window && GetFocus()==view){
                 double right=((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);
                 double forward=((GetAsyncKeyState('W')&0x8000)?1.:0)-((GetAsyncKeyState('S')&0x8000)?1.:0);
-                if(mockClimb){right=0;forward=1;}
+                if(mockClimb || mockPush){right=0;forward=1;}
                 if(mockBattle && !adventure->scene().Characters.empty()){
                     const auto& enemy=adventure->scene().Characters[0];auto delta=Vec3{enemy.X,enemy.Y,enemy.Z}-adventure->position;
                     adventure->yaw=std::atan2(delta.x,-delta.z);adventure->pitch=0;adventure->cameraYaw=adventure->yaw;adventure->cameraPitch=-.75;adventure->cameraDistance=9;
@@ -2796,7 +2911,7 @@ struct Editor {
                 adventure->posture_button((GetAsyncKeyState(VK_CONTROL)&0x8000)!=0,right,forward,dt);adventure->mobility_button((GetAsyncKeyState('V')&0x8000)!=0,right,forward,dt);adventure->sprint((GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);
                 adventure->move(right,forward,dt);
                 renderer->gameplay_time(adventure->seconds());
-                if(adventure->rules().revision!=revision)renderer->scene(adventure->visible_scene());
+                if(adventure->rules().revision!=revision)renderer->scene(adventure->visible_scene(),true);
                 if(!adventure->rules().message.empty())adventureHint=adventure->rules().message;
                 questTracker.update(scene,adventure->rules(),playing);
             }
@@ -2838,13 +2953,14 @@ struct Editor {
             if(mover){auto p=mover->presentation();renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});}
             else renderer->pacing_player({},{});
         }
-        auto publishPresentation=[&](AdventurePlayer& mover){double started=timing_seconds();auto p=mover.presentation();auto timing=mover.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));};
+        auto publishPresentation=[&](AdventurePlayer& mover){gameplayPresentationActive=true;renderer->player_body(mover.body_bounds());renderer->collision_objects(mover.environment_objects());mover.liquids(renderer->liquid_snapshot());renderer->runtime_objects(mover.dynamic_objects());renderer->pacing_debris(mover.debris_poses());double started=timing_seconds();auto p=mover.presentation();auto timing=mover.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers,!scene.RaytracingEnabled));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));};
         if(playing && adventure)publishPresentation(*adventure);
         else if(explorer)publishPresentation(*explorer);
-        else renderer->gameplay_overlays({});
+        else if(gameplayPresentationActive){renderer->gameplay_overlays({});renderer->player_body({});renderer->collision_objects({});renderer->runtime_objects({});renderer->pacing_debris({});gameplayPresentationActive=false;}
         {auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
          auto presentation=mover?mover->presentation():AdventurePlayer::Presentation{};
-         gameplayAudio.update(mover?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
+         if(!mover&&playing){auto status=renderer->status();auto viewState=camera_state();presentation.audioActive=true;presentation.epoch=(uint64_t(1)<<63)|status.environment_epoch;presentation.poseTime=status.seconds;presentation.eye=viewState.eye;presentation.viewAim=(viewState.target-viewState.eye).unit();presentation.viewUp=viewState.up;presentation.lightning=status.environment_lightning;presentation.lightningSounds=std::move(status.environment_sounds);}
+         gameplayAudio.update(mover||playing?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
         renderer->frame_updates((playing && adventure) || explorer?window:nullptr);
         if (renderer) {
             pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);

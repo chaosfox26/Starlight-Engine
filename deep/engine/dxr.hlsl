@@ -1,5 +1,5 @@
 // DXR 1.1 inline queries, native pixel grid. No upscaler or frame generation.
-struct Vertex { float3 p; float3 n; float4 surface; };
+struct Vertex { float3 p; float3 n; float4 surface; float4 history; };
 struct Instance { row_major float4x4 world; row_major float4x4 normal; row_major float4x4 previousWorld; float4 color; uint4 meta; };
 RaytracingAccelerationStructure scene : register(t0);
 StructuredBuffer<Vertex> vertices : register(t1);
@@ -15,7 +15,7 @@ cbuffer Constants : register(b0) {
  uint4 settings; // tier, bounces, sample index, local lights
  float4 frame; // width, height, fog density, smoke count
  uint4 sequence; // RNG, reset, reactive lighting, reserved
- row_major float4x4 previousVP, viewMatrix, previousView;
+ row_major float4x4 previousVP, viewMatrix, previousView, currentVP;
 };
 static const float PI=3.141592654;
 static uint rng;
@@ -24,7 +24,7 @@ float hash31(float3 p){p=frac(p*.1031);p+=dot(p,p.yzx+33.33);return frac((p.x+p.
 float noise3(float3 p){float3 a=floor(p),f=frac(p);f=f*f*(3-2*f);return lerp(lerp(lerp(hash31(a),hash31(a+float3(1,0,0)),f.x),lerp(hash31(a+float3(0,1,0)),hash31(a+float3(1,1,0)),f.x),f.y),lerp(lerp(hash31(a+float3(0,0,1)),hash31(a+float3(1,0,1)),f.x),lerp(hash31(a+float3(0,1,1)),hash31(a+float3(1,1,1)),f.x),f.y),f.z);}
 float3 hemisphere(float3 n){float a=2*PI*random(),r=sqrt(random());float3 t=normalize(cross(abs(n.y)<.99?float3(0,1,0):float3(1,0,0),n));return t*(r*cos(a))+cross(n,t)*(r*sin(a))+n*sqrt(max(0,1-r*r));}
 float3 sky(float3 d){return ambient.rgb*lerp(.25,1.7,saturate(d.y*.5+.5));}
-struct Hit {float3 p,n,albedo,emission;float rough,kind,distance; float3 previousPosition; uint objectId;};
+struct Hit {float3 p,n,albedo,emission;float rough,kind,distance; float3 previousPosition,currentPosition; uint objectId;};
 bool trace(float3 origin,float3 direction,float limit,out Hit h){
  h=(Hit)0;RayDesc ray;ray.Origin=origin;ray.Direction=direction;ray.TMin=.002;ray.TMax=limit;
  RayQuery<RAY_FLAG_FORCE_OPAQUE> q;q.TraceRayInline(scene,0,255,ray);while(q.Proceed()){}
@@ -33,7 +33,7 @@ bool trace(float3 origin,float3 direction,float limit,out Hit h){
  Vertex a=vertices[obj.meta.x+indices[tri]],b=vertices[obj.meta.x+indices[tri+1]],c=vertices[obj.meta.x+indices[tri+2]];
  float2 uv=q.CommittedTriangleBarycentrics();float3 w=float3(1-uv.x-uv.y,uv);
  float4 surface=a.surface*w.x+b.surface*w.y+c.surface*w.z;
- h.objectId=q.CommittedInstanceID();h.previousPosition=mul(float4(a.p*w.x+b.p*w.y+c.p*w.z,1),obj.previousWorld).xyz;
+ h.objectId=q.CommittedInstanceID();float3 pa=sequence.w>0&&a.history.w>0?a.history.xyz:a.p,pb=sequence.w>0&&b.history.w>0?b.history.xyz:b.p,pc=sequence.w>0&&c.history.w>0?c.history.xyz:c.p;h.previousPosition=mul(float4(pa*w.x+pb*w.y+pc*w.z,1),obj.previousWorld).xyz;h.currentPosition=mul(float4(a.p*w.x+b.p*w.y+c.p*w.z,1),obj.world).xyz;
  h.distance=q.CommittedRayT();h.p=origin+direction*h.distance;
  h.n=normalize(mul(float4(a.n*w.x+b.n*w.y+c.n*w.z,0),obj.normal).xyz);if(dot(h.n,direction)>0)h.n=-h.n;
  h.kind=surface.w;h.rough=.78;float3 color=obj.color.rgb*surface.rgb;h.albedo=pow(max(color,0),2.2);h.emission=h.albedo*obj.color.w;
@@ -83,11 +83,12 @@ float3 secondary(float3 p,float3 n,float3 dir){float distance;return secondaryDi
  float3 albedo=found?max(h.albedo,.001):1;float3 specAlbedo=found?.04+.96*pow(1-saturate(dot(-dir,h.n)),5):1;
  float depth=found?abs(mul(float4(h.p,1),viewMatrix).z):400;
  float4 previous=mul(float4(found?h.previousPosition:eyeTime.xyz+dir*400,1),previousVP);
- float2 oldPixel=(previous.xy/max(previous.w,.0001)*float2(.5,-.5)+.5)*frame.xy-.5;
+ float4 current=mul(float4(found?h.currentPosition:eyeTime.xyz+dir*400,1),currentVP);
+ float2 velocity=(previous.xy/max(previous.w,.0001)-current.xy/max(current.w,.0001))*float2(.5,-.5)*frame.xy;
  float oldDepth=found?abs(mul(float4(h.previousPosition,1),previousView).z):400;
  targets[1][px]=float4(found?h.n:float3(0,0,0),found?h.rough:1);
  targets[2][px]=float4(albedo,1);targets[3][px]=float4(specAlbedo,1);targets[4][px]=float4(depth,0,0,0);
- targets[5][px]=float4(oldPixel-float2(px),oldDepth,previous.w>0?f16tof32(0x3c00+(found?h.objectId:8192)):0);targets[25][px]=float4(oldPixel-float2(px),0,0);targets[6][px]=float4(emission,1);
+ targets[5][px]=float4(velocity,oldDepth,previous.w>0?f16tof32(0x3c00+(found?h.objectId:8192)):0);targets[25][px]=float4(velocity,0,0);targets[6][px]=float4(emission,1);
  if(found){
   if(settings.x<4){float3 d;float3 total=directSplit(h,-dir,settings.x>=3,d);diffuse=d;specular=max(0,total-d);
    float ao=settings.x>=2?visibility(h.p,h.n,hemisphere(h.n),1.5):1;diffuse+=h.albedo*ambient.rgb*.22*ao;

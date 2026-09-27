@@ -24,7 +24,7 @@ public:
         if(state!=State::Free || !resources.spend_grapple())return false;
         const double distance=(target-player).length();
         if(!valid || !std::isfinite(distance) || distance<.01 || distance>25)return false;
-        anchor=target;normal=surfaceNormal.unit();ropeLength=distance;launchPoint=player;flightDuration=flightRemaining=distance/40.;
+        anchor=target;anchorVelocity=priorAnchorVelocity={};normal=surfaceNormal.unit();ropeLength=distance;launchPoint=player;flightDuration=flightRemaining=distance/40.;
         state=overhead?State::Swing:State::Pulling;return true;
     }
     void release(){held=false;if(state==State::Pulling || state==State::Swing)detach();}
@@ -36,7 +36,7 @@ public:
     }
     Vec3 step(Vec3 player,Vec3 steering,double dt,double movementFactor=1){
         if(!std::isfinite(dt) || dt<=0 || state==State::Free)return velocity;
-        dt=std::min(dt,1./30.);
+        dt=std::min(dt,.05);
         if(flying()){flightRemaining=std::max(0.,flightRemaining-dt);return velocity;}
         if(state==State::Pulling){
             auto delta=anchor+normal*.5-player;
@@ -64,7 +64,7 @@ public:
     }
     Vec3 wall_jump(){
         if(state!=State::Wall)return velocity;
-        velocity=normal*4+Vec3{0,5,0};detach();return velocity;
+        velocity=anchorVelocity+normal*4+Vec3{0,5,0};detach();return velocity;
     }
 };
 }

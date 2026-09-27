@@ -25,6 +25,7 @@ std::vector<MeshPart> parts(const Character &c) {
     return c.Shape || c.Sculpt ? shape_geometry(c) : load_glb(wide(c.Asset));
 }
 } // namespace
+std::vector<MeshPart> object_parts(const Character& c){return parts(c);}
 Mesh object_mesh(const Character &c) {
     Mesh m;
     for (const auto &part : parts(c)) {
@@ -36,20 +37,29 @@ Mesh object_mesh(const Character &c) {
     return m;
 }
 std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flow,
-                                  const std::vector<MeshPart> &overlays, RenderSceneCache *cache) {
-    // Fluid geometry changes independently, so it retains the uncached path.
-    if(flow)cache=nullptr;
-    if(cache && cache->packet.empty())cache->packet=render_scene(scene);
+                                  const std::vector<MeshPart> &overlays, RenderSceneCache *cache, bool runtimeEffects) {
+    // Keep terrain and authored static meshes resident while liquids and rigid
+    // bodies change. Their motion must not rebuild every blade of grass.
+    if(cache && std::any_of(scene.Characters.begin(),scene.Characters.end(),[](const auto& c){return c.Dynamic && (c.Shape=="chaos-rock" || c.Shape=="light-shard" || c.Shape=="light" || c.Shape=="fire" || c.Shape=="chaos-lightning" || c.Shape=="craxis-smoke");}))cache=nullptr;
+    if(cache && (cache->runtimeEffects!=runtimeEffects || cache->simulatedLiquids!=(flow!=nullptr))){cache->clear();cache->runtimeEffects=runtimeEffects;cache->simulatedLiquids=flow!=nullptr;}
+    if(cache && cache->packet.empty()){
+        auto base=scene;
+        if(flow && base.Terrain)base.Terrain->WaterEnabled=false;
+        std::erase_if(base.Characters,[&](const auto& c){return c.Dynamic || (flow && c.Shape=="lava");});
+        cache->packet=render_scene(base,nullptr,{},nullptr,runtimeEffects);
+    }
     if(!cache)scene.validate();
     struct Draw {
         MeshPart part;
         const Character *actor;
         bool transient=false;
+        uint64_t identity=0;
     };
     std::vector<Draw> draws;
     if (!cache) {
     if (scene.Terrain) {
-        for (auto &p : terrain_geometry(*scene.Terrain))
+        auto terrain=*scene.Terrain;if(flow)terrain.WaterEnabled=false;
+        for (auto &p : terrain_geometry(terrain))
             draws.push_back({std::move(p), nullptr});
     } else {
         MeshPart ground;
@@ -61,14 +71,16 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
         ground.mesh.indices = {0, 1, 2, 0, 2, 3};
         draws.push_back({std::move(ground), nullptr});
     }
+    }
+    for (const auto &c : scene.Characters)
+        if((!cache || c.Dynamic) && !(runtimeEffects && (c.Shape=="chaos-lightning" || c.Shape=="fire" || c.Shape=="grass")) && !(flow && c.Shape=="lava"))
+        {uint32_t partIndex=0;for (auto &p : parts(c)){
+            auto identity=render_identity(c.Id,partIndex++);
+            if (!p.mesh.indices.empty())draws.push_back({std::move(p), &c,false,identity});
+        }}
     if (flow)
         for (auto &p : flow->geometry())
             draws.push_back({std::move(p), nullptr, true});
-    for (const auto &c : scene.Characters)
-        for (auto &p : parts(c))
-            if (!p.mesh.indices.empty())
-                draws.push_back({std::move(p), &c});
-    }
     for (const auto &part : overlays)
         draws.push_back({part, nullptr, true});
     uint32_t baseDraws=0;
@@ -81,7 +93,7 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
     size_t packetCapacity = 256 + scene.Characters.size() * 64;
     for (const auto& draw : draws)
         packetCapacity += 160 + (draw.actor ? draw.actor->Route.size() * 8 : 0)
-                        + draw.part.mesh.vertices.size() * 40
+                        + draw.part.mesh.vertices.size() * 48
                         + draw.part.mesh.indices.size() * 4;
     w.bytes.reserve(packetCapacity + (cache ? cache->packet.size() : 0));
     if(cache){
@@ -89,7 +101,7 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
         uint32_t total=baseDraws+uint32_t(draws.size());
         std::memcpy(w.bytes.data()+4,&total,sizeof(total));
     } else {
-    w.put(uint32_t(0x38564c53));
+    w.put(uint32_t(0x41564c53));
     w.put(uint32_t(draws.size()));
     std::vector<const Character *> lights, smoke;
     for (const auto &c : scene.Characters) {
@@ -133,6 +145,7 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
     }
     for (const auto &draw : draws) {
         const auto *c = draw.actor;
+        w.put(draw.identity);
         w.put(uint32_t(draw.transient));
         auto kind = c ? c->Shape.value_or("") : "";
         w.f(draw.part.emissive ? 1 : 0);
@@ -171,6 +184,7 @@ std::vector<uint8_t> render_scene(const SceneData &scene, const TerrainFlow *flo
             w.vec(v.normal.dot(v.normal) > 1e-12 ? v.normal : Vec3{0, 1, 0});
             w.vec(v.color);
             w.f(v.kind);
+            w.put(v.motionIdentity);
         }
         w.put(uint32_t(mesh.indices.size()));
         for (int i : mesh.indices)

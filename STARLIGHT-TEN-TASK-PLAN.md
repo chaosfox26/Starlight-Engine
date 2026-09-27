@@ -1,3 +1,11 @@
+## Current owner-defined sequence
+
+The new sequence is: (1) full physics and dynamic behavior; (2) higher-detail meshes, textures and environment quality; (3) return to performance optimization using that realistic workload. See [the detailed task list](docs/PHYSICS-AND-MOTION-TASK-LIST.md). Retain the GPU attack-fill change. The owner subsequently authorized direct implementation and verification. Task 1 is now active. This sequence supersedes conflicting older order notes below.
+
+## Historical planning checkpoint — superseded by implementation authorization
+
+27 September 2026: retain the GPU attack-fill change. Pause implementation and testing while preparing the next task list. Its first item is full movement, combat and object physics, including genuinely dynamic lightning and other intended moving/reactive effects. The detailed checklist is [Physics and motion task list](docs/PHYSICS-AND-MOTION-TASK-LIST.md). This is a planning checkpoint, not authorization to skip the list and begin implementation. Further frame-pacing investigation is deferred;4B remains unstarted. Earlier priority/order notes below are historical where they conflict.
+
 ## Latest clean-Windows result — 27 September 2026
 
 PASS: fresh Windows Sandbox guest, final export hashes verified, content validation and all 33 gameplay checks plus combat exchange passed. Zero audio errors; captures reviewed. See docs/STEP-4-CLEAN-WINDOWS-20260927.md (or STEP-4-CLEAN-WINDOWS-20260927.md from docs). This supersedes older clean-Windows blockers below. 4B remains untouched.

@@ -57,6 +57,11 @@ Vec3 rotate(Vec3 p, int axis, double degrees) {
     return {p.x * c - p.y * s, p.x * s + p.y * c, p.z};
 }
 } // namespace
+Character route_pose(const Character& source,double seconds){
+    auto c=source;if(c.Route.empty()||c.PhysicsRotation)return c;auto at=c.at(seconds);double yaw=c.route_yaw(seconds);c.X=at.X;c.Z=at.Z;
+    using Q=std::array<double,4>;auto multiply=[](Q a,Q b){Vec3 x{a[0],a[1],a[2]},y{b[0],b[1],b[2]};auto v=x*b[3]+y*a[3]+x.cross(y);return Q{v.x,v.y,v.z,a[3]*b[3]-x.dot(y)};};auto axis=[](int index,double angle){Q q{};q[index]=std::sin(angle*.5);q[3]=std::cos(angle*.5);return q;};double rad=std::numbers::pi/180;
+    c.PhysicsRotation=multiply(axis(1,yaw),multiply(axis(2,c.RotationZ*rad),multiply(axis(1,c.RotationY*rad),axis(0,c.RotationX*rad))));c.Route.clear();return c;
+}
 Vec3 world_point(const Character &c, Vec3 p) {
     p = {p.x * c.Width, p.y * c.Height, p.z * c.Depth};
     if (c.PhysicsRotation) {

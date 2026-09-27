@@ -24,12 +24,51 @@ void to_json(json &j, const Character &v) {
     j["Asset"] = v.Asset;
     j["Shape"] = v.Shape ? json(*v.Shape) : json(nullptr);
     j["Sculpt"] = v.Sculpt ? json(*v.Sculpt) : json(nullptr);
+    if(!v.LightningTargetId.empty())j["LightningTargetId"]=v.LightningTargetId;
     j["TargetX"] = v.TargetX;
     j["TargetY"] = v.TargetY;
     j["TargetZ"] = v.TargetZ;
     j["BranchSpread"] = v.BranchSpread;
     j["Dynamic"] = v.Dynamic;
     j["Density"] = v.Density;
+    j["VelocityX"]=v.VelocityX;
+    j["VelocityY"]=v.VelocityY;
+    j["VelocityZ"]=v.VelocityZ;
+    j["AngularVelocityX"]=v.AngularVelocityX;
+    j["AngularVelocityY"]=v.AngularVelocityY;
+    j["AngularVelocityZ"]=v.AngularVelocityZ;
+    j["JointAngleMin"]=v.JointAngleMin;
+    j["JointAngleMax"]=v.JointAngleMax;
+    j["JointSegments"]=v.JointSegments;
+    j["JointRadius"]=v.JointRadius;
+    j["CombatProjectileSpeed"]=v.CombatProjectileSpeed;
+    j["CombatProjectileGravity"]=v.CombatProjectileGravity;
+    j["CombatProjectileMass"]=v.CombatProjectileMass;
+    j["JointKind"]=v.JointKind;
+    j["JointTargetId"]=v.JointTargetId;
+    j["JointX"]=v.JointX;
+    j["JointY"]=v.JointY;
+    j["JointZ"]=v.JointZ;
+    j["JointTargetX"]=v.JointTargetX;
+    j["JointTargetY"]=v.JointTargetY;
+    j["JointTargetZ"]=v.JointTargetZ;
+    j["JointAxisX"]=v.JointAxisX;
+    j["JointAxisY"]=v.JointAxisY;
+    j["JointAxisZ"]=v.JointAxisZ;
+    j["JointLength"]=v.JointLength;
+    j["JointFrequency"]=v.JointFrequency;
+    j["JointDamping"]=v.JointDamping;
+    j["LightningDamage"]=v.LightningDamage;
+    j["LightningChainRadius"]=v.LightningChainRadius;
+    j["LightningChains"]=v.LightningChains;
+    j["ParticleRate"]=v.ParticleRate;
+    j["ParticleLifetime"]=v.ParticleLifetime;
+    j["ParticleDrag"]=v.ParticleDrag;
+    j["ParticleLift"]=v.ParticleLift;
+    j["ParticleWindX"]=v.ParticleWindX;
+    j["ParticleWindY"]=v.ParticleWindY;
+    j["ParticleWindZ"]=v.ParticleWindZ;
+    j["Friction"] = v.Friction; j["Restitution"] = v.Restitution;
     j["Surface"] = v.Surface;
     j["LightCone"] = v.LightCone;
     j["LightIntensity"] = v.LightIntensity;
@@ -50,6 +89,7 @@ void to_json(json &j, const Character &v) {
     j["Route"] = v.Route;
 }
 void from_json(const json &j, Character &v) {
+    v.JointRuntimePoints.clear();
     v.GrappleMode=j.value("GrappleMode",0);
     v.CombatSightRange=j.value("CombatSightRange",60.);v.CombatHealth=j.value("CombatHealth",0.);v.CombatTeam=j.value("CombatTeam",2);v.CombatBoss=j.value("CombatBoss",false);v.CombatAutoAttack=j.value("CombatAutoAttack",false);v.CombatPursuit=j.value("CombatPursuit",false);v.CombatControlEffect=j.value("CombatControlEffect",-1);
     v.GameplayRole=j.value("GameplayRole",std::string("none"));v.GameplayKey=j.value("GameplayKey",std::string{});
@@ -73,6 +113,7 @@ void from_json(const json &j, Character &v) {
         else
             v.Sculpt = j.at("Sculpt").get<SculptMesh>();
     }
+    if(j.contains("LightningTargetId"))j.at("LightningTargetId").get_to(v.LightningTargetId);
     if (j.contains("TargetX"))
         j.at("TargetX").get_to(v.TargetX);
     if (j.contains("TargetY"))
@@ -85,6 +126,45 @@ void from_json(const json &j, Character &v) {
         j.at("Dynamic").get_to(v.Dynamic);
     if (j.contains("Density"))
         j.at("Density").get_to(v.Density);
+    if(j.contains("VelocityX"))j.at("VelocityX").get_to(v.VelocityX);
+    if(j.contains("VelocityY"))j.at("VelocityY").get_to(v.VelocityY);
+    if(j.contains("VelocityZ"))j.at("VelocityZ").get_to(v.VelocityZ);
+    if(j.contains("AngularVelocityX"))j.at("AngularVelocityX").get_to(v.AngularVelocityX);
+    if(j.contains("AngularVelocityY"))j.at("AngularVelocityY").get_to(v.AngularVelocityY);
+    if(j.contains("AngularVelocityZ"))j.at("AngularVelocityZ").get_to(v.AngularVelocityZ);
+    if(j.contains("JointAngleMin"))j.at("JointAngleMin").get_to(v.JointAngleMin);
+    if(j.contains("JointAngleMax"))j.at("JointAngleMax").get_to(v.JointAngleMax);
+    if(j.contains("JointSegments"))v.JointSegments=native_int(j.at("JointSegments"));
+    if(j.contains("JointRadius"))j.at("JointRadius").get_to(v.JointRadius);
+    if(j.contains("CombatProjectileSpeed"))j.at("CombatProjectileSpeed").get_to(v.CombatProjectileSpeed);
+    if(j.contains("CombatProjectileGravity"))j.at("CombatProjectileGravity").get_to(v.CombatProjectileGravity);
+    if(j.contains("CombatProjectileMass"))j.at("CombatProjectileMass").get_to(v.CombatProjectileMass);
+    if(j.contains("JointKind"))v.JointKind=native_int(j.at("JointKind"));
+    if(j.contains("JointTargetId"))j.at("JointTargetId").get_to(v.JointTargetId);
+    if(j.contains("JointX"))j.at("JointX").get_to(v.JointX);
+    if(j.contains("JointY"))j.at("JointY").get_to(v.JointY);
+    if(j.contains("JointZ"))j.at("JointZ").get_to(v.JointZ);
+    if(j.contains("JointTargetX"))j.at("JointTargetX").get_to(v.JointTargetX);
+    if(j.contains("JointTargetY"))j.at("JointTargetY").get_to(v.JointTargetY);
+    if(j.contains("JointTargetZ"))j.at("JointTargetZ").get_to(v.JointTargetZ);
+    if(j.contains("JointAxisX"))j.at("JointAxisX").get_to(v.JointAxisX);
+    if(j.contains("JointAxisY"))j.at("JointAxisY").get_to(v.JointAxisY);
+    if(j.contains("JointAxisZ"))j.at("JointAxisZ").get_to(v.JointAxisZ);
+    if(j.contains("JointLength"))j.at("JointLength").get_to(v.JointLength);
+    if(j.contains("JointFrequency"))j.at("JointFrequency").get_to(v.JointFrequency);
+    if(j.contains("JointDamping"))j.at("JointDamping").get_to(v.JointDamping);
+    if(j.contains("LightningDamage"))j.at("LightningDamage").get_to(v.LightningDamage);
+    if(j.contains("LightningChainRadius"))j.at("LightningChainRadius").get_to(v.LightningChainRadius);
+    if(j.contains("LightningChains"))v.LightningChains=native_int(j.at("LightningChains"));
+    if(j.contains("ParticleRate"))j.at("ParticleRate").get_to(v.ParticleRate);
+    if(j.contains("ParticleLifetime"))j.at("ParticleLifetime").get_to(v.ParticleLifetime);
+    if(j.contains("ParticleDrag"))j.at("ParticleDrag").get_to(v.ParticleDrag);
+    if(j.contains("ParticleLift"))j.at("ParticleLift").get_to(v.ParticleLift);
+    if(j.contains("ParticleWindX"))j.at("ParticleWindX").get_to(v.ParticleWindX);
+    if(j.contains("ParticleWindY"))j.at("ParticleWindY").get_to(v.ParticleWindY);
+    if(j.contains("ParticleWindZ"))j.at("ParticleWindZ").get_to(v.ParticleWindZ);
+    if(j.contains("Friction"))j.at("Friction").get_to(v.Friction);
+    if(j.contains("Restitution"))j.at("Restitution").get_to(v.Restitution);
     if (j.contains("Surface"))
         v.Surface = native_int(j.at("Surface"));
     if (j.contains("LightCone"))
@@ -150,12 +230,13 @@ void from_json(const json& j,QuestDefinition& q){
 }
 void to_json(json &j, const GameSettings &v) {
     j={{"Preset",v.Preset},{"SpawnX",v.SpawnX},{"SpawnY",v.SpawnY},{"SpawnZ",v.SpawnZ},
-       {"MoveSpeed",v.MoveSpeed},{"LookSensitivity",v.LookSensitivity},{"PlayerRadius",v.PlayerRadius},{"Collision",v.Collision},{"ReducedCameraMotion",v.ReducedCameraMotion},{"SightRange",v.SightRange}};
+       {"ProjectileMass",v.ProjectileMass},{"ProjectileSpeed",v.ProjectileSpeed},{"ProjectileGravity",v.ProjectileGravity},{"MoveSpeed",v.MoveSpeed},{"LookSensitivity",v.LookSensitivity},{"PlayerRadius",v.PlayerRadius},{"Collision",v.Collision},{"ReducedCameraMotion",v.ReducedCameraMotion},{"SightRange",v.SightRange}};
 }
 void from_json(const json &j, GameSettings &v) {
     if(!j.is_object())throw std::runtime_error("Expected game settings object");
     v.Preset=j.value("Preset",v.Preset);v.SpawnX=j.value("SpawnX",v.SpawnX);
     v.SpawnY=j.value("SpawnY",v.SpawnY);v.SpawnZ=j.value("SpawnZ",v.SpawnZ);
+    v.ProjectileMass=j.value("ProjectileMass",.02);v.ProjectileSpeed=j.value("ProjectileSpeed",0.);v.ProjectileGravity=j.value("ProjectileGravity",0.);
     v.MoveSpeed=j.value("MoveSpeed",v.MoveSpeed);v.LookSensitivity=j.value("LookSensitivity",v.LookSensitivity);
     v.PlayerRadius=j.value("PlayerRadius",v.PlayerRadius);v.Collision=j.value("Collision",v.Collision);
     v.ReducedCameraMotion=j.value("ReducedCameraMotion",false);v.SightRange=j.value("SightRange",60.);

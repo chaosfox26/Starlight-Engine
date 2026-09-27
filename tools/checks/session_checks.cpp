@@ -1,3 +1,4 @@
+#include "solid_fixture.hpp"
 #include "native_session.hpp"
 #include "physics.hpp"
 #include "projects.hpp"
@@ -154,6 +155,25 @@ int wmain(int argc, wchar_t **argv) {
       require(scene.Characters[0].Y < 1 && scene.Characters[0].Y > -.5 &&
                   scene.Characters[0].PhysicsRotation.has_value(),
               "Dynamic rock falls and rests on terrain");
+    }
+    if(component==L"physics-behavior"){
+      SceneData constrained;Character body;body.Shape="cube";body.Dynamic=true;body.X=3;body.Y=4;body.JointKind=1;constrained.Characters={body};PhysicsSession physics;physics.reset(constrained);
+      auto waitReady=[&]{auto end=GetTickCount64()+10000;while(!physics.ready()&&GetTickCount64()<end)std::this_thread::sleep_for(std::chrono::milliseconds(1));require(physics.ready(),"Constraint terrain preparation completes");};waitReady();
+      for(int i=0;i<180;++i)physics.step(constrained,1./60.,nullptr);
+      require(std::abs(constrained.Characters[0].Y-4)<.03,"Standalone fixed constraints hold against gravity");
+      constrained.Characters[0].JointKind=0;physics.reset(constrained);waitReady();for(int i=0;i<180;++i)physics.step(constrained,1./60.,nullptr);
+      require(constrained.Characters[0].Y<.2,"Reset removes old constraints before rebuilding bodies");
+      constrained.Characters[0].Y=4;constrained.Characters[0].VelocityX=2;constrained.Characters[0].AngularVelocityY=90;physics.reset(constrained);waitReady();for(int i=0;i<15;++i)physics.step(constrained,1./60.,nullptr);require(constrained.Characters[0].X>3.4&&std::abs((*constrained.Characters[0].PhysicsRotation)[1])>.1,"Standalone bodies apply authored translation and spin");
+      constrained.Characters[0]=body;auto& rope=constrained.Characters[0];rope.Size=.2;rope.Density=1000;rope.JointKind=3;rope.JointSegments=12;rope.JointY=1;rope.JointTargetY=2.2;rope.JointLength=2;physics.reset(constrained);waitReady();for(int i=0;i<180;++i)physics.step(constrained,1./60.,nullptr);require(rope.JointRuntimePoints.size()==13&&rope.Y>3.85,"Standalone rope links carry their load and publish interpolated paths");
+      rope.JointKind=0;physics.reset(constrained);waitReady();for(int i=0;i<180;++i)physics.step(constrained,1./60.,nullptr);require(rope.JointRuntimePoints.empty()&&rope.Y<.2,"Standalone reset removes rope constraints and collision links");
+      SceneData imported;Character model;model.Asset=utf8(solid_glb_fixture(output).wstring());model.Dynamic=true;model.X=3;model.Y=3;imported.Characters={model};physics.reset(imported);waitReady();for(int i=0;i<180;++i)physics.step(imported,1./60.,nullptr);require(imported.Characters[0].Y<.2&&imported.Characters[0].PhysicsRotation.has_value(),"Standalone physics simulates imported solid meshes instead of skipping them");
+      SceneData stack;for(int i=0;i<4;++i){Character cube;cube.Shape="cube";cube.Dynamic=true;cube.Y=i*1.03;cube.Friction=.8;stack.Characters.push_back(cube);}physics.reset(stack);waitReady();for(int i=0;i<480;++i)physics.step(stack,1./60.,nullptr);bool stable=true;for(int i=0;i<4;++i)stable&=std::abs(stack.Characters[i].Y-i)<.08&&std::abs(stack.Characters[i].X)<.08&&std::abs(stack.Characters[i].Z)<.08;require(stable,"Four-body stack settles without sinking, separation or lateral drift");
+      SceneData fast;Character wall;wall.Shape="cube";wall.Width=.05;wall.Height=4;wall.Depth=4;Character bullet;bullet.Shape="cube";bullet.Dynamic=true;bullet.Size=.15;bullet.X=-3;bullet.Y=1;bullet.VelocityX=200;fast.Characters={wall,bullet};physics.reset(fast);waitReady();for(int i=0;i<6;++i)physics.step(fast,1./60.,nullptr);require(fast.Characters[1].X<.15,"Continuous rigid-body collision stops a fast body at a thin wall");
+      SceneData hinge;Character arm;arm.Shape="cube";arm.Dynamic=true;arm.Y=3;arm.JointKind=2;arm.JointAngleMin=-15;arm.JointAngleMax=15;arm.AngularVelocityY=240;hinge.Characters={arm};physics.reset(hinge);waitReady();for(int i=0;i<120;++i)physics.step(hinge,1./60.,nullptr);auto rotation=*hinge.Characters[0].PhysicsRotation;require(std::abs(rotation[1])<.15&&std::abs(hinge.Characters[0].Y-3)<.05,"Hinge angular limits resist authored spin while holding the pivot");
+      arm.JointKind=6;arm.JointAxisX=1;arm.JointAxisY=0;arm.JointLength=1;arm.AngularVelocityY=0;arm.VelocityX=4;hinge.Characters={arm};physics.reset(hinge);waitReady();for(int i=0;i<120;++i)physics.step(hinge,1./60.,nullptr);require(hinge.Characters[0].X<=1.05&&std::abs(hinge.Characters[0].Y-3)<.05,"Slider travel limits stop momentum and exclude off-axis gravity");
+      SceneData routed;Character pusher;pusher.Shape="cube";pusher.Height=2;pusher.X=-2;pusher.Route={{3,0}};pusher.Speed=1;Character crate;crate.Shape="cube";crate.Size=.4;crate.Dynamic=true;crate.Density=100;crate.X=0;routed.Characters={pusher,crate};physics.reset(routed);waitReady();for(int i=0;i<240;++i)physics.step(routed,1./60.,nullptr);require(routed.Characters[1].X>1,"Standalone routed collision bodies push dynamic props along their visible path");require(routed.Characters[0].X==-2&&routed.Characters[0].Route.size()==1&&!routed.Characters[0].PhysicsRotation,"Kinematic simulation preserves authored route origins and headings");
+      SceneData flowing;Character floater;floater.Shape="cube";floater.Dynamic=true;floater.Size=.4;floater.Density=500;floater.X=-.25;floater.Y=1.8;flowing.Characters={floater};physics.reset(flowing);waitReady();TerrainData flat;auto currentFlow=std::make_unique<TerrainFlow>(flat,std::vector<LiquidSource>{});for(int i=0;i<180;++i){currentFlow->water.fill(2);for(int z=0;z<48;++z)for(int x=0;x<24;++x)currentFlow->water[z*48+x]=3;currentFlow->step(1./60.);physics.step(flowing,1./60.,currentFlow.get());}require(flowing.Characters[0].X>-.20,"Standalone buoyancy uses liquid transport velocity to carry floating objects");
+      atomic_write(output / "physics-behavior.json",json{{"pass",true},{"checks",checks}}.dump(2));return 0;
     }
     if (component == L"physics") {
       json samples = json::array();

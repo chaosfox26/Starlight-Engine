@@ -4,11 +4,13 @@
 #include "ray_reconstruction.h"
 
 // Owned by one native render thread. Descriptor tables and upload data are per fence slot.
-struct DxrItem {uint64_t key;const Mesh* mesh;XMFLOAT4X4 world;XMFLOAT4 color;};
+struct DxrItem {uint64_t key;const Mesh* mesh;XMFLOAT4X4 world;XMFLOAT4 color;uint64_t motionKey=0;};
 struct DxrPass {
+ static_assert(sizeof(Vertex)==56,"DXR shader vertex history layout must match native uploads");
+ std::map<uint64_t,XMFLOAT4X4> previousWorldByKey;
  struct Blas {ComPtr<ID3D12Resource> result;UINT vertex=0,index=0;};
  struct Instance {XMFLOAT4X4 world,normal,previousWorld;XMFLOAT4 color;UINT meta[4];};
- struct Constants {XMFLOAT4X4 inverse;XMFLOAT4 eyeTime,sun,ambient,pos[32],color[32],dir[32],smoke[16];UINT settings[4];XMFLOAT4 frame;UINT sequence[4];XMFLOAT4X4 previousVP,view,previousView;};
+ struct Constants {XMFLOAT4X4 inverse;XMFLOAT4 eyeTime,sun,ambient,pos[32],color[32],dir[32],smoke[16];UINT settings[4];XMFLOAT4 frame;UINT sequence[4];XMFLOAT4X4 previousVP,view,previousView,currentVP;};
  static constexpr UINT stride=(sizeof(Constants)+255)&~255;
  ComPtr<ID3D12Device5> device;ComPtr<ID3D12GraphicsCommandList4> command;
  ComPtr<ID3D12RootSignature> signature;ComPtr<ID3D12PipelineState> trace,prefilter,temporal,atrous,composite;
@@ -105,7 +107,7 @@ struct DxrPass {
   uint64_t hash=1469598103934665603ull;auto mix=[&](const void* p,size_t n){auto bytes=(const uint8_t*)p;for(size_t i=0;i<n;i++){hash^=bytes[i];hash*=1099511628211ull;}};
   // Upload heaps may be write-combined: never hash/read or bitfield-update them in place.
   for(UINT i=0;i<count;i++){
-   auto& item=items[i];auto& b=cache.at(item.key);Instance entry{};entry.world=item.world;entry.previousWorld=previousItems.size()==items.size()&&previousItems[i].key==item.key?previousItems[i].world:item.world;
+   auto& item=items[i];auto& b=cache.at(item.key);Instance entry{};entry.world=item.world;auto previous=previousWorldByKey.find(item.motionKey);entry.previousWorld=item.motionKey&&previous!=previousWorldByKey.end()?previous->second:item.world;
    XMStoreFloat4x4(&entry.normal,XMMatrixTranspose(XMMatrixInverse(nullptr,XMLoadFloat4x4(&item.world))));entry.color=item.color;entry.meta[0]=b.vertex;entry.meta[1]=b.index;
    D3D12_RAYTRACING_INSTANCE_DESC instance{};for(UINT row=0;row<3;row++)for(UINT col=0;col<4;col++)instance.Transform[row][col]=item.world.m[col][row];instance.InstanceID=i;instance.InstanceMask=255;instance.Flags=D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE;instance.AccelerationStructure=b.result->GetGPUVirtualAddress();
    mix(&entry.world,sizeof(entry.world));mix(&entry.color,sizeof(entry.color));memcpy(data+i,&entry,sizeof(entry));memcpy(desc+i,&instance,sizeof(instance));
@@ -119,12 +121,12 @@ struct DxrPass {
   Constants c{};XMStoreFloat4x4(&c.inverse,XMMatrixInverse(nullptr,d.viewProjNoJit));c.eyeTime={d.camWorld.x,d.camWorld.y,d.camWorld.z,time};c.sun=light.lightDir;c.ambient=light.ambient;for(UINT i=0;i<32;i++)if(light.spots[i].pos.w>0){UINT j=c.settings[3]++;c.pos[j]=light.spots[i].pos;c.color[j]=light.spots[i].color;c.dir[j]=light.spots[i].dir;}for(size_t i=0;i<smoke.size()&&i<16;i++)c.smoke[i]=smoke[i];c.settings[0]=active;c.settings[1]=bounces;c.frame={(float)d.w,(float)d.h,density,(float)smoke.size()};
 
   XMMATRIX view=XMMatrixLookAtRH(XMLoadFloat3(&d.editorEye),XMLoadFloat3(&d.editorTarget),XMLoadFloat3(&d.editorUp));
-  XMFLOAT4X4 projection;XMStoreFloat4x4(&projection,XMMatrixInverse(nullptr,view)*d.viewProjNoJit);XMStoreFloat4x4(&c.view,view);c.previousVP=previousVP;c.previousView=previousView;
+  XMFLOAT4X4 projection;XMStoreFloat4x4(&projection,XMMatrixInverse(nullptr,view)*d.viewProjNoJit);XMStoreFloat4x4(&c.view,view);c.previousVP=previousVP;c.previousView=previousView;XMStoreFloat4x4(&c.currentVP,d.viewProjNoJit);
   uint64_t topology=1469598103934665603ull;for(auto& item:items){topology^=item.key;topology*=1099511628211ull;}
   float dx=d.camWorld.x-previousEye.x,dy=d.camWorld.y-previousEye.y,dz=d.camWorld.z-previousEye.z;
   bool reset=!historyValid||lastTopology!=topology||previousMode!=denoiserMode||previousTier!=active||previousBounces!=bounces||dx*dx+dy*dy+dz*dz>9;
   mix(&c.inverse,sizeof(c.inverse));mix(&c.sun,sizeof(c.sun));mix(&c.ambient,sizeof(c.ambient));mix(c.pos,sizeof(c.pos));mix(c.color,sizeof(c.color));mix(c.dir,sizeof(c.dir));mix(c.smoke,sizeof(c.smoke));mix(c.settings,sizeof(c.settings));mix(&c.frame,sizeof(c.frame));
-  if(hash!=lastHash||animated){samples=0;historyResets++;}lastHash=hash;c.settings[2]=samples;c.sequence[0]=(UINT)d.frameIndex;c.sequence[1]=reset?1:0;c.sequence[2]=animated?1:0;
+  if(hash!=lastHash||animated){samples=0;historyResets++;}lastHash=hash;c.settings[2]=samples;c.sequence[0]=(UINT)d.frameIndex;c.sequence[1]=reset?1:0;c.sequence[2]=animated?1:0;c.sequence[3]=light.motionTime.z>0?1:0;
   memcpy(constantMap+slot*stride,&c,sizeof(c));
   auto bind=[&]{ID3D12DescriptorHeap* hs[]={heaps[slot].Get()};command->SetDescriptorHeaps(1,hs);command->SetComputeRootSignature(signature.Get());command->SetComputeRootShaderResourceView(0,tlas->GetGPUVirtualAddress());command->SetComputeRootShaderResourceView(1,vertices->GetGPUVirtualAddress());command->SetComputeRootShaderResourceView(2,indices->GetGPUVirtualAddress());command->SetComputeRootShaderResourceView(3,instanceUpload->GetGPUVirtualAddress()+slot*kMaxInstances*sizeof(Instance));command->SetComputeRootConstantBufferView(4,constants->GetGPUVirtualAddress()+slot*stride);command->SetComputeRootDescriptorTable(5,heaps[slot]->GetGPUDescriptorHandleForHeapStart());};
   auto dispatch=[&](ID3D12PipelineState* pipeline,UINT iteration){UINT constants[2]={iteration,historyParity};command->SetComputeRoot32BitConstants(6,2,constants,0);command->SetPipelineState(pipeline);command->Dispatch((d.w+7)/8,(d.h+7)/8,1);};
@@ -146,7 +148,7 @@ struct DxrPass {
    for(UINT iteration=0;iteration<3;iteration++){UINT dest=iteration==1?21:19;imageState(d,dest,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);imageState(d,dest+1,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);dispatch(atrous.Get(),iteration);imageState(d,dest,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);imageState(d,dest+1,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);}
    imageState(d,23,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);dispatch(composite.Get(),0);imageState(d,23,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
   }
-  historyValid=true;historyParity=1-historyParity;lastTopology=topology;previousMode=denoiserMode;previousTier=active;previousBounces=bounces;previousItems=items;XMStoreFloat4x4(&previousVP,d.viewProjNoJit);previousView=c.view;previousEye=d.camWorld;
+  historyValid=true;historyParity=1-historyParity;lastTopology=topology;previousMode=denoiserMode;previousTier=active;previousBounces=bounces;previousItems=items;previousWorldByKey.clear();for(const auto& item:items)if(item.motionKey)previousWorldByKey[item.motionKey]=item.world;XMStoreFloat4x4(&previousVP,d.viewProjNoJit);previousView=c.view;previousEye=d.camWorld;
   command->EndQuery(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,slot*4+3);command->ResolveQueryData(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,slot*4,4,readback.Get(),slot*4*sizeof(UINT64));timed[slot]=true;samples=std::min(samples+1,1024u);return images[23].Get();
  }
 };
