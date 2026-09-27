@@ -411,18 +411,23 @@ static void BuildHeart(Mesh& m, int seg = 64) {
 struct SmoothXf { float x = 0, z = 0, y = 0, yaw = 0; bool init = false; };
 
 #include "persistent_workers.h"
+#include "parallel_metrics.h"
 struct RenderDevice {
     PersistentWorkers persistentWorkers;
+    ParallelMetrics parallelMetrics;
     int persistentWorkerMode = -1; // persistent default; external legacy comparison override
     void parallelFor(int count, unsigned nthreads, const std::function<void(int,int,int)>& fn) {
         if (persistentWorkerMode < 0) {
             wchar_t value[8]{};
             persistentWorkerMode = !(GetEnvironmentVariableW(L"STARLIGHT_EXPERIMENT_PERSISTENT_WORKERS", value, 8) && value[0] == L'0');
         }
-        if (!persistentWorkerMode) { ::parallelFor(count,nthreads,fn); return; }
-        if (nthreads <= 1 || count < kPoolFloor) { if(count>0) fn(0,count,0); return; }
-        const unsigned threads = std::min(nthreads, (unsigned)((count+kPoolMinChunk-1)/kPoolMinChunk));
-        persistentWorkers.run(count,threads,fn);
+        unsigned threads=(nthreads<=1 || count<kPoolFloor)?1u:
+            std::min(nthreads,unsigned((count+kPoolMinChunk-1)/kPoolMinChunk));
+        parallelMetrics.run(count,threads,[&](const auto& measured){
+            if(!persistentWorkerMode)::parallelFor(count,nthreads,measured);
+            else if(threads==1){if(count>0)measured(0,count,0);}
+            else persistentWorkers.run(count,threads,measured);
+        },fn);
     }
 
     // One request when a project opens; never fight a user's later Alt-Tab.
@@ -446,6 +451,8 @@ struct RenderDevice {
 
     // Shared native-rendering ceiling. Applies regardless of VSync/benchmark mode.
     unsigned frameRateLimit = 0; // supplied by the selected external settings
+    double measuredFenceWaitMs=0,measuredPacingWaitMs=0,measuredPresentWaitMs=0;
+    static double timingNow(){LARGE_INTEGER q,f;QueryPerformanceCounter(&q);QueryPerformanceFrequency(&f);return double(q.QuadPart)/f.QuadPart;}
     HANDLE framePacingTimer = nullptr;
     LONGLONG lastFrameStart = 0, pacingFrequency = 0;
     virtual ~RenderDevice() { if (framePacingTimer) CloseHandle(framePacingTimer); if (frameLatencyWaitable) CloseHandle(frameLatencyWaitable); if (fenceEvent) CloseHandle(fenceEvent); }
@@ -489,15 +496,22 @@ struct RenderDevice {
         QueryPerformanceCounter(&now);
         const LONGLONG interval = (pacingFrequency + frameRateLimit - 1) / frameRateLimit;
         if (lastFrameStart) {
+            const double waitStarted=timingNow();
             const LONGLONG deadline = lastFrameStart + interval;
             while (now.QuadPart < deadline) {
+                // Avoid putting the thread to sleep for the final fraction of
+                // a millisecond, where scheduler wake-up variance exceeds the
+                // requested wait. The bounded spin never changes the cap.
+                const LONGLONG guard=std::max<LONGLONG>(1,pacingFrequency/4000);
+                if(deadline-now.QuadPart<=guard){YieldProcessor();QueryPerformanceCounter(&now);continue;}
                 LARGE_INTEGER due{};
-                due.QuadPart = -((deadline - now.QuadPart) * 10000000 + pacingFrequency - 1) / pacingFrequency;
+                due.QuadPart = -((deadline - now.QuadPart - guard) * 10000000 + pacingFrequency - 1) / pacingFrequency;
                 if (!SetWaitableTimer(framePacingTimer, &due, 0, nullptr, nullptr, FALSE) ||
                     WaitForSingleObject(framePacingTimer, INFINITE) != WAIT_OBJECT_0)
                     throw std::runtime_error("Frame pacing wait failed");
                 QueryPerformanceCounter(&now);
             }
+            measuredPacingWaitMs+=(timingNow()-waitStarted)*1000;
         }
         // Reset to actual start: never catch up with a burst after a slow frame.
         lastFrameStart = now.QuadPart;
@@ -763,9 +777,11 @@ struct RenderDevice {
     }
     void waitFence(UINT64 v) {
         if (fence->GetCompletedValue() < v) {
+            const double waitStarted=timingNow();
             must(fence->SetEventOnCompletion(v, fenceEvent), "arm GPU completion");
             if (WaitForSingleObject(fenceEvent, INFINITE) != WAIT_OBJECT_0)
                 throw std::runtime_error("Wait for GPU completion failed");
+            measuredFenceWaitMs+=(timingNow()-waitStarted)*1000;
         }
     }
     // --d3ddebug: pull every queued D3D12 / DXGI debug-layer message into the log (once per frame + at exit)
@@ -1877,7 +1893,7 @@ struct RenderDevice {
     XMFLOAT3 editorUp{0,1,0};
     void renderEmpty(HWND hwnd) {
         (void)hwnd;
-        if (frameLatencyWaitable && !auditOffscreen) WaitForSingleObject(frameLatencyWaitable, 1000);
+        if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}
         paceFrame();
         uint64_t now = GetTickCount64();
         float dt = lastTick ? (now-lastTick)*0.001f : 0.016f; lastTick=now;

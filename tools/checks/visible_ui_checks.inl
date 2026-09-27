@@ -65,12 +65,12 @@ int visible_ui_checks(const fs::path& output) {
         ULONGLONG newFramesMs=0;
         while (GetTickCount64()<end) { pump(false); stayedForeground &= foreground();
             if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
-            Sleep(10); }
+            MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         // Require new rendered frames after a transition,
         // rather than capturing a blank intermediate surface and calling it done.
         const auto renderDeadline=GetTickCount64()+10000;
         while(renderer->status().frames<initialFrames+3 && renderer->status().error.empty() &&
-              GetTickCount64()<renderDeadline) { pump(false); stayedForeground &= foreground(); Sleep(10); }
+              GetTickCount64()<renderDeadline) { pump(false); stayedForeground &= foreground(); MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
         auto screenshot=output.parent_path()/("ui-"+std::to_string(report["checks"].size())+".bmp");
         const bool behavior=valid(), captured=stayedForeground && capture(screenshot);
@@ -97,7 +97,7 @@ int visible_ui_checks(const fs::path& output) {
             if(!foreground())throw std::runtime_error("Test window lost focus; stopped without retry. User direction required.");
             if(renderer->status().frames<3)stableSince=GetTickCount64();
             if (GetTickCount64()-stableSince>=1500) break;
-            Sleep(10);
+            MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
         }
         const auto startup = renderer->status();
         DWORD foregroundProcess = 0;
@@ -188,6 +188,11 @@ int visible_ui_checks(const fs::path& output) {
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_BATTLE_ONLY",nullptr,0)){
             MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
             SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            const bool pacingTest=GetEnvironmentVariableW(L"STARLIGHT_UI_PACING",nullptr,0)>0;
+            if(pacingTest){
+                if(monitor.rcMonitor.right-monitor.rcMonitor.left!=2560 || monitor.rcMonitor.bottom-monitor.rcMonitor.top!=1440)throw std::runtime_error("Pacing test requires a 2560x1440 monitor; display settings were not changed");
+                pacingShown=true;renderer->pacing_enabled(true);report["fullscreen1440p"]=true;
+            }
             scene=SceneData{};scene.Name="Mock battle - live movement and cones";scene.Game.emplace();scene.Game->SpawnZ=0;
             Character enemy;enemy.Shape="cube";enemy.X=1;enemy.Z=-2.5;enemy.CombatHealth=1000;enemy.CombatBoss=true;enemy.CombatPursuit=true;enemy.CombatAutoAttack=true;scene.Characters={enemy};
             history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
@@ -203,6 +208,10 @@ int visible_ui_checks(const fs::path& output) {
                 },[&]{auto p=adventure->presentation();both|=p.showTelegraph && !p.actorTelegraphs.empty();return adventure->health()>0 && adventure->combat_actors().at(enemy.Id).health>0;});
             }
             mockBattle=false;
+            if(pacingTest){auto timing=renderer->pacing_snapshot();json objects=json::array();for(const auto& o:timing.objects)objects.push_back({{"name",o.name},{"id",o.id},{"poseUpdatesPerSecond",o.updatesPerSecond},{"unchangedMs",o.unchangedMs},{"moving",o.moving}});
+                report["pacing"]={{"renderFps",timing.fps},{"p50Ms",timing.p50},{"p95Ms",timing.p95},{"p99Ms",timing.p99},{"worstMs",timing.worst},{"frameMs",timing.frameMs},{"objects",objects},{"scope","Last two seconds; CPU render completion and object transforms"}};
+                if(timing.frameMs.size()<10 || timing.objects.size()<3)throw std::runtime_error("Pacing monitor did not collect frames and objects");
+            }
             report["simultaneousTelegraphs"]=both;
             report["playerDamaged"]=adventure->health()<100;
             report["enemyDamaged"]=adventure->combat_actors().at(enemy.Id).health<startingEnemy;
@@ -259,6 +268,21 @@ int visible_ui_checks(const fs::path& output) {
             step("Released cycle never repeats",[&]{},[&]{return !adventure->basic_attack().held && !adventure->basic_attack().winding;});
             step("Fragment cleanup remains cosmetic",[&]{},[&]{return adventure->scene().Characters.empty() && scene.encode()==authored;});
             step("Fragments expire without gameplay objects",[&]{},[&]{return adventure->presentation().fragments.empty() && adventure->scene().Characters.empty();});
+            report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_WEAPONS_ONLY",nullptr,0)){
+            scene=SceneData{};scene.Name="Weapon and sound presentation";scene.Game.emplace();scene.Game->SpawnZ=0;scene.Terrain.emplace();
+            Character target;target.Shape="cube";target.Width=2;target.Height=2;target.Depth=1;target.Z=-4;target.GameplayRole="breakable";scene.Characters={target};
+            auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
+            step("Third-person dual pistols",[&]{adventure->cameraDistance=4;adventure->cameraPitch=-.25;},[&]{return adventure->presentation().showBody && adventure->presentation().showWeapons;});
+            step("First-person pistols below aim",[&]{adventure->cameraDistance=0;},[&]{return !adventure->presentation().showBody && adventure->presentation().showWeapons;});
+            auto soundsBefore=gameplayAudio.submitted;
+            step("Committed attack begins",[&]{adventure->fire_button(true);adventure->fire_button(false);},[&]{return adventure->basic_attack().winding && adventure->presentation().shots==0;});
+            step("Committed attack continues",[&]{},[&]{return adventure->basic_attack().winding;});
+            step("Shot and shatter submit original sounds",[&]{},[&]{return adventure->presentation().shots==1 && adventure->presentation().shatters==1 && gameplayAudio.submitted>=soundsBefore+2 && gameplayAudio.failed==0 && scene.encode()==authored;});
+            soundsBefore=gameplayAudio.submitted;
+            step("Stun birds submit chirps",[&]{adventure->cameraDistance=4;adventure->apply_control(ControlEffect::Stun,{2,true},true);},[&]{return gameplayAudio.submitted>soundsBefore && gameplayAudio.failed==0;});
+            report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;
             report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
         }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_MOVEMENT_ONLY",nullptr,0)){

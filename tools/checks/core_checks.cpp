@@ -3,6 +3,7 @@
 #include "mesh.hpp"
 #include "platform.hpp"
 #include "render_scene.hpp"
+#include "../../deep/engine/persistent_workers.h"
 #include "assets.hpp"
 #include "interactions.hpp"
 #include "object_template.hpp"
@@ -10,6 +11,9 @@
 #include "adventure.hpp"
 #include "grapple_motion.hpp"
 #include "player_presentation.hpp"
+#include "gameplay_audio.hpp"
+#include "frame_pacing.hpp"
+#include "pacing_log.hpp"
 #include "combat_control.hpp"
 #include "quest_model.hpp"
 #include "object_behaviors.hpp"
@@ -28,6 +32,67 @@ int main(int argc, char **argv) {
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
     try {
+        {
+            FramePacingMonitor monitor;
+            for(int i=0;i<=400;i++){
+                double t=i/400.;monitor.frame(t);
+                monitor.pose("moving","Moving",{}, {double(i/8)},t);
+                monitor.pose("static","Static",{}, {0},t);
+            }
+            auto snapshot=monitor.snapshot(1);
+            require(std::abs(snapshot.fps-400)<.01,"Frame pacing samples completed frames independently of pose changes");
+            require(std::abs(snapshot.p99-2.5)<.001,"Frame pacing percentiles preserve individual intervals");
+            auto moving=std::find_if(snapshot.objects.begin(),snapshot.objects.end(),[](const auto& o){return o.id=="moving";});
+            auto stationary=std::find_if(snapshot.objects.begin(),snapshot.objects.end(),[](const auto& o){return o.id=="static";});
+            require(moving!=snapshot.objects.end() && std::abs(moving->updatesPerSecond-50)<.01,"Object monitor distinguishes 50 pose updates from 400 rendered frames");
+            require(stationary!=snapshot.objects.end() && !stationary->moving,"Static scenery is not classified as slow animation");
+            monitor.frame(1.1);require(monitor.snapshot(1.1).worst>99,"Frame pacing retains a single 100 ms hitch");
+            auto hitched=monitor.snapshot(1.1);
+            require(std::abs(hitched.low1-1000./22.)<.001 && std::abs(hitched.low01-10)<.001,"One-percent lows average the slowest frames rather than substituting a percentile");
+            auto logPath=folder/"pacing-roundtrip.jsonl";
+            {PacingLog log(logPath);log.push(hitched,{{1,1.1,100,3,4,.5}},1.1);}
+            std::ifstream timingFile(logPath);std::string headerLine,sampleLine,endLine;std::getline(timingFile,headerLine);std::getline(timingFile,sampleLine);std::getline(timingFile,endLine);
+            auto sample=json::parse(sampleLine),end=json::parse(endLine);
+            require(sample["frames"].size()==1 && sample["overlay"]["graphMs"].size()==401 && end["type"]=="end" && end["droppedRecords"]==0,"Timing logger drains every queued frame and overlay sample before shutdown");
+
+            monitor.frame(4);require(monitor.snapshot(4).objects.empty(),"Removed object readings expire");
+        }
+
+        {
+            MeshPart a;a.color={.2,.4,.6};a.mesh.vertices={{{0,0,0}},{{1,0,0}},{{0,1,0}}};a.mesh.indices={0,1,2};
+            auto b=a;b.mesh.vertices[0].position.z=1;auto glow=a;glow.emissive=true;
+            auto merged=batch_presentation({a,b,glow});
+            require(merged.size()==2 && merged[0].mesh.vertices.size()==6 && merged[0].mesh.indices==std::vector<int>({0,1,2,3,4,5}) && merged[0].mesh.vertices[3].position.z==1 && merged[1].emissive,"Presentation batching preserves triangle offsets, world positions and emissive separation");
+            AdventurePlayer::Presentation p;p.showBody=false;p.showTelegraph=true;p.attackAim={0,0,-1};p.channelProgress=.5;
+            auto cone=player_presentation(p);for(auto& part:cone)part.mesh.validate();
+            require(cone.size()==2,"Moving cone uses two material batches instead of one allocation per edge");
+        }
+        {
+            SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+            AdventurePlayer player;player.start(level);
+            player.cameraDistance=0;
+            auto initial=player.presentation();
+            require(!initial.showBody && initial.showWeapons && !player_presentation(initial).empty(),"First person shows dual pistols without a body");
+            player.fire_button(true);player.fire_button(false);
+            for(int i=0;i<49;++i)player.move(0,0,.05);
+            require(player.presentation().shots==0 && player.presentation().shotFlash==0,"Weapon effects wait for the committed attack to resolve");
+            player.move(0,0,.05);
+            require(player.presentation().shots==1 && player.presentation().shotFlash>0,"Resolved shot emits one event and a muzzle flash even on a miss");
+            for(int i=0;i<5;++i)player.move(0,0,.05);
+            require(player.presentation().shots==1 && player.presentation().shotFlash==0,"Released attack does not repeat and muzzle flash expires");
+            player.fire_button(true);player.move(0,0,.05);player.cancel_mobility_input();
+            for(int i=0;i<60;++i)player.move(0,0,.05);
+            require(player.presentation().shots==1,"Cancelled windup produces no phantom sound or muzzle flash");
+            player.start(level);
+            require(player.presentation().epoch!=initial.epoch && player.presentation().shots==0 && player.presentation().shotFlash==0,"Restart clears presentation events and changes the audio epoch");
+            player.start(level,false);player.cameraDistance=0;
+            require(!player.presentation().showWeapons && player_presentation(player.presentation()).empty(),"Authoring exploration does not introduce combat weapons");
+            for(auto cue:{GameplayCue::Shot,GameplayCue::Shatter,GameplayCue::Impact,GameplayCue::Chirp}){
+                auto pcm=gameplay_sound(cue);long energy=0;int peak=0;
+                for(auto sample:pcm){peak=std::max(peak,std::abs(int(sample)));energy+=std::abs(int(sample));}
+                require(!pcm.empty() && pcm.front()==0 && std::abs(int(pcm.back()))<2 && peak<7000 && energy>10000,"Synthesized placeholder cue is audible data with bounded gain and click-free endpoints");
+            }
+        }
         {
             GrappleMotion g;MovementResources resources;g.press(resources,true,{0,0,0},{0,0,-20},{0,0,1},false);
             for(int i=0;i<15;i++)g.step({0,0,0},{},1./60.);
@@ -1071,6 +1136,48 @@ int main(int argc, char **argv) {
         Character rock;
         rock.Shape = "chaos-rock";
         render.Characters.push_back(rock);
+        {
+            ParallelMetrics metrics;PersistentWorkers workers;metrics.enabled=true;
+            std::vector<int> visited(300,0);
+            metrics.run(300,3,[&](const auto& callback){workers.run(300,3,callback);},
+                [&](int lo,int hi,int){for(int i=lo;i<hi;++i)++visited[i];});
+            require(std::all_of(visited.begin(),visited.end(),[](int n){return n==1;}) && metrics.reading.parallelBatches==1 && metrics.reading.participants==3 && metrics.reading.items==300 && metrics.reading.chunkMs.size()==3,
+                "Multicore monitor records actual dispatched participants and work without changing results");
+            metrics.reset();
+            metrics.run(10,1,[&](const auto& callback){callback(0,10,0);},[](int,int,int){});
+            require(metrics.reading.serialBatches==1 && metrics.reading.parallelBatches==0 && metrics.reading.participants==1 && metrics.reading.callerWaitMs==0,
+                "Multicore monitor distinguishes serial fallback from parallel execution");
+            metrics.reset();metrics.enabled=false;
+            metrics.run(10,1,[&](const auto& callback){callback(0,10,0);},[](int,int,int){});
+            require(metrics.reading.items==0 && metrics.reading.chunkMs.empty(),"Disabled multicore monitor leaves collection off");
+            PacingSnapshot recorded;recorded.multicore.parallelBatches=2;recorded.multicore.chunkMs={.1,.2};
+            PacingFrameRecord raw;raw.multicore=recorded.multicore;
+            auto logPath=folder/"multicore-roundtrip.jsonl";
+            {PacingLog log(logPath);log.push(recorded,{raw},1);}
+            std::ifstream file(logPath);std::string line;std::getline(file,line);std::getline(file,line);auto sample=json::parse(line);
+            require(sample["overlay"]["multicore"]["parallelBatches"]==2 && sample["frames"][0][18]["chunkMs"][1]==.2,
+                "Continuous log preserves per-frame and overlay worker readings");
+        }
+        {
+            AdventurePlayer::Presentation p;p.showTelegraph=true;p.channelProgress=.6;p.actorTelegraphs.push_back({{2,0,3},{0,0,-1},.5,TelegraphKind::Enemy});
+            BattlePresentationWorkers workers;ParallelWorkReading reading;
+            auto parallel=workers.build(p,reading);
+            require(render_scene(render,nullptr,parallel)==render_scene(render,nullptr,player_presentation(p)) && reading.parallelBatches==1 && reading.participants==2,
+                "Parallel player and boss effects preserve the serial render packet exactly");
+            p.actorTelegraphs.clear();workers.build(p,reading);
+            require(reading.serialBatches==1 && reading.participants==1,"Single battle job avoids waking extra workers");
+        }
+        RenderSceneCache geometryCache;
+        auto overlayParts=shape_geometry(rock);
+        require(render_scene(render,nullptr,overlayParts,&geometryCache)==render_scene(render,nullptr,overlayParts),
+                "Cached static scene plus dynamic effects matches complete render packet");
+        overlayParts.front().mesh.vertices.front().position.x+=.75;
+        require(render_scene(render,nullptr,overlayParts,&geometryCache)==render_scene(render,nullptr,overlayParts),
+                "Changing effects preserve cached scene and identical geometry");
+        render.Characters.front().X+=2;
+        geometryCache.clear();
+        require(render_scene(render,nullptr,{},&geometryCache)==render_scene(render),
+                "Scene edit invalidation refreshes cached geometry");
         auto packet = render_scene(render);
         atomic_write(folder / "native-scene.bin",
                      std::string_view(reinterpret_cast<const char *>(packet.data()), packet.size()));

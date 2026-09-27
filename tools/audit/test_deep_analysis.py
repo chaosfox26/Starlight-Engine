@@ -6,6 +6,14 @@ import knowledge_report as k
 import feature_evidence as fe
 
 def main():
+    movement_sources={'editor/cpp/adventure_controller.hpp':'class AdventureController {};',
+                      'editor/cpp/grapple_motion.hpp':'class GrappleMotion {};',
+                      'editor/cpp/adventure.hpp':'auto velocity = grapple_.step(position, steer, dt);'}
+    movement=next(c for c in a.capability_analysis(movement_sources) if c['title']=='Character movement and grappling')
+    assert not movement['missing']
+    movement_sources['editor/cpp/adventure.hpp']='// grapple was mentioned but is not integrated'
+    movement=next(c for c in a.capability_analysis(movement_sources) if c['title']=='Character movement and grappling')
+    assert movement['missing']==[{'file':'editor/cpp/adventure.hpp','pattern':r'grapple_\.step'}]
     with tempfile.TemporaryDirectory(prefix='starlight-analyzer-test-') as temp:
         base=Path(temp); root=base/'repo'; root.mkdir(); (root/'editor/cpp').mkdir(parents=True)
         data=b'\x00\x01all bytes\xff\r\n'; (root/'blob.dat').write_bytes(data)

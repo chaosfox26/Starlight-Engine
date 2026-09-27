@@ -1,6 +1,24 @@
 #pragma once
 #include "adventure.hpp"
+#include <windows.h>
+#include "../../deep/engine/persistent_workers.h"
+#include "../../deep/engine/parallel_metrics.h"
 namespace starlight::editor {
+// Cosmetic geometry shares world coordinates. Batch equal materials so every
+// moving cone edge does not allocate its own pair of GPU buffers and draw call.
+inline std::vector<MeshPart> batch_presentation(std::vector<MeshPart> parts){
+    std::vector<MeshPart> batches;
+    for(auto& part:parts){
+        auto match=std::find_if(batches.begin(),batches.end(),[&](const MeshPart& b){
+            return b.emissive==part.emissive && b.color.x==part.color.x && b.color.y==part.color.y && b.color.z==part.color.z;
+        });
+        if(match==batches.end()){batches.push_back(std::move(part));continue;}
+        const int offset=static_cast<int>(match->mesh.vertices.size());
+        match->mesh.vertices.insert(match->mesh.vertices.end(),std::make_move_iterator(part.mesh.vertices.begin()),std::make_move_iterator(part.mesh.vertices.end()));
+        for(int index:part.mesh.indices)match->mesh.indices.push_back(index+offset);
+    }
+    return batches;
+}
 // Temporary geometry only: never inserted into gameplay, collision or saved scenes.
 inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presentation& p){
     std::vector<MeshPart> parts;
@@ -62,6 +80,30 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         }
     };
     for(auto at:p.fragments)box(at,{.12,.12,.12},{.65,.8,.9});
+    if(p.showWeapons){
+        // Original temporary dual pistols. First-person geometry follows the
+        // camera basis, while third-person weapons follow the attack facing.
+        const auto forward=(p.showBody?p.attackAim:p.viewAim).unit();
+        auto right=forward.cross(p.showBody?Vec3{0,1,0}:p.viewUp).unit();
+        if(right.length()<.5)right={1,0,0};
+        const auto up=right.cross(forward).unit();
+        const auto base=p.showBody?p.feet+Vec3{0,p.bodyHeight*.68,0}:p.eye-up*.23;
+        auto weaponBox=[&](Vec3 center,Vec3 size,Vec3 color,bool glow=false){
+            Character c;c.Shape="cube";
+            for(auto part:shape_geometry(c)){
+                part.color=color;part.emissive=glow;
+                for(auto& v:part.mesh.vertices){auto q=v.position;v.position=center+right*(q.x*size.x)+up*((q.y-.5)*size.y)+forward*(q.z*size.z);}
+                part.mesh.normals();parts.push_back(std::move(part));
+            }
+        };
+        for(double side:{-1.,1.}){
+            auto grip=base+right*(side*(p.showBody?.32:.24))+forward*(.48-p.shotFlash*.055);
+            weaponBox(grip,{.09,.21,.12},{.10,.14,.20});
+            weaponBox(grip+up*.11+forward*.10,{.12,.12,.34},{.35,.43,.55});
+            weaponBox(grip+up*.12+forward*.29,{.08,.075,.07},{.12,.75,.95},true);
+            if(p.shotFlash>0)weaponBox(grip+up*.12+forward*.37,{.11*p.shotFlash,.11*p.shotFlash,.15},{1,.78,.25},true);
+        }
+    }
     if(p.showBody){
         double height=p.control==ControlEffect::Sleep?.35:p.control==ControlEffect::Knockdown?p.bodyHeight*.6:p.bodyHeight;
         Vec3 sway{};if(p.control==ControlEffect::Stun || p.control==ControlEffect::Disorient)sway={std::sin(p.poseTime*5)*.07,0,std::cos(p.poseTime*5)*.07};
@@ -91,6 +133,40 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         overlay.attackOrigin=actor.origin;overlay.attackAim=actor.aim;overlay.channelProgress=actor.progress;overlay.telegraphKind=actor.kind;
         auto rendered=player_presentation(overlay);parts.insert(parts.end(),std::make_move_iterator(rendered.begin()),std::make_move_iterator(rendered.end()));
     }
-    return parts;
+    return batch_presentation(std::move(parts));
 }
+// Workers read one immutable presentation snapshot and own separate mesh lists.
+// The owner joins them and merges in actor order; combat/physics are not mutated.
+class BattlePresentationWorkers {
+    PersistentWorkers workers_;
+    ParallelMetrics metrics_;
+public:
+    std::vector<MeshPart> build(const AdventurePlayer::Presentation& snapshot,
+                               ParallelWorkReading& reading,bool parallel=true){
+        metrics_.reset();metrics_.enabled=true;
+        const int count=1+int(snapshot.actorTelegraphs.size());
+        unsigned threads=parallel?std::min({unsigned(count),4u,std::max(1u,std::thread::hardware_concurrency())}):1u;
+        std::vector<std::vector<MeshPart>> output(count);
+        metrics_.run(count,threads,[&](const auto& callback){workers_.run(count,threads,callback);},
+            [&](int lo,int hi,int){for(int i=lo;i<hi;++i){
+                if(i==0){auto player=snapshot;player.actorTelegraphs.clear();output[i]=player_presentation(player);}
+                else {const auto& actor=snapshot.actorTelegraphs[i-1];
+                    AdventurePlayer::Presentation effect;effect.showBody=false;effect.showTelegraph=true;
+                    effect.telegraphTerrain=snapshot.telegraphTerrain;effect.telegraphRange=3;effect.telegraphHalfAngle=.7853981633974483;
+                    effect.attackOrigin=actor.origin;effect.attackAim=actor.aim;effect.channelProgress=actor.progress;effect.telegraphKind=actor.kind;
+                    output[i]=player_presentation(effect);
+                }
+            }});
+        reading=metrics_.reading;
+        std::vector<MeshPart> combined;
+        for(auto& parts:output)combined.insert(combined.end(),std::make_move_iterator(parts.begin()),std::make_move_iterator(parts.end()));
+        return batch_presentation(std::move(combined));
+    }
+};
+inline std::vector<MeshPart> battle_presentation(const AdventurePlayer::Presentation& p,ParallelWorkReading& reading){
+    thread_local BattlePresentationWorkers workers;
+    thread_local const bool enabled=[] {wchar_t value[8]{};return !(GetEnvironmentVariableW(L"STARLIGHT_BATTLE_WORKERS",value,8) && value[0]==L'0');}();
+    return workers.build(p,reading,enabled);
+}
+
 }

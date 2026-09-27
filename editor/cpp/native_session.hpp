@@ -1,6 +1,8 @@
 #pragma once
 #include "platform.hpp"
 #include "render_scene.hpp"
+#include "frame_pacing.hpp"
+#include "runtime_timing.hpp"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -38,9 +40,25 @@ class NativeSession {
     bool tools_dirty_ = false;
     std::vector<MeshPart> gameplayOverlays_;
     bool gameplayOverlaysDirty_=false;
+    bool pacingEnabled_=false;
+    std::vector<double> playerPose_;
+    Vec3 playerPosition_{};
+    PacingSnapshot pacingSnapshot_;
+    HWND updateWindow_=nullptr;
+    bool updatePosted_=false;
+    RuntimeTiming runtimeTiming_;
+    uint64_t runtimeSequence_=0,inputSequence_=0;
+    double inputEventTime_=0;
+    int attackCount_=-1;
+    std::vector<std::string> timingEvents_;
     void run(std::stop_token);
 
   public:
+    static constexpr UINT frameUpdateMessage=WM_APP+142;
+    void frame_updates(HWND);
+    void frame_update_handled();
+    void runtime_timing(RuntimeTiming,int attackCount);
+    void input_event();
     NativeSession(HWND, int, int);
     ~NativeSession();
     NativeSession(const NativeSession &) = delete;
@@ -49,6 +67,9 @@ class NativeSession {
     void size(int, int);
     void camera(CameraState);
     void gameplay_overlays(std::vector<MeshPart>);
+    void pacing_enabled(bool);
+    void pacing_player(Vec3,std::vector<double>);
+    PacingSnapshot pacing_snapshot();
     void playback(bool, bool reset = false);
     void gameplay_time(std::optional<double>);
     void playback_options(bool repeat, std::string follow);

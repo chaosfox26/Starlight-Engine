@@ -1,0 +1,85 @@
+// Opt-in foreground acceptance in the actual exported executable. Uses scratch
+// runtime scenes; never saves or modifies the package's authored content.
+int gameplay_checks(const fs::path& output){
+    json report{{"pass",false},{"scope","Packaged foreground movement, combat, control and lifecycle; not clean-Windows certification"},{"checks",json::array()}};
+    fs::create_directories(output.parent_path());gameplayCheck=true;
+    const auto original=authored.encode();
+    auto pump=[&]{MSG msg{};while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){
+        if(msg.message==WM_QUIT || msg.message==WM_CLOSE || (msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE))throw std::runtime_error("Gameplay acceptance cancelled");
+        TranslateMessage(&msg);DispatchMessageW(&msg);
+    }};
+    auto step=[&](const char* name,auto action,auto valid,int ms=650){
+        if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");
+        action();auto frames=renderer->status().frames;auto deadline=GetTickCount64()+ms;
+        while(GetTickCount64()<deadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}
+        const auto renderDeadline=GetTickCount64()+10000;
+        while(renderer->status().frames<frames+3 && renderer->status().error.empty() && GetTickCount64()<renderDeadline){
+            pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+        }
+        auto state=renderer->status();bool pass=valid() && state.frames>=frames+3 && state.error.empty();
+        auto screenshot=output.parent_path()/("gameplay-"+std::to_string(report["checks"].size())+".bmp");
+        const auto captures=state.captures;renderer->capture(screenshot);
+        auto captureDeadline=GetTickCount64()+5000;
+        while(renderer->status().captures==captures && GetTickCount64()<captureDeadline){pump();if(GetForegroundWindow()!=window)throw std::runtime_error("Foreground lost; stopped without retry");MsgWaitForMultipleObjectsEx(0,nullptr,8,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}
+        pass=pass && renderer->status().captures>captures && fs::exists(screenshot);
+        report["checks"].push_back({{"name",name},{"pass",pass},{"foreground",true},{"frames",state.frames},{"rendererError",state.error}});
+        report["checks"].back()["screenshot"]=utf8(screenshot.wstring());
+        atomic_write(output,report.dump(2));if(!pass)throw std::runtime_error(name);
+    };
+    auto load=[&](const SceneData& scene){checkRight=checkForward=0;paused=false;gameplayAudio.stop();gameplay.start(scene);renderer->scene(gameplay.visible_scene());renderer->gameplay_time(0);renderer->playback(true,true);tick=GetTickCount64();};
+    SceneData empty;empty.Game.emplace();empty.Game->SpawnZ=0;empty.Terrain.emplace();
+    auto key=[&](int code){SendMessageW(window,WM_KEYDOWN,code,0);SendMessageW(window,WM_KEYUP,code,0);};
+    try{
+        step("Packaged scene renders with third-person weapons",[&]{},[&]{return gameplay.presentation().showBody && gameplay.presentation().showWeapons;},1600);
+        load(empty);double startZ=gameplay.position.z;
+        step("Continuous forward movement",[&]{checkForward=1;},[&]{checkForward=0;return gameplay.position.z<startZ-1;});
+        double facing=gameplay.yaw;
+        step("Orbit preserves character facing",[&]{gameplay.orbit_camera(100,0);},[&]{return gameplay.yaw==facing && gameplay.cameraYaw!=facing;});
+        step("Right look changes facing with camera",[&]{gameplay.look(100,0);},[&]{return gameplay.yaw!=facing && gameplay.yaw==gameplay.cameraYaw;});
+        step("Wheel reaches first person with pistols",[&]{SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(0,120*24),0);},[&]{return !gameplay.presentation().showBody && gameplay.presentation().showWeapons;});
+        load(empty);double firstY=0;bool secondJump=false;
+        step("First jump from Space",[&]{key(VK_SPACE);},[&]{firstY=gameplay.position.y;return firstY>1.9;},200);
+        step("Second distinct Space jumps again",[&]{key(VK_SPACE);},[&]{secondJump=gameplay.position.y>firstY;return secondJump;},200);
+        step("Landing restores grounded movement",[&]{},[&]{return gameplay.grounded();},1600);
+        step("Sprint consumes its own stamina",[&]{checkForward=1;gameplay.sprint(true);},[&]{checkForward=0;gameplay.sprint(false);return gameplay.movement_resources().stamina<500 && gameplay.movement_resources().dodgeCharges==2;});
+        bool protectedDodge=false;
+        step("Dodge consumes one charge and blocks damage",[&]{gameplay.dodge(1,0);protectedDodge=gameplay.take_damage(10)==0;},[&]{return protectedDodge && gameplay.health()==100 && gameplay.movement_resources().dodgeCharges==1;});
+        load(empty);step("Grounded start",[&]{},[&]{return gameplay.grounded();},250);
+        bool protectedLunge=false;
+        step("Lunge spends both charges atomically",[&]{gameplay.mobility_button(true,0,1,.23);protectedLunge=gameplay.take_damage(10)==0;},[&]{gameplay.mobility_button(false,0,1);return protectedLunge && gameplay.movement_resources().dodgeCharges==0;});
+        step("Control selects crouch",[&]{key(VK_CONTROL);},[&]{return gameplay.posture()==1;});
+        step("Prone changes physical height",[&]{gameplay.set_posture(0);gameplay.posture_button(true,0,0,.4);gameplay.posture_button(false,0,0);},[&]{return gameplay.posture()==2 && gameplay.presentation().bodyHeight==.5;});
+        load(empty);Character wall;wall.Shape="cube";wall.Width=8;wall.Height=8;wall.Depth=1;wall.Z=-5;auto wallScene=empty;wallScene.Characters={wall};load(wallScene);
+        step("Grapple hook and wall attachment",[&]{gameplay.cameraYaw=0;gameplay.cameraPitch=0;SendMessageW(window,WM_KEYDOWN,'G',0);},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Wall && gameplay.presentation().showTether;},1400);
+        step("Releasing G retains wall attachment",[&]{SendMessageW(window,WM_KEYUP,'G',0);gameplay.cameraDistance=0;},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Wall && !gameplay.presentation().showBody;});
+        step("Wall jump detaches",[&]{key(VK_SPACE);},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Free;});
+        auto swingScene=empty;Character ceiling;ceiling.Shape="cube";ceiling.Width=8;ceiling.Depth=8;ceiling.Height=.3;ceiling.Y=6;swingScene.Characters={ceiling};load(swingScene);
+        step("Overhead grapple enters swing",[&]{gameplay.cameraPitch=1.2;SendMessageW(window,WM_KEYDOWN,'G',0);},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Swing;},900);
+        step("Swing steering moves beneath anchor",[&]{checkRight=1;},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Swing && gameplay.grapple_motion().velocity.length()>.1;});
+        Vec3 releasedVelocity{};
+        step("Swing release retains travel momentum",[&]{releasedVelocity=gameplay.grapple_motion().velocity;checkRight=0;SendMessageW(window,WM_KEYUP,'G',0);},[&]{return releasedVelocity.length()>.1 && gameplay.grapple_motion().state==GrappleMotion::State::Free;});
+        load(empty);auto impactBefore=gameplayAudio.submitted;
+        step("Launch visibly lifts the player",[&]{gameplay.apply_control(ControlEffect::Launch,{2,true},true);},[&]{return gameplay.position.y>2 && gameplay.presentation().impacts==0;},400);
+        step("Launch landing emits one impact sound",[&]{},[&]{return gameplay.presentation().impacts==1 && gameplayAudio.submitted>impactBefore && gameplayAudio.failed==0;},1500);
+        load(empty);bool blocked=false;
+        step("Stun blocks attack and emits chirps",[&]{gameplay.apply_control(ControlEffect::Stun,{2,true},true);key('1');blocked=!gameplay.basic_attack().winding;},[&]{return blocked && gameplay.crowd_control().active==ControlEffect::Stun && gameplayAudio.submitted>0 && gameplayAudio.failed==0;});
+        step("Stun expiry starts player immunity",[&]{},[&]{return !gameplay.crowd_control().active && gameplay.crowd_control().immunity>0;},1700);
+        bool friendlyRejected=false;
+        step("Friendly control stays rejected",[&]{load(empty);friendlyRejected=gameplay.apply_control(ControlEffect::Stun,{2,true},false)==CombatControl::Result::Rejected;},[&]{return friendlyRejected && !gameplay.crowd_control().active;});
+        auto combat=empty;Character target;target.Id="acceptance-target";target.Shape="cube";target.Z=-4;target.Width=2;target.Height=2;target.Depth=1;target.GameplayRole="breakable";combat.Characters={target};load(combat);
+        step("Target selection never fires",[&]{key(VK_TAB);},[&]{return gameplay.presentation().targetBounds.has_value() && !gameplay.basic_attack().winding;});
+        auto audioBefore=gameplayAudio.submitted;
+        step("Released attack resolves and shatters",[&]{key('1');},[&]{return gameplay.scene().Characters.empty() && gameplay.presentation().shots==1 && gameplayAudio.submitted>=audioBefore+2;},3000);
+        step("Released attack does not repeat",[&]{},[&]{return gameplay.presentation().shots==1 && !gameplay.basic_attack().winding;});
+        load(empty);
+        step("Healing restores runtime health",[&]{gameplay.take_damage(40);gameplay.healing_cast("",true);gameplay.healing_cast("",false);},[&]{return gameplay.health()==80;},1800);
+        auto bossScene=empty;Character boss;boss.Id="acceptance-boss";boss.Shape="cube";boss.Width=2;boss.Height=2;boss.Z=-4;boss.CombatHealth=1000;boss.CombatBoss=true;bossScene.Characters={boss};load(bossScene);
+        step("Repeated solo control breaks boss bar",[&]{gameplay.select_target();for(int i=0;i<4;++i)gameplay.control_actor(boss.Id,ControlEffect::Stun,{1,true});},[&]{return gameplay.combat_actors().at(boss.Id).bar.phase==BossBreakBar::Phase::Staggered;});
+        step("Boss vulnerability modifies resolved damage",[&]{key('1');},[&]{return gameplay.combat_actors().at(boss.Id).health==987.5;},2800);
+        double pausedTime=0;
+        step("Pause freezes gameplay",[&]{key(VK_ESCAPE);pausedTime=gameplay.seconds();},[&]{return paused && gameplay.seconds()==pausedTime;});
+        step("Restart restores original package scene",[&]{key(VK_F5);},[&]{return !paused && gameplay.health()==100 && gameplay.movement_resources().dodgeCharges==2 && gameplay.presentation().shots==0 && authored.encode()==original;});
+        report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;report["authoredUnchanged"]=authored.encode()==original;report["pass"]=true;
+    }catch(const std::exception& e){report["error"]=e.what();}
+    atomic_write(output,report.dump(2));bool pass=report["pass"].get<bool>();gameplayCheck=false;SendMessageW(window,WM_CLOSE,0,0);return pass?0:1;
+}
