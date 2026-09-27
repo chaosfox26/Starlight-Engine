@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iostream>
 using namespace starlight::editor;
+#include "physics_boundary_checks.inl"
 int main(int argc, char **argv) {
     std::vector<std::string> checks;
     auto require = [&](bool ok, const char *name) {
@@ -34,6 +35,7 @@ int main(int argc, char **argv) {
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
     try {
+        physics_boundary_checks(require);
         {
             SceneData fire;Character emitter;emitter.Shape="fire";fire.Characters={emitter};EnvironmentEffects effects;
             for(int i=0;i<20;++i)effects.step(fire,.025,i*.025);require(effects.flame_count()>0,"Fire emits independently moving physical flame particles");

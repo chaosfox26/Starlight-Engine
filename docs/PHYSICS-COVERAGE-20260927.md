@@ -32,3 +32,11 @@ This is the current verified implementation checkpoint. The broad full-physics a
 ## Reconciled remaining scope
 
 All twelve named feature groups above have implementations and passing bounded evidence. Earlier unchecked high-level lists duplicated completed work; they are replaced by the reconciled task list. Three acceptance items remain: a single comprehensive mixed-world scene, a current visible authoring/undo/save/export pass over new controls, and explicit boundary/coverage closure. Their exact criteria are in PHYSICS-AND-MOTION-TASK-LIST.md. This is a count of remaining acceptance groups, not a percentage or duration estimate. Physics is substantially implemented for existing supported scene types; it is not yet fully accepted.
+
+## Boundary review update
+
+Release build and 771 core checks pass, including 16 new boundary checks. See [boundary review](PHYSICS-BOUNDARY-REVIEW-20260927.md) for tested limits, source-reviewed behavior and three remaining regression gaps. Unsupported fracture can remove the object and emit generic debris; it does not guarantee source-shaped physical pieces. Mixed-world and editor authoring acceptance remain open. This update is local and has not been published to GitHub.
+
+## Closeout check results
+
+The targeted boundary checks, representative new editor-control groups and comprehensive saved/exported mixed-world run now pass. See [closeout report](PHYSICS-CLOSEOUT-CHECKS-20260927.md) for evidence, retained failures and exact scope. This supersedes the initial boundary-review gaps above. The checklist must retain fidelity limitations; passing these fixtures is not universal physics certification.
