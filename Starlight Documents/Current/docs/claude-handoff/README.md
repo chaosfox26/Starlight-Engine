@@ -11,9 +11,9 @@
 ## 2. Repository and evidence locations
 
 1. Development source: `D:/projects/Starlight-Engine`. This contains private original history and has no publication remote. **Never push this history.**
-2. Separate anonymized publication source: `D:/projects/Starlight-Publish`; private GitHub destination: https://github.com/ChaosFox/Starlight-Engine. Publish sanitized deltas only, preserving dependency credits and existing licensing boundaries.
-3. Local handoff folder: `D:/projects/Starlight-Claude-Handoff-20260927`. Start with `README.md`. Its `latest-analysis-original` folder contains unchanged top-level analysis data and failure details, with a SHA-256 manifest. These local originals are not for GitHub publication.
-4. Full original audit and all screenshots/binaries: `D:/projects/Starlight-analysis/run-20260927-145737-11584-42661687`.
+2. Separate anonymized publication source: `D:/projects/Starlight-Engine/publication`; private GitHub destination: https://github.com/ChaosFox/Starlight-Engine. Publish sanitized deltas only, preserving dependency credits and existing licensing boundaries.
+3. Local handoff folder: `D:/projects/Starlight-Engine/Starlight Documents/Current/history/handoff-20260927`. Start with `README.md`. Its `latest-analysis-original` folder contains unchanged top-level analysis data and failure details, with a SHA-256 manifest. These local originals are not for GitHub publication.
+4. Full original audit and all screenshots/binaries: `D:/projects/Starlight-Engine/analysis/run-20260927-145737-11584-42661687`.
 5. Repository handoff: `docs/claude-handoff`. Its `analysis` folder contains selected text/JSON evidence. The publication copy is anonymized; embedded original hashes and paths describe original evidence, not transformed file bytes. The local raw folder is authoritative for exact-byte analysis.
 6. Development checkpoints: `184c47d` physics closeout, `4349645` handoff/analyzer descriptions, `f81d1c1` full audit findings/reporting correction. Published checkpoint before this handoff: `a5a334d`. Use Git HEAD for the newer handoff commit; do not confuse development and publication hashes.
 

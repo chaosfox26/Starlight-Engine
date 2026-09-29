@@ -109,3 +109,10 @@ CMakeUserPresets.json
 !/Starlight Documents/
 /Starlight Documents/*
 !/Starlight Documents/Current/
+
+# Current Analysis Tool entry point.
+!/Launch-Starlight-Analysis.cmd
+
+# Private historical evidence is local, not publication input.
+/Starlight Documents/Current/history/
+!/deep/README.md

@@ -26,12 +26,12 @@ The controlled change and repeated scenario establish that cosmetic mesh fragmen
 
 ## Verification and evidence
 
-- Before: `D:/projects/Starlight-analysis/task4-battle-before-20260927/report.json`.
-- After: `D:/projects/Starlight-analysis/task4-battle-batched-20260927/report.json`.
+- Before: `D:/projects/Starlight-Engine/analysis/task4-battle-before-20260927/report.json`.
+- After: `D:/projects/Starlight-Engine/analysis/task4-battle-batched-20260927/report.json`.
 - Both runs passed all44 checks, retained foreground, showed simultaneous telegraphs and recorded damage to player and enemy. The unchanged scenario alternates damage and healing while actors move, pursue and dodge.
 - After-run screenshot `ui-14.bmp` visually inspected: green and orange healing, hostile attack outline, moving actors, pistols and resource HUD retained.
 - Normal editor/player build passed. `task4-batching-core-20260927/result.json`:937 checks passed, including index remapping/material preservation and bounded cone batching plus prior gameplay checks.
-- Final export `D:/projects/Starlight-analysis/task4-export-final-20260927/gameplay-report.json`:33 foreground checks passed with captures, zero audio errors and authored state unchanged. Its separate `combat-report.json` passed1,210 frames, cone and damage checks in foreground. Clean-Windows validation remains a separate unavailable environment gate.
+- Final export `D:/projects/Starlight-Engine/analysis/task4-export-final-20260927/gameplay-report.json`:33 foreground checks passed with captures, zero audio errors and authored state unchanged. Its separate `combat-report.json` passed1,210 frames, cone and damage checks in foreground. Clean-Windows validation remains a separate unavailable environment gate.
 
 ## Analyzer correction
 

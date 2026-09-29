@@ -111,7 +111,7 @@ static void startAnalysis(HWND hwnd, const wchar_t* mode) {
     if(child) return;
     EnableWindow(openComparison,FALSE);
     try {
-        fs::path base=fs::path(launchArgs[3]).parent_path()/L"Starlight-analysis";
+        fs::path base=fs::path(launchArgs[3])/L"analysis";
         SYSTEMTIME t{}; GetLocalTime(&t); wchar_t name[128]{};
         swprintf_s(name,L"run-%04u%02u%02u-%02u%02u%02u-%lu-%llu",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,GetCurrentProcessId(),GetTickCount64());
         output=launchArgs.size()==5 ? fs::path(launchArgs[4]) : base/name;
@@ -145,7 +145,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     if(count!=4 && count!=5) { MessageBoxW(nullptr,L"Arguments: python.exe deep_analysis.py repository output-directory",L"Starlight analysis",MB_ICONERROR); if(argv) LocalFree(argv); return 2; }
     std::vector<std::wstring> args(argv,argv+count); LocalFree(argv);
     launchArgs=args;
-    output=fs::path(args[3]).parent_path()/L"Starlight-analysis";
+    output=fs::path(args[3])/L"analysis";
     try { fs::create_directories(output); }
     catch(...) { MessageBoxW(nullptr,L"Cannot create output directory.",L"Starlight analysis",MB_ICONERROR); return 3; }
     if(fs::exists(output/L"byte-manifest.jsonl")) { MessageBoxW(nullptr,L"Use a new output directory. Existing evidence will not be overwritten.",L"Starlight analysis",MB_ICONERROR); return 4; }

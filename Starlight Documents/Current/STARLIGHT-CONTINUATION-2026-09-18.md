@@ -43,8 +43,8 @@ This update records documentation and planning work. It does not resume paused o
 
 Current entry points from this conversation:
 
-- [Engine knowledge entry point](STARLIGHT-KNOWLEDGE.md): reusable feature/workflow understanding from the completed analysis, with current direction and research links. The latest pack is D:/projects/Starlight-analysis/knowledge-20260918-v3; read its freshness limits rather than repeating a full source dive.
-- [Landscape reality check](D:/projects/Starlight-analysis/research-20260918/REALITY-CHECK.md): 58 comparison areas and 63 primary sources. Strong precedents exist; no uniqueness or performance-superiority claim was established.
+- [Engine knowledge entry point](STARLIGHT-KNOWLEDGE.md): reusable feature/workflow understanding from the completed analysis, with current direction and research links. The latest pack is D:/projects/Starlight-Engine/analysis/knowledge-20260918-v3; read its freshness limits rather than repeating a full source dive.
+- [Landscape reality check](D:/projects/Starlight-Engine/analysis/research-20260918/REALITY-CHECK.md): 58 comparison areas and 63 primary sources. Strong precedents exist; no uniqueness or performance-superiority claim was established.
 
 
 The current work is documentation only. Preserve existing code and known audit failures; do not interpret the scene's desired effects, VR ambitions or narrative as shipped functionality. ChaosFox's next explicit request determines what work resumes.

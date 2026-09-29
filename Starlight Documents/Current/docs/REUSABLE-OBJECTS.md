@@ -16,7 +16,7 @@ Files are versioned and limited to 32 MiB; saves use the existing atomic-write/b
 The normal native editor and isolated audit editor builds succeeded. All 81 core checks
 passed, including settings and sculpt round trips, distinct identities, translated routes,
 Undo/Redo, unsupported versions and external-dependency rejection. Results are preserved
-in `D:/projects/Starlight-analysis/reusable-objects-20260923/result.json`.
+in `D:/projects/Starlight-Engine/analysis/reusable-objects-20260923/result.json`.
 The new menu/file-dialog interaction has not yet been exercised live. These checks do not
 certify the larger asset pipeline or visual acceptance.
 
@@ -46,7 +46,7 @@ from saving, including earlier operations. Successful batches retain the scene b
 
 All 84 core checks passed after this extension, including relative object paths, route
 translation, independent duplication and stale-object rollback. Evidence:
-`D:/projects/Starlight-analysis/object-commands-20260923/result.json`.
+`D:/projects/Starlight-Engine/analysis/object-commands-20260923/result.json`.
 
 ## Reusable groups
 
@@ -93,7 +93,7 @@ silently substituted. Command tools remain noninteractive.
 The integrated core run passed 500 checks with the geometry fixtures loaded. This
 includes reusable groups, guarded insertion, model relinking and failure rollback,
 missing-file reporting, and composition of portable scenes with relative model paths.
-Evidence: `D:/projects/Starlight-analysis/asset-workflow-integrated-20260923/result.json`.
+Evidence: `D:/projects/Starlight-Engine/analysis/asset-workflow-integrated-20260923/result.json`.
 This count includes existing checks; it is not a count of newly implemented features.
 
 The isolated editor run passed all 81 checks, including full-selection Duplicate/Delete
@@ -124,12 +124,12 @@ blocked filesystem call.
 The browser's insertion, search, and Undo command checks passed in the isolated editor,
 with all 85 checks passing and resource counts flat across 80 menu cycles. An intentional
 progress-file lock generated recorded reporting errors without hanging or losing the
-final result: `D:/projects/Starlight-analysis/asset-browser-ui-final-20260923.json`.
+final result: `D:/projects/Starlight-Engine/analysis/asset-browser-ui-final-20260923.json`.
 This result predates the type selector addition. Appearance and interactive folder-picker
 verification remain outstanding; the desktop capture tool could not inspect the window.
 
 The type-filter data checks passed in the subsequent 505-check core run:
-`D:/projects/Starlight-analysis/asset-type-filter-20260923/result.json`.
+`D:/projects/Starlight-Engine/analysis/asset-type-filter-20260923/result.json`.
 
 ## Copy objects between scenes
 
@@ -145,12 +145,12 @@ are revalidated before pasting. A missing/invalid model cancels the entire inser
 Use portable export when copying to another computer or preserving external models.
 
 The combined type-filter and Copy/Paste editor checks passed all 91 assertions and 80
-resource cycles: `D:/projects/Starlight-analysis/asset-copy-paste-ui-20260923.json`.
+resource cycles: `D:/projects/Starlight-Engine/analysis/asset-copy-paste-ui-20260923.json`.
 GDI, USER, and tooltip counts stayed unchanged. This verifies command behavior,
 including missing-model rollback, rather than visual polish or mouse interaction.
 
 **Focus** now centers the camera on the combined bounds of the selected group instead
 of only its first object. Other preset views retain their existing single-object behavior.
 The final integrated editor run passed 92 checks and all 80 resource cycles with flat
-GDI/USER/tooltip counts: `D:/projects/Starlight-analysis/group-focus-ui-20260923.json`.
+GDI/USER/tooltip counts: `D:/projects/Starlight-Engine/analysis/group-focus-ui-20260923.json`.
 Both normal and isolated editor builds include this change.
