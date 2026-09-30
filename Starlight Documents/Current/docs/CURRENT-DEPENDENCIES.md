@@ -20,3 +20,14 @@ Do not move or delete the entire deep directory. Moving its live sources would r
 This is a source-reference review, not a new full engine test. No engine behavior or GameProject files were changed.
 
 Cleanup update: the retired automation and generated build folders have now been moved to _quarantine/20260929, with restore manifests. Subsequent build, core and export checks passed. See the root WORKSPACE-STRUCTURE.md for the current layout.
+
+## Starlight Realms predecessor and retained model assets
+
+1. ChaosFox confirmed on 29 September 2026 that **Starlight Realms is a predecessor to Starlight Engine**. This historical relationship does not make every file in that older tree disposable.
+2. Its existing location is `<separate-game-project>/starlight-realms`. It remains outside the current Starlight Engine cleanup scope; nothing in this note authorizes its deletion.
+3. Model assets from the earlier 2D-to-3D pipeline remain under its `build` directory: Kira under `kira`; Fox Dancer under `bodyforge` and `models-v3`; additional assets under `models`, `models-v2`, `rig`, `motion`, `motion-v2`, and `textures`. Representative files were found and readable; this is not a complete asset inventory or import validation.
+4. The current engine also defaults to an NGX SDK beneath `native-dx12/third_party/sdk/streamline/external/ngx-sdk` in that predecessor tree. Preserve this dependency until an explicitly configured replacement is verified.
+5. Before any future Realms cleanup, inventory original models, source images, Blender projects, textures, rigs, animations, pipeline scripts, and their references. Separate unique sources from reproducible outputs, establish one documented asset location, update consuming paths, and verify model loading and engine builds before retiring old paths. Do not classify model-containing folders as disposable merely because they are named `build`.
+6. No model files were relocated or deleted as part of this documentation update.
+
+Latest cleanup correction: ChaosFox manually deleted the Starlight Engine quarantine; its absence was verified. Earlier quarantine/blocked-deletion statements above describe prior steps, not current availability. Fresh full verification is running in `analysis/post-quarantine-full-20260929`; final results are pending.

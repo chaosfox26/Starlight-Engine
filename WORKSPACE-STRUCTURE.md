@@ -37,7 +37,7 @@
 | audit-runs | Original regression evidence, including the required comparison.bin fixture |
 | Starlight Documents/Current/docs/claude-handoff/analysis | Selected analysis evidence kept beside the current handoff |
 | publication | Independent sanitized GitHub checkout, formerly D:\projects\Starlight-Publish. Never use as the primary development tree or push the private parent Git history |
-| _quarantine | Temporary reversible holding area. Never use these copies as source. Restore maps are in 20260929/manifest.json, 20260929/legacy-root/manifest.json and 20260929/legacy-deep/manifest.json |
+| _quarantine (removed) | Former temporary holding area, manually deleted by ChaosFox after review. It is no longer available for restoration. See CLEANUP-STATUS.md for post-removal verification. |
 
 The analyzer excludes analysis, publication and _quarantine from its engine file census and records that scope explicitly. Existing reports keep their original paths as historical evidence.
 
@@ -45,8 +45,8 @@ The analyzer excludes analysis, publication and _quarantine from its engine file
 
 Run commands from this workspace root. Build the shortcut's editor with `python Build-Native.py --config Release --build-dir out/classic`. Omitting --build-dir uses out/native. Build the Analysis Tool with `python tools/build/build_deep_analysis.py --build-dir out/analysis-tool`. Root launchers and desktop shortcuts now refer inside this workspace.
 
-The relocated publication checkout has its own Git metadata; old absolute-path build caches there need regeneration before use. Its CMake requires an explicit STARLIGHT_NGX_SDK setting. Do not modify GameProject or copy licensed SDKs during this cleanup.
+The relocated publication checkout has its own Git metadata. Its classic, audit-engine and verification CMake caches were freshly regenerated after relocation and now point to publication inside this workspace. Its CMake requires an explicit STARLIGHT_NGX_SDK setting; the existing external SDK was supplied during regeneration. This verified configuration, not a new publication compile. Do not modify GameProject or copy licensed SDKs during this cleanup.
 
 ## Scope boundary
 
-Claude Code and Starbus are separate projects and are untouched. Old automation snapshots can contain GameProject benchmark copies; those are preserved in quarantine, while the active game project stays in place. Cleanup does not implement new features or resolve the earlier telemetry and denoiser failures.
+Claude Code and Starbus are separate projects and are untouched. Old automation snapshots were retired with quarantine; the active game project and model assets remain in place. Cleanup does not implement new features or resolve the earlier telemetry and denoiser failures. Compiler intermediates were removed to reduce size and will regenerate on future builds; installed binaries remain available.

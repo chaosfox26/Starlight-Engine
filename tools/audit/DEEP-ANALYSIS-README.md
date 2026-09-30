@@ -22,7 +22,7 @@ From the Starlight repository, using the existing Python and Visual Studio C++ i
 
 ```powershell
 python tools/audit/test_deep_analysis.py
-python tools/audit/build_deep_analysis.py --build-dir D:/projects/Starlight-Engine/out/analysis-tool --launch
+python tools/build/build_deep_analysis.py --build-dir out/analysis-tool --launch
 ```
 
 Use a fresh build directory if the GUI executable is open. The native progress GUI stays open at completion; closing it while active minimizes it so the analyzer can finish. Open summary/evidence buttons provide the results. The launcher immediately returns and does not poll. Tell the assistant “Completed” when ready for review.

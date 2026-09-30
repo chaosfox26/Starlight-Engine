@@ -6,6 +6,6 @@ This root is the only authoritative Starlight development checkout. editor and t
 
 publication is an independent sanitized Git repository for GitHub; never upload the private parent history. analysis contains reports and historical evidence, not build instructions. New analysis reports belong under analysis/run-* and are excluded from engine inventory.
 
-Current cleanup verification covers analyzer output isolation, analyzer unit checks and its GUI build. It does not close the two previously recorded runtime failures or certify a new full engine run. Cleanup still has explicitly listed deletion blockers; see CLEANUP-STATUS.md.
+The post-quarantine full run completed in analysis/post-quarantine-full-20260929: 11 of 13 stages passed, with the same two previously recorded runtime failures. Subsequent generated-file cleanup passed core and export checks. Quarantine is gone. See CLEANUP-STATUS.md for exact scope and retained evidence.
 
 GameProject, Claude Code and Starbus are outside this cleanup. Do not change those projects or services as part of Starlight organization.
