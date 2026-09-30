@@ -89,6 +89,12 @@ def category(rel):
     if Path(rel).suffix.lower() in ('.md','.json','.txt','.log'): return 'documentation/configuration/evidence'
     return 'other asset or repository file'
 
+def validate_output(root, out):
+    root, out = root.resolve(), out.resolve()
+    reports = root / 'analysis'
+    if out == root or (root in out.parents and reports not in out.parents):
+        raise ValueError('Internal reports must use a run directory under analysis/.')
+
 def enumerate_files(root, issues):
     found = []
     def error(e): issues.append({'phase':'enumeration','path':str(e.filename),'error':str(e)})
@@ -96,6 +102,8 @@ def enumerate_files(root, issues):
         keep=[]
         for name in sorted(dirs):
             p=Path(base)/name
+            if Path(base) == root and name.casefold() in ('analysis', 'publication', '_quarantine'):
+                continue  # Reports and the separate publishing checkout are not engine inputs.
             try:
                 if p.lstat().st_file_attributes & 0x400:
                     issues.append({'phase':'enumeration','path':str(p),'error':'Reparse point not followed; external content outside coverage'})
@@ -402,14 +410,14 @@ def write_progress(out, percent, message):
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument('--root',required=True,type=Path); parser.add_argument('--output',required=True,type=Path); parser.add_argument('--workers',type=int,default=4); parser.add_argument('--extra-evidence',type=Path); args=parser.parse_args()
     root=args.root.resolve(); out=args.output.resolve()
-    if out==root or root in out.parents: raise SystemExit('Output must be outside repository for a non-self-referential byte census.')
+    validate_output(root, out)
     out.mkdir(parents=True,exist_ok=True)
     if (out/'byte-manifest.jsonl').exists(): raise SystemExit('Refusing to overwrite an existing analysis run.')
     def progress(percent,message):
         write_progress(out,percent,message)
-    state={'analyzerVersion':VERSION,'root':str(root),'startedUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'issues':[]}
+    state={'analyzerVersion':VERSION,'root':str(root),'startedUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'issues':[], 'excludedRootDirectories':['analysis','publication','_quarantine']}
     try:
-        progress(1,'Recording source identity and enumerating every repository file...')
+        progress(1,'Recording source identity and enumerating engine files (analysis/publication/quarantine excluded)...')
         state['gitStart']={'head':git(root,'rev-parse','HEAD'),'status':git(root,'status','--porcelain=v1','--untracked-files=all'),'submodules':git(root,'submodule','status'),'diff':git(root,'diff','--stat')}
         work=enumerate_files(root,state['issues']); total=sum(s for _,s,_ in work); files=[]; read=0; last=0
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1,min(args.workers,16))) as pool, (out/'byte-manifest.jsonl').open('w',encoding='utf-8',newline='\n') as manifest:

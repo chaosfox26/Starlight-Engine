@@ -2,7 +2,7 @@
 
 ## Development versus publication — 27 September 2026
 
-This is the anonymized publication repository for the private GitHub project. It has separate history from the original development checkout. Publish reviewed source deltas; never merge the original private history, recovery archives or private assets. Chaos is the first-party publication identity. Preserve upstream attribution and external SDK licensing requirements. The current collaborator entry point is PHYSICS-HANDOFF.md.
+This is the original private development history. Never push it to the separate anonymized publication repository. The latter lives at D:/projects/Starlight-Engine/publication and was published privately to https://github.com/Chaos/Starlight-Engine with Chaos first-party identity and preserved upstream credits. Review/anonymize future deltas before publication; do not copy private lore, identities, recovery archives or original history into it. No blanket MIT grant was made; the external NVIDIA SDK retains its separate license/prerequisite status. Detailed private recovery context is D:/projects/_recovery/STARLIGHT-RESUMED-20260927.md. Google Drive upload was cancelled and its uploaded folder deleted at the owner's request; do not treat Drive as a backup or restart uploads.
 
 This repository records the current engine source, tools, requirements and selected regression inputs. A checkpoint records working state; it does not certify completion. Current order is physics acceptance, mesh/texture quality, then performance optimization. See PHYSICS-AND-MOTION-TASK-LIST.md and PHYSICS-HANDOFF.md; older milestone-order notes are historical.
 
@@ -24,6 +24,6 @@ The native build requires the external Windows/Visual Studio/DXC/Python toolchai
 
 The 24 September full GUI audit passed all 13 stages, including 924 core checks. A 26 September file-integrity review confirmed all 173 indexed source files unchanged. Two environment-related failures in the 25 September audit were rerun successfully on 26 September. This Git setup changes tracking and documentation, not gameplay, and does not rerun or close all gameplay acceptance gates.
 
-Detailed local evidence: `D:/projects/Starlight-analysis/file-integrity-20260926/REVIEW.md`. Current continuation: PHYSICS-HANDOFF.md. These external locations are local references, not files restored by cloning this repository.
+Detailed local evidence: `D:/projects/Starlight-Engine/analysis/file-integrity-20260926/REVIEW.md`. Current continuation: `D:/projects/_recovery/STARLIGHT-TUESDAY-HANDOFF-20260929.md`. These external locations are local references, not files restored by cloning this repository.
 
-This publication repository uses the private GitHub origin remote. The separate development checkout has no remote; its history must not be pushed here.
+The development repository has no remote. The separate anonymized publication repository has the private GitHub remote described above. Publish reviewed source deltas there; never push this original development history.

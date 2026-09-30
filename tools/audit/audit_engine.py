@@ -134,8 +134,8 @@ def main():
     parser.add_argument('--reuse-runtime', type=Path, help='Reference saved runtime evidence without rerunning it; freshness remains explicit')
     args = parser.parse_args()
     root, out = args.root.resolve(), args.output.resolve()
-    if out == root or root in out.parents:
-        raise SystemExit('Audit output must be outside the engine repository')
+    from deep_analysis import validate_output
+    validate_output(root, out)
     out.mkdir(parents=True, exist_ok=True)
     if (out/'audit-summary.json').exists():
         raise SystemExit('Existing audit output cannot be overwritten')

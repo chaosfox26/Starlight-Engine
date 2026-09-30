@@ -23,7 +23,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--build-dir',type=Path,required=True);p.add_argument('--launch',action='store_true');p.add_argument('--output',type=Path);a=p.parse_args()
     root,exe=build(a.build_dir.resolve());print('Built:',exe)
     if a.launch:
-        out=(a.output or root.parent/'Starlight-analysis'/datetime.datetime.now().strftime('run-%Y%m%d-%H%M%S')).resolve()
+        out=(a.output or root/'analysis'/datetime.datetime.now().strftime('run-%Y%m%d-%H%M%S')).resolve()
         # The reusable GUI snapshots all reporting modules into each fresh run.
         proc=subprocess.Popen([str(exe),sys.executable,str(root/'tools/audit/deep_analysis.py'),str(root),str(out)],cwd=root,creationflags=subprocess.DETACHED_PROCESS|subprocess.CREATE_NEW_PROCESS_GROUP,close_fds=True)
         print('Detached progress GUI PID:',proc.pid);print('Output:',out)

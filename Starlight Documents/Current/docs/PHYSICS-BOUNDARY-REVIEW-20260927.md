@@ -2,7 +2,7 @@
 
 Focused review complete; exhaustive boundary acceptance remains open. No engine behavior was changed in this pass.
 
-Release build passed. The core suite passed 771 checks, including 16 new boundary checks in tools/checks/physics_boundary_checks.inl. Local evidence: D:/projects/Starlight-analysis/physics-boundary-core-20260927/result.json. No additional visible test was required for these test-only changes.
+Release build passed. The core suite passed 771 checks, including 16 new boundary checks in tools/checks/physics_boundary_checks.inl. Local evidence: D:/projects/Starlight-Engine/analysis/physics-boundary-core-20260927/result.json. No additional visible test was required for these test-only changes.
 
 | Area | Expected boundary behavior | Evidence |
 | --- | --- | --- |

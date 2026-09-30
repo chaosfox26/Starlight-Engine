@@ -111,8 +111,8 @@ Historical SampleGame documents mention browser and Godot prototypes. Those refe
 - Starlight knowledge entry point: D:/projects/Starlight-Engine/STARLIGHT-KNOWLEDGE.md
 - Broader engine direction: D:/projects/Starlight-Engine/STARLIGHT-PRODUCT-DIRECTION.md
 - Engine proposal assessment: D:/projects/Starlight-Engine/STARLIGHT-SCULPTING-FEASIBILITY-2026-09-18.md
-- Dated engine knowledge pack: D:/projects/Starlight-analysis/knowledge-20260918-v3/
-- Competitor/research reality check: D:/projects/Starlight-analysis/research-20260918/REALITY-CHECK.md
+- Dated engine knowledge pack: D:/projects/Starlight-Engine/analysis/knowledge-20260918-v3/
+- Competitor/research reality check: D:/projects/Starlight-Engine/analysis/research-20260918/REALITY-CHECK.md
 - Consolidated SampleGame opening plan: D:/SampleGame/Design/first-scene-brainstorm-notes.md
 - Shareable narrative: D:/SampleGame/Design/SampleGame-The-Shattered-World-Opening-Readthrough.txt
 - Lore: D:/SampleGame/Codex/SampleGame-Codex.pdf

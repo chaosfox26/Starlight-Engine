@@ -59,9 +59,9 @@ The focused core suite passed 487 checks with the existing geometry reference lo
 New coverage includes shared-model deduplication, relocation and render-data creation,
 relative paths after saving, refusal to overwrite existing folders, failed-export
 cleanup, and rejection of corrupt assets or absolute manifest paths.
-Evidence: `D:/projects/Starlight-analysis/portable-scenes-verified-20260923/result.json`.
+Evidence: `D:/projects/Starlight-Engine/analysis/portable-scenes-verified-20260923/result.json`.
 Live export-menu interaction and actual transfer to another computer remain unverified.
 
 The later integrated run passed 500 total core checks, including selection-only export
 and guarded composition of a portable model scene. Evidence:
-`D:/projects/Starlight-analysis/asset-workflow-integrated-20260923/result.json`.
+`D:/projects/Starlight-Engine/analysis/asset-workflow-integrated-20260923/result.json`.

@@ -6,6 +6,30 @@ import knowledge_report as k
 import feature_evidence as fe
 
 def main():
+    # Internal evidence and the independent publication checkout must never
+    # recursively enter the engine census, even while a report is being written.
+    with tempfile.TemporaryDirectory(prefix='starlight-internal-output-') as temp:
+        root = Path(temp)
+        (root/'live.cpp').write_text('live')
+        for folder in ('analysis', 'publication', '_quarantine'):
+            (root/folder/'nested').mkdir(parents=True)
+            (root/folder/'nested/duplicate.cpp').write_text('excluded')
+        issues = []
+        assert [p.name for p, _, _ in a.enumerate_files(root, issues)] == ['live.cpp']
+        assert not issues
+        a.validate_output(root, root/'analysis/run-test')
+        for bad in (root, root/'analysis', root/'editor/report'):
+            try:
+                a.validate_output(root, bad)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f'Unsafe internal output accepted: {bad}')
+        subprocess.run([sys.executable, str(Path(a.__file__)), '--root', str(root),
+                        '--output', str(root/'analysis/run-test')], check=True, capture_output=True)
+        state = json.loads((root/'analysis/run-test/run-state.json').read_text())
+        assert state['bytesRead'] == 4
+        assert state['excludedRootDirectories'] == ['analysis', 'publication', '_quarantine']
     movement_sources={'editor/cpp/adventure_controller.hpp':'class AdventureController {};',
                       'editor/cpp/grapple_motion.hpp':'class GrappleMotion {};',
                       'editor/cpp/adventure.hpp':'auto velocity = grapple_.step(position, steer, dt);'}

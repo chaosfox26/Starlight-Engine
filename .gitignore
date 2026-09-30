@@ -121,3 +121,15 @@ CMakeUserPresets.json
 !/Starlight Documents/
 /Starlight Documents/*
 !/Starlight Documents/Current/
+
+!/Launch-Starlight-Analysis.cmd
+
+/Starlight Documents/Current/history/
+
+!/deep/README.md
+
+/analysis/
+
+/publication/
+
+/_quarantine/

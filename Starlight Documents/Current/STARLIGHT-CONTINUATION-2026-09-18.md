@@ -48,8 +48,8 @@ This update records documentation and planning work. It does not resume paused o
 Current entry points from this conversation:
 
 - [Portable high-level handoff](STARLIGHT-SAMPLEGAME-CHAT-HANDOFF.md): self-contained engine/game distinction, broader proposed direction, slice summary and evidence limits; attach this companion when moving to a chat without local file access.
-- [Engine knowledge entry point](STARLIGHT-KNOWLEDGE.md): reusable feature/workflow understanding from the completed analysis, with current direction and research links. The latest pack is D:/projects/Starlight-analysis/knowledge-20260918-v3; read its freshness limits rather than repeating a full source dive.
-- [Landscape reality check](D:/projects/Starlight-analysis/research-20260918/REALITY-CHECK.md): 58 comparison areas and 63 primary sources. Strong precedents exist; no uniqueness or performance-superiority claim was established.
+- [Engine knowledge entry point](STARLIGHT-KNOWLEDGE.md): reusable feature/workflow understanding from the completed analysis, with current direction and research links. The latest pack is D:/projects/Starlight-Engine/analysis/knowledge-20260918-v3; read its freshness limits rather than repeating a full source dive.
+- [Landscape reality check](D:/projects/Starlight-Engine/analysis/research-20260918/REALITY-CHECK.md): 58 comparison areas and 63 primary sources. Strong precedents exist; no uniqueness or performance-superiority claim was established.
 - [SampleGame opening plan](D:/SampleGame/Design/first-scene-brainstorm-notes.md): consolidated sequence, lore connections, future asset needs, open decisions and original spoken clarifications.
 - [Shareable opening read-through](D:/SampleGame/Design/SampleGame-The-Shattered-World-Opening-Readthrough.txt): second-person narrative ending in the SampleGame title, then a fade to black and “Powered by the Starlight Engine.”
 

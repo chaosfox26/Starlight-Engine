@@ -4,7 +4,7 @@ Assessment date: 18 September 2026. This is an engineering assessment, not an im
 
 Source PDF: [Uploaded proposal](C:/Users/Chaos/.codex/codex-remote-attachments/01a0b2e6-f2b0-7f11-98bc-a9469bd78d7b/0708EDE5-55E4-433A-A5C1-4F6E0899E92D/1-Starlight-Engine-Next-Generation-In-Engine-Sculpting-Tool-Proposal.pdf).
 
-Current-engine baseline: [knowledge pack](D:/projects/Starlight-analysis/knowledge-20260918-v3/STARLIGHT-START-HERE.md), source snapshot 18 September 2026, with saved runtime evidence from 17 September. This review used that reusable knowledge pack rather than repeating a source audit. No runtime tests or engine implementation were performed for this assessment.
+Current-engine baseline: [knowledge pack](D:/projects/Starlight-Engine/analysis/knowledge-20260918-v3/STARLIGHT-START-HERE.md), source snapshot 18 September 2026, with saved runtime evidence from 17 September. This review used that reusable knowledge pack rather than repeating a source audit. No runtime tests or engine implementation were performed for this assessment.
 
 ## Overall judgment
 
