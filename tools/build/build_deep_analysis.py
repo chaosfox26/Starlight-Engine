@@ -15,8 +15,15 @@ def build(destination):
             k,v=line.split('=',1);env[k]=v
     compiler=sorted((install/'VC/Tools/MSVC').glob('*/bin/Hostx64/x64/cl.exe'))[-1]
     exe=destination/'Starlight.DeepAnalysis.exe'
+    resource=destination/'analysis-icon.rc'
+    resource.write_text('101 ICON "'+(root/'design/branding/starlight-analysis.ico').as_posix()+'"\n',encoding='utf-8')
+    compiled_resource=destination/'analysis-icon.res'
     with (destination/'build.log').open('w') as log:
-        subprocess.run([str(compiler),'/nologo','/std:c++20','/EHsc','/O2','/W4','/utf-8',str(root/'tools/audit/deep_analysis_gui.cpp'),'/Fe:'+str(exe),'/Fo:'+str(destination/'deep_analysis_gui.obj'),'/link','/SUBSYSTEM:WINDOWS','user32.lib','shell32.lib','comctl32.lib','gdi32.lib'],env=env,cwd=destination,stdout=log,stderr=subprocess.STDOUT,check=True)
+        resource_compiler=shutil.which('rc.exe',path=env.get('PATH',env.get('Path','')))
+        if not resource_compiler:
+            resource_compiler=str(sorted((Path(os.environ['ProgramFiles(x86)'])/'Windows Kits/10/bin').glob('*/x64/rc.exe'))[-1])
+        subprocess.run([resource_compiler,'/nologo','/fo',str(compiled_resource),str(resource)],env=env,cwd=destination,stdout=log,stderr=subprocess.STDOUT,check=True)
+        subprocess.run([str(compiler),'/nologo','/std:c++20','/EHsc','/O2','/W4','/utf-8',str(root/'tools/audit/deep_analysis_gui.cpp'),str(compiled_resource),'/Fe:'+str(exe),'/Fo:'+str(destination/'deep_analysis_gui.obj'),'/link','/SUBSYSTEM:WINDOWS','user32.lib','shell32.lib','comctl32.lib','gdi32.lib'],env=env,cwd=destination,stdout=log,stderr=subprocess.STDOUT,check=True)
     return root,exe
 
 if __name__=='__main__':

@@ -1,4 +1,4 @@
-// SampleGame DX12 client — milestone 5 "off" backend: bilinear compute upscale, no vendor SDK.
+// SampleGame DX12 client — "off" backend: bilinear compute upscale, no vendor SDK.
 // This is the floor of "playable on any system": every quality mode renders at the SDK-standard
 // ratio and gets filtered to the output size by an 8x8 compute kernel that exists on any D3D12
 // adapter. It also serves as the reference the vendor paths are compared against in the results

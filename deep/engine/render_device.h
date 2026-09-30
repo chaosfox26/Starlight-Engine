@@ -23,7 +23,7 @@ static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x
 #include <memory>
 #include <functional>
 
-// Milestone 5: upscaler / frame-generation backends (upscale\*.cpp). One path is chosen at
+// upscaler / frame-generation backends (upscale\*.cpp). One path is chosen at
 // startup (--upscaler auto|dlss|fsr|xess|off); the scene renders to offscreen color+depth+mvec
 // at the mode's render size, the backend reconstructs to output size, the renderer copies to
 // the backbuffer. --bench <ms> + --report <json> make the client its own measurement program.
@@ -51,7 +51,7 @@ static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
-// M6: three frames in flight. Every per-frame GPU-read resource (command allocator, instance
+// three frames in flight. Every per-frame GPU-read resource (command allocator, instance
 // CB ring, joint palettes) exists once per slot; the CPU only waits when the slot it is about
 // to reuse has not retired yet (--inflight caps how many frames may be queued, 1 = the old
 // fully-synchronous behaviour, for A/B numbers).
@@ -158,13 +158,13 @@ static_assert(sizeof(SceneCB) <= kCbStride, "SceneCB must fit one CB slot");
 struct InstData { SceneCB s; UINT paletteBase; UINT _pad[3]; };
 static_assert(sizeof(InstData) == sizeof(SceneCB) + 16, "InstData must match HLSL Inst layout");
 
-// per-character fur profile (Chaos #2097: "luscious/soft/silky" vs "tough/rigid"), picked by look.sex
+// per-character fur profile, picked by look.sex
 struct FurProfile { float length, softness, stiffness, sheen, sway, density; };
 
 
 
 // per-frame block (b1): the lights + camera + fog, shared by every draw of the frame. The three
-// follow-spotlights are real cone lights here (M6) instead of the old per-instance "glow" add.
+// follow-spotlights are real cone lights shared by draws in the frame.
 struct SpotLight { XMFLOAT4 pos; XMFLOAT4 dir; XMFLOAT4 color; };   // pos.w = range, dir.w = cos outer, color.w = cos inner
 struct FrameCB {
     XMFLOAT4   lightDir;   // xyz world-space direction the key light travels, w = intensity
@@ -530,7 +530,7 @@ struct RenderDevice {
     ComPtr<ID3D12Resource>       targets[kFrameCount];
     ComPtr<ID3D12Resource>       depth;      // render-size D32 (upscaler input)
 
-    // ---- milestone 5: offscreen scene at render size, reconstructed to output size ----
+    // ---- offscreen scene at render size, reconstructed to output size ----
     std::unique_ptr<up::Upscaler> ups;
     std::string upsRequest = "auto";          // --upscaler
     std::string upsReason;                    // why the active path was chosen (title/report)
@@ -600,7 +600,7 @@ struct RenderDevice {
     bool   instancingOn = true;                             // hotkey I: batched instanced draws (on) vs one draw per character (off) — live A/B
     bool   perfHud = true;                                  // hotkey T: live perf HUD in the title bar vs the full client title
 
-    // ---- M6: skinned characters + bakes-v1 textures ----
+    // ---- skinned characters + bakes-v1 textures ----
     struct TexSet { ComPtr<ID3D12Resource> basecolor, normal, roughness, ao, furflow, sparkle; UINT table = 0; bool ok = false; bool fur = false; };
     struct CharModel {
         model::SkinnedModel data;
@@ -769,7 +769,7 @@ struct RenderDevice {
 
     void must(HRESULT hr, const char* what) { if (FAILED(hr)) { drainDebug(); throw std::runtime_error(what); } }   // debug-layer reason lands in the log first
 
-    // full GPU idle: init / mode change / screenshot / teardown only (never per frame, M6)
+    // full GPU idle: init / mode change / screenshot / teardown only (never per frame)
     void flush() {
         const UINT64 v = ++fenceVal;
         must(queue->Signal(fence.Get(), v), "signal GPU completion");
@@ -900,7 +900,7 @@ struct RenderDevice {
             ComPtr<ID3D12Debug> dbg; if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg)))) { dbg->EnableDebugLayer(); flags |= DXGI_CREATE_FACTORY_DEBUG; logLine("d3d12 debug layer ON"); }
             if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiq)))) { dxgiq->SetMuteDebugOutput(kDxgiDebugAll, FALSE); logLine("dxgi debug queue ON"); }
         }
-        // ---- M5: pick the adapter first (vendor drives the auto path), then let the chosen backend
+        // ---- pick the adapter first (vendor drives the auto path), then let the chosen backend
         // create factory + device (DLSS proxies them through the Streamline interposer).
         {
             ComPtr<IDXGIFactory6> probe; must(CreateDXGIFactory2(flags, IID_PPV_ARGS(&probe)), "CreateDXGIFactory2 (probe)");
@@ -967,7 +967,7 @@ struct RenderDevice {
         fenceVal = 1;
         fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-        // ---- M5: backend init (may REPLACE the swapchain with a frame-generation one), then
+        // ---- backend init (may REPLACE the swapchain with a frame-generation one), then
         // backbuffer views, then the mode's render size + offscreen targets.
         {
             up::DeviceCtx ctx; ctx.device = device.Get(); ctx.queue = queue.Get(); ctx.adapter = adapter.Get();
@@ -1011,7 +1011,7 @@ struct RenderDevice {
         charNorm = XMMatrixMultiply(XMMatrixTranslation(-cx, -minY, -cz), XMMatrixScaling(s, s, s));
     }
 
-    // ---- M5: backend selection. --upscaler auto = adapter vendor (NVIDIA dlss, AMD fsr, Intel
+    // ---- backend selection. --upscaler auto = adapter vendor (NVIDIA dlss, AMD fsr, Intel
     // xess, else fsr), then the portable candidates; an explicit request tries that path, then off.
     // A backend that is not built or whose SDK/driver refuses is logged with the reason and skipped.
     void chooseBackend() {
@@ -1144,7 +1144,7 @@ struct RenderDevice {
         must(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &sigErr), "SerializeRootSignature");
         must(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&rootSig)), "CreateRootSignature");
 
-        // M6 shading: one GGX/Cook-Torrance model for everything. CB colours are sRGB (the room's
+        // Shading: one GGX/Cook-Torrance model for everything. CB colours are sRGB (the room's
         // tuned palette) -> linear in, lit by the key light + hemisphere ambient + three cone
         // spotlights, fogged, then encoded back to sRGB into the UNORM target. Skinned characters
         // add the bakes-v1 maps (basecolor sRGB, tangent-space normal, roughness, AO).
@@ -1313,7 +1313,7 @@ struct RenderDevice {
             "  po.color = float4(finish(i.wp, c), 1.0);\n"
             "  return po;\n"
             "}\n"
-            // ---- shell fur (Chaos #2090/#2097 phase a). The 'fur' submesh is drawn again N times
+            // ---- shell fur. The 'fur' submesh is drawn again N times
             // (SV_InstanceID = shell); every shell is the skinned body pushed out along the normal by
             // h*length and bent in the tangent plane by the furflow map (grooming direction),
             // gravity and a wind sway (softness scales the bend, stiffness resists gravity/wind).
@@ -1525,8 +1525,8 @@ struct RenderDevice {
     uint8_t* cbSlotBase() { return cbBase + (size_t)slot * cbSlotBytes(); }
     D3D12_GPU_VIRTUAL_ADDRESS cbSlotGpu() { return cb->GetGPUVirtualAddress() + (UINT64)slot * cbSlotBytes(); }
 
-    // ---- M6: load the charfactory GLBs + their bakes-v1 texture sets. Missing files degrade
-    // to the M5 primitives per model (never a crash); everything is reported in the log/report.
+    // ---- load the charfactory GLBs + their bakes-v1 texture sets. Missing files degrade
+    // to the fallback primitives per model (never a crash); everything is reported in the log/report.
     GpuMesh uploadMesh(const void* verts, size_t vbytes, UINT stride, const std::vector<uint32_t>& indices) {
         std::vector<uint8_t> alignedVertices;
         if(stride==68) {
@@ -1605,7 +1605,7 @@ struct RenderDevice {
         cmd->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
     }
 
-    // ---- M6: one skinned character. Evaluates the pose into this frame's palette slot, then
+    // ---- one skinned character. Evaluates the pose into this frame's palette slot, then
     // draws the submeshes the look allows (gear:* only when that slot is shown, tattoo only when
     // on) with the model's texture set. Returns false when the palette ring is full.
     // Drain the per-(model,variant,submesh) buckets: pack each into the t7 ring and issue ONE instanced draw
@@ -1769,7 +1769,7 @@ struct RenderDevice {
 
     // MULTICORE PROOF: the engine's real per-character animation math (evalPose) is pure compute with
     // thread_local scratch => embarrassingly parallel. Run N poses on 1 thread, then on 2/4/8/16/hw
-    // threads, report the speedup. This is the measured "spread it across all cores" demonstration.
+    // threads, report the speedup.
     void mtProof(int topN) {
         if (models.empty() || models[0].data.joints.empty() || models[0].data.clips.empty()) {
             logLine("MT-PROOF: no skinned model+clip loaded, cannot run"); return;
@@ -1840,7 +1840,7 @@ struct RenderDevice {
         std::string ver = ups->versionString(), fg = ups->fgStatus(), extra = ups->extraStatus();
         uint64_t presentedN = ups->hasPresentedCounter() ? benchPresented : (uint64_t)benchFrames.size();
         auto esc = [](std::string s) { std::string o; for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); } return o; };
-        // M6 block: what was actually loaded + drawn, and how the pacing behaved
+        // Report block: what was actually loaded + drawn, and how the pacing behaved
         std::string modelsJson = "[";
         size_t joints = 0, clips = 0;
         for (size_t i = 0; i < models.size(); ++i) {
@@ -1907,9 +1907,9 @@ struct RenderDevice {
         if(curModel.size()!=kMaxInstances){curModel.resize(kMaxInstances);prevModel.resize(kMaxInstances);}
         ups->beginFrame(frameIndex);
         const float clear[4]={0.025f,0.03f,0.045f,1};
-        // ---- M6: acquire this frame's slot. The CPU only waits when the slot's previous
+        // ---- acquire this frame's slot. The CPU only waits when the slot's previous
         // submission (kFrameCount frames ago) has not retired — with --inflight 3 that is the
-        // GPU-bound case, never the sync-every-frame flush of M1..M5.
+        // GPU-bound case, without flushing every frame.
         ups->renderSubmitStart();
         slot = frameIndex % kFrameCount;
         if (fence->GetCompletedValue() < slotFence[slot]) {
@@ -1966,7 +1966,7 @@ struct RenderDevice {
         }
 
         if(editorDraw)editorDraw();
-        // ---- M5: reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
+        // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
         barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         barrier(depth.Get(),      D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -2009,7 +2009,7 @@ struct RenderDevice {
         antilag.setFrameGenFrameType(false);
         if (!auditOffscreen) ups->present(swap.Get(), vsync ? 1 : 0, (!vsync && tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0);
         if (!auditOffscreen) ups->afterPresent();
-        // ---- M6: retire by slot instead of flushing. The fence value signalled here is what the
+        // ---- retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
         slotFence[slot] = ++fenceVal;
         queue->Signal(fence.Get(), fenceVal);

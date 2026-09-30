@@ -1,4 +1,4 @@
-// SampleGame DX12 client — texture loading (M6): PNG via WIC -> RGBA8 mip chain, with a raw mip
+// SampleGame DX12 client — texture loading : PNG via WIC -> RGBA8 mip chain, with a raw mip
 // cache next to the bakes so the second run is one read instead of a 4K PNG decode.
 #pragma once
 #ifndef NOMINMAX

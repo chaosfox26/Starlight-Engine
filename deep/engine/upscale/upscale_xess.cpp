@@ -1,4 +1,4 @@
-// SampleGame DX12 client — milestone 5 XeSS backend (Intel XeSS SDK: XeSS-SR super resolution, XeSS-FG
+// SampleGame DX12 client — XeSS backend (Intel XeSS SDK: XeSS-SR super resolution, XeSS-FG
 // frame generation through its proxy swapchain, XeLL latency reduction which XeSS-FG requires).
 // Compiled only when build/flags.json enables backends.xess (buildctl adds UP_HAVE_XESS + the SDK
 // include dir and copies libxess.dll / libxess_fg.dll / libxell.dll next to the exe). Nothing is

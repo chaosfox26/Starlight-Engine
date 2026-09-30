@@ -1,4 +1,4 @@
-// SampleGame DX12 client — milestone 5 DLSS backend (NVIDIA Streamline 2.12: DLSS super resolution +
+// SampleGame DX12 client — DLSS backend (NVIDIA Streamline 2.12: DLSS super resolution +
 // DLSS frame generation + Reflex/PCL markers, all through sl.interposer.dll). Compiled only when
 // build/flags.json enables backends.dlss (buildctl adds UP_HAVE_DLSS + the SDK include dir and copies
 // the Streamline DLLs next to the exe). Nothing is linked statically: sl.interposer.dll is

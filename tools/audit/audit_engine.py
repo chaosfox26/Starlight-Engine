@@ -132,11 +132,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--audit-mode', choices=['features', 'errors', 'both'], default='features')
     parser.add_argument('--reuse-runtime', type=Path, help='Reference saved runtime evidence without rerunning it; freshness remains explicit')
+    parser.add_argument('--keep-artifacts', action='store_true', help='Keep raw captures and temporary packages for deeper debugging; default keeps compact reports')
     args = parser.parse_args()
     root, out = args.root.resolve(), args.output.resolve()
     from deep_analysis import validate_output
     validate_output(root, out)
     out.mkdir(parents=True, exist_ok=True)
+    preexisting = {str(p.relative_to(out)) for p in out.rglob('*') if p.is_file()}
     if (out/'audit-summary.json').exists():
         raise SystemExit('Existing audit output cannot be overwritten')
     def progress(percent, message):
@@ -184,7 +186,7 @@ def main():
     write(out/'execution-source-hashes.json', initial_hashes)
     if args.audit_mode != 'features':
         progress(1, 'Building isolated audit binaries; the normal editor build is preserved.')
-        result = execute([sys.executable, str(root/'Build-Native.py'), '--build-dir', str(build)], root,
+        result = execute([sys.executable, str(root/'Build-Native.py'), '--build-dir', str(build), '--compact'], root,
                          out/'build.log', 1200, lambda age: progress(2, f'Building audit binaries — {age}s; details in build.log'))
         result['name'] = 'build'; records.append(result)
         if source_hashes(root, sources) != initial_hashes:
@@ -330,7 +332,30 @@ def main():
     # Preserve the analyzer seal and separately seal the final combined deliverables.
     write(out/'audit-deliverable-hashes.json', {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in out.iterdir() if p.is_file() and p.name in ('AUDIT-SHAREABLE-REPORT.md','audit-summary.json','runtime-evidence.json')})
-    progress(100, 'Completed — report saved. Review failed, unavailable and untested areas; completion is not certification.')
+    from artifact_cleanup import final_status, compact_report
+    status = final_status(summary, findings)
+    (out/'final-status.txt').write_text(status, encoding='utf-8')
+    with (out/'AUDIT-SHAREABLE-REPORT.md').open('a', encoding='utf-8') as report:
+        report.write('\n\n## Final result\n\n'+status+'\n\nDefault retention keeps written summaries and structured results. Raw captures and temporary packages may be removed; old evidence links describe their original locations. Use --keep-artifacts for a future detailed diagnostic run.\n')
+    write(out/'audit-deliverable-hashes.json', {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in out.iterdir() if p.is_file() and p.name in ('AUDIT-SHAREABLE-REPORT.md','audit-summary.json','runtime-evidence.json')})
+    if args.audit_mode != 'features':
+        try:
+            from artifact_cleanup import retain_captures
+            retain_captures(root, out)
+        except (OSError, ValueError) as error:
+            write(out/'capture-retention-warning.json', {'error': str(error)})
+    if not args.keep_artifacts and root/'analysis' in out.parents:
+        progress(99, 'Reports saved. Removing temporary captures and test packages...')
+        try:
+            cleanup = compact_report(root, out, preexisting)
+            if any(row["status"] != "removed" for row in cleanup):
+                raise OSError("Some generated files remain locked or could not be removed")
+        except (OSError, ValueError) as error:
+            write(out/'summary-retention-warning.json', {'error': str(error)})
+            status += '\nSome temporary files could not be cleaned up; see the report folder.'
+            (out/'final-status.txt').write_text(status, encoding='utf-8')
+    progress(100, status)
     return 0 if not records or summary['allRequestedStagesPassed'] else 4
 
 

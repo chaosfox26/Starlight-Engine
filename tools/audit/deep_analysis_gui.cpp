@@ -46,17 +46,17 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
         control(hwnd,L"STATIC",L"Feature report inventories code and saved evidence. Error checks build and test.\nRun both combines them into one shareable report; visible tests need foreground focus.",0,24,56,700,44);
         progressBar=control(hwnd,PROGRESS_CLASSW,L"",PBS_SMOOTH,24,117,700,24);
         SendMessageW(progressBar,PBM_SETRANGE32,0,100);
-        statusLabel=control(hwnd,L"STATIC",L"Ready. Choose Feature report, Error checks, or Run both.",0,24,156,700,64);
-        outputLabel=control(hwnd,L"EDIT",output.c_str(),ES_READONLY|ES_AUTOHSCROLL|WS_BORDER,24,231,700,28);
-        openReport=control(hwnd,L"BUTTON",L"Open shareable report",BS_PUSHBUTTON,24,282,158,32,101);
-        openFolder=control(hwnd,L"BUTTON",L"Open evidence folder",BS_PUSHBUTTON,188,282,170,32,102);
-        openComparison=control(hwnd,L"BUTTON",L"Open engine comparison",BS_PUSHBUTTON,370,282,190,32,106);
+        statusLabel=control(hwnd,L"EDIT",L"Ready. Choose Feature report, Error checks, or Run both.",ES_READONLY|ES_MULTILINE|ES_AUTOVSCROLL|WS_VSCROLL,24,156,700,120);
+        outputLabel=control(hwnd,L"EDIT",output.c_str(),ES_READONLY|ES_AUTOHSCROLL|WS_BORDER,24,287,700,28);
+        openReport=control(hwnd,L"BUTTON",L"Open shareable report",BS_PUSHBUTTON,24,338,158,32,101);
+        openFolder=control(hwnd,L"BUTTON",L"Open evidence folder",BS_PUSHBUTTON,188,338,170,32,102);
+        openComparison=control(hwnd,L"BUTTON",L"Open engine comparison",BS_PUSHBUTTON,370,338,190,32,106);
         EnableWindow(openComparison,FALSE);
         EnableWindow(openReport,FALSE);
-        startButton=control(hwnd,L"BUTTON",L"Feature report",BS_PUSHBUTTON,24,326,180,32,103);
-        errorButton=control(hwnd,L"BUTTON",L"Error checks",BS_PUSHBUTTON,216,326,180,32,104);
-        bothButton=control(hwnd,L"BUTTON",L"Run both",BS_PUSHBUTTON,408,326,180,32,105);
-        control(hwnd,L"STATIC",L"Each run preserves its own evidence. Builds can take several minutes.\nCompletion means reports were saved, not that every feature passed.",0,24,374,700,42);
+        startButton=control(hwnd,L"BUTTON",L"Feature report",BS_PUSHBUTTON,24,382,180,32,103);
+        errorButton=control(hwnd,L"BUTTON",L"Error checks",BS_PUSHBUTTON,216,382,180,32,104);
+        bothButton=control(hwnd,L"BUTTON",L"Run both",BS_PUSHBUTTON,408,382,180,32,105);
+        control(hwnd,L"STATIC",L"Each run keeps a compact summary. Temporary captures are removed after reporting.\nCompletion means reports were saved, not that every feature passed.",0,24,430,700,42);
         audit_theme::apply_tree(hwnd);
         return 0;
     case WM_TIMER: {
@@ -86,7 +86,10 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
             bool exists=fs::is_regular_file(output/L"AUDIT-SHAREABLE-REPORT.md");
             EnableWindow(openReport,exists);
             EnableWindow(openComparison,fs::is_regular_file(output/L"ENGINE-COMPARISON.md"));
-            if(code==4 && exists) SetWindowTextW(statusLabel,L"Audit completed with failed, unavailable or untested stages. Open the shareable report for findings.");
+            std::ifstream resultFile(output/L"final-status.txt",std::ios::binary);
+            std::string result((std::istreambuf_iterator<char>(resultFile)),{});
+            if(exists && !result.empty() && (code==0 || code==4)) SetWindowTextW(statusLabel,wide(result).c_str());
+            else if(code==4 && exists) SetWindowTextW(statusLabel,L"Audit completed with failed, unavailable or untested stages. Open the shareable report for findings.");
             else if(code!=0 || !exists) SetWindowTextW(statusLabel,L"Analysis failed or stopped before producing a summary. See worker.log and failure.txt.");
             SetWindowTextW(hwnd,code==0&&exists?L"Starlight analysis — Completed":L"Starlight analysis — Needs attention");
         }
@@ -119,6 +122,7 @@ static void startAnalysis(HWND hwnd, const wchar_t* mode) {
         if(!fs::create_directories(output)) throw std::runtime_error("Output exists");
         auto scripts=fs::path(launchArgs[2]).parent_path();
         fs::copy_file(scripts/L"audit_engine.py",output/L"analyzer-used.py");
+        fs::copy_file(scripts/L"artifact_cleanup.py",output/L"artifact_cleanup.py");
         fs::copy_file(scripts/L"deep_analysis.py",output/L"deep_analysis.py");
         fs::copy_file(scripts/L"knowledge_report.py",output/L"knowledge_report.py");
         fs::copy_file(scripts/L"feature_evidence.py",output/L"feature_evidence.py");
@@ -150,8 +154,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int) {
     catch(...) { MessageBoxW(nullptr,L"Cannot create output directory.",L"Starlight analysis",MB_ICONERROR); return 3; }
     if(fs::exists(output/L"byte-manifest.jsonl")) { MessageBoxW(nullptr,L"Use a new output directory. Existing evidence will not be overwritten.",L"Starlight analysis",MB_ICONERROR); return 4; }
     INITCOMMONCONTROLSEX cc{sizeof(cc),ICC_PROGRESS_CLASS}; InitCommonControlsEx(&cc);
-    WNDCLASSW wc{}; wc.lpfnWndProc=procedure; wc.hInstance=instance; wc.lpszClassName=L"StarlightDeepAnalysis"; wc.hCursor=LoadCursor(nullptr,IDC_ARROW); wc.hbrBackground=audit_theme::brush(); RegisterClassW(&wc);
-    HWND hwnd=CreateWindowW(wc.lpszClassName,L"Starlight Engine — Deep Analysis",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,772,480,nullptr,nullptr,instance,nullptr);
+    WNDCLASSW wc{}; wc.lpfnWndProc=procedure; wc.hInstance=instance; wc.lpszClassName=L"StarlightDeepAnalysis"; wc.hCursor=LoadCursor(nullptr,IDC_ARROW); wc.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(101)); wc.hbrBackground=audit_theme::brush(); RegisterClassW(&wc);
+    HWND hwnd=CreateWindowW(wc.lpszClassName,L"Starlight Engine — Deep Analysis",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,772,536,nullptr,nullptr,instance,nullptr);
     if(!hwnd) return 5;
     ShowWindow(hwnd,SW_SHOWNORMAL); UpdateWindow(hwnd);
     if(count==5) startAnalysis(hwnd);

@@ -376,7 +376,7 @@ struct Renderer : RenderDevice {
         XMVECTOR ctr = XMVectorSet(camPx, 1.1f + camPy * 0.5f, camPz, 0);
         XMVECTOR eye = XMVectorAdd(ctr, XMVectorSet(sinf(orbit) * camDist, camHigh, cosf(orbit) * camDist, 0));
         XMStoreFloat3(&camWorld, eye);
-        // ---- M5: pending hotkeys (F2 quality / F3 FG / F4 DLSS-G multiplier) applied between frames ----
+        // ---- pending hotkeys (F2 quality / F3 FG / F4 DLSS-G multiplier) applied between frames ----
         if (pendingMode >= 0) { int m = pendingMode; pendingMode = -1; applyMode(m); logLine(std::string("mode -> ") + ups->modeName(ups->mode()) + " " + std::to_string(rw) + "x" + std::to_string(rh)); }
         if (pendingFG >= 0) { ups->setFG(pendingFG == 1); pendingFG = -1; logLine("fg -> " + ups->fgStatus()); }
         if (pendingMult) { ups->cycleMultiplier(); pendingMult = false; logLine("fg mult -> " + ups->fgStatus()); }
@@ -418,9 +418,9 @@ struct Renderer : RenderDevice {
         const float clear[4] = { mood.x * dim, mood.y * dim, mood.z * dim, 1.0f };
         XMFLOAT4 fog = XMFLOAT4(clear[0], clear[1], clear[2], 0.35f + 0.5f * dk);
 
-        // ---- M6: acquire this frame's slot. The CPU only waits when the slot's previous
+        // ---- acquire this frame's slot. The CPU only waits when the slot's previous
         // submission (kFrameCount frames ago) has not retired — with --inflight 3 that is the
-        // GPU-bound case, never the sync-every-frame flush of M1..M5.
+        // GPU-bound case, without flushing every frame.
         ups->renderSubmitStart();
         slot = frameIndex % kFrameCount;
         if (fence->GetCompletedValue() < slotFence[slot]) {
@@ -494,7 +494,7 @@ struct Renderer : RenderDevice {
         }
         float spotDim = 1.0f - 0.45f * dk;
 
-        // ---- M6: per-frame lights (b1). Key light + hemisphere ambient dim with `darkness`; the
+        // ---- per-frame lights (b1). Key light + hemisphere ambient dim with `darkness`; the
         // three follow-spots are cone lights aimed from the rig at the tracked floor point.
         {
             FrameCB fc{};
@@ -572,7 +572,7 @@ struct Renderer : RenderDevice {
         // ---- gear + tattoo extras (CONTRACT-3D §3 v1.2). With a skinned model the chest/pants/hip
         // pieces and the tattoo are submeshes of the character itself (drawCharacter); slots the
         // model has no mesh for (head/shoulders/gloves/feet/weapon) attach placeholder boxes to the
-        // posed joints. Without models: the M4 body offsets on the 1.8 m forge mesh (+Z = front).
+        // posed joints. Without models: the body offsets on the 1.8 m forge mesh (+Z = front).
         auto drawLook = [&](const net::LookState& look, const XMMATRIX& body, const CharModel* cm, const XMFLOAT4X4* joints) {
             auto attach = [&](const GpuMesh& mesh, const XMMATRIX& local, const XMFLOAT3& col, float em) {
                 drawMesh(mesh, XMMatrixMultiply(local, body), col, em, 0.45f, 0.35f);
@@ -625,7 +625,7 @@ struct Renderer : RenderDevice {
             }
         };
 
-        // ---- M6: model + clip choice. Players: their species' model when loaded, else the lead.
+        // ---- model + clip choice. Players: their species' model when loaded, else the lead.
         // Crowd/NPCs rotate the non-lead models by id hash (variant = hash % 4). Clip from the wire
         // anim enum (server ANIM: idle walk run jump dodge charge fire; crowd: idle walk dance).
         auto hashId = [](const std::string& id) { uint32_t hsh = 2166136261u; for (unsigned char ch : id) { hsh ^= ch; hsh *= 16777619u; } return hsh; };
@@ -645,7 +645,7 @@ struct Renderer : RenderDevice {
             return c >= 0 ? c : (cm.clipIdle >= 0 ? cm.clipIdle : 0);
         };
         static std::vector<XMFLOAT4X4> jointsTmp; jointsTmp.resize(kMaxJoints);
-        // one character: skinned when a model is loaded, else the M5 primitive + old placeholders
+        // one character: skinned when a model is loaded, else the fallback primitive + old placeholders
         auto drawEntity = [&](uint64_t key, const net::LookState* look, const std::string& species, int anim, bool crowd, bool local,
                               float x, float y, float z, float yaw, const XMFLOAT3& fallbackCol, float fallbackEm) {
             CharModel* cm = pickModel(species, (uint32_t)key, !crowd);
@@ -835,7 +835,7 @@ struct Renderer : RenderDevice {
             }
         }
 
-        // ---- M5: reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
+        // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
         barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         barrier(depth.Get(),      D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -877,7 +877,7 @@ struct Renderer : RenderDevice {
         antilag.setFrameGenFrameType(false);
         ups->present(swap.Get(), vsync ? 1 : 0, (!vsync && tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0);
         ups->afterPresent();
-        // ---- M6: retire by slot instead of flushing. The fence value signalled here is what the
+        // ---- retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
         slotFence[slot] = ++fenceVal;
         queue->Signal(fence.Get(), fenceVal);

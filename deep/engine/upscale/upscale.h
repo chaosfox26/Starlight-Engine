@@ -1,4 +1,4 @@
-// SampleGame DX12 client — milestone 5 upscaler / frame-generation abstraction.
+// SampleGame DX12 client — upscaler / frame-generation abstraction.
 // One vendor path is chosen at STARTUP (--upscaler dlss|fsr|xess|off, default = adapter vendor):
 // the three vendor swapchain interposers (DLSS-G proxy, FSR-FG wrapper, XeFG wrapper) cannot
 // coexist, so exactly one backend owns device/swapchain creation hooks and the per-frame hooks.

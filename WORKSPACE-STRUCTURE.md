@@ -47,6 +47,12 @@ Run commands from this workspace root. Build the shortcut's editor with `python 
 
 The relocated publication checkout has its own Git metadata. Its classic, audit-engine and verification CMake caches were freshly regenerated after relocation and now point to publication inside this workspace. Its CMake requires an explicit STARLIGHT_NGX_SDK setting; the existing external SDK was supplied during regeneration. This verified configuration, not a new publication compile. Do not modify SampleGame or copy licensed SDKs during this cleanup.
 
+## Keeping generated files under control
+
+Use `python Build-Native.py --config Release --build-dir out/classic --compact` for a compact build. Add `--test` when the configured tests should run before cleanup. Normal builds retain their caches. Compact cleanup runs only after successful requested commands, accepts one CMake build belonging to this source tree under `out`, and removes only OBJ/PCH/ILK intermediates. It preserves EXE/DLL/LIB/PDB files, assets and reports. Each operation leaves a manifest under that build's `cleanup-records` directory. The next build regenerates intermediates.
+
+Analysis runs now keep compact written reports, structured stage results, failure explanations, and reporting-script snapshots by default. After reports are saved, newly generated screenshots, test exports and other bulky run artifacts are removed even when tests fail. Files present before the invocation, files outside that run, and redirected paths are protected. `summary-retention.json` records removals; cleanup failures are visible in the final status. Use the command-line `--keep-artifacts` option when raw diagnostic captures are needed. Audit builds use compact build cleanup; normal development builds remain unchanged. Historical successful-run BMP retention also remains for older archives.
+
 ## Scope boundary
 
 Claude Code and Starbus are separate projects and are untouched. Old automation snapshots were retired with quarantine; the active SampleGame project and model assets remain in place. Cleanup does not implement new features or resolve the earlier telemetry and denoiser failures. Compiler intermediates were removed to reduce size and will regenerate on future builds; installed binaries remain available.

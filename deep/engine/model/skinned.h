@@ -1,4 +1,4 @@
-// SampleGame DX12 client — skinned character models (M6).
+// SampleGame DX12 client — skinned character models.
 // Loads a charfactory GLB (CONTRACT-3D v1.1: 29-joint rig, 27 clips, named mesh nodes
 // body/hair/tattoo/gear:*), optionally remaps TEXCOORD_0 to the bakes-v1 atlas layout
 // (<m>_atlas_uv.bin), generates tangents, and evaluates clip poses into a joint palette on the

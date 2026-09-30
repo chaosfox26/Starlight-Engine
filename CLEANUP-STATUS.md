@@ -1,3 +1,9 @@
+# Current publication update
+
+This update includes compact audit summaries, failure explanations, optional build compaction, the Analysis Tool icon, separated historical source notes, and source identity replacements with Chaos. Focused analyzer and five cleanup checks pass. The last full runtime run remains 10/13 with editor-control deadline, fullscreen telemetry and denoiser motion-vector failures. No new full runtime pass is claimed. Historical statuses below describe earlier checkpoints.
+
+The external privacy utility and its private replacement list/backups are not published. This commit updates current files; it does not rewrite Git history or anonymize existing archives.
+
 # Cleanup status — 29 September 2026
 
 ## Latest verified state (supersedes historical quarantine notes below)
@@ -10,6 +16,20 @@
 6. Remaining follow-up: audit active paths versus historical references, and reconcile current handoff status. No fixes to the two known rendering failures or modifications to SampleGame/Starbus were made.
 
 ## Historical cleanup sequence
+
+## Latest full verification of cleanup automation and icon
+
+GUI Run both `analysis/run-20260929-213020-5404-8804937` completed: 10/13 stages passed. The prior fullscreen live telemetry and dynamic motion-vector failures persist. One additional failure occurred: native-classic-ui did not complete all warmup/measured cycles within its stage deadline (process returned 1 after 222.13 seconds). Cause is not established; concurrent desktop work was reported, but is not proven responsible. Do not describe this run as all passing or as only the two old failures.
+
+The census covered 6,008 stable files, reading 1,689,937,241 bytes, with no scan issues or tree changes. This excludes analysis/publication and is not the whole workspace size (4.67 GiB measured after the run/build).
+
+Cleanup automation verification: three focused tests passed; additional isolated checks confirmed cleanup skips failed builds and failed requested tests and keeps the default newest three completed runs. A real audit-contract target regenerated after compaction, passed 13 checks, was compacted again, and passed again. The full compact editor build passed, followed by 1,184 core and 12 export checks. GUI snapshot included artifact_cleanup.py. Its final capture-retention.json contained zero candidates and no warning: current evidence stayed intact; automatic deletion behavior was exercised with temporary test data, not inferred from that empty live record.
+
+The new Analysis Tool icon and cleanup automation remain local pending a subsequent publication update. This full result does not certify the editor's missed timing deadline as resolved.
+
+## Earlier sequence (continued)
+
+Further reduction after archive verification: removed 533 byte-identical older binary/texture test captures (1,063.56 MiB), retaining and hash-verifying an identical copy of each. Protected latest full run, recent failure baselines and cleanup checks remain complete. Mapping: analysis/cleanup-review-20260929/duplicate-binary-captures-removal.json. Also removed 116 generated LIB/PDB files (1,022,888,126 bytes) from other build configurations, preserving installed classic/Release products and SampleGame-named project output. Older debugging symbols require regeneration; subsequent builds regenerate removed link products. No source/runtime binaries were removed in this pass. All 1,184 core and 12 export checks passed afterward, including packaged rendering. The owner-created Starlight-Engine.7z remains untouched and represents the earlier verified 5.95 GiB checkpoint, not this newer reduced layout.
 
 Active-path review: regenerated all three relocated publication CMake caches (classic, audit-engine, verification) successfully with their current root and the existing external NGX SDK. Corrected the analyzer GUI build command in its README and obsolete quarantine/verification wording in root README and CLAUDE.md. Desktop editor/analyzer shortcut targets exist; launcher and build entry points use the current root. No old Starlight-Publish/Starlight-analysis root references were found in the scanned current Python/C++/header/command/PowerShell/CMake tool and editor source. Historical relocation manifests and sealed reports intentionally retain original paths. Both analyzer test scripts passed. No full runtime rerun was needed for these documentation/cache changes; publication compilation was not rerun.
 

@@ -115,7 +115,7 @@ static void WriteCache(const std::string& path, uint64_t srcSize, uint64_t srcMt
 }
 
 // 2x2 box filter (odd edges clamp). Normals/roughness/AO get the same plain average: adequate
-// for the mip distances the club camera uses; a renormalizing/linear-space variant is an M6 gap.
+// for the mip distances the club camera uses; a renormalizing/linear-space variant is not implemented.
 static void Downsample(const std::vector<uint8_t>& src, uint32_t sw, uint32_t sh, std::vector<uint8_t>& dst, uint32_t& dw, uint32_t& dh) {
     dw = std::max(1u, sw / 2); dh = std::max(1u, sh / 2);
     dst.resize((size_t)dw * dh * 4);

@@ -1,4 +1,4 @@
-// SampleGame DX12 client — milestone 5 FSR backend (AMD FidelityFX SDK 2.3.0: upscaler 4.1.1 / 3.1.x
+// SampleGame DX12 client — FSR backend (AMD FidelityFX SDK 2.3.0: upscaler 4.1.1 / 3.1.x
 // fallback, frame generation 4.0.1 / 3.1.x fallback, FG swapchain 3.1.7). Compiled only when
 // build/flags.json enables backends.fsr (buildctl adds UP_HAVE_FSR + the SDK include dirs and copies
 // the signed DLLs next to the exe). Nothing here is linked statically: the loader DLL is LoadLibrary'd
