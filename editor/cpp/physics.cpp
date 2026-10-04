@@ -1,4 +1,6 @@
 #include "physics.hpp"
+#include "object_cache.hpp"
+#include "terrain_collision.hpp"
 #include "body_constraints.hpp"
 #include <DirectXMath.h>
 #include <numbers>
@@ -38,6 +40,7 @@ PhysicsSession::PhysicsSession() : handle_(slp_create()) {
 PhysicsSession::~PhysicsSession() { slp_destroy(handle_); }
 void PhysicsSession::terrain(const TerrainData &t) {
     t.validate();
+    if(!t.Volumes.empty()){if(!install_terrain_volume_collision(handle_,t))fail();return;}
     std::vector<float> heights;
     heights.reserve(t.Heights.size());
     for (double height : t.Heights)
@@ -63,7 +66,8 @@ void PhysicsSession::reset(const SceneData &scene) {
         if (k == "grass" || k == "fire" || k == "light" || k == "lava" ||
             k == "chaos-lightning" || k == "light-shard" || k == "craxis-smoke")
             continue;
-        auto mesh = object_mesh(c);
+        const auto sharedMesh = ObjectCache::shared().mesh(c);
+        const Mesh& mesh = *sharedMesh;
         std::vector<float> points;
         std::vector<uint32_t> indices(mesh.indices.begin(), mesh.indices.end());
         for (const auto &v : mesh.vertices) {

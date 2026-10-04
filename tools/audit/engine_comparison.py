@@ -3,6 +3,8 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import subprocess
+import tempfile
 from pathlib import Path
 
 REVIEWED = '2026-09-23'
@@ -30,6 +32,21 @@ ROWS = [
         ('Project Manager creates, imports and opens projects.', 'https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html')],
      'Test beginner task completion, discoverability and recovery with people. Documentation cannot establish which experience is easier or unique.'),
 ]
+
+def native_generate(root,program,out,model,graph=None,today=None):
+    with tempfile.TemporaryDirectory(prefix='starlight-comparison-') as temp:
+        base=Path(temp)
+        (base/'model.json').write_text(json.dumps(model),encoding='utf-8')
+        (base/'graph.json').write_text(json.dumps(graph or {}),encoding='utf-8')
+        command=[str(program),str(base/'model.json'),str(base/'graph.json'),
+                 str(root/'tools/audit/comparison-rules.json'),str(base/'result')]
+        if today: command.append(today.isoformat())
+        result=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode: raise RuntimeError('Native comparison report failed: '+result.stderr.strip())
+        for name in ('engine-comparison.json','ENGINE-COMPARISON.md'):
+            with (out/name).open('xb') as target: target.write((base/'result'/name).read_bytes())
+        return json.loads((base/'result/engine-comparison.json').read_text(encoding='utf-8'))
+
 
 def generate(out, model, graph=None, today=None):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)

@@ -1,5 +1,6 @@
 #pragma once
 #include "adventure.hpp"
+#include "native_session.hpp"
 #include <windows.h>
 #include "../../deep/engine/persistent_workers.h"
 #include "../../deep/engine/parallel_metrics.h"
@@ -7,11 +8,13 @@ namespace starlight::editor {
 // Cosmetic geometry shares world coordinates. Batch equal materials so every
 // moving cone edge does not allocate its own pair of GPU buffers and draw call.
 inline std::vector<MeshPart> batch_presentation(std::vector<MeshPart> parts){
+    {static const bool noBatch=std::getenv("STARLIGHT_DIAG_NO_BATCH")!=nullptr; /* diagnostic: reproduces the 2026-09-27 unbatched presentation */ if(noBatch)return parts;}
     std::vector<MeshPart> batches;
     for(auto& part:parts){
-        if(part.gpuTelegraph){batches.push_back(std::move(part));continue;}
+        auto volume=[](const MeshPart& p){return !p.mesh.vertices.empty()&&p.mesh.vertices.front().kind>=13&&p.mesh.vertices.front().kind<14;};
+        if(part.gpuTelegraph||volume(part)){batches.push_back(std::move(part));continue;}
         auto match=std::find_if(batches.begin(),batches.end(),[&](const MeshPart& b){
-            return !b.gpuTelegraph && b.emissive==part.emissive && b.color.x==part.color.x && b.color.y==part.color.y && b.color.z==part.color.z;
+            return !b.gpuTelegraph && !volume(b) && b.emissive==part.emissive && b.color.x==part.color.x && b.color.y==part.color.y && b.color.z==part.color.z;
         });
         if(match==batches.end()){batches.push_back(std::move(part));continue;}
         const int offset=static_cast<int>(match->mesh.vertices.size());
@@ -21,7 +24,7 @@ inline std::vector<MeshPart> batch_presentation(std::vector<MeshPart> parts){
     return batches;
 }
 // Temporary geometry only: never inserted into gameplay, collision or saved scenes.
-inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presentation& p,bool gpuFill=false){
+inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presentation& p,bool gpuFill=false,bool residentFragments=false){
     std::vector<MeshPart> parts;
     auto line=[&](Vec3 a,Vec3 b,Vec3 color,double width){
         MeshPart part;part.color=color;part.emissive=true;auto direction=(b-a).unit();
@@ -88,9 +91,11 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         }
     };
     for(const auto& fragment:p.fragments){
-        if(fragment.part){auto part=*fragment.part;uint64_t vertexIndex=0;for(auto& v:part.mesh.vertices){v.motionIdentity=vertex_motion_identity(3,fragment.serial,vertexIndex++);Vec3 q{fragment.rotation[0],fragment.rotation[1],fragment.rotation[2]};auto rotate=[&](Vec3 value){auto t=q.cross(value)*2;return value+t*fragment.rotation[3]+q.cross(t);};v.position=rotate(v.position)+fragment.position;v.normal=rotate(v.normal);}parts.push_back(std::move(part));}
+        if(fragment.part){if(residentFragments)continue;auto part=*fragment.part;uint64_t vertexIndex=0;for(auto& v:part.mesh.vertices){v.motionIdentity=vertex_motion_identity(3,fragment.serial,vertexIndex++);Vec3 q{fragment.rotation[0],fragment.rotation[1],fragment.rotation[2]};auto rotate=[&](Vec3 value){auto t=q.cross(value)*2;return value+t*fragment.rotation[3]+q.cross(t);};v.position=rotate(v.position)+fragment.position;v.normal=rotate(v.normal);}parts.push_back(std::move(part));}
         else box(fragment.position,{.12,.12,.12},{.65,.8,.9},fragment.serial+1000);
     }
+    for(const auto& puff:p.dust)if(puff.opacity()>.0001)parts.push_back(dust_volume(puff));
+    for(const auto& grain:p.grit)parts.push_back(dust_grain(grain));
     for(const auto& shot:p.projectiles){size_t start=parts.size();line(shot.position,shot.position-shot.velocity.unit()*.3,{1,.8,.25},.025);uint64_t vertexIndex=0;for(size_t i=start;i<parts.size();++i)for(auto& v:parts[i].mesh.vertices)v.motionIdentity=vertex_motion_identity(4,shot.serial,vertexIndex++);}
     if(p.showWeapons){
         // Original temporary dual pistols. First-person geometry follows the
@@ -155,14 +160,14 @@ class BattlePresentationWorkers {
     ParallelMetrics metrics_;
 public:
     std::vector<MeshPart> build(const AdventurePlayer::Presentation& snapshot,
-                               ParallelWorkReading& reading,bool parallel=true,bool gpuFill=false){
+                               ParallelWorkReading& reading,bool parallel=true,bool gpuFill=false,bool residentFragments=false){
         metrics_.reset();metrics_.enabled=true;
         const int count=1+int(snapshot.actorTelegraphs.size());
         unsigned threads=parallel?std::min({unsigned(count),4u,std::max(1u,std::thread::hardware_concurrency())}):1u;
         std::vector<std::vector<MeshPart>> output(count);
         metrics_.run(count,threads,[&](const auto& callback){workers_.run(count,threads,callback);},
             [&](int lo,int hi,int){for(int i=lo;i<hi;++i){
-                if(i==0){auto player=snapshot;player.actorTelegraphs.clear();output[i]=player_presentation(player,gpuFill);}
+                if(i==0){auto player=snapshot;player.actorTelegraphs.clear();output[i]=player_presentation(player,gpuFill,residentFragments);}
                 else {const auto& actor=snapshot.actorTelegraphs[i-1];
                     AdventurePlayer::Presentation effect;effect.showBody=false;effect.showTelegraph=true;effect.telegraphIdentity=render_identity(actor.identity,0);
                     effect.telegraphTerrain=snapshot.telegraphTerrain;effect.telegraphRange=3;effect.telegraphHalfAngle=.7853981633974483;
@@ -176,11 +181,17 @@ public:
         return batch_presentation(std::move(combined));
     }
 };
-inline std::vector<MeshPart> battle_presentation(const AdventurePlayer::Presentation& p,ParallelWorkReading& reading,bool gpuFill=true){
+// Fragments with a shared mesh can be drawn from GPU-resident geometry; only their pose is sent per update.
+inline std::vector<RubbleInstance> resident_rubble(const AdventurePlayer::Presentation& p,bool enabled){
+    std::vector<RubbleInstance> instances;
+    if(enabled)for(const auto& f:p.fragments)if(f.part)instances.push_back({f.part,f.position,f.rotation,f.serial});
+    return instances;
+}
+inline std::vector<MeshPart> battle_presentation(const AdventurePlayer::Presentation& p,ParallelWorkReading& reading,bool gpuFill=true,bool residentFragments=false){
     thread_local BattlePresentationWorkers workers;
     thread_local const bool enabled=[] {wchar_t value[8]{};return !(GetEnvironmentVariableW(L"STARLIGHT_BATTLE_WORKERS",value,8) && value[0]==L'0');}();
     thread_local const bool gpuEnabled=[] {wchar_t value[8]{};return !(GetEnvironmentVariableW(L"STARLIGHT_GPU_TELEGRAPHS",value,8) && value[0]==L'0');}();
-    return workers.build(p,reading,enabled,gpuFill && gpuEnabled);
+    return workers.build(p,reading,enabled,gpuFill && gpuEnabled,residentFragments);
 }
 
 }

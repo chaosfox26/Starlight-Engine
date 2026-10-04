@@ -1,0 +1,15 @@
+Starlight graphics checks
+
+The editor, player and bundled source-build tools do not require a separate development-tool installation.
+
+Graphics debug validation is an additional check. Microsoft requires the Windows Graphics Tools optional feature even when an application includes the matching Direct3D debug DLLs. Starlight does not install this Windows feature automatically.
+
+To enable this check, open Windows Settings, find Optional features, select Add an optional feature, and search for Graphics Tools. Complete the Windows installation, then rerun the error checks. Windows may require a download and administrator approval.
+
+If Graphics Tools is unavailable, rendering may still work, but debug validation is not verified. The analysis report retains that failed requirement; it does not count ordinary rendering as a debug-validation pass.
+
+Windows Sandbox has its own optional features and virtual graphics adapter. Installing Graphics Tools on the host does not establish that it is available in Sandbox. Likewise, a virtual adapter cannot certify NVIDIA ray reconstruction or every physical graphics card. Hardware-specific results must be checked on suitable hardware.
+
+Microsoft references:
+https://learn.microsoft.com/en-us/windows/win32/direct3d12/directx-12-programming-environment-set-up
+https://github.com/microsoft/DirectX-Specs/blob/master/d3d/D3D12Redistributable.md

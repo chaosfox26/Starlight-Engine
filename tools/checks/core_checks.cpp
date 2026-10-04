@@ -1,6 +1,8 @@
+#include "engine_assets.hpp"
 #include "solid_fixture.hpp"
 #include "commands.hpp"
 #include "geometry.hpp"
+#include "terrain_volume.hpp"
 #include "mesh.hpp"
 #include "platform.hpp"
 #include "render_scene.hpp"
@@ -11,6 +13,7 @@
 #include "asset_library.hpp"
 #include "adventure.hpp"
 #include "environment_effects.hpp"
+#include "crystal_geometry.hpp"
 #include "grapple_motion.hpp"
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
@@ -22,10 +25,40 @@
 #include "adventure_template.hpp"
 #include "tutorial_progress.hpp"
 #include <cstring>
+#include <thread>
 #include <iostream>
 using namespace starlight::editor;
 #include "physics_boundary_checks.inl"
-int main(int argc, char **argv) {
+#include "rain_checks.inl"
+#include "object_cache_checks.inl"
+#include "key_card_checks.inl"
+#include "graphics_runtime_checks.inl"
+#include "club_schema_checks.inl"
+#include "asset_root_checks.inl"
+#include "active_scene_guard_checks.inl"
+#include "environment_effects.hpp"
+#include "render_split_checks.inl"
+#include "lightning_graphics_checks.inl"
+#include "lighting_fixtures.inl"
+#include "water_wave_checks.inl"
+#include "liquid_surface_checks.inl"
+#include "liquid_obstacle_surface_checks.inl"
+#include "foliage_material_checks.inl"
+#include "terrain_material_checks.inl"
+#include "lava_surface_checks.inl"
+#include "lava_passage_geometry_checks.inl"
+#include "rock_fracture_checks.inl"
+#include "destruction_dust_checks.inl"
+#include "object_destruction_checks.inl"
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+#include "terrain_destruction_checks.inl"
+#endif
+// Keep the large controller fixtures out of main's permanently reserved frame.
+// Other phases must retain room for nested collision/mesh operations on Windows.
+__declspec(noinline) static void character_controller_checks(const auto& require,const fs::path& folder){
+#include "character_controller_checks.inl"
+}
+static int checks_main(int argc, char **argv) {
     std::vector<std::string> checks;
     auto require = [&](bool ok, const char *name) {
         if (!ok)
@@ -34,8 +67,102 @@ int main(int argc, char **argv) {
     };
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
+    EngineAssets::ScopedRoot checkLibrary(folder / "engine-assets");
     try {
+        active_scene_guard_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path());
         physics_boundary_checks(require);
+        rain_checks(require,folder);
+        object_cache_checks(require,folder);
+        key_card_checks(require,folder);
+        graphics_runtime_checks(require,folder);
+        club_schema_checks(require,folder);
+        model_asset_checks(require,folder);
+        asset_root_checks(require,folder);
+        render_split_checks(require);
+        fracture_pose_checks(require);
+        ray_tree_checks(require);
+        lightning_graphics_checks(require,folder);
+        lighting_fixtures(folder);
+        water_wave_checks(require,folder);
+        liquid_surface_checks(require,folder);
+        liquid_obstacle_surface_checks(require,folder);
+        foliage_material_checks(require,folder);
+        terrain_material_checks(require,folder);
+        lava_surface_checks(require,folder);
+        lava_passage_geometry_checks(require);
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+        rock_fracture_checks(require,folder);
+        destruction_dust_checks(require,folder);
+        object_destruction_checks(require,folder);
+        terrain_destruction_checks(require,folder);
+#endif
+        {
+            auto owner=std::make_unique<SceneData>();auto& saved=*owner;
+            auto baseline=json::parse(saved.encode());baseline.erase("ShadowQuality");
+            require(SceneData::decode(baseline.dump()).ShadowQuality==2,"Legacy scenes retain default Medium shadow quality");
+            for(int quality=0;quality<4;++quality){saved.ShadowQuality=quality;require(SceneData::decode(saved.encode()).ShadowQuality==quality,"Saved shadow preset round trips without changing its value");}
+            for(const auto& invalid:std::array<json,4>{json(-1),json(4),json(1.5),json("High")}){auto data=baseline;data["ShadowQuality"]=invalid;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}require(rejected,"Invalid shadow quality is rejected instead of silently truncating");}
+        }
+        {
+            auto volume=[](const Mesh& mesh){double result=0;for(size_t i=0;i<mesh.indices.size();i+=3){auto a=mesh.vertices[mesh.indices[i]].position,b=mesh.vertices[mesh.indices[i+1]].position,c=mesh.vertices[mesh.indices[i+2]].position;result+=a.dot(b.cross(c))/6.;}return result;};
+            Mesh round,stretched,moved;Vec3 center{1,2,3},velocity{2,4,-1};
+            append_particle_surface(round,center,velocity,.02,1,731,{1,1,1},7.2f);
+            append_particle_surface(stretched,center,velocity,.02,3,731,{1,1,1},7.2f);
+            append_particle_surface(moved,center+Vec3{.2,.4,0},velocity+Vec3{1,0,1},.02,2,731,{1,1,1},7.2f);
+            std::map<std::pair<int,int>,int> edges;bool finite=true,outward=true,history=true;
+            for(size_t i=0;i<stretched.indices.size();i+=3){auto a=stretched.vertices[stretched.indices[i]],b=stretched.vertices[stretched.indices[i+1]],c=stretched.vertices[stretched.indices[i+2]];outward&=(b.position-a.position).cross(c.position-a.position).dot((a.position+b.position+c.position)/3-center)>1e-15;for(int e=0;e<3;++e){int x=stretched.indices[i+e],y=stretched.indices[i+(e+1)%3];edges[{std::min(x,y),std::max(x,y)}]++;}}
+            for(size_t i=0;i<stretched.vertices.size();++i){const auto& v=stretched.vertices[i];finite&=std::isfinite(v.position.x+v.position.y+v.position.z)&&std::abs(v.normal.length()-1)<1e-10&&v.normal.dot(v.position-center)>0;history&=v.motionIdentity&&v.motionIdentity==moved.vertices[i].motionIdentity;}
+            atomic_write(folder/"particle-surface-diagnostics.json",json{{"outward",outward},{"finiteNormals",finite},{"closed",std::all_of(edges.begin(),edges.end(),[](const auto& edge){return edge.second==2;})},{"vertices",stretched.vertices.size()},{"indices",stretched.indices.size()},{"volume",volume(stretched)}}.dump(2));
+            require(outward&&finite&&std::all_of(edges.begin(),edges.end(),[](const auto& edge){return edge.second==2;}),"Splash and spark particles are closed outward surfaces with smooth finite normals");
+            require(std::abs(volume(round)-volume(stretched))<1e-12&&volume(round)>0,"Velocity stretch preserves droplet volume instead of inflating thin splash sheets");
+            require(history,"Particle vertex history survives movement and velocity-driven deformation");
+            Mesh rejected;append_particle_surface(rejected,center,velocity,0,1,731,{1,1,1},0);require(rejected.vertices.empty(),"Expired zero-size particle geometry is not submitted");
+            SceneData splashScene;splashScene.Name="Three dimensional splash droplets";splashScene.FogDensity=0;splashScene.Hour=15;
+            Character backdrop;backdrop.Shape="cube";backdrop.Id="splash-backdrop";backdrop.Y=0;backdrop.Z=-1.2;backdrop.Width=3;backdrop.Height=3;backdrop.Depth=.2;backdrop.Color="#CB6D40";splashScene.Characters={backdrop};
+            EnvironmentEffects effects;effects.splash({{0,.8,0},{0,0,0},1,false});auto drops=effects.geometry(splashScene);bool material=true;
+            for(const auto& part:drops)for(const auto& v:part.mesh.vertices)material&=std::abs(v.kind-7.2)<1e-5&&v.color.y>0&&std::abs(v.normal.length()-1)<1e-8;
+            require(material&&!drops.empty()&&drops[0].mesh.indices.size()==effects.splash_count()*particle_surface().indices.size(),"Runtime water splashes use bounded 3D dielectric meshes without shoreline foam");
+            auto saveSplash=[&](const char* name,const SceneData& scene,const std::vector<MeshPart>& overlay){auto packet=render_scene(scene,nullptr,overlay,nullptr,true);atomic_write(folder/(std::string(name)+".bin"),std::string_view(reinterpret_cast<const char*>(packet.data()),packet.size()));};
+            saveSplash("water-droplets",splashScene,drops);saveSplash("water-droplets-empty",splashScene,{});
+            auto blue=splashScene;blue.Characters[0].Color="#3F7ACB";saveSplash("water-droplets-blue",blue,drops);saveSplash("water-droplets-blue-empty",blue,{});
+            effects.step(splashScene,.025,.025);saveSplash("water-droplets-moved",splashScene,effects.geometry(splashScene));
+            effects.reset();effects.splash({{0,.8,0},{0,0,0},1,true});auto molten=effects.geometry(splashScene);require(!molten.empty()&&molten[0].mesh.vertices[0].kind>8,"Lava droplets use molten crust shading on closed moving meshes");saveSplash("lava-droplets",splashScene,molten);
+            effects.reset();for(int burst=0;burst<80;++burst)effects.splash({{(burst%8-3.5)*.18,.5+(burst/8)*.07,-.1}, {},1,false});
+            auto particleStart=std::chrono::steady_clock::now();auto dense=effects.geometry(splashScene);double particleMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-particleStart).count();
+            require(effects.splash_count()==1024&&dense.size()==1&&dense[0].mesh.vertices.size()==1024*particle_surface().vertices.size(),"Repeated splash bursts respect the particle cap and bounded shared mesh topology");
+            atomic_write(folder/"particle-dense-budget.json",json{{"particles",effects.splash_count()},{"vertices",dense[0].mesh.vertices.size()},{"triangles",dense[0].mesh.indices.size()/3},{"geometryMs",particleMs},{"cpuMeshBytes",dense[0].mesh.vertices.capacity()*sizeof(Vertex)+dense[0].mesh.indices.capacity()*sizeof(int)}}.dump(2));saveSplash("water-droplets-dense",splashScene,dense);
+            std::vector<double> timings;
+            for(int trial=0;trial<15;++trial){auto start=std::chrono::steady_clock::now();auto sample=effects.geometry(splashScene);timings.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());require(sample[0].mesh.vertices.size()==dense[0].mesh.vertices.size()&&sample[0].mesh.vertices.back().motionIdentity==dense[0].mesh.vertices.back().motionIdentity,"Repeated dense splash reconstruction preserves geometry and motion identity");}
+            auto ordered=timings;std::sort(ordered.begin(),ordered.end());
+            atomic_write(folder/"particle-rebuild-timing.json",json{{"samplesMs",timings},{"medianMs",ordered[ordered.size()/2]},{"vertices",dense[0].mesh.vertices.size()},{"triangles",dense[0].mesh.indices.size()/3}}.dump(2));
+            json inventory=json::array();for(const auto& kind:shapes){Character object;object.Shape=kind;auto parts=object_parts(object);size_t vertices=0,triangles=0;for(const auto& part:parts){vertices+=part.mesh.vertices.size();triangles+=part.mesh.indices.size()/3;}inventory.push_back({{"shape",kind},{"parts",parts.size()},{"vertices",vertices},{"triangles",triangles},{"visualAcceptance","pending"}});}
+            atomic_write(folder/"placeable-object-inventory.json",inventory.dump(2));
+            SceneData magic;magic.Name="Chaos rock and luminous shard materials";magic.Hour=19;magic.FogDensity=0;
+            Character rock;rock.Shape="chaos-rock";rock.Id="magic-rock";rock.X=-1;rock.Size=1.8;rock.Color="#9679CB";
+            Character shard;shard.Shape="light-shard";shard.Id="magic-shard";shard.X=1.2;shard.Size=.8;shard.Color="#6C8EBF";
+            magic.Characters={rock,shard};saveSplash("magic-stones",magic,{});auto tinted=magic;tinted.Characters[0].Color="#D53F26";tinted.Characters[1].Color="#D53F26";saveSplash("magic-stones-tinted",tinted,{});auto day=magic;day.Hour=15;saveSplash("magic-stones-day",day,{});
+            const auto& crystal=crystal_surface();std::map<std::tuple<int64_t,int64_t,int64_t>,int> welded;std::vector<int> remap;Vec3 sum;bool crystalNormals=true;
+            for(const auto& vertex:crystal.vertices){auto p=vertex.position;sum=sum+p;auto [at,added]=welded.emplace(std::tuple{std::llround(p.x*1e8),std::llround(p.y*1e8),std::llround(p.z*1e8)},int(welded.size()));remap.push_back(at->second);crystalNormals&=std::abs(vertex.normal.length()-1)<1e-10&&vertex.kind==11;}
+            std::map<std::pair<int,int>,int> crystalEdges;bool crystalFaces=true;
+            for(size_t i=0;i<crystal.indices.size();i+=3){auto a=crystal.vertices[crystal.indices[i]],b=crystal.vertices[crystal.indices[i+1]],c=crystal.vertices[crystal.indices[i+2]];auto cross=(b.position-a.position).cross(c.position-a.position);crystalFaces&=cross.length()>1e-10&&cross.dot(a.normal)>0;for(int e=0;e<3;++e){int x=remap[crystal.indices[i+e]],y=remap[crystal.indices[i+(e+1)%3]];crystalEdges[{std::min(x,y),std::max(x,y)}]++;}}
+            require(crystalFaces&&crystalNormals&&volume(crystal)>0&&std::all_of(crystalEdges.begin(),crystalEdges.end(),[](const auto& edge){return edge.second==2;}),"Beveled crystal has a closed nondegenerate boundary with stable facet normals");
+            auto bounds=object_bounds(shard);require(bounds.high.y>1.9&&bounds.low.y==0,"Rebuilt light shards retain an upright grounded authored transform");
+            json positions=json::array();for(size_t i=0;i<std::min(size_t(20),crystal.vertices.size());++i){auto p=crystal.vertices[i].position;positions.push_back({p.x,p.y,p.z});}atomic_write(folder/"rebuilt-shard-reference.json",json{{"light-shard",json::array({json{{"vertices",crystal.vertices.size()},{"indices",crystal.indices.size()},{"positions",positions},{"sum",{sum.x,sum.y,sum.z}}}})}}.dump(2));
+            SceneData materialScene;materialScene.Name="Authored surfaces on solid primitives";materialScene.FogDensity=0;materialScene.Hour=15;bool authoredSurface=true;
+            for(int surface=1;surface<=6;++surface){Character object;object.Shape=surface==2?"rectangle":surface==3?"trapezoid":surface==4?"octagon":"cube";object.Surface=surface;object.Id="material-primitive-"+std::to_string(surface);object.Size=.7;object.X=(surface-3.5)*.9;materialScene.Characters.push_back(object);}
+            auto reloaded=SceneData::decode(materialScene.encode());for(size_t i=0;i<reloaded.Characters.size();++i){const auto& object=reloaded.Characters[i];auto part=object_parts(object);for(const auto& vertex:part[0].mesh.vertices)authoredSurface&=vertex.kind==object.Surface;auto plain=object;plain.Surface=0;auto original=object_parts(plain);authoredSurface&=original[0].mesh.indices==part[0].mesh.indices;for(size_t v=0;v<part[0].mesh.vertices.size();++v)authoredSurface&=(part[0].mesh.vertices[v].position-original[0].mesh.vertices[v].position).length()<1e-12;}
+            require(authoredSurface,"Primitive surface choices survive save and reload and reach rendering without altering solid geometry");saveSplash("material-primitives",materialScene,{});for(auto& object:materialScene.Characters)object.Surface=0;saveSplash("material-primitives-plain",materialScene,{});
+            SceneData meadow;meadow.Name="Grass field - current overhaul prototype";meadow.Hour=15;meadow.FogDensity=.008;meadow.Terrain.emplace();
+            for(int z=0;z<TerrainData::N;++z)for(int x=0;x<TerrainData::N;++x){double px=x*TerrainData::Step-TerrainData::Half,pz=z*TerrainData::Step-TerrainData::Half;meadow.Terrain->Heights[z*TerrainData::N+x]=.13*std::sin(px*.38)*std::cos(pz*.29);}
+            for(int z=0;z<12;++z)for(int x=0;x<12;++x){Character patch;patch.Shape="grass";patch.Id="meadow-grass-"+std::to_string(z*12+x);patch.X=(x-5.5)*.8;patch.Z=(z-5.5)*.8-3;patch.Y=meadow.Terrain->height_at(patch.X,patch.Z);patch.Color=(x+z)%3==0?"#779952":(x+z)%3==1?"#9BAE67":"#638A46";patch.RotationY=std::fmod(x*137.+z*97.,360.);meadow.Characters.push_back(patch);}
+            EnvironmentEffects meadowEffects;meadowEffects.step(meadow,.025,0);saveSplash("grass-field",meadow,meadowEffects.geometry(meadow));
+            for(int tick=1;tick<=30;++tick)meadowEffects.step(meadow,.025,tick*.025);
+            saveSplash("grass-field-wind",meadow,meadowEffects.geometry(meadow));atomic_write(folder/"grass-field.starscene",meadow.encode());
+            std::vector<double> grassTimings;
+            for(int tick=0;tick<15;++tick){auto start=std::chrono::steady_clock::now();meadowEffects.step(meadow,.025,.8+tick*.025);grassTimings.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());}
+            auto orderedGrass=grassTimings;std::sort(orderedGrass.begin(),orderedGrass.end());
+            atomic_write(folder/"grass-update-timing.json",json{{"patches",meadow.Characters.size()},{"blades",meadow.Characters.size()*100},{"samplesMs",grassTimings},{"medianMs",orderedGrass[orderedGrass.size()/2]}}.dump(2));
+        }
         {
             SceneData fire;Character emitter;emitter.Shape="fire";fire.Characters={emitter};EnvironmentEffects effects;
             for(int i=0;i<20;++i)effects.step(fire,.025,i*.025);require(effects.flame_count()>0,"Fire emits independently moving physical flame particles");
@@ -64,7 +191,7 @@ int main(int argc, char **argv) {
             require(player.scene().Characters.empty()&&player.presentation().projectiles.empty(),"Projectile impact invokes gameplay destruction only on arrival");
             auto restored=SceneData::decode(level.encode());require(restored.Game->ProjectileSpeed==5,"Projectile behavior persists through scene save and load");
             player.start(level);require(player.presentation().projectiles.empty(),"Restart clears all projectiles");
-            Character barrier;barrier.Shape="cube";barrier.Z=-2;barrier.Width=4;barrier.Height=3;barrier.Depth=.03;level.Characters.push_back(barrier);player.start(level);player.fire_button(true);player.fire_button(false);for(int i=0;i<600;++i)player.move(0,0,1./120.);require(player.scene().Characters.size()==2,"A physical shot hits intervening scenery instead of damaging a target behind it");
+            Character barrier;barrier.Shape="cube";barrier.Breakable=false;barrier.Z=-2;barrier.Width=4;barrier.Height=3;barrier.Depth=.03;level.Characters.push_back(barrier);player.start(level);player.fire_button(true);player.fire_button(false);for(int i=0;i<600;++i)player.move(0,0,1./120.);require(player.scene().Characters.size()==2,"A physical shot hits intervening scenery instead of damaging a target behind it");
 
         }
         {
@@ -169,6 +296,38 @@ int main(int argc, char **argv) {
             for(int i=0;i<150;i++)p.move(0,0,1./120.);
             require(p.scene().Characters[0].X>before && p.scene().Characters[0].X<before+1,"NPC resumes route without catch-up teleport");
             require(level.encode()==saved,"Runtime route control preserves authored route");
+        }
+
+        {
+            TerrainData cave;cave.Volumes.push_back({0,-5,0,4,true});
+            auto floor=terrain_support_height(cave,0,0,-8.8);
+            require(floor&&std::abs(*floor+9)<.002,"Local support queries select the cave floor rather than the roof or old heightfield");
+            require(!terrain_support_height(cave,0,0,-5),"Actors without nearby support do not teleport to another terrain layer");
+            Bounds body{{-.2,-9,-.2},{.2,-7.5,.2}};
+            auto support=terrain_body_support(cave,body,{},-8.8);
+            require(support&&*support<-8.9&&terrain_body_clear(cave,body,{0,*support+9,0}),"Cave floor support considers the complete actor footprint");
+            require(!terrain_body_clear(cave,body,{3.9,2,0})&&!terrain_body_clear(cave,body,{0,7,0}),"Volumetric actor clearance rejects cave walls and low ceilings");
+            TerrainData mound;mound.Volumes.push_back({0,0,0,1,false});
+            auto raised=terrain_support_height(mound,0,0,.9);
+            require(raised&&std::abs(*raised-1)<.002,"Local actor support finds added terrain above the legacy ground");
+            SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnY=-7.2;level.Game->SpawnZ=0;level.Terrain=cave;
+            Character enemy;enemy.Shape="cube";enemy.Id="cave-patrol";enemy.X=-1;enemy.Y=-8.8;enemy.Width=.4;enemy.Depth=.4;enemy.Height=1;enemy.CombatHealth=100;enemy.Speed=1.5;enemy.Route={{2,0}};level.Characters={enemy};auto authored=level.encode();
+            AdventurePlayer player;player.start(level);bool inside=true;
+            for(int tick=0;tick<240;++tick){player.move(0,0,1./120.);inside=inside&&terrain_body_clear(cave,object_bounds(player.scene().Characters.front()));}
+            auto moved=player.scene().Characters.front();
+            require(moved.X>.5&&moved.Y<-8&&inside,"Patrolling NPC traverses the carved cave floor while preserving volumetric body clearance");
+            require(level.encode()==authored,"Cave navigation changes only runtime actor poses");
+            enemy.Route={{8,0}};level.Characters={enemy};player.start(level);
+            for(int tick=0;tick<600;++tick)player.move(0,0,1./120.);
+            auto blocked=player.scene().Characters.front();
+            require(blocked.X<3.2&&blocked.Y<-5&&terrain_body_clear(cave,object_bounds(blocked)),"Cave navigation stops at unwalkable curved walls instead of climbing to the heightfield");
+            TerrainData lowCave;lowCave.Volumes.push_back({0,-2,0,1.5,true});level.Terrain=lowCave;
+            enemy.X=0;enemy.Z=0;enemy.Y=-3.45;enemy.Width=.2;enemy.Depth=.2;enemy.Height=1.5;enemy.Route.clear();level.Characters={enemy};level.Game->SpawnY=-1.8;level.Game->SpawnZ=-1;
+            player.start(level);player.control_actor(enemy.Id,ControlEffect::Launch,{1,true});inside=true;double top=-10;
+            for(int tick=0;tick<480;++tick){player.move(0,0,1./120.);auto b=object_bounds(player.scene().Characters.front());inside=inside&&terrain_body_clear(lowCave,b);top=std::max(top,b.high.y);}
+            auto landed=player.scene().Characters.front();
+            require(inside&&top<-.45&&landed.Y<-2&&!player.combat_actors().at(enemy.Id).launchAirborne,"Launched NPC sweeps the cave walls and ceiling, then lands inside the carved volume");
+            atomic_write(folder/"npc-volume-contact.json",json{{"patrolX",moved.X},{"patrolY",moved.Y},{"blockedX",blocked.X},{"blockedY",blocked.Y},{"launchTop",top},{"landedY",landed.Y},{"bodyClear",inside}}.dump(2));
         }
 
         {
@@ -403,7 +562,7 @@ int main(int argc, char **argv) {
             SceneData level;level.Game.emplace();level.Game->SpawnZ=0;level.Game->Collision=false;
             Character enemy;enemy.Shape="cube";enemy.Z=-4;enemy.Y=1;enemy.CombatHealth=100;enemy.CombatTeam=2;enemy.CombatBoss=true;level.Characters={enemy};
             auto saved=level.encode();auto restored=SceneData::decode(saved);
-            require(restored.SchemaVersion==12 && restored.Characters[0].CombatHealth==100 && restored.Characters[0].CombatBoss,"Combat actor and boss settings round-trip through scene schema");
+            require(restored.SchemaVersion==16 && restored.Characters[0].CombatHealth==100 && restored.Characters[0].CombatBoss,"Combat actor and boss settings round-trip through scene schema");
             AdventurePlayer p;p.start(restored);p.select_target();p.fire_button(true);p.fire_button(false);for(int i=0;i<310;i++)p.move(0,0,1./120.);
             require(p.combat_actors().at(enemy.Id).health==90 && p.scene().Characters.size()==1,"Basic attack damages combat actor without prematurely removing it");
             for(int i=0;i<4;i++)p.control_actor(enemy.Id,ControlEffect::Stun,{1,true});
@@ -490,7 +649,7 @@ int main(int argc, char **argv) {
             require(!p.presentation().fragments.empty(),"Physical debris remains available to collide and settle beyond the old cosmetic timeout");
             for(int i=0;i<720;i++)p.move(0,0,1./120.);
             require(p.presentation().fragments.empty(),"Physical debris is retired after its bounded eight-second lifetime");
-            Character wall;wall.Shape="cube";wall.Width=5;wall.Height=4;wall.Depth=.2;wall.Z=-2;level.Characters.push_back(wall);
+            Character wall;wall.Shape="cube";wall.Breakable=false;wall.Width=5;wall.Height=4;wall.Depth=.2;wall.Z=-2;level.Characters.push_back(wall);
             p.start(level);p.fire_button(true);for(int i=0;i<310;i++)p.move(0,0,1./120.);
             require(p.scene().Characters.size()==3,"Solid wall blocks aimed attacks to targets behind it");
             level.Characters.pop_back();p.start(level);p.select_target();p.yaw=p.cameraYaw=1.5;p.fire_button(true);
@@ -631,6 +790,25 @@ int main(int argc, char **argv) {
             require(bounded.positions[2]==0 && bounded.positions[1]==1,"Invalid individual step cannot escape lesson bounds");
         }
         SceneData s;
+        require(hash_bytes("")=="E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+                "SHA256 empty input matches the standard vector");
+        require(hash_bytes("abc")=="BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+                "SHA256 text matches the standard vector");
+        {
+            auto file=folder/"atomic-reader-conflict.txt";
+            atomic_write(file,"original");
+            HANDLE reader=CreateFileW(file.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,0,nullptr);
+            require(reader!=INVALID_HANDLE_VALUE,"Reader conflict fixture opens");
+            std::jthread release([reader]{Sleep(120);CloseHandle(reader);});
+            atomic_write(file,"updated");
+            release.join();
+            require(read_file(file)=="updated","Atomic commit survives a temporary report reader");
+            Handle held(CreateFileW(file.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,0,nullptr));
+            require(bool(held),"Persistent reader fixture opens");
+            bool rejected=false;
+            try{atomic_write(file,"must not replace");}catch(const std::exception&){rejected=true;}
+            require(rejected && read_file(file)=="updated","Persistent reader conflict fails with original preserved");
+        }
         {
             auto nested=folder;
             while(nested.wstring().size()<290)nested/=L"long-path-fixture";
@@ -668,11 +846,23 @@ int main(int argc, char **argv) {
         auto copy = SceneData::decode(s.encode());
         require(copy.Characters[0].Id == c.Id && copy.Terrain->Heights == s.Terrain->Heights,
                 "Scene schema7 roundtrip");
-        require(SceneData::decode("{\"SchemaVersion\":6}").SchemaVersion == 7, "Older scene migration");
-        for (const auto *text : {"null", "{\"Characters\":null}", "{\"SchemaVersion\":99}",
-                                 "{\"PathBounces\":99}", "{\"Terrain\":{\"Heights\":[]}}",
-                                 "{\"SchemaVersion\":7.5}", "{\"PathBounces\":4294967297}",
-                                 "{\"Characters\":[{\"Sculpt\":{\"Positions\":[0,0,0],\"Indices\":[0.1,0,0]}}]}"}) {
+        for (const auto *older : {"{\"SchemaVersion\":6}", "{\"SchemaVersion\":15}", "{}"}) {
+            bool conversion = false;
+            try { SceneData::decode(older); } catch (const ConversionRequired &) { conversion = true; }
+            require(conversion, "A scene older than the key-card schema is refused with a conversion-required error, never silently read");
+        }
+        {
+            bool conversion = false;
+            try { SceneData::decode("{\"SchemaVersion\":16,\"Characters\":[{\"Sculpt\":{\"Positions\":[0,0,0],\"Indices\":[0,0,0]}}]}"); } catch (const ConversionRequired &) { conversion = true; }
+            require(conversion, "A key card that embeds sculpt geometry is refused with a conversion-required error");
+            conversion = false;
+            try { SceneData::decode("{\"SchemaVersion\":16,\"Terrain\":{\"Heights\":[]}}"); } catch (const ConversionRequired &) { conversion = true; }
+            require(conversion, "A key card that embeds terrain grids is refused with a conversion-required error");
+        }
+        for (const auto *text : {"null", "{\"SchemaVersion\":16,\"Characters\":null}", "{\"SchemaVersion\":99}",
+                                 "{\"SchemaVersion\":16,\"PathBounces\":99}", "{\"SchemaVersion\":16,\"Terrain\":{\"Asset\":\"terrain-0\"}}",
+                                 "{\"SchemaVersion\":16.5}", "{\"SchemaVersion\":16,\"PathBounces\":4294967297}",
+                                 "{\"SchemaVersion\":16,\"Characters\":[{\"Sculpt\":{\"Asset\":\"sculpt-0\"}}]}"}) {
             bool rejected = false;
             try {
                 SceneData::decode(text);
@@ -763,18 +953,18 @@ int main(int argc, char **argv) {
             edits.begin(target); target.Characters.push_back(first); edits.commit();
             require(edits.undo(target) && target.Characters.empty() && edits.redo(target) &&
                 target.Characters.front().Id == first.Id, "Reusable object insertion supports Undo and Redo");
-            auto invalid = json::parse(read_file(saved)); invalid["Version"] = 2;
+            auto invalid = json::parse(read_file(saved)); invalid["Version"] = 3;
             bool refused = false;
             try { decode_object_template(invalid.dump()); } catch (...) { refused = true; }
             require(refused, "Unknown reusable object version is rejected");
-            invalid["Version"] = 1; invalid["Object"]["Asset"] = "outside.glb";
+            invalid["Version"] = 2; invalid["Object"]["Asset"] = "outside.glb";
             refused = false;
             try { decode_object_template(invalid.dump()); } catch (...) { refused = true; }
             require(refused, "Reusable objects reject hidden external asset dependencies");
             Character imported; imported.Asset = "missing.glb";
             refused = false;
             try { encode_object_template(imported); } catch (...) { refused = true; }
-            require(refused, "Unsupported imported models are not advertised as portable objects");
+            require(refused, "A reusable object that names its model by file path is refused");
             auto secondObject = object; secondObject.Id = new_id(); secondObject.X += 3;
             secondObject.Y = 2; secondObject.Route = {{7,4}};
             auto groupFile = folder / "arrangement.stargroup";
@@ -811,13 +1001,70 @@ int main(int argc, char **argv) {
         Character grass;
         grass.Shape = "grass";
         auto grassMesh = shape_geometry(grass)[0].mesh;
-        require(grassMesh.vertices.size() == 1000 && grassMesh.indices.size() == 2400,
-                "Grass blade topology");
+        require(grassMesh.vertices.size() == 2200 && grassMesh.indices.size() == 7800,
+                "Curved grass blades have folded cross sections and tapered tips");
+        bool grassValid=true;size_t roots=0;
+        for(const auto& v:grassMesh.vertices){grassValid&=std::isfinite(v.normal.x+v.normal.y+v.normal.z)&&std::abs(v.normal.length()-1)<1e-8&&v.color.x>=0&&v.color.x<=1&&v.color.y>=0&&v.color.y<=1&&v.color.z>=0&&v.color.z<=1;roots+=v.position.y==0;}
+        for(size_t i=0;i<grassMesh.indices.size();i+=3){auto a=grassMesh.vertices[grassMesh.indices[i]].position,b=grassMesh.vertices[grassMesh.indices[i+1]].position,c=grassMesh.vertices[grassMesh.indices[i+2]].position;grassValid&=(b-a).cross(c-a).length()>1e-12;}
+        require(grassValid&&roots==300,"Blade geometry has finite unit normals, anchored roots, valid leaf coordinates and no degenerate tips");
+        Vec3 grassSum{};json grassPositions=json::array();for(size_t i=0;i<grassMesh.vertices.size();++i){auto p=grassMesh.vertices[i].position;grassSum=grassSum+p;if(i<20)grassPositions.push_back({p.x,p.y,p.z});}
+        atomic_write(folder/"rebuilt-grass-reference.json",json{{"grass",json::array({json{{"vertices",grassMesh.vertices.size()},{"indices",grassMesh.indices.size()},{"positions",grassPositions},{"sum",{grassSum.x,grassSum.y,grassSum.z}}}})}}.dump(2));
+        TerrainData carved;
+        carved.Volumes.push_back({0,-2,0,1,true});
+        require(carved.density_at(0,-2,0)>0 && carved.density_at(0,-.5,0)<0 && carved.density_at(0,-3.5,0)<0,"Carved terrain retains a solid roof and floor");
+        auto caveRoof=terrain_hit(&carved,{0,-2,0},{0,1,0});
+        require(caveRoof && std::abs(caveRoof->y+1)<.01,"Picking from inside a cavity finds its roof");
+        carved.Volumes.push_back({0,1,0,2,false});
+        require(carved.density_at(0,1,0)<0 && carved.density_at(3,1,0)>0,"Terrain union creates material above the heightfield");
+        auto restoredTerrain=json(carved).get<TerrainData>();
+        require(restoredTerrain.Volumes.size()==2 && restoredTerrain.density_at(0,1,0)==carved.density_at(0,1,0),"Volumetric terrain scene roundtrip");
+        auto terrainBuildStart=std::chrono::steady_clock::now();
+        auto caveGeometry=terrain_geometry(carved);
+        double terrainBuildMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-terrainBuildStart).count();
+        auto cacheStart=std::chrono::steady_clock::now();auto cachedCave=terrain_geometry(carved);
+        double terrainCacheMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-cacheStart).count();
+        auto originalPosition=caveGeometry[0].mesh.vertices[0].position;cachedCave[0].mesh.vertices[0].position.x+=1;
+        require((terrain_geometry(carved)[0].mesh.vertices[0].position-originalPosition).length()<1e-12,"Terrain mesh cache returns independently owned geometry");
+        atomic_write(folder/"terrain-metrics.json",json{{"buildMs",terrainBuildMs},{"cachedCopyMs",terrainCacheMs},{"vertices",caveGeometry[0].mesh.vertices.size()},{"triangles",caveGeometry[0].mesh.indices.size()/3},{"meshBytes",caveGeometry[0].mesh.vertices.size()*sizeof(Vertex)+caveGeometry[0].mesh.indices.size()*sizeof(int)}}.dump(2));
+        require(!caveGeometry.empty() && !caveGeometry[0].mesh.indices.empty(),"Volumetric terrain extracts visible geometry");
+        {
+            TerrainVolumeCache editing;editing.get(carved);auto changed=carved;changed.Volumes.push_back({1.875,.1,1.875,.6,true});
+            auto start=std::chrono::steady_clock::now();auto incremental=editing.get(changed);
+            double updateMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();size_t rebuilt=editing.rebuiltChunks;
+            TerrainVolumeCache clean;auto fresh=clean.get(changed);
+            bool identical=incremental.indices==fresh.indices && incremental.vertices.size()==fresh.vertices.size();
+            if(identical)for(size_t i=0;i<fresh.vertices.size();++i){const auto& a=incremental.vertices[i];const auto& b=fresh.vertices[i];if((a.position-b.position).length()>1e-8 || (a.normal-b.normal).length()>1e-8 || (a.color-b.color).length()>1e-8 || std::abs(a.kind-b.kind)>1e-6){identical=false;break;}}
+            require(identical,"Localized volume edits match a complete rebuild across chunk boundaries");
+            require(rebuilt>0 && rebuilt<169,"A small terrain stamp rebuilds only affected chunks");
+            auto undone=editing.get(carved);require(undone.indices==caveGeometry[0].mesh.indices && undone.vertices.size()==caveGeometry[0].mesh.vertices.size(),"Undoing a terrain stamp restores the original chunk topology");
+            atomic_write(folder/"terrain-local-update.json",json{{"updateMs",updateMs},{"rebuiltChunks",rebuilt},{"totalChunks",169},{"vertices",incremental.vertices.size()}}.dump(2));
+        }
+
+        bool upper=false,lower=false,finiteVolumeNormals=true;
+        for(const auto& v:caveGeometry[0].mesh.vertices){upper=upper || v.position.y>2;lower=lower || v.position.y<-20;finiteVolumeNormals=finiteVolumeNormals && std::isfinite(v.normal.x+v.normal.y+v.normal.z);}
+        require(upper && lower && finiteVolumeNormals,"Volume mesh includes raised mass, closed bottom and finite normals");
+        std::map<std::pair<int,int>,int> volumeEdges;
+        const auto& volumeMesh=caveGeometry[0].mesh;
+        for(size_t i=0;i<volumeMesh.indices.size();i+=3)for(int e=0;e<3;++e){int a=volumeMesh.indices[i+e],b=volumeMesh.indices[i+(e+1)%3];volumeEdges[{std::min(a,b),std::max(a,b)}]++;}
+        require(std::all_of(volumeEdges.begin(),volumeEdges.end(),[](const auto& edge){return edge.second==2;}),"Volume terrain has no open triangle edges");
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+        {
+            SceneData underground;underground.Game.emplace();underground.Terrain.emplace();underground.Terrain->Volumes.push_back({0,-4,0,3,true});
+            AdventureController caveController(underground,{0,-2.3,0});Vec3 eye{0,-2.3,0};
+            for(int tick=0;tick<480;++tick)eye=caveController.step(eye,{},1./120.,false,tick/120.,{});
+            require(eye.y<-4.8 && eye.y>-5.6,"Character settles on the carved cavity floor rather than original heightfield");
+            AdventurePlayer viewer;viewer.start(underground);viewer.position={0,-4,0};viewer.cameraDistance=5;viewer.cameraYaw=viewer.cameraPitch=0;
+            auto boom=(viewer.camera_eye()-viewer.view_position()).length();
+            require(boom>2.5 && boom<3,"Third-person camera extends inside a cave and stops at its actual wall");
+        }
+#endif
         TerrainData flat;
         auto terrain = terrain_geometry(flat);
-        require(terrain.size() == 1 && terrain[0].mesh.vertices.size() == 193 * 193 &&
-                    terrain[0].mesh.indices.size() == 192 * 192 * 6,
-                "Terrain render sampling");
+        require(terrain.size() == 1 && terrain[0].mesh.vertices.size() == 193 * 193 + 192 * 16 + 4 &&
+                    terrain[0].mesh.indices.size() == 192 * 192 * 6 + 192 * 24 + 6,
+                "Terrain surface, closed perimeter and underside sampling");
+        require(terrain[0].mesh.vertices.back().position.y == -1 && terrain[0].mesh.vertices.back().normal.y < -.99,
+                "Terrain underside has depth and faces downward");
         flat.WaterEnabled = true;
         flat.WaterLevel = .5;
         auto wet = terrain_geometry(flat);
@@ -826,29 +1073,41 @@ int main(int argc, char **argv) {
         stamp_shape(flat, cube);
         require(flat.height_at(0, 0) == 1 && flat.height_at(2, 2) == 0,
                 "Terrain stamp raises footprint only");
+        {
+            json snapshots=json::object();
+            for(const auto* kind:{"rock","boulder","pebbles","chaos-rock","fire"}){
+                Character stone;stone.Shape=kind;auto mesh=shape_geometry(stone)[0].mesh;std::map<std::pair<int,int>,int> edges;bool valid=true;Vec3 sum;
+                for(const auto& v:mesh.vertices){sum=sum+v.position;valid=valid && std::abs(v.normal.length()-1)<1e-6 && v.position.y>=-1e-9;}
+                for(size_t i=0;i<mesh.indices.size();i+=3){auto a=mesh.vertices[mesh.indices[i]].position,b=mesh.vertices[mesh.indices[i+1]].position,c=mesh.vertices[mesh.indices[i+2]].position;valid=valid && (b-a).cross(c-a).length()>1e-12;for(int e=0;e<3;++e){int x=mesh.indices[i+e],y=mesh.indices[i+(e+1)%3];edges[{std::min(x,y),std::max(x,y)}]++;}}
+                require(valid && std::all_of(edges.begin(),edges.end(),[](const auto& edge){return edge.second==2;}),"Rebuilt assets and fire proxy have closed nondegenerate surfaces and unit normals");
+                json positions=json::array();for(size_t i=0;i<std::min(size_t(20),mesh.vertices.size());++i){auto p=mesh.vertices[i].position;positions.push_back({p.x,p.y,p.z});}
+                snapshots[kind]=json::array({json{{"vertices",mesh.vertices.size()},{"indices",mesh.indices.size()},{"positions",positions},{"sum",{sum.x,sum.y,sum.z}}}});
+            }
+            atomic_write(folder/"rebuilt-stone-reference.json",snapshots.dump(2));
+        }
         if (argc > 2) {
             auto reference = json::parse(read_file(argv[2]));
             for (auto it = reference.begin(); it != reference.end(); ++it) {
                 Character shape;
                 shape.Shape = it.key();
                 auto actual = shape_geometry(shape);
-                require(actual.size() == it.value().size(), "Managed/native geometry part count");
+                require(actual.size() == it.value().size(), "Canonical built-in geometry part count");
                 for (size_t p = 0; p < actual.size(); p++) {
                     const auto &expected = it.value()[p];
                     const auto &mesh = actual[p].mesh;
                     require(mesh.vertices.size() == expected.at("vertices").get<size_t>() &&
                                 mesh.indices.size() == expected.at("indices").get<size_t>(),
-                            "Managed/native geometry topology");
+                            "Canonical built-in geometry topology");
                     Vec3 sum;
                     for (const auto &v : mesh.vertices)
                         sum = sum + v.position;
                     auto e = expected.at("sum").get<std::vector<double>>();
                     require((sum - Vec3{e[0], e[1], e[2]}).length() < 1e-8,
-                            "Managed/native geometry position sums");
+                            "Canonical built-in geometry position sums");
                     for (size_t i = 0; i < expected.at("positions").size(); i++) {
                         auto q = expected.at("positions")[i].get<std::vector<double>>();
                         require((mesh.vertices[i].position - Vec3{q[0], q[1], q[2]}).length() < 1e-12,
-                                "Managed/native seeded vertex coordinates");
+                                "Canonical built-in seeded vertex coordinates");
                     }
                 }
             }
@@ -977,9 +1236,15 @@ int main(int argc, char **argv) {
             auto fixture = fs::path(argv[2]).parent_path() / "fixtures/triangle.glb";
             auto parts = load_glb(fixture);
             require(!parts.empty() && parts[0].mesh.vertices.size() == 3, "Native GLB triangle import");
+            const auto fixtureModel = import_model(fixture);
+            {
+                auto stored = load_model(fixtureModel);
+                require(EngineAssets::valid_id(AssetKind::Model, fixtureModel) && stored->size() == parts.size() && stored->front().mesh.vertices.size() == 3,
+                    "Importing a GLB stores it in the shared library under a content id that the shared parser reads back");
+            }
             {
                 SceneData broken; Character imported;
-                imported.Asset = "missing-old-model.glb"; imported.Name = "Route keeper";
+                imported.Asset = "model-" + std::string(64, 'a'); imported.Name = "Route keeper";
                 imported.Width = 2; imported.X = 3; imported.Route = {{4,5}};
                 broken.Characters.push_back(imported);
                 auto brokenFile = folder / "repair.starscene"; save_scene(broken, brokenFile);
@@ -988,16 +1253,16 @@ int main(int argc, char **argv) {
                     "Scene inspection identifies missing imported models without opening renderer");
                 auto repairDraft = broken; repairDraft.Characters.push_back(imported); repairDraft.Characters.back().Id = new_id();
                 size_t prompts = 0;
-                auto repairedCount = repair_scene_models(repairDraft, [&](const fs::path&) -> std::optional<fs::path> { ++prompts; return fixture; });
+                auto repairedCount = repair_scene_models(repairDraft, [&](const std::string&, const std::string&) -> std::optional<fs::path> { ++prompts; return fixture; });
                 require(repairedCount && *repairedCount == 1 && prompts == 1 &&
-                    repairDraft.Characters[0].Asset == repairDraft.Characters[1].Asset &&
+                    repairDraft.Characters[0].Asset == repairDraft.Characters[1].Asset && repairDraft.Characters[0].Asset == fixtureModel &&
                     inspect_scene(brokenFile).at("missingAssetCount") == 1,
                     "Guided model repair resolves shared references once without writing the scene");
                 auto cancelDraft = broken;
-                auto extraMissing = imported; extraMissing.Id = new_id(); extraMissing.Asset = "another-missing.glb";
+                auto extraMissing = imported; extraMissing.Id = new_id(); extraMissing.Asset = "model-" + std::string(64, 'b');
                 cancelDraft.Characters.push_back(extraMissing);
                 const auto cancelledBefore = cancelDraft.encode(); prompts = 0;
-                auto cancelled = repair_scene_models(cancelDraft, [&](const fs::path&) -> std::optional<fs::path> {
+                auto cancelled = repair_scene_models(cancelDraft, [&](const std::string&, const std::string&) -> std::optional<fs::path> {
                     if (++prompts == 1) return fixture;
                     return std::nullopt;
                 });
@@ -1022,7 +1287,7 @@ int main(int argc, char **argv) {
             }
             {
                 SceneData portable;
-                Character model; model.Asset = utf8(fs::absolute(fixture).wstring());
+                Character model; model.Asset = fixtureModel;
                 portable.Characters = {model, model}; portable.Characters.back().Id = new_id();
                 auto destination = folder / ("portable-" + new_id());
                 auto report = export_portable_scene(portable, destination);
@@ -1044,7 +1309,7 @@ int main(int argc, char **argv) {
                 auto composed = load_scene(mergeTarget);
                 require(composed.Hour == 22 && composed.Characters.size() == 1 &&
                     composed.Characters.front().Id != subset.Characters.front().Id && render_scene(composed).size() > 0,
-                    "Portable imported-model composition resolves source-relative model files");
+                    "Portable imported-model composition resolves the model assets bundled with the source scene");
                 bool missingSelection = false;
                 auto absentSelection = folder / ("missing-selection-" + new_id());
                 try { export_scene_selection(portable, {"missing"}, absentSelection); } catch (...) { missingSelection = true; }
@@ -1054,17 +1319,25 @@ int main(int argc, char **argv) {
                 require(verify_portable_scene(relocated).at("success").get<bool>(), "Relocated export passes integrity verification");
                 auto sceneFile = relocated / "scene.starscene";
                 auto reopened = load_scene(sceneFile);
-                require(fs::exists(starlight::editor::wide(reopened.Characters[0].Asset)) &&
-                    render_scene(reopened).size() > 0, "Relocated portable scene resolves and renders bundled models");
+                require(reopened.Characters[0].Asset == fixtureModel && EngineAssets::exists(AssetKind::Model, reopened.Characters[0].Asset) &&
+                    render_scene(reopened).size() > 0, "Relocated portable scene resolves and renders its bundled model by id");
+                {
+                    EngineAssets::ScopedRoot isolated(folder / ("isolated-" + new_id()));
+                    auto fromBundle = load_scene(sceneFile);
+                    auto located = EngineAssets::locate(fromBundle.Characters[0].Asset);
+                    require(!located.empty() && fs::equivalent(located.parent_path(), relocated / "assets") && !fs::exists(EngineAssets::file_for(fromBundle.Characters[0].Asset)),
+                        "A library that never held the model finds it in the scene's bundle through the bundle search root");
+                    save_scene(fromBundle, folder / ("from-bundle-" + new_id() + ".starscene"));
+                    require(fs::is_regular_file(EngineAssets::file_for(fromBundle.Characters[0].Asset)), "Saving a scene opened from a bundle copies its model into the library");
+                }
                 save_scene(reopened, sceneFile, hash_file(sceneFile));
                 auto onDisk = SceneData::decode(read_file(sceneFile));
-                require(fs::path(starlight::editor::wide(onDisk.Characters[0].Asset)).is_relative(),
-                    "Saving reopened portable scene retains relative model paths");
+                require(onDisk.Characters[0].Asset == fixtureModel, "Saving a reopened portable scene keeps the model id");
                 bool refused = false;
                 auto before = hash_file(sceneFile);
                 try { export_portable_scene(portable, relocated); } catch (...) { refused = true; }
                 require(refused && hash_file(sceneFile) == before, "Portable export refuses to overwrite existing folders");
-                portable.Characters[0].Asset = utf8((folder / "missing-model.glb").wstring());
+                portable.Characters[0].Asset = "model-" + std::string(64, 'c');
                 auto failed = folder / ("failed-export-" + new_id()); refused = false;
                 try { export_portable_scene(portable, failed); } catch (...) { refused = true; }
                 require(refused && !fs::exists(failed), "Missing model does not publish a partial portable scene");
@@ -1078,7 +1351,7 @@ int main(int argc, char **argv) {
                 try { verify_portable_scene(relocated); } catch (...) { refused = true; }
                 require(refused, "Portable verification rejects absolute asset paths");
                 atomic_write(manifestFile, manifest.dump());
-                auto assetPath = fs::path(starlight::editor::wide(reopened.Characters[0].Asset));
+                auto assetPath = relocated / "assets" / starlight::editor::wide(reopened.Characters[0].Asset + ".slasset");
                 atomic_write(assetPath, "damaged"); refused = false;
                 try { verify_portable_scene(relocated); } catch (...) { refused = true; }
                 require(refused, "Portable verification rejects damaged asset bytes");
@@ -1118,10 +1391,10 @@ int main(int argc, char **argv) {
             SceneData adventure;adventure.Game.emplace();adventure.Game->MoveSpeed=6.25;
             adventure.Game->LookSensitivity=.37;adventure.Game->Collision=false;
             auto restored=SceneData::decode(adventure.encode());
-            require(restored.SchemaVersion==8 && restored.Game && restored.Game->MoveSpeed==6.25 &&
+            require(restored.SchemaVersion==16 && restored.Game && restored.Game->MoveSpeed==6.25 &&
                     restored.Game->LookSensitivity==.37 && !restored.Game->Collision,
                     "Adventure player settings survive scene save and load");
-            require(!SceneData::decode("{}").Game,"Legacy scenes do not acquire gameplay implicitly");
+            require(!SceneData::decode("{\"SchemaVersion\":16}").Game,"Legacy scenes do not acquire gameplay implicitly");
             for(auto field:{"MoveSpeed","LookSensitivity","PlayerRadius"}){
                 auto invalid=json(adventure);invalid["Game"][field]=-1;
                 bool rejected=false;try{SceneData::decode(invalid.dump());}catch(...){rejected=true;}
@@ -1188,6 +1461,19 @@ int main(int argc, char **argv) {
         {
             auto starter=adventure_template();
             require(adventure_readiness(starter).empty(),"Starter adventure has no basic setup findings");
+            auto collectionScene=starter;
+            const auto collectible=std::find_if(collectionScene.Characters.begin(),collectionScene.Characters.end(),[](const auto& c){return c.GameplayRole=="key";});
+            GameplayRule collectionRule;collectionRule.Id="readiness-collection";collectionRule.Name="Collection setup";collectionRule.Event="item-collected";collectionRule.Subject=collectible->Id;
+            collectionRule.Actions.push_back({"complete-objective","collected"});collectionScene.Rules.push_back(collectionRule);
+            auto collectionFindings=adventure_readiness(collectionScene);
+            require(std::any_of(collectionFindings.begin(),collectionFindings.end(),[](const auto& f){return f.find("collection event expects an item key")!=std::string::npos;}),
+                    "Collection setup identifies an object ID used instead of its emitted item key");
+            collectionScene.Rules.back().Subject=collectible->GameplayKey;
+            require(adventure_readiness(collectionScene).empty(),"Collection setup accepts the actual emitted item key");
+            collectionScene.Rules.back().Subject.clear();
+            require(adventure_readiness(collectionScene).empty(),"Collection setup preserves wildcard events");
+            collectionScene.Rules.back().Subject="not-an-item";collectionScene.Rules.back().Enabled=false;
+            require(adventure_readiness(collectionScene).empty(),"Collection setup ignores disabled events");
             starter.Characters.erase(std::remove_if(starter.Characters.begin(),starter.Characters.end(),[](const auto& c){return c.GameplayRole=="key";}),starter.Characters.end());
             auto findings=adventure_readiness(starter);
             require(std::count_if(findings.begin(),findings.end(),[](const auto& f){return f.find("no collectible key")!=std::string::npos;})==2,
@@ -1219,7 +1505,7 @@ int main(int argc, char **argv) {
             for(int i=0;i<20;i++)builder.move(0,1,.05);
             require(builder.position.z<5,"Removed building objects no longer block exploration");
         }
-        #include "character_controller_checks.inl"
+        character_controller_checks(require,folder);
         render.Terrain.emplace();
         Character rock;
         rock.Shape = "chaos-rock";
@@ -1239,12 +1525,14 @@ int main(int argc, char **argv) {
             metrics.run(10,1,[&](const auto& callback){callback(0,10,0);},[](int,int,int){});
             require(metrics.reading.items==0 && metrics.reading.chunkMs.empty(),"Disabled multicore monitor leaves collection off");
             PacingSnapshot recorded;recorded.multicore.parallelBatches=2;recorded.multicore.chunkMs={.1,.2};
-            PacingFrameRecord raw;raw.multicore=recorded.multicore;
+            PacingFrameRecord raw;raw.multicore=recorded.multicore;raw.applicationForeground=true;raw.windowVisible=true;
             auto logPath=folder/"multicore-roundtrip.jsonl";
             {PacingLog log(logPath);log.push(recorded,{raw},1);}
             std::ifstream file(logPath);std::string line;std::getline(file,line);std::getline(file,line);auto sample=json::parse(line);
             require(sample["overlay"]["multicore"]["parallelBatches"]==2 && sample["frames"][0][18]["chunkMs"][1]==.2,
                 "Continuous log preserves per-frame and overlay worker readings");
+            require(sample["frames"][0][22]==true && sample["frames"][0][23]==false && sample["frames"][0][24]==true,
+                "Pacing log preserves sampled foreground, minimization and visibility states");
         }
         {
             AdventurePlayer::Presentation p;p.showTelegraph=true;p.channelProgress=.6;p.actorTelegraphs.push_back({{2,0,3},{0,0,-1},.5,TelegraphKind::Enemy});
@@ -1281,6 +1569,19 @@ int main(int argc, char **argv) {
             for(int i=0;i<1200;++i)step_particle(falling,1./240,nullptr,{});
             require(falling.position.y>=falling.radius-1e-6 && falling.position.y<falling.radius+.01 && std::abs(falling.velocity.y)<.1,
                 "Debris collides, bounces and settles on terrain instead of falling through it");
+            TerrainData cave;cave.Volumes.push_back({0,-2,0,1,true});PhysicalParticle underground;underground.position={0,-2,0};
+            for(int i=0;i<1200;++i)step_particle(underground,1./240,&cave,{});
+            require(underground.position.y>-2.95&&underground.position.y<-2.9&&std::abs(underground.velocity.y)<.1,"Particles settle on a carved cavity floor without snapping to the old ground plane");
+            PhysicalParticle roof;roof.position={0,-2,0};roof.velocity={0,100,0};step_particle(roof,.02,&cave,{}, {},{});
+            require(roof.position.y<-1.05&&roof.velocity.y<=0,"Fast particles sweep the solid cave ceiling instead of passing through it");
+            PhysicalParticle side;side.position={0,-2,0};side.velocity={100,0,0};step_particle(side,.02,&cave,{}, {},{});
+            require(side.position.x<.95&&side.velocity.x<=0,"Fast particles collide with carved side walls in three dimensions");
+            TerrainData raised;raised.Volumes.push_back({0,2,0,1,false});PhysicalParticle impact;impact.position={-2,2,0};impact.velocity={100,0,0};step_particle(impact,.02,&raised,{}, {},{});
+            require(impact.position.x<-1.05&&impact.velocity.x<=0,"Particles collide with raised terrain volumes above the original heightfield");
+            PhysicalParticle edited;edited.position={0,2,0};edited.velocity={0,-1,0};step_particle(edited,.01,&raised,{}, {},{});
+            require(raised.density_at(edited.position.x,edited.position.y,edited.position.z)>=edited.radius-1e-4,"Terrain edits eject engulfed particles into air rather than retaining them inside solid mass");
+            TerrainData buried;std::fill(buried.Heights.begin(),buried.Heights.end(),20);buried.Volumes.push_back({0,0,0,.25,false});PhysicalParticle trapped;trapped.position={0,0,0};step_particle(trapped,.01,&buried,{}, {},{});
+            require(buried.density_at(trapped.position.x,trapped.position.y,trapped.position.z)>=trapped.radius-1e-4,"Symmetric deep terrain overlap finds a nearby escape instead of choosing an unreachable upward surface");
         }
         {
             SceneData storm;Character bolt;bolt.Shape="chaos-lightning";bolt.TargetX=0;bolt.TargetY=-1;bolt.TargetZ=0;storm.Characters={bolt};
@@ -1461,7 +1762,7 @@ int main(int argc, char **argv) {
             SceneData storm;storm.Game.emplace();Character bolt;bolt.Shape="chaos-lightning";bolt.X=8;bolt.TargetX=0;bolt.TargetY=0;storm.Characters={bolt};AdventurePlayer player;player.start(storm);for(int i=0;i<6;++i)player.move(0,0,.01);auto p=player.presentation();require(p.lightningSounds.size()==1&&p.lightningSounds[0].serial==p.lightning&&p.lightningSounds[0].position.x==8,"Lightning records one spatial sound event per physical discharge");player.start(storm);require(player.presentation().lightningSounds.empty(),"Scene restart clears pending lightning sound history");
         }
         {
-            SceneData level;level.Game.emplace();Character model;model.Asset=utf8(solid_glb_fixture(folder).wstring());model.Dynamic=true;model.X=3;model.Y=3;model.VelocityX=1;level.Characters={model};level.validate();AdventurePlayer player;player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);auto moved=player.scene().Characters[0];require(moved.Y<.2&&moved.X>3.5&&moved.PhysicsRotation.has_value(),"Imported solid models participate in shared gameplay rigid-body physics");
+            SceneData level;level.Game.emplace();Character model;model.Asset=import_model(solid_glb_fixture(folder));model.Dynamic=true;model.X=3;model.Y=3;model.VelocityX=1;level.Characters={model};level.validate();AdventurePlayer player;player.start(level);for(int i=0;i<240;++i)player.move(0,0,1./120.);auto moved=player.scene().Characters[0];require(moved.Y<.2&&moved.X>3.5&&moved.PhysicsRotation.has_value(),"Imported solid models participate in shared gameplay rigid-body physics");
             auto sculpt=model;sculpt.Asset.clear();Character cube;cube.Shape="cube";sculpt.Sculpt=sculpt_from(object_mesh(cube));sculpt.validate();require(!sculpt.Shape&&sculpt.Dynamic,"Standalone sculpt geometry can be authored as a dynamic body without a primitive shape tag");
         }
         {
@@ -1486,13 +1787,22 @@ int main(int argc, char **argv) {
             SceneData burning;Character burner;burner.Shape="fire";burner.ParticleRate=100;burning.Characters={burner};EnvironmentEffects burningEffects;
             for(int i=0;i<10;++i)burningEffects.step(burning,.025,i*.025);require(burningEffects.flame_count()>0,"Dry fire emits physical flames before flooding");
             burningEffects.step(burning,.025,.275,liquid.get());require(burningEffects.flame_count()==0,"Flooding extinguishes existing flames and submerged fire emission");
+            auto submergedFire=burningEffects.geometry(burning);require(std::none_of(submergedFire.begin(),submergedFire.end(),[](const auto& part){return !part.mesh.vertices.empty()&&part.mesh.vertices.front().kind==12;}),"Flooding also extinguishes the volumetric fire core");
             for(int i=0;i<40;++i)burningEffects.step(burning,.025,.3+i*.025,liquid.get());require(burningEffects.flame_count()==0,"Submerged emitters do not accumulate deferred bursts");
             liquid->water.fill(0);liquid->lava.fill(1);burningEffects.step(burning,.025,1.325,liquid.get());require(burningEffects.flame_count()>0&&burningEffects.flame_count()<=3,"Lava permits fire without releasing a stored underwater burst");
+            auto relitFire=burningEffects.geometry(burning);require(std::any_of(relitFire.begin(),relitFire.end(),[](const auto& part){return !part.mesh.vertices.empty()&&part.mesh.vertices.front().kind==12;}),"Volumetric fire resumes when an emitter is no longer submerged");
             burningEffects.reset();require(burningEffects.flame_count()==0,"Reset clears liquid-reactive fire state");liquid->lava.fill(0);liquid->water.fill(1);liquid->water[TerrainFlow::index(.25,.25)]=2;
             require(std::abs(atmosphere_surface(nullptr,liquid.get(),.1,.4)-liquid->liquid_at(.1,.4).first)<1e-10,"Fog air boundary follows the actual liquid surface");
             require(atmosphere_surface(nullptr,liquid.get(),20,0)==0,"Fog outside the liquid domain retains its ground boundary");
             SceneData plume;Character source;source.Shape="craxis-smoke";source.Route={{4,0}};source.Speed=1;plume.Characters={source};auto startSources=smoke_sources(plume,0,nullptr),movedSources=smoke_sources(plume,2,nullptr);require(movedSources.size()==1&&movedSources[0][0]>startSources[0][0]+1.9,"Transported smoke emission follows moving authored sources");
+            auto chaosSources=fog_emitters(plume,2,nullptr);require(chaosSources.size()==1&&chaosSources[0][4]==1&&chaosSources[0][0]==movedSources[0][0],"Chaos fog retains its identity while following the authored route");
+            SceneData cloudScene;cloudScene.Name="Layered animated chaos clouds";cloudScene.FogDensity=0;cloudScene.Hour=19;source.Route.clear();source.Speed=1;source.Y=2;source.Size=2;source.Id="cloud-volume";cloudScene.Characters={source};
+            Character behind;behind.Shape="cube";behind.Id="cloud-backdrop";behind.X=0;behind.Y=.5;behind.Z=-4;behind.Width=4;behind.Height=3;behind.Color="#939393";cloudScene.Characters.push_back(behind);
+            auto saveCloud=[&](const char* name,const SceneData& scene){auto packet=render_scene(scene);atomic_write(folder/(std::string(name)+".bin"),std::string(reinterpret_cast<const char*>(packet.data()),packet.size()));atomic_write(folder/(std::string(name)+".scene.json"),scene.encode());};
+            saveCloud("chaos-clouds",cloudScene);auto clearCloud=cloudScene;clearCloud.Characters.erase(clearCloud.Characters.begin());saveCloud("chaos-clouds-empty",clearCloud);
+            Character wall=behind;wall.Id="cloud-front-wall";wall.Y=0;wall.Z=2.8;wall.Width=8;wall.Height=7;wall.Depth=.3;auto hiddenCloud=cloudScene;hiddenCloud.Characters.push_back(wall);saveCloud("chaos-clouds-occluded",hiddenCloud);
             plume.Characters=burning.Characters;require(smoke_sources(plume,0,nullptr).size()==1&&smoke_sources(plume,0,liquid.get()).empty(),"Fire smoke emits in air and stops when water extinguishes its source");
+            auto sootSources=fog_emitters(plume,0,nullptr);require(sootSources.size()==1&&sootSources[0][4]==0&&fog_emitters(plume,0,liquid.get()).empty(),"Ordinary fire smoke occupies a distinct channel and obeys extinction");
             plume.Characters[0].Route={{4,0}};plume.Characters[0].Speed=1;auto movingLights=environment_lights(plume,2,nullptr);require(movingLights.size()==1&&movingLights[0][0]>1.9&&environment_lights(plume,2,liquid.get()).empty(),"Fire lighting follows the moving emitter and extinguishes underwater");
             auto windWater=std::make_unique<TerrainFlow>(TerrainData{},std::vector<LiquidSource>{});windWater->water.fill(1);auto waterVolume=windWater->volume();windWater->wind(2,1);for(int i=0;i<240;++i)windWater->step(1./120.);double windEnergy=windWater->wave_energy();require(windEnergy>1e-5&&std::abs(windWater->liquid_at(1,2).first-1)>1e-5&&std::abs(windWater->volume()-waterVolume)<1e-8,"Atmospheric wind excites the simulated water surface without changing fluid volume");windWater->wind(0,0);for(int i=0;i<1200;++i)windWater->step(1./120.);require(windWater->wave_energy()<windEnergy*.01,"Wind-driven waves dissipate after the forcing stops");
             auto snapshot=liquid->snapshot();require(std::abs(snapshot.at(.1,.4).first-liquid->liquid_at(.1,.4).first)<1e-10,"Shared gameplay and standalone liquid sampling agree between grid points");
@@ -1500,6 +1810,7 @@ int main(int argc, char **argv) {
             SceneData level;Character bolt;bolt.Shape="chaos-lightning";bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.BranchSpread=2;level.Characters={bolt};auto arcs=trace_lightning(bolt,level,.06);require(arcs.size()==4&&arcs[1].branch&&arcs[2].branch&&arcs[3].branch,"Lightning emits independently traced physical branch paths");bool bounded=true;for(const auto& arc:arcs)for(auto point:arc.path)bounded&=point.y>=-1e-5;require(bounded&&arcs[0].contact,"Lightning main and branch paths terminate at terrain instead of crossing it");
             EnvironmentEffects stormEffects;stormEffects.step(level,.03,.03);require(stormEffects.lightning_sounds().size()==1&&stormEffects.lightning_sounds()[0].time==.03,"Ordinary environment playback publishes one timed thunder event");stormEffects.step(level,.02,.05);require(stormEffects.lightning_sounds().size()==1,"Environment thunder is not resubmitted every rendered frame");auto epoch=stormEffects.epoch();stormEffects.reset();require(stormEffects.lightning_sounds().empty()&&stormEffects.epoch()!=epoch,"Environment reset clears pending thunder and changes its audio epoch");
             auto engulfed=level;Character enclosure;enclosure.Shape="cube";enclosure.Y=5;enclosure.Height=2;enclosure.Width=enclosure.Depth=2;engulfed.Characters.push_back(enclosure);auto trapped=trace_lightning(bolt,engulfed,.06);require(trapped.front().contact&&trapped.front().hit==enclosure.Id&&(trapped.front().target-trapped.front().source).length()<1e-8,"Lightning beginning inside a moving solid terminates immediately on that body");
+            for(int seed=0;seed<256;++seed){auto probe=bolt;probe.Id="terrain-regression-"+std::to_string(seed);auto paths=trace_lightning(probe,level,.06);bool above=true;for(const auto& path:paths)for(auto point:path.path)above&=point.y>=-1e-5;require(above,("Lightning terrain contact stays above ground for deterministic seed "+std::to_string(seed)).c_str());}
             auto next=trace_lightning(bolt,level,.28);require((arcs[0].path[1]-next[0].path[1]).length()>.001,"Successive discharges change their physical path topology");
         }
         {
@@ -1531,10 +1842,35 @@ int main(int argc, char **argv) {
         geometryCache.clear();
         require(render_scene(render,nullptr,{},&geometryCache)==render_scene(render),
                 "Scene edit invalidation refreshes cached geometry");
+        {
+            SceneData showcase;showcase.Name="Solid terrain arch";showcase.FogDensity=.006;showcase.Hour=14;showcase.Terrain.emplace();
+            showcase.Terrain->Volumes.push_back({0,2,0,5,false});
+            for(double z:{-4.,-2.,0.,2.,4.})showcase.Terrain->Volumes.push_back({0,2,z,2.6,true});
+            auto encoded=showcase.encode();auto roundtrip=SceneData::decode(encoded);
+            require(roundtrip.Terrain && roundtrip.Terrain->Volumes.size()==6,"Solid terrain showcase preserves its complete operation stack");
+            atomic_write(folder/"solid-terrain-arch.scene",encoded);
+            auto preview=render_scene(roundtrip);
+            atomic_write(folder/"solid-terrain-arch.bin",std::string_view(reinterpret_cast<const char*>(preview.data()),preview.size()));
+        }
+        {
+            SceneData liquid;liquid.Name="Liquid material basin";liquid.Hour=14;liquid.FogDensity=.008;liquid.Terrain.emplace();auto& bed=*liquid.Terrain;bed.WaterEnabled=true;bed.WaterLevel=0;
+            for(int z=0;z<97;++z)for(int x=0;x<97;++x){double px=x*.25-12,pz=z*.25-12;bed.Heights[z*97+x]=.35-1.5*std::exp(-(px*px+pz*pz)/34.);bed.Paint[z*97+x]=2;}
+            Character stone;stone.Shape="boulder";stone.Color="#73777C";stone.X=5;stone.Z=1;stone.Size=2;liquid.Characters={stone};
+            for(bool lava:{false,true}){bed.Lava=lava;auto preview=render_scene(liquid);auto name=lava?"lava-basin":"water-basin";atomic_write(folder/(std::string(name)+".bin"),std::string_view(reinterpret_cast<const char*>(preview.data()),preview.size()));atomic_write(folder/(std::string(name)+".scene"),liquid.encode());}
+        }
+        {
+            SceneData flames;flames.Name="Volumetric fire reference";flames.Hour=20;flames.FogDensity=.003;
+            Character emitter;emitter.Shape="fire";emitter.Color="#FF5909";emitter.Size=2;emitter.Z=0;flames.Characters={emitter};
+            auto preview=render_scene(flames);atomic_write(folder/"volumetric-fire.bin",std::string_view(reinterpret_cast<const char*>(preview.data()),preview.size()));atomic_write(folder/"volumetric-fire.scene",flames.encode());
+            Character wall;wall.Shape="cube";wall.Color="#585860";wall.Width=5;wall.Height=6;wall.Depth=.5;wall.Z=3;flames.Characters.push_back(wall);
+            preview=render_scene(flames);atomic_write(folder/"volumetric-fire-occluded.bin",std::string_view(reinterpret_cast<const char*>(preview.data()),preview.size()));
+            flames.Characters.clear();preview=render_scene(flames);atomic_write(folder/"volumetric-fire-empty.bin",std::string_view(reinterpret_cast<const char*>(preview.data()),preview.size()));
+        }
         auto packet = render_scene(render);
         atomic_write(folder / "native-scene.bin",
                      std::string_view(reinterpret_cast<const char *>(packet.data()), packet.size()));
         require(packet.size() > 1000, "Native renderer packet emitted");
+        generated_scene_readback_checks(require,folder);
         atomic_write(folder / "result.json", json{{"success", true}, {"checks", checks}}.dump(2));
         std::cout << "PASS " << checks.size() << " native checks\n";
         return 0;
@@ -1544,4 +1880,20 @@ int main(int argc, char **argv) {
         std::cerr << e.what() << '\n';
         return 1;
     }
+}
+
+// The checks run in one very large function; a few more inlined locals once exceeded the default 1 MB stack. Give it room.
+#include <windows.h>
+namespace { struct ChecksArgs { int argc; char **argv; int result; }; }
+int main(int argc, char **argv) {
+    ChecksArgs args{argc, argv, 1};
+    HANDLE thread = CreateThread(nullptr, 64u * 1024 * 1024, [](LPVOID parameter) -> DWORD {
+        auto *a = static_cast<ChecksArgs *>(parameter);
+        a->result = checks_main(a->argc, a->argv);
+        return 0;
+    }, &args, STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+    if (!thread) return checks_main(argc, argv);
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+    return args.result;
 }

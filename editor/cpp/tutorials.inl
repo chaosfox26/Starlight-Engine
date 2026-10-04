@@ -88,9 +88,11 @@ void filter_help() {
 }
 void layout_help() {
     auto p=[&](int n){return settings_px(n);};
-    const int helpX=p(fullScreen?56:60);
+    const int menusLeft=width-p(fullScreen?180:184);
+    const int helpWidth=std::min(p(136),std::max(p(80),menusLeft-p(72)));
+    const int helpX=std::max(p(56),menusLeft-p(8)-helpWidth);
     if(helpButton)SetWindowPos(helpButton,HWND_TOP,helpX,p(fullScreen?12:18),
-        std::max(p(80),std::min(p(136),width-p(194)-helpX)),p(30),SWP_NOACTIVATE);
+        helpWidth,p(fullScreen?28:30),SWP_NOACTIVATE);
     if(!helpPanel)return;
     unscroll_panel(helpPanel);
     const int w=std::min(p(480),width-60),h=p(360);

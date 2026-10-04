@@ -30,7 +30,7 @@ Windows RAII and math
 
 | Former component(s) | Native implementation | Responsibilities |
 |---|---|---|
-| SceneData, CharacterSettings | scene.hpp, scene.cpp, scene_json.cpp | Schema 1–7 migration, character properties/routes, validation, schema 7 output |
+| SceneData, CharacterSettings | scene.hpp, scene.cpp, scene_json.cpp | Schema 1–7 migration, character properties/routes, validation, schema 7 output. Superseded 2026-10-04: the current scene schema is 16 (key cards that reference library assets); older schemas are read only by Starlight.SceneMigration, and the runtime reports conversion required. See docs/architecture/KEY-CARD-ARCHITECTURE.md. |
 | TerrainData | scene.cpp, geometry.cpp | 97×97 height/paint storage, bilinear samples, terrain brushes, 193×193 render mesh, clipped water plane |
 | ObjectGeometry, NatureGeometry, EffectGeometry, SurfaceDetail | geometry.cpp, color.hpp, named_colors.hpp | All 15 shapes/nature/effect types, original seeded nature geometry, native lightning ribbons, material attributes |
 | GlbModel | assets.cpp | GLB 2 static triangle import, node transforms, base-color factors, bounds and malformed-input validation |

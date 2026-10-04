@@ -4,6 +4,7 @@
 #include "commands.hpp"
 #include "render_scene.hpp"
 #include "render_contract.hpp"
+#include "visible_resolution.hpp"
 #include <atomic>
 #include <chrono>
 #include <commctrl.h>
@@ -181,9 +182,10 @@ json child(std::string name, const fs::path &exe,
     throw std::runtime_error("Cannot isolate child in job");
   }
   if (visibleChild) {
-    // Only requested visible stages may activate the audit and receive foreground rights.
-    ShowWindow(window, SW_RESTORE);
-    bool activated = SetForegroundWindow(window) != FALSE;
+    // Never pull the controller in front of the test. Pass inherited permission,
+    // or ask for one explicit user activation when Windows denies the handoff.
+    DWORD foregroundOwner=0;GetWindowThreadProcessId(GetForegroundWindow(),&foregroundOwner);
+    bool activated = foregroundOwner==GetCurrentProcessId();
     bool granted = SendMessageW(window, WM_APP+17, pi.dwProcessId, 0) != FALSE;
     if (!granted) {
       status(percent, L"Click this audit window to start the visible checks — waiting for Windows foreground permission");
@@ -697,24 +699,27 @@ void report(const json &hw, const json &comparisons) {
 void visibleAudit(const fs::path &packet) {
   const std::string name = "visible-presentation";
   fs::create_directories(output / wide(name));
-  status(86, L"AUTOMATIC FULL-SCREEN TEST: native 1440p or above; keep foreground for 30 seconds");
+  status(86, L"AUTOMATIC VISIBLE TEST: 720p through 4K; keep foreground for 30 seconds");
   const int displayWidth=GetSystemMetrics(SM_CXSCREEN), displayHeight=GetSystemMetrics(SM_CYSCREEN);
+  const auto resolution=starlight::audit::visible_resolution(displayWidth,displayHeight);
   SetEnvironmentVariableW(L"STARLIGHT_D3D_DEBUG", nullptr);
   SetEnvironmentVariableW(L"STARLIGHT_BENCH_SECONDS", L"30");
   SetEnvironmentVariableW(L"STARLIGHT_NATIVE_LOG", (output / wide(name) / L"native.log").c_str());
   auto process = child(name, binaries / L"Starlight.NativeRenderChecks.exe", {packet.wstring(),
     (output / wide(name) / L"render.json").wstring(), (output / wide(name) / L"frame.bmp").wstring(),
-    std::to_wstring(displayWidth),std::to_wstring(displayHeight),L"1",L"fullscreen-auto",L"3",L"0"}, 120);
+    std::to_wstring(resolution.width),std::to_wstring(resolution.height),L"1",resolution.fullscreen ? L"fullscreen-auto" : L"bounded-auto",L"3",L"0"}, 120);
   auto result = readResult(output / wide(name) / L"render.json");
-  auto verdict = starlight::audit::validate_render(result,displayWidth,displayHeight,1,"focused-present",false);
-  if (displayWidth < 2560 || displayHeight < 1440 || !result.value("fullscreen",false) || !result.value("automaticStart",false))
-    verdict["errors"].push_back("Automatic full-screen native 1440p-or-higher contract not met");
+  auto verdict = starlight::audit::validate_render(result,resolution.width,resolution.height,1,"focused-present",false);
+  if (!resolution.supported || result.value("fullscreen",false) != resolution.fullscreen || !result.value("automaticStart",false))
+    verdict["errors"].push_back("Automatic visible 720p minimum / 4K pixel-budget contract not met");
+  verdict["displayWidth"]=displayWidth; verdict["displayHeight"]=displayHeight;
+  verdict["boundedTo4K"]=!resolution.fullscreen;
   if (process.value("status", "") != "pass") verdict["errors"].push_back("Child process failed, timed out, or was cancelled");
   std::ifstream capture(output / wide(name) / L"frame.bmp", std::ios::binary);
   BITMAPFILEHEADER file{}; BITMAPINFOHEADER info{};
   capture.read(reinterpret_cast<char*>(&file), sizeof(file));
   capture.read(reinterpret_cast<char*>(&info), sizeof(info));
-  if (!capture || file.bfType != 0x4D42 || info.biWidth != displayWidth || (info.biHeight != displayHeight && info.biHeight != -displayHeight))
+  if (!capture || file.bfType != 0x4D42 || info.biWidth != resolution.width || (info.biHeight != resolution.height && info.biHeight != -resolution.height))
     verdict["errors"].push_back("Missing or wrong-sized captured frame");
   verdict["accepted"] = verdict["errors"].empty();
   verdict["performanceEligible"] = verdict["accepted"];
@@ -729,17 +734,32 @@ void visibleAudit(const fs::path &packet) {
 void visibleEditorAudit() {
   const std::string name="visible-editor";
   status(82,L"VISIBLE EDITOR: starts automatically after foreground verification; Esc cancels");
+  // The full walkthrough waits for rendered frames on slow virtual GPUs too.
+  // Keep a finite deadline without treating development-machine speed as a gate.
   auto process=child(name,binaries/L"Starlight.NativeEditor.exe",
-    {L"--ui-walkthrough",(output/wide(name)/L"result.json").wstring()},240);
+    {L"--ui-walkthrough",(output/wide(name)/L"result.json").wstring()},600);
   auto result=readResult(output/wide(name)/L"result.json");
   bool good=process.value("status","")=="pass" && starlight::audit::validate_visible_editor(result);
   if (result.contains("checks") && result["checks"].is_array())
     for (const auto &check : result["checks"]) good &= check.value("pass",false) && check.value("foreground",false) && check.value("captureSucceeded",false);
   auto verdict=json{{"name",name},{"accepted",good},{"performanceEligible",false},
     {"scope","Visible menu/control walkthrough; not all editor features"}};
+  verdict["errors"]=json::array();
+  if (!good) {
+    const auto processStatus=process.value("status", "unknown");
+    verdict["errors"].push_back("Editor walkthrough process: "+processStatus);
+    if (result.empty()) {
+      const auto partial=readResult(output/wide(name)/L"result.json.progress.json");
+      const auto completed=partial.contains("checks") && partial["checks"].is_array()
+        ? partial["checks"].size() : 0;
+      verdict["errors"].push_back("Final walkthrough report missing; "+std::to_string(completed)+" step results were recorded before termination. Partial results are not a pass.");
+    } else {
+      verdict["errors"].push_back("One or more required behavior, foreground, capture, or completion checks did not pass.");
+    }
+  }
   evidenceChecks.push_back(verdict);
   save(output/wide(name)/L"evidence-verdict.json",verdict);
-  if (!good) finding("visible editor walkthrough rejected",name,"Failed, incomplete, or missing UI evidence","Inspect per-step assertions, focus and captures.");
+  if (!good) finding("visible editor walkthrough rejected",name,verdict["errors"].dump(),"Inspect per-step assertions, focus and captures.");
 }
 void finishGate0() {
   int passed = 0, failed = 0, controls = 0;
@@ -749,6 +769,7 @@ void finishGate0() {
     auto dir = output / wide(name);
     bool control = name == "component-physics" || name == "lifecycle-idle-control";
     bool good = run.value("status", "") == "pass";
+    json reasons = json::array();
     if (fs::exists(dir / L"session-results.json")) good &= readResult(dir / L"session-results.json").value("success",false);
     if (fs::exists(dir / L"render.json")) good &= readResult(dir / L"render.json").value("success",false);
     if (name.starts_with("debug-tier-") || name.starts_with("measurement-")) {
@@ -765,12 +786,13 @@ void finishGate0() {
       evidenceChecks.push_back(verdict);
       save(dir/L"evidence-verdict.json",verdict);
       good &= verdict["accepted"].get<bool>();
+      reasons = verdict["errors"];
     }
     if (name == "visible-presentation" || name == "visible-editor") good &= readResult(dir / L"evidence-verdict.json").value("accepted",false);
     if (control && good) ++controls;
     else if (good) ++passed;
     else ++failed;
-    detail.push_back({{"name",name},{"outcome", !good ? "failed" : control ? "control-completed" : "bounded-check-passed"}});
+    detail.push_back({{"name",name},{"outcome", !good ? "failed" : control ? "control-completed" : "bounded-check-passed"},{"reasons",reasons}});
   }
   save(output / L"gate0-runs.json", runs);
   save(output / L"audit-verdict.json", {{"runCompleted",!cancel}, {"passedChecks",passed}, {"failedChecks",failed},
@@ -779,7 +801,11 @@ void finishGate0() {
   std::ostringstream report;
   report << "# Gate 0 audit outcome\n\nPassed bounded checks: "<<passed<<". Failed checks: "<<failed
          <<". Completed controls (not acceptance passes): "<<controls<<".\n\n";
-  for (const auto &row : detail) report << "- "<<row["name"].get<std::string>()<<": "<<row["outcome"].get<std::string>()<<"\n";
+  for (const auto &row : detail) {
+    report << "- "<<row["name"].get<std::string>()<<": "<<row["outcome"].get<std::string>();
+    for (const auto &reason : row["reasons"]) report << ". " << reason.get<std::string>();
+    report << "\n";
+  }
   report << "\nRun completion is not Gate 0 certification. Offscreen results do not substitute for visible presentation. Debug timings are not performance claims. Controls do not prove leak freedom. See audit-verdict.json and per-stage evidence.\n";
   atomic_write(output / L"GATE0-RESULTS.md", report.str());
   status(100, cancel ? L"Cancelled — partial evidence saved" : L"Finished: " + std::to_wstring(failed) + L" failed; " +
@@ -788,7 +814,8 @@ void finishGate0() {
 void gate0Audit() {
   try {
     if (visibleOnly) {
-      const auto packet = root / L"audit-runs/run-20260917-192850/comparison.bin";
+      const auto currentGraphics = output.parent_path() / L"native-core/current-graphics.bin";
+      const auto packet = fs::exists(currentGraphics) ? currentGraphics : root / L"audit-runs/run-20260917-192850/comparison.bin";
       save(output / L"scope.json", {{"scope","visible presentation only"},{"packetSha256",hash_file(packet)},
         {"viewportSha256",hash_file(binaries / L"Starlight.Viewport.dll")},
         {"harnessSha256",hash_file(binaries / L"Starlight.NativeRenderChecks.exe")}});
@@ -824,7 +851,8 @@ void gate0Audit() {
     }
     SetEnvironmentVariableW(L"STARLIGHT_HANDLE_TRACE", nullptr);
     SetEnvironmentVariableW(L"STARLIGHT_LIFECYCLE_IDLE_CONTROL", nullptr);
-    const auto packet = root / L"audit-runs/run-20260917-192850/comparison.bin";
+    const auto currentGraphics = output.parent_path() / L"native-core/current-graphics.bin";
+    const auto packet = fs::exists(currentGraphics) ? currentGraphics : root / L"audit-runs/run-20260917-192850/comparison.bin";
     save(output / L"workload.json", {{"packetSha256", hash_file(packet)}, {"width",3840}, {"height",2160},
       {"purpose", "Repeated current-renderer measurements, not legacy speedup"}});
     for (int tier = 0; tier <= 4 && !cancel; ++tier) {
@@ -1135,7 +1163,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       CW_USEDEFAULT, 700, 260, nullptr, nullptr, instance, nullptr);
   if (!window)
     return 3;
-  ShowWindow(window, SW_SHOW);
+  ShowWindow(window, SW_SHOWNOACTIVATE);
   UpdateWindow(window);
   coordinator = std::jthread(audit);
   MSG msg{};

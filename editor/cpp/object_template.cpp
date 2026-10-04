@@ -1,13 +1,14 @@
 #include "object_template.hpp"
 #include "interactions.hpp"
+#include "engine_assets.hpp"
 #include <unordered_map>
 namespace starlight::editor {
 namespace {
 constexpr size_t maximumBytes = 32 * 1024 * 1024;
 void self_contained(const Character& object) {
     object.validate();
-    if (!object.Shape && !object.Sculpt)
-        throw std::runtime_error("Reusable objects currently support built-in shapes and sculpts. Imported model packaging is not available yet.");
+    if (!object.Shape && !object.Sculpt && object.Asset.empty())
+        throw std::runtime_error("Reusable objects need a built-in shape, a sculpt or an imported model");
 }
 }
 std::string encode_object_template(const Character& object) {
@@ -15,29 +16,33 @@ std::string encode_object_template(const Character& object) {
     if(!object.JointTargetId.empty())throw std::runtime_error("Save connected bodies together as a reusable group");
     if(!object.LightningTargetId.empty())throw std::runtime_error("Save the lightning emitter and its target together as a reusable group");
     auto saved = object;
-    saved.Asset.clear(); // Sculpt geometry can be independent of its original model.
+    if (saved.Shape || saved.Sculpt) saved.Asset.clear();
     saved.Id.clear();
-    auto result = json{{"Format","starlight-object"},{"Version",1},{"Object",saved}}.dump(2);
+    auto result = json{{"Format","starlight-object"},{"Version",2},{"Object",saved}}.dump(2);
     if (result.size() > maximumBytes) throw std::runtime_error("Reusable object exceeds 32 MiB");
     return result;
 }
 Character decode_object_template(std::string_view bytes) {
     if (bytes.size() > maximumBytes) throw std::runtime_error("Reusable object exceeds 32 MiB");
     auto data = json::parse(bytes);
-    if (data.at("Format") != "starlight-object" || native_int(data.at("Version")) != 1)
-        throw std::runtime_error("Unsupported reusable object format");
+    if (data.at("Format") != "starlight-object") throw std::runtime_error("Unsupported reusable object format");
+    if (native_int(data.at("Version")) < 2) throw ConversionRequired("This reusable object uses the pre-key-card format. Convert it with Starlight.SceneMigration before using it.");
+    if (native_int(data.at("Version")) != 2) throw std::runtime_error("Unsupported reusable object format");
     auto object = data.at("Object").get<Character>();
     self_contained(object);
-    if (!object.Asset.empty()) throw std::runtime_error("Reusable objects must contain their own geometry");
+    if (!object.Shape && !object.Sculpt) (void)EngineAssets::get(AssetKind::Model, object.Asset);
     object.Id = new_id();
     return object;
 }
 void save_object_template(const Character& object, const fs::path& path) {
     if (_wcsicmp(path.extension().c_str(), L".starobject")) throw std::runtime_error("Save reusable objects as .starobject files");
-    atomic_write(path, encode_object_template(object), true);
+    auto bytes = encode_object_template(object);
+    EngineAssets::bundle_into(EngineAssets::referenced_ids(json::parse(bytes)), fs::absolute(path).parent_path() / L"assets");
+    atomic_write(path, bytes, true);
 }
 Character load_object_template(const fs::path& path) {
     if (fs::file_size(path) > maximumBytes) throw std::runtime_error("Reusable object exceeds 32 MiB");
+    EngineAssets::discover_near(fs::absolute(path).parent_path());
     return decode_object_template(read_file(path));
 }
 void place_object_template(Character& object, double x, double z) {
@@ -57,21 +62,22 @@ std::string encode_object_group(const std::vector<Character>& objects) {
     for(const auto& object:objects){auto copy=object;copy.LightningTargetId.clear();copy.JointTargetId.clear();auto item=json::parse(encode_object_template(copy)).at("Object");item["Id"]=ids.at(object.Id);
         if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Include the lightning target in its reusable group");item["LightningTargetId"]=target->second;}if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Include the joint target in its reusable group");item["JointTargetId"]=target->second;}saved.push_back(std::move(item));}
 
-    auto bytes = json{{"Format","starlight-object-group"},{"Version",1},{"Objects",saved}}.dump(2);
+    auto bytes = json{{"Format","starlight-object-group"},{"Version",2},{"Objects",saved}}.dump(2);
     if (bytes.size() > maximumBytes) throw std::runtime_error("Reusable group exceeds 32 MiB");
     return bytes;
 }
 std::vector<Character> decode_object_group(std::string_view bytes) {
     if (bytes.size() > maximumBytes) throw std::runtime_error("Reusable group exceeds 32 MiB");
     auto data = json::parse(bytes);
-    if (data.at("Format") != "starlight-object-group" || native_int(data.at("Version")) != 1)
-        throw std::runtime_error("Unsupported reusable group format");
+    if (data.at("Format") != "starlight-object-group") throw std::runtime_error("Unsupported reusable group format");
+    if (native_int(data.at("Version")) < 2) throw ConversionRequired("This reusable group uses the pre-key-card format. Convert it with Starlight.SceneMigration before using it.");
+    if (native_int(data.at("Version")) != 2) throw std::runtime_error("Unsupported reusable group format");
     const auto &objects = data.at("Objects");
     if (!objects.is_array() || objects.empty() || objects.size() > 4096)
         throw std::runtime_error("Reusable groups require between 1 and 4096 objects");
     std::vector<Character> result;
     std::unordered_map<std::string,std::string> ids;
-    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",1},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty())ids[old]=decoded.Id;result.push_back(std::move(decoded));}
+    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty())ids[old]=decoded.Id;result.push_back(std::move(decoded));}
     for(auto& object:result)if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Reusable group lightning target is missing");object.LightningTargetId=target->second;}
 
     for(auto& object:result)if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Reusable group joint target is missing");object.JointTargetId=target->second;}
@@ -79,10 +85,13 @@ std::vector<Character> decode_object_group(std::string_view bytes) {
 }
 void save_object_group(const std::vector<Character>& objects, const fs::path& path) {
     if (_wcsicmp(path.extension().c_str(), L".stargroup")) throw std::runtime_error("Save reusable groups as .stargroup files");
-    atomic_write(path, encode_object_group(objects), true);
+    auto bytes = encode_object_group(objects);
+    EngineAssets::bundle_into(EngineAssets::referenced_ids(json::parse(bytes)), fs::absolute(path).parent_path() / L"assets");
+    atomic_write(path, bytes, true);
 }
 std::vector<Character> load_object_group(const fs::path& path) {
     if (fs::file_size(path) > maximumBytes) throw std::runtime_error("Reusable group exceeds 32 MiB");
+    EngineAssets::discover_near(fs::absolute(path).parent_path());
     return decode_object_group(read_file(path));
 }
 void place_object_group(std::vector<Character>& objects, SceneData& scene, double x, double z,

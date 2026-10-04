@@ -1,0 +1,813 @@
+{
+  "format": "starlight-source-rules-v1",
+  "tokens": [
+    [
+      "types",
+      "\\b(?:class|struct|enum\\s+class|enum)\\s+(\\w+)"
+    ],
+    [
+      "includes",
+      "^\\s*#\\s*include\\s*[<\"]([^>\"\\n]+)"
+    ],
+    [
+      "native_exports",
+      "\\b(?:API\\s+|__declspec\\s*\\(dllexport\\)\\s+)[^;{}(\\n]*?\\b(\\w+)\\s*\\("
+    ],
+    [
+      "function_candidates",
+      "^\\s*(?:[\\w:<>*&]+\\s+)+([\\w:~]+)\\s*\\([^;]*\\)\\s*(?:const\\s*)?\\{"
+    ],
+    [
+      "allocation",
+      "\\b(?:new|make_unique|make_shared|malloc|realloc|HeapAlloc)\\b|\\.(?:resize|reserve|push_back|emplace_back)\\s*\\("
+    ],
+    [
+      "synchronization",
+      "\\b(?:WaitForSingleObject|WaitForMultipleObjects|flush|notify_all|condition_variable|mutex|atomic|join)\\b"
+    ],
+    [
+      "threads_jobs",
+      "\\b(?:jthread|thread|async|PersistentWorkers|JobSystemThreadPool|parallelFor|parallel_for)\\b"
+    ],
+    [
+      "graphics",
+      "\\b(?:Create\\w*(?:Resource|PipelineState|CommandList|CommandAllocator)|ResourceBarrier|ExecuteCommandLists|Dispatch|DrawIndexedInstanced|Present|TraceRayInline|BuildRaytracingAccelerationStructure)\\b"
+    ],
+    [
+      "file_process_network",
+      "\\b(?:CreateFileW|CreateProcessW|LoadLibraryExW|WinHttp\\w+|socket|ifstream|ofstream|ShellExecuteW)\\b"
+    ],
+    [
+      "ui",
+      "\\b(?:CreateWindowExW|CreateWindowW|DestroyWindow|SetTimer|KillTimer|SetWindowPos|MoveWindow|SendMessageW)\\b"
+    ],
+    [
+      "validation",
+      "\\b(?:throw|validate|isfinite|assert|static_assert)\\b"
+    ],
+    [
+      "todo",
+      "\\b(?:TODO|FIXME|HACK|XXX)\\b"
+    ]
+  ],
+  "capabilities": [
+    [
+      "Dynamic world physics closeout",
+      "Movement, physical props, constraints, fracture, traveling projectiles, lightning, particles and bounded fluids share gameplay and presentation. The closeout report records core, visible editor and mixed exported-world checks.",
+      [
+        [
+          "editor/cpp/adventure.hpp",
+          "advance_projectiles"
+        ],
+        [
+          "editor/cpp/body_constraints.hpp",
+          "JointSegments"
+        ],
+        [
+          "tools/checks/physics_boundary_checks.inl",
+          "Unsupported gameplay fracture"
+        ]
+      ],
+      "Bounded acceptance only. Unsupported fracture uses generic debris; conservative collision, heightfield liquids and fixed fog domains remain. Cloth, soft bodies and ragdolls are absent."
+    ],
+    [
+      "Character movement and grappling",
+      "Shared player controller provides sprint resources, double jump, directional dodge, lunge, crouch, prone, slide and grapple traversal with collision.",
+      [
+        [
+          "editor/cpp/adventure_controller.hpp",
+          "class AdventureController"
+        ],
+        [
+          "editor/cpp/grapple_motion.hpp",
+          "class GrappleMotion"
+        ],
+        [
+          "editor/cpp/adventure.hpp",
+          "grapple_\\.step"
+        ]
+      ],
+      "Source presence is not complete visible or clean-machine validation. Consult the current requirement sign-off for acceptance and remaining gates."
+    ],
+    [
+      "Telegraph combat and combat actors",
+      "Runtime attacks, healing, health, target selection, pursuit and caster-attached cone presentation share the adventure runtime.",
+      [
+        [
+          "editor/cpp/adventure.hpp",
+          "class AdventurePlayer"
+        ],
+        [
+          "editor/cpp/adventure.hpp",
+          "surface_telegraph_contact"
+        ],
+        [
+          "editor/cpp/combat_control.hpp",
+          "struct CombatActor"
+        ]
+      ],
+      "Damage and health values are provisional. Finished character assets and complete milestone sign-off remain deferred or open; see current evidence."
+    ],
+    [
+      "Crowd control and boss break bars",
+      "Fourteen control effects, player anti-chain immunity and boss break/stagger/recovery states have explicit runtime representations.",
+      [
+        [
+          "editor/cpp/combat_control.hpp",
+          "struct CombatControl"
+        ],
+        [
+          "editor/cpp/combat_control.hpp",
+          "struct BossBreakBar"
+        ],
+        [
+          "editor/cpp/combat_control.hpp",
+          "ControlEffect"
+        ]
+      ],
+      "Boss behavior is distinct from PvP immunity. Per-effect source and tests must be inspected; this catalogue does not certify balance or full gameplay completion."
+    ],
+    [
+      "Discoverable editor help",
+      "Optional searchable lessons share one visible entry point across editing modes.",
+      [
+        [
+          "editor/cpp/tutorials.inl",
+          "void show_help"
+        ],
+        [
+          "editor/cpp/tutorial_progress.hpp",
+          "decode_tutorial_progress"
+        ],
+        [
+          "editor/cpp/editor_main.cpp",
+          "HelpOpen"
+        ]
+      ],
+      "Text guidance with saved reading positions; live appearance and input verification pending. Not interactive task tracking."
+    ],
+    [
+      "Walk and build preview",
+      "Exploration and the existing editing tools operate on the same authored scene; gameplay tests use a separate temporary copy.",
+      [
+        [
+          "editor/cpp/editor_main.cpp",
+          "InteractiveBuild"
+        ],
+        [
+          "editor/cpp/adventure.hpp",
+          "rebuild_for_authoring"
+        ],
+        [
+          "editor/cpp/classic_completion.inl",
+          "explorer->rebuild_for_authoring"
+        ]
+      ],
+      "Experimental preview. Physical input, complete visual acceptance, objectives, XP and unlocks are not established."
+    ],
+    [
+      "Adventure gameplay foundation",
+      "Saved bounded events, conditions and actions share one runtime across editor Play and Windows export; authoring supports Undo and independent Play state.",
+      [
+        [
+          "editor/cpp/adventure.hpp",
+          "class AdventurePlayer"
+        ],
+        [
+          "editor/cpp/gameplay_rules.hpp",
+          "class GameplayRulesRuntime"
+        ],
+        [
+          "editor/cpp/scene.hpp",
+          "GameplayRule"
+        ],
+        [
+          "editor/cpp/editor_main.cpp",
+          "gameplay_rule_command"
+        ]
+      ],
+      "Collection, interaction and spherical area events with item/objective conditions and objective/door/finish actions. Shared character movement and combat now exist; final Step 4/4A acceptance remains open. No arbitrary scripting. Check current validation evidence separately."
+    ],
+    [
+      "Windows adventure export",
+      "Packages the standalone player, engine and C++ runtime libraries with an integrity-checked portable scene.",
+      [
+        [
+          "editor/cpp/game_export.cpp",
+          "export_playable_game"
+        ],
+        [
+          "editor/cpp/player_main.cpp",
+          "wWinMain"
+        ],
+        [
+          "CMakeLists.txt",
+          "Starlight.NativePlayer"
+        ]
+      ],
+      "Package validation does not prove visible play, clean-machine compatibility, code signing, or non-Windows support."
+    ],
+    [
+      "Native application and build",
+      "The active build assembles a native Win32 editor, core library, session library, renderer and physics DLLs, native project host, project modules and checks. Python orchestrates compilation; it is not the editor runtime.",
+      [
+        [
+          "CMakeLists.txt",
+          "add_executable\\(Starlight.NativeEditor"
+        ],
+        [
+          "editor/cpp/editor_main.cpp",
+          "wWinMain"
+        ],
+        [
+          "Build-Native.py",
+          "CMake/Ninja"
+        ]
+      ],
+      "Windows/D3D12 is the current build contract. Compiling successfully does not validate runtime behavior or portable packaging."
+    ],
+    [
+      "Classic creator interface",
+      "The native editor keeps floating controls over the canvas, beginner/advanced settings, terrain and shape tools, named colors and a full feature catalogue. The catalogue describes both experimental tools and unimplemented ambitions.",
+      [
+        [
+          "editor/cpp/editor_main.cpp",
+          "advanced"
+        ],
+        [
+          "tools/checks/classic_ui_checks.inl",
+          "beginner hides"
+        ],
+        [
+          "editor/cpp/classic_completion.inl",
+          "catalog|Catalogue|catalogue|feature_catalog"
+        ],
+        [
+          "editor/cpp/named_colors.hpp",
+          "Pink"
+        ]
+      ],
+      "A catalogue entry is not proof of a working subsystem. Latest saved UI evidence is described separately."
+    ],
+    [
+      "Independent game preview",
+      "Current Play uses the main editor renderer/session in both window modes. Retained GamePreview code can own a secondary session but is not the current Play command path.",
+      [
+        [
+          "editor/cpp/classic_completion.inl",
+          "void playback_command"
+        ],
+        [
+          "editor/cpp/classic_completion.inl",
+          "renderer->playback\\(next"
+        ],
+        [
+          "editor/cpp/game_preview.hpp",
+          "NativeSession"
+        ]
+      ],
+      "Independent views consume additional resources; this is not a demonstrated shared GPU resource pool or a packaged game exporter."
+    ],
+    [
+      "Scene data and compatibility",
+      "SceneData models authored objects, terrain, liquid sources, environment and ray-tracing preferences. Character records also represent props. JSON serialization and validation are native C++.",
+      [
+        [
+          "editor/cpp/scene.hpp",
+          "SchemaVersion = 7"
+        ],
+        [
+          "editor/cpp/scene_json.cpp",
+          "from_json"
+        ],
+        [
+          "editor/cpp/scene.cpp",
+          "validate"
+        ]
+      ],
+      "This is a record/vector model, not evidence of a general archetype ECS. Saved authored state differs from a simulation checkpoint."
+    ],
+    [
+      "Scene packet ABI",
+      "The writer emits NativeScene V7 and the viewport accepts versions V1–V7. The binary packet is distinct from JSON scene schema and project/preset schemas.",
+      [
+        [
+          "editor/cpp/render_scene.cpp",
+          "0x37564c53"
+        ],
+        [
+          "editor/native/viewport.cpp",
+          "0x31564c53.*0x37564c53"
+        ]
+      ],
+      "Native exports remain active ABI boundaries even though the managed editor was retired."
+    ],
+    [
+      "Local automation",
+      "The native command layer provides describe/inspect and transactional add, move, route, rename, remove, configure, shape, transform and terrain operations with expected scene hashes.",
+      [
+        [
+          "editor/cpp/commands.cpp",
+          "starlight-editor-local"
+        ],
+        [
+          "editor/cpp/commands.cpp",
+          "expectedSha256"
+        ],
+        [
+          "editor/cpp/command_runner.cpp",
+          "--describe"
+        ]
+      ],
+      "This is local command automation. It is not an embedded AI model, cloud service, or complete GUI command parity."
+    ],
+    [
+      "Persistence and editing safety",
+      "Platform and command code implement native file handling, hashed scene revisions and save protection; editor history supports undo/redo and canceled edits.",
+      [
+        [
+          "editor/cpp/platform.cpp",
+          "ReplaceFile|MoveFile"
+        ],
+        [
+          "editor/cpp/mesh.hpp",
+          "SceneHistory"
+        ],
+        [
+          "editor/cpp/commands.cpp",
+          "expectedSha256"
+        ]
+      ],
+      "Whole-scene history and asset portability need separate memory and distribution policies. No unlimited-history safety claim is made."
+    ],
+    [
+      "Terrain authoring",
+      "Editable terrain has 97×97 height samples at 0.25 m spacing over a 24 m span. It supports brushes, surface painting and denser preview geometry.",
+      [
+        [
+          "editor/cpp/scene.hpp",
+          "N = 97"
+        ],
+        [
+          "editor/cpp/scene.hpp",
+          "Step = .25, Half = 12"
+        ],
+        [
+          "editor/cpp/geometry.cpp",
+          "193|subdiv|N - 1"
+        ]
+      ],
+      "A heightfield cannot encode caves or stacked surfaces. Rendering currently rebuilds geometry; this is not world streaming."
+    ],
+    [
+      "Object geometry and sculpting",
+      "Native mesh code provides transforms, bounds/picking and sculpt operations on authored mesh copies, with scene history integration.",
+      [
+        [
+          "editor/cpp/mesh.cpp",
+          "sculpt|Sculpt"
+        ],
+        [
+          "editor/cpp/interactions.cpp",
+          "snap|Snap"
+        ],
+        [
+          "editor/cpp/scene.hpp",
+          "SculptMesh"
+        ]
+      ],
+      "Do not infer topology repair, adaptive remeshing, UV authoring or a production sculpting package."
+    ],
+    [
+      "Props and effects",
+      "The scene shape list includes basic solids, rocks, pebbles, grass, fire/light/lava, Chaos Lightning, Chaos Rock, Light-Bound Shard and Craxis Smoke.",
+      [
+        [
+          "editor/cpp/scene.hpp",
+          "chaos-lightning"
+        ],
+        [
+          "editor/cpp/geometry.cpp",
+          "chaos|lightning"
+        ],
+        [
+          "deep/engine/chaos_lightning.h",
+          "subdivide"
+        ]
+      ],
+      "Procedural props are not a world scatter, foliage simulation, fracture or particle system."
+    ],
+    [
+      "Static model import",
+      "The native asset path parses GLB geometry and validates accessors, buffers and graph structure for preview meshes.",
+      [
+        [
+          "editor/cpp/assets.cpp",
+          "load_glb"
+        ],
+        [
+          "editor/cpp/assets.cpp",
+          "accessor|Accessor"
+        ]
+      ],
+      "Creator static import must not inherit the separate game project crowd runtime’s skinning/animation capability. Full imported material/animation authoring is not established."
+    ],
+    [
+      "Reusable assets and scene composition",
+      "Search asset folders by name and type; insert models, native objects, groups and scene objects. Save native templates/groups, copy selections between scenes, repair missing models, and export portable scene or selection folders with integrity manifests.",
+      [
+        [
+          "editor/cpp/asset_browser.inl",
+          "asset_browser_command"
+        ],
+        [
+          "editor/cpp/selection_clipboard.inl",
+          "selection_clipboard_command"
+        ],
+        [
+          "editor/cpp/object_template.cpp",
+          "encode_object_group"
+        ],
+        [
+          "editor/cpp/portable_scene.cpp",
+          "export_portable_scene"
+        ]
+      ],
+      "Text browser has no thumbnails. Native templates exclude imported models; portable scene folders support embedded GLB dependencies. This is editor-content reuse, not standalone game export. GUI visual acceptance and clean-machine validation remain separate."
+    ],
+    [
+      "Render ownership and updates",
+      "NativeSession owns a worker thread with coalesced scene/camera/control input. It exposes status, capture, playback and suspend/resume. Viewport and physics work are owned by the session path.",
+      [
+        [
+          "editor/cpp/native_session.hpp",
+          "std::jthread"
+        ],
+        [
+          "editor/cpp/native_session.cpp",
+          "NativeSession::run"
+        ],
+        [
+          "editor/cpp/native_session.cpp",
+          "condition_"
+        ]
+      ],
+      "Resize now preserves the viewport/device and replaces size-dependent images; scene changes can still rebuild geometry. Worker ownership is not a proof of race freedom."
+    ],
+    [
+      "Native rendering contract",
+      "The viewport explicitly selects native output and disables the upscaler request. HDR rendering, spatial edge AA and presentation use the shared D3D12 renderer.",
+      [
+        [
+          "editor/native/viewport.cpp",
+          "modeRequest=\"native\""
+        ],
+        [
+          "editor/native/viewport.cpp",
+          "upsRequest=\"off\""
+        ],
+        [
+          "editor/native/edge_aa.h",
+          "Dispatch|dispatch|numthreads"
+        ]
+      ],
+      "No super resolution or frame generation is allowed for current acceptance. Native resolution does not guarantee alias-free output."
+    ],
+    [
+      "Inline hardware ray tracing",
+      "DxrPass builds acceleration structures and executes compute inline RayQuery, with selectable tiers and raster fallback. The shader build targets cs_6_5.",
+      [
+        [
+          "deep/engine/dxr.hlsl",
+          "TraceRayInline"
+        ],
+        [
+          "deep/engine/dxr.h",
+          "BuildRaytracingAccelerationStructure"
+        ],
+        [
+          "tools/build/cmake_shaders.py",
+          "cs_6_5"
+        ]
+      ],
+      "This is not an RT state-object/shader-table pipeline. Historical device-loss failures remain dated evidence; current throughput requires a successful run with explicit workload, native dimensions and presentation conditions."
+    ],
+    [
+      "Native temporal denoiser",
+      "The native wavelet path implements prefilter, temporal reconstruction, atrous filtering and composition, with history/guide resources.",
+      [
+        [
+          "deep/engine/svgf.hlsl",
+          "Prefilter"
+        ],
+        [
+          "deep/engine/svgf.hlsl",
+          "Temporal"
+        ],
+        [
+          "deep/engine/svgf.hlsl",
+          "Atrous"
+        ],
+        [
+          "deep/engine/svgf.hlsl",
+          "Composite"
+        ]
+      ],
+      "ABI mode 0 is native wavelet. Existence of the implementation is not fresh runtime validation or proof of zero ghosting."
+    ],
+    [
+      "Optional native Ray Reconstruction",
+      "Direct NGX integration supplies optional Ray Reconstruction and capability/failure handling. The denoiser API maps mode 1 to RR and mode 0 to wavelet.",
+      [
+        [
+          "deep/engine/ray_reconstruction.h",
+          "DLAA"
+        ],
+        [
+          "deep/engine/ray_reconstruction.h",
+          "NGX_D3D12"
+        ],
+        [
+          "editor/native/viewport.cpp",
+          "mode==1\\?1:0"
+        ]
+      ],
+      "RR must remain 1:1. Vendor capability, local SDK/DLL paths and fallback behavior require explicit validation; no super-resolution authorization follows from RR."
+    ],
+    [
+      "Atmosphere and lighting",
+      "Atmosphere compute shaders provide injection, integration and composition; scene settings include time of day, day cycle and fog. Local lights and smoke are packet inputs.",
+      [
+        [
+          "deep/engine/atmosphere.hlsl",
+          "Inject"
+        ],
+        [
+          "editor/cpp/scene.hpp",
+          "DayCycle"
+        ],
+        [
+          "editor/native/viewport.cpp",
+          "Too many smoke volumes"
+        ]
+      ],
+      "Bounded froxel fog and procedural skies are not a full weather or fluid-smoke solver. Raster and ray visibility differ."
+    ],
+    [
+      "Rigid-body simulation",
+      "The native physics DLL integrates Jolt with fixed stepping, collision shape preparation and a job system. The editor wrapper consumes body poses and liquid data.",
+      [
+        [
+          "deep/Physics/PhysicsWorld.cpp",
+          "JobSystemThreadPool"
+        ],
+        [
+          "deep/Physics/PhysicsWorld.cpp",
+          "async"
+        ],
+        [
+          "editor/cpp/physics.cpp",
+          "liquid|Liquid"
+        ]
+      ],
+      "Async collision cooks and four-worker Jolt scheduling are not a global concurrency budget. High-density coupled performance remains unverified."
+    ],
+    [
+      "Water and lava flow",
+      "TerrainFlow maintains separate water/lava arrays on a 48×48 grid, with 0.5 m cells, obstacle coverage and geometry extraction.",
+      [
+        [
+          "editor/cpp/flow.hpp",
+          "N = 48"
+        ],
+        [
+          "editor/cpp/flow.hpp",
+          "Cell = .5"
+        ],
+        [
+          "editor/cpp/flow.cpp",
+          "transport"
+        ],
+        [
+          "editor/cpp/flow.hpp",
+          "FlowObstacleMask"
+        ]
+      ],
+      "This is terrain-bound surface transport, not a general 3D incompressible fluid solver or guaranteed two-way pressure coupling."
+    ],
+    [
+      "Routes and simulation controls",
+      "Objects carry X/Z route points and speed; NativeSession implements repeat/follow and playback/reset behavior.",
+      [
+        [
+          "editor/cpp/scene.hpp",
+          "WalkPoint"
+        ],
+        [
+          "editor/cpp/native_session.cpp",
+          "repeat_"
+        ],
+        [
+          "editor/cpp/native_session.cpp",
+          "follow_"
+        ]
+      ],
+      "Route playback is distinct from navigation, skeletal locomotion, collision-aware character controllers and animation graphs."
+    ],
+    [
+      "Local music",
+      "Native music controls use Windows MCI with playlist/playback/volume behavior.",
+      [
+        [
+          "editor/cpp/music.hpp",
+          "mciSendString|mciSendCommand"
+        ],
+        [
+          "editor/cpp/classic_completion.inl",
+          "music"
+        ]
+      ],
+      "Editor music is not a spatial audio engine or exported game soundtrack system."
+    ],
+    [
+      "Texture foundation",
+      "The shared texture loader supports DDS block-compressed textures, mip selection and format-aware GPU uploads, alongside existing image loading.",
+      [
+        [
+          "deep/engine/model/texture.cpp",
+          "loadTextureDDS"
+        ],
+        [
+          "deep/engine/model/texture.cpp",
+          "BC5"
+        ],
+        [
+          "deep/engine/model/texture.cpp",
+          "BC7"
+        ]
+      ],
+      "A BC5/BC7 loader is not a complete editor PBR material library, offline cooker or asynchronous residency manager."
+    ],
+    [
+      "Project host boundary",
+      "The native host loads project modules through StarlightRunProject; editor project handling validates schema 3 manifests and launches/reconciles presets.",
+      [
+        [
+          "deep/src/runtime.cpp",
+          "StarlightRunProject"
+        ],
+        [
+          "editor/cpp/projects.cpp",
+          "schemaVersion"
+        ],
+        [
+          "CMakeLists.txt",
+          "foreach\\(project_name IN ITEMS Empty GameProject"
+        ]
+      ],
+      "Creator scene Play and project-DLL execution are separate workflows. See current publication and closeout evidence for tested export cases; project-host and editor-player workflows remain distinct."
+    ],
+    [
+      "Crowd runtime",
+      "The separate game project contains crowd gathering, pose evaluation and instance-bucket emission using renderer parallel preparation.",
+      [
+        [
+          "deep/projects/GameProject/project.cpp",
+          "poolThreads"
+        ],
+        [
+          "deep/projects/GameProject/project.cpp",
+          "pose|Pose"
+        ],
+        [
+          "deep/projects/GameProject/project.cpp",
+          "bucket|Bucket"
+        ]
+      ],
+      "Do not attribute large-crowd figures to the editor or to independent gameplay entities; inherited results are workload-specific."
+    ],
+    [
+      "Persistent CPU workers",
+      "PersistentWorkers uses contiguous ranges, caller participation, condition variables and a shared completion count. Threads are joined on destruction.",
+      [
+        [
+          "deep/engine/persistent_workers.h",
+          "const int per"
+        ],
+        [
+          "deep/engine/persistent_workers.h",
+          "done_.wait"
+        ],
+        [
+          "deep/engine/persistent_workers.h",
+          "thread.join"
+        ]
+      ],
+      "This class does not implement a general task DAG, fibers or work stealing. Wider thread counts require measured gains, not utilization alone."
+    ],
+    [
+      "Command recording and GPU lifetime",
+      "The renderer owns command lists/allocators, barriers, submission and frame retirement. CPU parallel preparation does not automatically imply concurrent D3D12 recording.",
+      [
+        [
+          "deep/engine/render_device.h",
+          "CreateCommandList"
+        ],
+        [
+          "deep/engine/render_device.h",
+          "CreateCommandAllocator"
+        ],
+        [
+          "deep/engine/render_device.h",
+          "ExecuteCommandLists"
+        ]
+      ],
+      "Future parallel recording needs per-worker/per-slot ownership, reserved bindings and ordered resource transitions."
+    ],
+    [
+      "Diagnostics and existing audits",
+      "Native checks cover core data, controlled diagnostics, textures, UI, sessions and render harnesses. The audit GUI coordinates checks and preserves result files.",
+      [
+        [
+          "CMakeLists.txt",
+          "native-diagnostics"
+        ],
+        [
+          "CMakeLists.txt",
+          "native-classic-ui"
+        ],
+        [
+          "tools/audit/audit.cpp",
+          "wWinMain"
+        ]
+      ],
+      "Checks are evidence for their exact run, not blanket certification. This analyzer does not run them or change failed assertions."
+    ],
+    [
+      "Diagnostic benchmark path",
+      "The current source contains auditOffscreen and optional benchmark exports. These are committed diagnostic facilities, not an accepted gameplay rendering mode.",
+      [
+        [
+          "deep/engine/render_device.h",
+          "auditOffscreen"
+        ],
+        [
+          "editor/native/viewport.cpp",
+          "sl_benchmark"
+        ]
+      ],
+      "Historical renderer failures are preserved; newer Gate 0 evidence and the reliability checkpoint record an isolated output-target correction. A source scan alone does not certify matched performance or lifecycle reliability."
+    ]
+  ],
+  "source_extensions": [
+    ".bat",
+    ".c",
+    ".cmake",
+    ".cmd",
+    ".cpp",
+    ".h",
+    ".hlsl",
+    ".hpp",
+    ".inl",
+    ".ps1",
+    ".py"
+  ],
+  "contracts": [
+    [
+      "serialization_field",
+      "\\bj\\[\"[^\"]+\"\\]|\\bj\\.at\\(\"[^\"]+\"\\)"
+    ],
+    [
+      "environment_switch",
+      "(?:getenv|GetEnvironmentVariable|_wgetenv)|STARLIGHT_[A-Z_]+"
+    ],
+    [
+      "shader_binding_or_threads",
+      "register\\s*\\(|numthreads\\s*\\(|\\b(?:cbuffer|RWTexture\\w*|Texture\\w*|StructuredBuffer|RWStructuredBuffer)\\b"
+    ],
+    [
+      "validation_error",
+      "throw\\s+std::|throw\\s+runtime_error|throw\\s+Error"
+    ],
+    [
+      "native_api",
+      "\\bAPI\\b.*\\(|__declspec\\s*\\(dllexport\\)"
+    ],
+    [
+      "resource_format_or_creation",
+      "DXGI_FORMAT_|CreateCommittedResource|CreateDescriptorHeap"
+    ],
+    [
+      "compile_or_path_dependency",
+      "nvsdk|\\.lib[\"\\s]|[A-Z]:[/\\\\]|find_package|find_program"
+    ]
+  ],
+  "models": [
+    "editor/cpp/flow.hpp",
+    "editor/cpp/mesh.hpp",
+    "editor/cpp/native_session.hpp",
+    "editor/cpp/physics.hpp",
+    "editor/cpp/render_scene.hpp",
+    "editor/cpp/scene.hpp"
+  ]
+}

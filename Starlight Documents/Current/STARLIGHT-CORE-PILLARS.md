@@ -18,6 +18,16 @@ I care about how a game looks. I also care about how it feels to play. A beautif
 
 Upscaling and generated frames aren’t an excuse for poor native performance. The foundation has to be strong on its own. And using hardware well doesn’t mean running it flat out for no reason; sensible limits and responsive tools belong together.
 
+Rasterization comes first. I want the engine to look good and run well at the screen's native resolution, with real rendered frames. Ray tracing, upscaling, and frame generation can be optional enhancements. They must never become requirements for a good experience or hide a slow foundation.
+
+I want a major increase in visual quality: detailed meshes and materials, convincing light, moving water and grass, weather, magic, and believable physical interactions. Performance cannot mean quietly stripping those improvements away. Build the quality properly, then remove wasted work while preserving the result. During this overhaul, the visual and physical upgrade pass comes first, with broad performance refinement afterward; measuring costs belongs in both passes.
+
+Smoothness means more than an impressive average frame rate. Frames should arrive evenly, movement and input should respond promptly, and editing, simulation, loading, and changes to the world should not cause avoidable stalls. A fast frozen test is not proof that a moving, interactive scene runs well.
+
+Use the CPU and GPU for the work they suit. Repeated dense visual work should not hold the CPU up rebuilding and uploading the same meshes every frame when the GPU can animate them. Low overall CPU usage can hide one busy thread, and low GPU usage can mean the GPU is waiting. Find the actual delay rather than guessing from usage meters. High wattage is not a quality target either; use sensible frame limits and avoid work that the person cannot benefit from.
+
+Show the evidence honestly: native resolution, real frame rate and frame pacing, CPU and GPU time, memory use, and responsiveness in representative moving scenes. Keep the scene, quality, hardware, and measurement conditions clear when comparing changes. Preserve useful detail and physical behavior, provide understandable quality choices, and check the intended hardware instead of treating one powerful development PC as proof for everyone. Do not promise a performance target until the matching workload has actually been measured.
+
 ## Care in the details
 
 I notice the corners. I notice the flash of a white window in a dark interface. I notice when scrolling catches, when a button moves unexpectedly, or when a menu feels awkward to use.

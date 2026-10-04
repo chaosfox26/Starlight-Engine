@@ -13,7 +13,7 @@
     finish.Conditions=area.Conditions;finish.Actions={{"finish-game",""}};
     level.Rules={collection,area,finish};
     auto encoded=level.encode();auto loaded=SceneData::decode(encoded);
-    require(loaded.SchemaVersion==9 && json(loaded.Rules)==json(level.Rules),"Saved events conditions and actions round trip without losing identities");
+    require(loaded.SchemaVersion==16 && json(loaded.Rules)==json(level.Rules),"Saved events conditions and actions round trip without losing identities");
     AdventurePlayer player;player.start(loaded);
     player.interact();require(player.rules().items.contains("red") && player.rules().objectives.empty(),"Required-set objective waits for all items");
     player.position.x=3;player.interact();

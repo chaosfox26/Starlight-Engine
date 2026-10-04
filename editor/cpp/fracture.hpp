@@ -4,8 +4,10 @@
 #include <map>
 #include <tuple>
 #include <set>
+#include <unordered_map>
+#include <bit>
 namespace starlight::editor {
-struct FracturePiece {std::shared_ptr<const MeshPart> part;Vec3 center;double radius=0;};
+struct FracturePiece {std::shared_ptr<const MeshPart> part;Vec3 center;double radius=0;std::shared_ptr<const void> hull;double hullDensity=0;}; // hull: optional prebuilt physics hull of part, valid for hullDensity
 inline bool closed_convex_mesh(const Mesh& mesh){
     if(mesh.vertices.size()<4||mesh.vertices.size()>80000||mesh.indices.size()<12||mesh.indices.size()>240000)return false;
     mesh.validate();Vec3 center{};for(const auto& v:mesh.vertices)center=center+v.position;center=center/double(mesh.vertices.size());
@@ -87,46 +89,94 @@ inline std::vector<FracturePiece> fracture_star_shaped(Mesh mesh,Vec3 color,bool
 }
 // Concave plane caps are traced as boundary loops, not angle-sorted around a
 // centroid. Ear clipping retains reentrant corners and disconnected cut islands.
-inline std::optional<Mesh> fracture_concave_half(const Mesh& source,int axis,double plane,bool lower){
-    Mesh out;std::vector<Vec3> nodes;std::set<std::pair<int,int>> edges;
+inline std::optional<Mesh> fracture_concave_half(const Mesh& source,int axis,double plane,bool lower,float capKind=-1,bool preserveNormals=false,std::string* failure=nullptr){
+    auto fail=[&](const char* reason)->std::optional<Mesh>{if(failure)*failure=reason;return {};};
+    Mesh out;std::vector<Vec3> nodes;std::vector<std::pair<int,int>> edges; // ascending, like the set it replaces
     auto component=[&](Vec3 p){return axis==0?p.x:axis==1?p.y:p.z;};
-    auto node=[&](Vec3 p){for(size_t i=0;i<nodes.size();++i)if((nodes[i]-p).length()<1e-7)return int(i);nodes.push_back(p);return int(nodes.size()-1);};
-    auto emit=[&](Vertex a,Vertex b,Vertex c){if((b.position-a.position).cross(c.position-a.position).length()<1e-10)return;int n=int(out.vertices.size());out.vertices.insert(out.vertices.end(),{a,b,c});out.indices.insert(out.indices.end(),{n,n+1,n+2});};
-    for(size_t t=0;t<source.indices.size();t+=3){std::vector<Vertex> clipped;bool positive=false,negative=false;
+    // Candidate index only: the original distance predicate and earliest ID remain authoritative.
+    using NodeKey=std::array<int64_t,3>;
+    struct NodeHash {size_t operator()(const NodeKey& k)const noexcept {size_t h=0;for(auto v:k)h^=std::hash<int64_t>{}(v)+size_t(0x9e3779b97f4a7c15ULL)+(h<<6)+(h>>2);return h;}};
+    std::unordered_map<NodeKey,std::vector<int>,NodeHash> nodeBuckets;std::vector<int> unindexedNodes;
+    auto nodeKey=[](Vec3 p,NodeKey& k){double q[]={p.x/4e-7,p.y/4e-7,p.z/4e-7};for(int a=0;a<3;++a){if(!std::isfinite(q[a])||std::abs(q[a])>1099511627776.)return false;k[a]=int64_t(std::floor(q[a]));}return true;};
+    using ExactNodeKey=std::array<uint64_t,3>;struct ExactNodeHash{size_t operator()(const ExactNodeKey& k)const noexcept{size_t h=0;for(auto v:k)h^=std::hash<uint64_t>{}(v)+size_t(0x9e3779b97f4a7c15ULL)+(h<<6)+(h>>2);return h;}};
+    std::unordered_map<ExactNodeKey,int,ExactNodeHash> exactNodeMemo;
+    auto node=[&](Vec3 p){bool memo=std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);ExactNodeKey exact{std::bit_cast<uint64_t>(p.x),std::bit_cast<uint64_t>(p.y),std::bit_cast<uint64_t>(p.z)};if(memo){auto found=exactNodeMemo.find(exact);if(found!=exactNodeMemo.end())return found->second;}NodeKey key{};bool indexed=nodeKey(p,key);int match=-1;
+        auto consider=[&](int i){if((match<0||i<match)&&(nodes[i]-p).length()<1e-7)match=i;};
+        if(indexed){
+            // A match lies within 1e-7 (a quarter of a 4e-7 cell), so neighbouring cells only matter near the matching cell edge.
+            int lowest[3],highest[3];const double q[]={p.x/4e-7,p.y/4e-7,p.z/4e-7};
+            for(int a=0;a<3;++a){double fraction=q[a]-double(key[a]);lowest[a]=fraction<.3?-1:0;highest[a]=fraction>.7?1:0;}
+            for(int x=lowest[0];x<=highest[0];++x)for(int y=lowest[1];y<=highest[1];++y)for(int z=lowest[2];z<=highest[2];++z){auto found=nodeBuckets.find(NodeKey{key[0]+x,key[1]+y,key[2]+z});if(found!=nodeBuckets.end())for(int i:found->second)consider(i);}
+            for(int i:unindexedNodes)consider(i);}
+        else for(size_t i=0;i<nodes.size();++i)consider(int(i));
+        if(match>=0){if(memo)exactNodeMemo.emplace(exact,match);return match;}int id=int(nodes.size());nodes.push_back(p);if(indexed)nodeBuckets[key].push_back(id);else unindexedNodes.push_back(id);if(memo)exactNodeMemo.emplace(exact,id);return id;
+    };
+    // Small valid facets remain part of the closed shell. Dropping them here
+    // opens a previously valid solid on the next cut of detailed rock faces.
+    auto emit=[&](Vertex a,Vertex b,Vertex c){if((b.position-a.position).cross(c.position-a.position).length()<1e-16)return;int n=int(out.vertices.size());out.vertices.insert(out.vertices.end(),{a,b,c});out.indices.insert(out.indices.end(),{n,n+1,n+2});};
+    out.vertices.reserve(source.indices.size()+64);out.indices.reserve(source.indices.size()+64);
+    for(size_t t=0;t<source.indices.size();t+=3){std::array<Vertex,4> clipped;size_t clippedCount=0;bool positive=false,negative=false;
         for(int j=0;j<3;++j){auto a=source.vertices[source.indices[t+j]],b=source.vertices[source.indices[t+(j+1)%3]];double da=component(a.position)-plane,db=component(b.position)-plane;positive|=da>1e-8;negative|=da< -1e-8;
-            bool in=lower?da<=0:da>=0,next=lower?db<=0:db>=0;if(in)clipped.push_back(a);
-            if(in!=next){double fraction=da/(da-db);Vertex v{a.position+(b.position-a.position)*fraction,a.normal+(b.normal-a.normal)*fraction,a.color+(b.color-a.color)*fraction,a.kind};clipped.push_back(v);}
+            bool in=lower?da<=0:da>=0,next=lower?db<=0:db>=0;if(in)clipped[clippedCount++]=a;
+            if(in!=next){double fraction=da/(da-db);Vertex v{a.position+(b.position-a.position)*fraction,a.normal+(b.normal-a.normal)*fraction,a.color+(b.color-a.color)*fraction,a.kind};clipped[clippedCount++]=v;}
         }
         if(!positive&&!negative){auto a=source.vertices[source.indices[t]].position,b=source.vertices[source.indices[t+1]].position,c=source.vertices[source.indices[t+2]].position;auto n=(b-a).cross(c-a);if(component(n)*(lower?1:-1)<=0)continue;}
-        for(size_t j=1;j+1<clipped.size();++j)emit(clipped[0],clipped[j],clipped[j+1]);
+        for(size_t j=1;j+1<clippedCount;++j)emit(clipped[0],clipped[j],clipped[j+1]);
     }
-    std::map<std::pair<int,int>,int> boundary;
-    for(size_t t=0;t<out.indices.size();t+=3)for(int j=0;j<3;++j){auto a=out.vertices[out.indices[t+j]].position,b=out.vertices[out.indices[t+(j+1)%3]].position;if(std::abs(component(a)-plane)<1e-7&&std::abs(component(b)-plane)<1e-7){int x=node(a),y=node(b);if(x==y)continue;if(x>y)std::swap(x,y);++boundary[{x,y}];}}
-    for(auto [edge,count]:boundary)if(count==1)edges.insert(edge);else if(count!=2)return {};
+    std::vector<std::pair<int,int>> boundary;
+    for(size_t t=0;t<out.indices.size();t+=3)for(int j=0;j<3;++j){auto a=out.vertices[out.indices[t+j]].position,b=out.vertices[out.indices[t+(j+1)%3]].position;if(std::abs(component(a)-plane)<1e-7&&std::abs(component(b)-plane)<1e-7){int x=node(a),y=node(b);if(x==y)continue;if(x>y)std::swap(x,y);boundary.emplace_back(x,y);}}
+    std::sort(boundary.begin(),boundary.end());
+    for(size_t first=0;first<boundary.size();){size_t last=first;while(last<boundary.size()&&boundary[last]==boundary[first])++last;const size_t count=last-first;if(count==1)edges.push_back(boundary[first]);else if(count!=2)return fail("Cap edge multiplicity");first=last;}
     if(edges.empty())return out;
-    std::vector<std::vector<int>> neighbors(nodes.size());for(auto [a,b]:edges){neighbors[a].push_back(b);neighbors[b].push_back(a);}for(const auto& row:neighbors)if(!row.empty()&&row.size()!=2)return {};
+    std::vector<std::vector<int>> neighbors(nodes.size());for(auto [a,b]:edges){neighbors[a].push_back(b);neighbors[b].push_back(a);}for(const auto& row:neighbors)if(!row.empty()&&row.size()!=2)return fail("Cap boundary degree");
     Vec3 normal=axis==0?Vec3{1,0,0}:axis==1?Vec3{0,1,0}:Vec3{0,0,1};if(!lower)normal=normal*-1;
     std::vector<bool> seen(nodes.size());std::vector<std::vector<int>> loops;
-    for(size_t first=0;first<nodes.size();++first)if(!seen[first]&&!neighbors[first].empty()){std::vector<int> loop;int previous=-1,current=int(first);do{if(seen[current])return {};seen[current]=true;loop.push_back(current);int next=neighbors[current][0]==previous?neighbors[current][1]:neighbors[current][0];previous=current;current=next;}while(current!=int(first));if(loop.size()<3)return {};loops.push_back(std::move(loop));}
+    for(size_t first=0;first<nodes.size();++first)if(!seen[first]&&!neighbors[first].empty()){std::vector<int> loop;int previous=-1,current=int(first);do{if(seen[current])return fail("Repeated cap loop node");seen[current]=true;loop.push_back(current);int next=neighbors[current][0]==previous?neighbors[current][1]:neighbors[current][0];previous=current;current=next;}while(current!=int(first));if(loop.size()<3)return fail("Short cap loop");loops.push_back(std::move(loop));}
     // Nested contours need a hole-aware cap; reject rather than filling a cavity.
     auto u=normal.cross({0,1,0});if(u.length()<.1)u=normal.cross({1,0,0});u=u.unit();auto v=normal.cross(u);
     auto contains=[&](Vec3 p,const std::vector<int>& polygon){bool inside=false;double x=p.dot(u),y=p.dot(v);for(size_t i=0,j=polygon.size()-1;i<polygon.size();j=i++){auto a=nodes[polygon[i]],b=nodes[polygon[j]];double ax=a.dot(u),ay=a.dot(v),bx=b.dot(u),by=b.dot(v);if((ay>y)!=(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;}return inside;};
-    for(size_t a=0;a<loops.size();++a)for(size_t b=0;b<loops.size();++b)if(a!=b&&contains(nodes[loops[a][0]],loops[b]))return {};
-    auto vertex=[&](int i){return Vertex{nodes[i],normal,{1,1,1},source.vertices.front().kind};};
+    for(size_t a=0;a<loops.size();++a)for(size_t b=0;b<loops.size();++b)if(a!=b&&contains(nodes[loops[a][0]],loops[b]))return fail("Nested cap loops");
+    auto vertex=[&](int i){return Vertex{nodes[i],normal,{1,1,1},capKind<0?source.vertices.front().kind:capKind};};
+    // Conservative broad phase; exact original half-plane predicates remain below.
+    auto earX=[&](Vec3 p){return axis==0?p.y:p.x;};auto earY=[&](Vec3 p){return axis==2?p.y:p.z;};
+    double earMax=1;for(auto p:nodes)earMax=std::max({earMax,std::abs(earX(p)),std::abs(earY(p))});
+    const double earRound=128*std::numeric_limits<double>::epsilon()*earMax*earMax;
+    const double earPad=128*std::numeric_limits<double>::epsilon()*earMax;
     for(auto loop:loops){double area=0;for(size_t i=0;i<loop.size();++i)area+=nodes[loop[i]].cross(nodes[loop[(i+1)%loop.size()]]).dot(normal);if(area<0)std::reverse(loop.begin(),loop.end());
-        while(loop.size()>3){bool clipped=false;for(size_t i=0;i<loop.size();++i){size_t prior=(i+loop.size()-1)%loop.size(),next=(i+1)%loop.size();auto a=nodes[loop[prior]],b=nodes[loop[i]],c=nodes[loop[next]];double turn=(b-a).cross(c-b).dot(normal);if(turn<1e-10)continue;bool occupied=false;
-            for(size_t j=0;j<loop.size();++j)if(j!=prior&&j!=i&&j!=next){auto p=nodes[loop[j]];if((b-a).cross(p-a).dot(normal)>=-1e-10&&(c-b).cross(p-b).dot(normal)>=-1e-10&&(a-c).cross(p-c).dot(normal)>=-1e-10){occupied=true;break;}}
-            if(!occupied){emit(vertex(loop[prior]),vertex(loop[i]),vertex(loop[next]));loop.erase(loop.begin()+i);clipped=true;break;}
-        }if(!clipped)return {};}
+        struct EarSweepNode{double x;int id;};std::vector<EarSweepNode> earSweep;std::vector<uint8_t> earAlive;
+        bool earSweepEnabled=loop.size()>=64;
+        if(earSweepEnabled)for(int id:loop)if(!std::isfinite(earX(nodes[id]))||!std::isfinite(earY(nodes[id]))){earSweepEnabled=false;break;}
+        if(earSweepEnabled){earSweep.reserve(loop.size());earAlive.resize(nodes.size());for(int id:loop){earSweep.push_back({earX(nodes[id]),id});earAlive[id]=1;}std::sort(earSweep.begin(),earSweep.end(),[](const EarSweepNode&a,const EarSweepNode&b){return a.x<b.x||(a.x==b.x&&a.id<b.id);});}
+        while(loop.size()>3){bool clipped=false;for(size_t i=0;i<loop.size();++i){size_t prior=(i+loop.size()-1)%loop.size(),next=(i+1)%loop.size();auto a=nodes[loop[prior]],b=nodes[loop[i]],c=nodes[loop[next]];double turn=(b-a).cross(c-b).dot(normal);if(turn<1e-14)continue;bool occupied=false;
+            const double earArea=turn-earRound;bool earFilter=std::isfinite(earArea)&&earArea>0;
+            double earLoX=0,earHiX=0,earLoY=0,earHiY=0;
+            if(earFilter){double weight=(1e-14+earRound)/earArea;auto bounds=[&](double x,double y,double z){double lo=std::min({x,y,z}),hi=std::max({x,y,z});return std::pair<double,double>{lo-weight*((x-lo)+(y-lo)+(z-lo))-earPad,hi+weight*((hi-x)+(hi-y)+(hi-z))+earPad};};auto x=bounds(earX(a),earX(b),earX(c)),y=bounds(earY(a),earY(b),earY(c));earLoX=x.first;earHiX=x.second;earLoY=y.first;earHiY=y.second;}
+
+            if(earSweepEnabled&&earFilter&&std::isfinite(earLoX)&&std::isfinite(earHiX)&&std::isfinite(earLoY)&&std::isfinite(earHiY)&&earLoX<=earHiX&&earLoY<=earHiY){
+                auto begin=std::lower_bound(earSweep.begin(),earSweep.end(),earLoX,[](const EarSweepNode&node,double value){return node.x<value;});
+                auto end=std::upper_bound(begin,earSweep.end(),earHiX,[](double value,const EarSweepNode&node){return value<node.x;});
+                for(auto query=begin;query!=end;++query){int id=query->id;if(!earAlive[id]||id==loop[prior]||id==loop[i]||id==loop[next])continue;auto p=nodes[id];if(earFilter&&(earX(p)<earLoX||earX(p)>earHiX||earY(p)<earLoY||earY(p)>earHiY))continue;if((b-a).cross(p-a).dot(normal)>=-1e-14&&(c-b).cross(p-b).dot(normal)>=-1e-14&&(a-c).cross(p-c).dot(normal)>=-1e-14){occupied=true;break;}}
+            }else{
+            for(size_t j=0;j<loop.size();++j)if(j!=prior&&j!=i&&j!=next){auto p=nodes[loop[j]];if(earFilter&&(earX(p)<earLoX||earX(p)>earHiX||earY(p)<earLoY||earY(p)>earHiY))continue;if((b-a).cross(p-a).dot(normal)>=-1e-14&&(c-b).cross(p-b).dot(normal)>=-1e-14&&(a-c).cross(p-c).dot(normal)>=-1e-14){occupied=true;break;}}
+            }
+            if(!occupied){emit(vertex(loop[prior]),vertex(loop[i]),vertex(loop[next]));if(earSweepEnabled)earAlive[loop[i]]=0;loop.erase(loop.begin()+i);clipped=true;break;}
+        }if(!clipped)return fail("Cap ear clipping failed");}
         emit(vertex(loop[0]),vertex(loop[1]),vertex(loop[2]));
-    }if(!out.indices.empty())out.normals();return out;
+    }
+    // Boundary tracing merges very close intersections. Make the retained
+    // surface use those exact same nodes as its cap, rather than leaving a
+    // microscopic seam which appears after repeated cuts of detailed faces.
+    for(auto& vert:out.vertices)if(std::abs(component(vert.position)-plane)<1e-7){int match=node(vert.position);vert.position=nodes[match];}
+    if(!out.indices.empty()){if(!preserveNormals)out.normals();else for(auto& v:out.vertices)v.normal=v.normal.unit();}
+    return out;
 }
-inline bool orient_fracture_mesh(Mesh& mesh){
-    if(mesh.indices.empty())return false;mesh.validate();using Key=std::tuple<int64_t,int64_t,int64_t>;std::map<Key,int> welded;std::vector<int> ids;
+inline bool orient_fracture_mesh(Mesh& mesh){ 
+    if(mesh.indices.empty())return false;mesh.validate();using Key=std::tuple<int64_t,int64_t,int64_t>;struct WeldHash {size_t operator()(const Key& key)const noexcept {size_t h=0;for(auto v:{std::get<0>(key),std::get<1>(key),std::get<2>(key)})h^=std::hash<int64_t>{}(v)+size_t(0x9e3779b97f4a7c15ULL)+(h<<6)+(h>>2);return h;}};std::unordered_map<Key,int,WeldHash> welded;welded.reserve(mesh.vertices.size());std::vector<int> ids;ids.reserve(mesh.vertices.size());
     for(const auto& v:mesh.vertices){auto p=v.position;if(std::max({std::abs(p.x),std::abs(p.y),std::abs(p.z)})>1e9)return false;auto [it,added]=welded.emplace(Key{std::llround(p.x*1e7),std::llround(p.y*1e7),std::llround(p.z*1e7)},int(welded.size()));ids.push_back(it->second);}
-    std::map<std::pair<int,int>,std::vector<std::pair<int,int>>> edges;int count=int(mesh.indices.size()/3);for(int t=0;t<count;++t)for(int j=0;j<3;++j){int a=ids[mesh.indices[t*3+j]],b=ids[mesh.indices[t*3+(j+1)%3]];if(a==b)return false;int sign=a<b?1:-1;if(a>b)std::swap(a,b);edges[{a,b}].push_back({t,sign});}
-    std::vector<std::vector<std::pair<int,int>>> neighbors(count);for(const auto& [edge,faces]:edges){if(faces.size()!=2)return false;int sign=-faces[0].second*faces[1].second;neighbors[faces[0].first].push_back({faces[1].first,sign});neighbors[faces[1].first].push_back({faces[0].first,sign});}
-    std::vector<int> orientations(count);for(int first=0;first<count;++first)if(!orientations[first]){orientations[first]=1;std::vector<int> queue{first};for(size_t i=0;i<queue.size();++i)for(auto [next,sign]:neighbors[queue[i]]){int value=orientations[queue[i]]*sign;if(!orientations[next]){orientations[next]=value;queue.push_back(next);}else if(orientations[next]!=value)return false;}
+    struct EdgeHash {size_t operator()(const std::pair<int,int>& edge)const noexcept{return size_t(uint64_t(uint32_t(edge.first))<<32|uint32_t(edge.second));}};struct EdgeFaces{std::array<std::pair<int,int>,2> faces{};size_t count=0;};std::unordered_map<std::pair<int,int>,EdgeFaces,EdgeHash> edges;edges.reserve(mesh.indices.size());int count=int(mesh.indices.size()/3);for(int t=0;t<count;++t)for(int j=0;j<3;++j){int a=ids[mesh.indices[t*3+j]],b=ids[mesh.indices[t*3+(j+1)%3]];if(a==b)return false;int sign=a<b?1:-1;if(a>b)std::swap(a,b);auto& faces=edges[{a,b}];if(faces.count<2)faces.faces[faces.count]={t,sign};++faces.count;}
+    std::vector<std::pair<int,int>> orderedEdges;orderedEdges.reserve(edges.size());for(const auto& entry:edges)orderedEdges.push_back(entry.first);std::sort(orderedEdges.begin(),orderedEdges.end());
+    struct NeighborRow{std::array<std::pair<int,int>,3> values{};size_t count=0;void push_back(std::pair<int,int> value){values[count++]=value;}auto begin()const{return values.begin();}auto end()const{return values.begin()+count;}};std::vector<NeighborRow> neighbors(count);for(const auto& edge:orderedEdges){const auto& entry=edges.find(edge)->second;if(entry.count!=2)return false;const auto& faces=entry.faces;int sign=-faces[0].second*faces[1].second;neighbors[faces[0].first].push_back({faces[1].first,sign});neighbors[faces[1].first].push_back({faces[0].first,sign});}
+    std::vector<int> orientations(count);for(int first=0;first<count;++first)if(!orientations[first]){orientations[first]=1;std::vector<int> queue;queue.reserve(count);queue.push_back(first);for(size_t i=0;i<queue.size();++i)for(auto [next,sign]:neighbors[queue[i]]){int value=orientations[queue[i]]*sign;if(!orientations[next]){orientations[next]=value;queue.push_back(next);}else if(orientations[next]!=value)return false;}
         double volume=0;auto origin=mesh.vertices[mesh.indices[first*3]].position;for(int t:queue){if(orientations[t]<0)std::swap(mesh.indices[t*3+1],mesh.indices[t*3+2]);auto a=mesh.vertices[mesh.indices[t*3]].position-origin,b=mesh.vertices[mesh.indices[t*3+1]].position-origin,c=mesh.vertices[mesh.indices[t*3+2]].position-origin;volume+=a.dot(b.cross(c))/6.;}if(std::abs(volume)<1e-10)return false;if(volume<0)for(int t:queue)std::swap(mesh.indices[t*3+1],mesh.indices[t*3+2]);
     }return true;
 }

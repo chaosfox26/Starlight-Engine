@@ -27,7 +27,16 @@ int gameplay_checks(const fs::path& output){
         if(!pass){const auto& tether=gameplay.grapple_motion();report["failureState"]={{"simulationSeconds",gameplay.seconds()},{"position",{gameplay.position.x,gameplay.position.y,gameplay.position.z}},{"grappleState",int(tether.state)},{"grappleHeld",tether.held},{"hookFlightRemaining",tether.flightRemaining},{"anchor",{tether.anchor.x,tether.anchor.y,tether.anchor.z}},{"velocity",{tether.velocity.x,tether.velocity.y,tether.velocity.z}}};}
         atomic_write(output,report.dump(2));if(!pass)throw std::runtime_error(name);
     };
-    auto load=[&](const SceneData& scene){checkRight=checkForward=0;paused=false;gameplayAudio.stop();gameplay.start(scene);renderer->scene(gameplay.visible_scene());renderer->gameplay_time(0);renderer->playback(true,true);tick=GetTickCount64();};
+    auto load=[&](const SceneData& scene){
+        checkRight=checkForward=0;gameplayAudio.stop();
+        SceneData staged=scene;std::swap(authored,staged);
+        struct Restore{SceneData& authored;SceneData& staged;~Restore(){std::swap(authored,staged);}} restore{authored,staged};
+        paused=true;gameplay.cancel_mobility_input();loadingActive=true;
+        struct Active{bool& flag;~Active(){flag=false;}} active{loadingActive};
+        LoadingScreen loading;loading.show(window,view);loading.update(0,"Starting your scene");
+        if(!prepare_and_start(loading))throw std::runtime_error("Scene preparation did not finish: "+lastPreparation.reason);
+        loading.close();loadingActive=false;paused=false;release_deferred_close();tick=GetTickCount64();
+    };
     SceneData empty;empty.Game.emplace();empty.Game->SpawnZ=0;empty.Terrain.emplace();
     auto key=[&](int code){SendMessageW(window,WM_KEYDOWN,code,0);SendMessageW(window,WM_KEYUP,code,0);};
     try{

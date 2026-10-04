@@ -1,4 +1,4 @@
-// Starlight DX12 client — milestone 5 FSR backend (AMD FidelityFX SDK 2.3.0: upscaler 4.1.1 / 3.1.x
+// Starlight DX12 client — FSR backend (AMD FidelityFX SDK 2.3.0: upscaler 4.1.1 / 3.1.x
 // fallback, frame generation 4.0.1 / 3.1.x fallback, FG swapchain 3.1.7). Compiled only when
 // build/flags.json enables backends.fsr (buildctl adds UP_HAVE_FSR + the SDK include dirs and copies
 // the signed DLLs next to the exe). Nothing here is linked statically: the loader DLL is LoadLibrary'd
@@ -8,6 +8,7 @@
 #ifdef UP_HAVE_FSR
 #define _WINDOWS 1
 #include "upscale.h"
+#include "upscale_paths.h"
 #include <atomic>
 #include <vector>
 #include <ffx_api.h>
@@ -54,11 +55,8 @@ struct FsrUpscaler : Upscaler {
 
     bool preDevice(LogFn l) override {
         log = l;
-        wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-        std::wstring dir(exe); size_t k = dir.find_last_of(L"\\/"); dir = (k == std::wstring::npos) ? L"." : dir.substr(0, k);
-        loader = LoadLibraryW((dir + L"\\amd_fidelityfx_loader_dx12.dll").c_str());
-        if (!loader) loader = LoadLibraryW(L"amd_fidelityfx_loader_dx12.dll");
-        if (!loader) { say("amd_fidelityfx_loader_dx12.dll not found next to the exe"); return false; }
+        loader = loadVendorModule(L"amd_fidelityfx_loader_dx12.dll");
+        if (!loader) { say("amd_fidelityfx_loader_dx12.dll not found next to the host module or the exe"); return false; }
         ffxLoadFunctions(&fx, loader);
         if (!fx.CreateContext || !fx.DestroyContext || !fx.Configure || !fx.Query || !fx.Dispatch) { say("loader DLL is missing entry points"); return false; }
         return true;

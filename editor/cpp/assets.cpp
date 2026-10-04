@@ -1,8 +1,12 @@
 #include "assets.hpp"
+#include "engine_assets.hpp"
 #include "platform.hpp"
 #include <DirectXMath.h>
+#include <atomic>
 #include <cstring>
 #include <functional>
+#include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 namespace starlight::editor {
 using namespace DirectX;
@@ -24,12 +28,70 @@ double srgb(double v) {
     v = std::clamp(v, 0., 1.);
     return std::round((v <= .0031308 ? v * 12.92 : 1.055 * std::pow(v, 1 / 2.4) - .055) * 255) / 255;
 }
+void embedded_uris(const json &value) {
+    if (value.is_object()) {
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            if (it.key() == "uri" && (!it.value().is_string() || !it.value().get<std::string>().starts_with("data:")))
+                throw std::runtime_error("Models must embed their resources; external URI found");
+            embedded_uris(it.value());
+        }
+    } else if (value.is_array())
+        for (const auto &item : value)
+            embedded_uris(item);
+}
+struct ModelEntry {
+    std::shared_ptr<const std::vector<MeshPart>> parts;
+    size_t bytes = 0;
+    uint64_t used = 0;
+};
+struct ModelService {
+    std::mutex lock;
+    std::unordered_map<std::string, ModelEntry> entries;
+    size_t bytes = 0;
+    uint64_t clock = 0;
+    std::atomic<uint64_t> hits{0}, misses{0}, evicted{0}, pinned{0};
+};
+ModelService &model_service() {
+    static ModelService service;
+    return service;
+}
+constexpr size_t kModelEntries = 256, kModelBytes = 512ull << 20;
+size_t model_bytes(const std::vector<MeshPart> &parts) {
+    size_t total = 0;
+    for (const auto &part : parts)
+        total += part.mesh.vertices.size() * sizeof(Vertex) + part.mesh.indices.size() * sizeof(int);
+    return total;
+}
+void evict_models(ModelService &s, const std::string &keep, size_t entryLimit, size_t byteLimit) {
+    std::vector<std::pair<uint64_t, std::string>> order;
+    order.reserve(s.entries.size());
+    for (const auto &[id, entry] : s.entries) {
+        if (id == keep) continue;
+        if (entry.parts.use_count() > 1) { s.pinned.fetch_add(1, std::memory_order_relaxed); continue; }
+        order.emplace_back(entry.used, id);
+    }
+    std::sort(order.begin(), order.end());
+    for (const auto &item : order) {
+        if (s.bytes <= byteLimit && s.entries.size() <= entryLimit) break;
+        auto found = s.entries.find(item.second);
+        s.bytes -= found->second.bytes;
+        s.entries.erase(found);
+        s.evicted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+uint32_t big_endian(std::string_view bytes, size_t at) {
+    if (bytes.size() < at + 4) throw std::runtime_error("Truncated image header");
+    return (uint32_t(uint8_t(bytes[at])) << 24) | (uint32_t(uint8_t(bytes[at + 1])) << 16) | (uint32_t(uint8_t(bytes[at + 2])) << 8) | uint32_t(uint8_t(bytes[at + 3]));
+}
 } // namespace
 std::vector<MeshPart> load_glb(const fs::path &path) {
-    if (fs::file_size(path) > 256ull * 1024 * 1024)
+    if (fs::file_size(path) > MaxImportBytes)
         throw std::runtime_error("Preview GLB exceeds 256 MiB");
-    auto storage = read_file(path);
-    std::string_view bytes = storage;
+    return parse_glb(read_file(path));
+}
+std::vector<MeshPart> parse_glb(std::string_view bytes) {
+    if (bytes.size() > MaxImportBytes)
+        throw std::runtime_error("Preview GLB exceeds 256 MiB");
     if (read_at<uint32_t>(bytes, 0) != 0x46546c67 || read_at<uint32_t>(bytes, 4) != 2 ||
         read_at<uint32_t>(bytes, 8) != bytes.size())
         throw std::runtime_error("Invalid GLB 2 header");
@@ -195,5 +257,138 @@ std::vector<MeshPart> load_glb(const fs::path &path) {
         part.mesh.normals();
     }
     return parts;
+}
+void validate_model_bytes(std::string_view bytes) {
+    (void)parse_glb(bytes);
+    for (size_t offset = 12; offset + 8 <= bytes.size();) {
+        uint32_t count, kind;
+        std::memcpy(&count, bytes.data() + offset, 4);
+        std::memcpy(&kind, bytes.data() + offset + 4, 4);
+        offset += 8;
+        if (count > bytes.size() - offset) throw std::runtime_error("Truncated GLB chunk");
+        if (kind == 0x4e4f534a) embedded_uris(json::parse(bytes.substr(offset, count)));
+        offset += count;
+    }
+}
+std::string import_model_bytes(std::string_view bytes) {
+    validate_model_bytes(bytes);
+    return EngineAssets::put(AssetKind::Model, bytes);
+}
+std::string import_model(const fs::path &path) {
+    try {
+        std::error_code error;
+        const auto size = fs::file_size(path, error);
+        if (error) throw std::runtime_error("The file cannot be read (" + error.message() + ")");
+        if (size > MaxImportBytes) throw std::runtime_error("The model exceeds 256 MiB");
+        return import_model_bytes(read_file(path));
+    } catch (const std::exception &e) {
+        throw std::runtime_error("Cannot import the model \"" + utf8(path.filename().wstring()) + "\": " + e.what());
+    }
+}
+std::shared_ptr<const std::vector<MeshPart>> load_model(const std::string &id) {
+    auto &s = model_service();
+    if (!EngineAssets::valid_id(AssetKind::Model, id)) throw AssetMissing("Object refers to an invalid model asset id: " + id);
+    {
+        std::lock_guard guard(s.lock);
+        auto found = s.entries.find(id);
+        if (found != s.entries.end()) {
+            found->second.used = ++s.clock;
+            s.hits.fetch_add(1, std::memory_order_relaxed);
+            return found->second.parts;
+        }
+    }
+    s.misses.fetch_add(1, std::memory_order_relaxed);
+    auto payload = EngineAssets::get(AssetKind::Model, id);
+    auto built = std::make_shared<const std::vector<MeshPart>>(parse_glb(*payload));
+    std::lock_guard guard(s.lock);
+    auto [slot, inserted] = s.entries.try_emplace(id);
+    if (!inserted) return slot->second.parts;
+    slot->second.parts = built;
+    slot->second.bytes = model_bytes(*built);
+    slot->second.used = ++s.clock;
+    s.bytes += slot->second.bytes;
+    if (s.bytes > kModelBytes || s.entries.size() > kModelEntries) evict_models(s, id, kModelEntries / 4 * 3, kModelBytes / 4 * 3);
+    return built;
+}
+ModelServiceStats model_service_stats() {
+    auto &s = model_service();
+    std::lock_guard guard(s.lock);
+    return {s.hits.load(), s.misses.load(), s.evicted.load(), s.pinned.load(), s.entries.size(), s.bytes};
+}
+void model_service_trim() {
+    auto &s = model_service();
+    std::lock_guard guard(s.lock);
+    evict_models(s, {}, 0, 0);
+}
+TextureInfo describe_texture(std::string_view bytes) {
+    TextureInfo info;
+    static constexpr unsigned char pngSignature[8] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+    if (bytes.size() >= 8 && !std::memcmp(bytes.data(), pngSignature, 8)) {
+        if (bytes.size() < 8 + 25 + 12 || big_endian(bytes, 8) != 13 || bytes.substr(12, 4) != "IHDR")
+            throw std::runtime_error("The PNG header is damaged");
+        info.png = true;
+        info.width = big_endian(bytes, 16);
+        info.height = big_endian(bytes, 20);
+        const auto depth = uint8_t(bytes[24]), colour = uint8_t(bytes[25]);
+        const bool depthOk = depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16;
+        const bool colourOk = colour == 0 || colour == 2 || colour == 3 || colour == 4 || colour == 6;
+        if (!depthOk || !colourOk) throw std::runtime_error("The PNG uses an unsupported bit depth or colour type");
+        const auto tail = bytes.substr(bytes.size() - 12);
+        if (tail.substr(4, 4) != "IEND" || big_endian(tail, 0) != 0) throw std::runtime_error("The PNG does not end with its IEND end marker at the last 12 bytes: it is truncated, or it carries bytes after the end marker, which Starlight does not accept");
+    } else if (bytes.size() >= 4 && uint8_t(bytes[0]) == 0xff && uint8_t(bytes[1]) == 0xd8 && uint8_t(bytes[2]) == 0xff) {
+        size_t at = 2;
+        bool found = false;
+        while (at + 4 <= bytes.size()) {
+            if (uint8_t(bytes[at]) != 0xff) throw std::runtime_error("The JPEG segment layout is damaged");
+            while (at + 1 < bytes.size() && uint8_t(bytes[at + 1]) == 0xff) ++at;
+            const auto marker = uint8_t(bytes[at + 1]);
+            if (marker == 0xda || marker == 0xd9) break;
+            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd8)) { at += 2; continue; }
+            if (at + 4 > bytes.size()) break;
+            const size_t length = (size_t(uint8_t(bytes[at + 2])) << 8) | uint8_t(bytes[at + 3]);
+            if (length < 2 || at + 2 + length > bytes.size()) throw std::runtime_error("The JPEG is truncated");
+            if (marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc) {
+                if (length < 8) throw std::runtime_error("The JPEG frame header is damaged");
+                info.height = (uint32_t(uint8_t(bytes[at + 5])) << 8) | uint8_t(bytes[at + 6]);
+                info.width = (uint32_t(uint8_t(bytes[at + 7])) << 8) | uint8_t(bytes[at + 8]);
+                found = true;
+                break;
+            }
+            at += 2 + length;
+        }
+        if (!found) throw std::runtime_error("The JPEG has no frame header");
+        size_t end = bytes.size();
+        while (end > 2 && bytes[end - 1] == 0) --end;
+        if (end < 2 || uint8_t(bytes[end - 2]) != 0xff || uint8_t(bytes[end - 1]) != 0xd9) throw std::runtime_error("The JPEG is truncated (no end marker)");
+    } else
+        throw std::runtime_error("Only PNG and JPEG textures can be imported");
+    const auto fit = texture_limits::checkDecodedRgba8(info.width, info.height);
+    if (!fit.ok())
+        throw std::runtime_error("The texture is refused: " + texture_limits::explain(fit, info.width, info.height, texture_limits::DecodedChannels, texture_limits::DecodedBytesPerChannel));
+    return info;
+}
+std::string import_texture_bytes(std::string_view bytes) {
+    if (bytes.size() > MaxImportBytes) throw std::runtime_error("The texture exceeds 256 MiB");
+    const auto info = describe_texture(bytes);
+    try {
+        if (info.png) (void)validate_png_stream(bytes);
+    } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("The image fails the Starlight image integrity check and is not stored: ") + e.what());
+    }
+    return EngineAssets::put(AssetKind::Texture, bytes);
+}
+std::string import_texture(const fs::path &path) {
+    try {
+        std::error_code error;
+        const auto size = fs::file_size(path, error);
+        if (error) throw std::runtime_error("The file cannot be read (" + error.message() + ")");
+        if (size > MaxImportBytes) throw std::runtime_error("The texture exceeds 256 MiB");
+        return import_texture_bytes(read_file(path));
+    } catch (const std::exception &e) {
+        throw std::runtime_error("Cannot import the texture \"" + utf8(path.filename().wstring()) + "\": " + e.what());
+    }
+}
+std::shared_ptr<const std::string> load_texture(const std::string &id) {
+    return EngineAssets::get(AssetKind::Texture, id);
 }
 } // namespace starlight::editor

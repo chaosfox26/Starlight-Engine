@@ -1,0 +1,1348 @@
+{
+  "product": "Starlight Engine Preview",
+  "publisher": "ChaosFox",
+  "readyForRelease": false,
+  "files": [
+    {
+      "path": "out/classic/Release/Starlight.NativeEditor.exe",
+      "bytes": 3680256,
+      "sha256": "9102f48164d9efae2c02a69d8c68d61adb44558db59bbbfda90ff5e7dcacb296",
+      "imports": [
+        {
+          "name": "COMCTL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dbghelp.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "WINMM.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "Starlight.Viewport.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "Starlight.Physics.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "USER32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "GDI32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "MSVCP140_ATOMIC_WAIT.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "gdiplus.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "UxTheme.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dwmapi.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativePlayer.exe",
+      "bytes": 1350656,
+      "sha256": "3dd5920fa6667f70a78878a667209826fd0a4ae4cc7b0ba02ceff29b2bbc8e6d",
+      "imports": [
+        {
+          "name": "USER32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "Starlight.Viewport.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "Starlight.Physics.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "GDI32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "MSVCP140_ATOMIC_WAIT.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "WINMM.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dwmapi.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.exe",
+      "bytes": 250368,
+      "sha256": "216e83c19eb44eca6b283c8b1dec724692ade7adbb7a75fd0ae75f10d92c80d5",
+      "imports": [
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "COMDLG32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dbghelp.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeCommands.exe",
+      "bytes": 583168,
+      "sha256": "c90cd7c08033574239026b312101c94da67695232c1f789302185091eb75b970",
+      "imports": [
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "Starlight.Physics.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.Viewport.dll",
+      "bytes": 466432,
+      "sha256": "2f1445c3f723fa1889428d084562600d918d95ce6ccf70b6128efbb3d34cadf4",
+      "imports": [
+        {
+          "name": "USER32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "d3d12.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dxgi.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "D3DCOMPILER_47.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-environment-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-time-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ADVAPI32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.Physics.dll",
+      "bytes": 1274368,
+      "sha256": "253e2e546a2863c47d0f9cc22f1788c4ee9e5b602f018bd124580a5bc81a21d7",
+      "imports": [
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeCoreChecks.exe",
+      "bytes": 1541632,
+      "sha256": "7be0e9f356b346657a565fc30456c4e3f009ea189332baf131f272e93d69115f",
+      "imports": [
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "Starlight.Physics.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "MSVCP140_ATOMIC_WAIT.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeDiagnosticChecks.exe",
+      "bytes": 153088,
+      "sha256": "72fa97742feed65249b9ba2121b2c58566dc13e0b7a98d1c99c0156151238369",
+      "imports": [
+        {
+          "name": "dbghelp.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeRenderChecks.exe",
+      "bytes": 112128,
+      "sha256": "0327c92953f7409d402999d627a0b146e37a1a237f1241213de8e15fa5f1eb89",
+      "imports": [
+        {
+          "name": "Starlight.Viewport.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "USER32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeSessionChecks.exe",
+      "bytes": 674816,
+      "sha256": "d585ba61bba6b8e5c92dd1e3a3f329281acfb59f8904b4fdbbd5362d562ac5bd",
+      "imports": [
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "SHELL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "bcrypt.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "Starlight.Viewport.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "Starlight.Physics.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "USER32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "MSVCP140_ATOMIC_WAIT.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.NativeTextureChecks.exe",
+      "bytes": 99328,
+      "sha256": "60d12d386ad5588cfbd51802f92074d1d781e21fea190b1be44be18f12612da6",
+      "imports": [
+        {
+          "name": "d3d12.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "dxgi.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ole32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.AuditContractChecks.exe",
+      "bytes": 136704,
+      "sha256": "0f5e0c2a2d3e2deed3189870ae3b215a48f049b7548139d66c28ea699957a3c3",
+      "imports": [
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/Starlight.HandleControl.exe",
+      "bytes": 111616,
+      "sha256": "8ea6278a9c4cbf268fe408b6b4d48dd8d20be3d3b9182d137867312ff09c5560",
+      "imports": [
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/msvcp140.dll",
+      "bytes": 643512,
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+      "imports": [
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-time-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-environment-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-math-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-utility-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/msvcp140_atomic_wait.dll",
+      "bytes": 57792,
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b",
+      "imports": [
+        {
+          "name": "MSVCP140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140_1.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-locale-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "ADVAPI32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-core-synch-l1-2-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/vcruntime140.dll",
+      "bytes": 178616,
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+      "imports": [
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-stdio-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-convert-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    },
+    {
+      "path": "out/classic/Release/vcruntime140_1.dll",
+      "bytes": 50112,
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+      "imports": [
+        {
+          "name": "api-ms-win-crt-runtime-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-heap-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "api-ms-win-crt-string-l1-1-0.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        },
+        {
+          "name": "VCRUNTIME140.dll",
+          "delayLoaded": false,
+          "resolution": "package"
+        },
+        {
+          "name": "KERNEL32.dll",
+          "delayLoaded": false,
+          "resolution": "Windows"
+        }
+      ]
+    }
+  ],
+  "missingImportsOrPrograms": [],
+  "errors": [],
+  "unfinishedReleaseGates": [
+    "nativeAnalysisParity",
+    "resourceRelocationVerified",
+    "exportedNoticesIncluded",
+    "assetAndSdkRedistributionReviewed",
+    "developmentToolsSelfContained",
+    "sandboxFullFeatureCheck",
+    "portableSettingsAndRelocationVerified"
+  ],
+  "scope": "Static and delay imports only. Dynamic loading, assets, subprocesses, license grants and Sandbox behavior require separate verification."
+}

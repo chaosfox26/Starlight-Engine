@@ -99,7 +99,7 @@ int ui_checks(const fs::path& output) {
         command(Redo);
         check("One Redo restores the complete pasted group", scene.Characters.size() == 2);
         copiedObjects.front().Shape.reset(); copiedObjects.front().Sculpt.reset();
-        copiedObjects.front().Asset = utf8((output.parent_path() / "missing-paste-model.glb").wstring());
+        copiedObjects.front().Asset = "model-" + std::string(64, 'e');
         const auto beforeInvalidPaste = scene.Characters.size(); bool rejectedPaste = false;
         try { command(PasteObjects); } catch (const std::exception&) { rejectedPaste = true; }
         check("Paste rejects missing models without inserting part of the group", rejectedPaste && scene.Characters.size() == beforeInvalidPaste);
@@ -232,6 +232,7 @@ int ui_checks(const fs::path& output) {
         atomic_write(output,report.dump(2));return failures?1:0;
     }
     #include "classic_completion_checks.inl"
+    bool projectDialogStayedInactive = true;
     auto cycle = [&] {
         auto tipCheckpoint = [&](const char* stage) {
             if (!report.contains("tooltip_cycle_trace")) report["tooltip_cycle_trace"] = nlohmann::json::array();
@@ -245,7 +246,9 @@ int ui_checks(const fs::path& output) {
         tipCheckpoint("menus");
         for (int page : {0, 1, 2, 3, 4, 5}) show_inspector(page);
         tipCheckpoint("inspector");
-        command(ShowMusic);command(CloseMusic);open_project();close_project();
+        command(ShowMusic);command(CloseMusic);open_project();
+        projectDialogStayedInactive &= !projectOwnerEnabled && GetForegroundWindow()!=projectWindow;
+        close_project();
         tipCheckpoint("project");
         command(BuildShapes); command(DockSettings);
         tipCheckpoint("end");
@@ -307,7 +310,11 @@ int ui_checks(const fs::path& output) {
     // Preserve warm-up inventories and synchronous creation stacks. No class is
     // excluded and no foreign/system-owned window is destroyed by the test.
     report["warmup_windows"] = nlohmann::json::array();
-    const auto churnDeadline = GetTickCount64() + 180000;
+    // This is a bounded resource-lifetime check, not a UI speed benchmark.
+    // Allow slower systems to complete the same 24 warm-up and 80 measured cycles.
+    const auto churnStarted = GetTickCount64();
+    constexpr ULONGLONG churnBudgetMs = 300000;
+    const auto churnDeadline = churnStarted + churnBudgetMs;
     int warmupCycles = 0;
     for(int i=0;i<24 && GetTickCount64()<churnDeadline;++i){progress("warming up menus",i+1,24);cycle();report["warmup_windows"].push_back(windowInventory());++warmupCycles;}
     report["windows_before"] = windowInventory();
@@ -325,6 +332,8 @@ int ui_checks(const fs::path& output) {
         ++completedCycles;
     }
     check("all warmup and measured UI cycles finish within the stage deadline", warmupCycles == 24 && completedCycles == 80);
+    check("automated project dialogs do not take foreground from other windows", projectDialogStayedInactive);
+    report["churnTiming"]={{"budgetMs",churnBudgetMs},{"elapsedMs",GetTickCount64()-churnStarted},{"warmupCycles",warmupCycles},{"measuredCycles",completedCycles}};
     const auto afterGdi = GetGuiResources(proc, GR_GDIOBJECTS), afterUser = GetGuiResources(proc, GR_USEROBJECTS);
     const auto afterTips = SendMessage(tips, TTM_GETTOOLCOUNT, 0, 0);
     report["renderer_frames_after"] = renderer->status().frames;

@@ -5,7 +5,8 @@ namespace starlight::editor {
 struct Bounds {
     Vec3 low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
 };
-Bounds object_bounds(const Character &);
+Bounds object_bounds(const Character &); // the engine's one bounds query: served from the shared per-object cache whenever that is worthwhile
+Bounds object_bounds_raw(const Character &); // always computes from the mesh; used by the cache itself
 void move_group(SceneData &, const Character &, const std::unordered_map<std::string, Character> &);
 double snap_increment(double value,double step);
 void snap_object(SceneData &, Character &, bool grid, bool objects, bool ground,double gridStep=.5);

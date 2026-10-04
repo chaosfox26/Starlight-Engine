@@ -4,7 +4,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <functional>
+#include <memory>
+#include <new>
 #include <unordered_map>
 #include "../third_party/cgltf.h"
 
@@ -64,24 +67,112 @@ static void GenerateTangents(SkinnedModel& m) {
     }
 }
 
-bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, SkinnedModel& out, std::string& err) {
+namespace {
+
+struct GltfDeleter { void operator()(cgltf_data* d) const { cgltf_free(d); } };
+using GltfPtr = std::unique_ptr<cgltf_data, GltfDeleter>;
+
+cgltf_result RefuseExternalRead(const cgltf_memory_options*, const cgltf_file_options*, const char*, cgltf_size*, void**) { return cgltf_result_io_error; }
+void IgnoreExternalRelease(const cgltf_memory_options*, const cgltf_file_options*, void*, cgltf_size) {}
+
+std::string ModelNameOf(const std::string& label) {
+    size_t slash = label.find_last_of("/\\");
+    std::string name = label.substr(slash == std::string::npos ? 0 : slash + 1);
+    if (name.size() > 4 && name.compare(name.size() - 4, 4, ".glb") == 0) name.resize(name.size() - 4);
+    return name;
+}
+
+const char* GltfResultName(cgltf_result r) {
+    switch (r) {
+    case cgltf_result_success: return "success";
+    case cgltf_result_data_too_short: return "data too short";
+    case cgltf_result_unknown_format: return "unknown format";
+    case cgltf_result_invalid_json: return "invalid JSON";
+    case cgltf_result_invalid_gltf: return "invalid glTF";
+    case cgltf_result_invalid_options: return "invalid options";
+    case cgltf_result_file_not_found: return "file not found";
+    case cgltf_result_io_error: return "I/O error";
+    case cgltf_result_out_of_memory: return "out of memory";
+    case cgltf_result_legacy_gltf: return "legacy glTF 1.0";
+    default: return "unknown error";
+    }
+}
+
+LoadCode GltfResultCode(cgltf_result r) {
+    switch (r) {
+    case cgltf_result_data_too_short: return LoadCode::Truncated;
+    case cgltf_result_unknown_format:
+    case cgltf_result_legacy_gltf:
+    case cgltf_result_file_not_found:
+    case cgltf_result_io_error: return LoadCode::Unsupported;
+    case cgltf_result_out_of_memory: return LoadCode::OutOfMemory;
+    default: return LoadCode::Malformed;
+    }
+}
+
+float ReadLittleEndianFloat(const uint8_t* p) {
+    const uint32_t bits = uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+    float value;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+LoadError CheckAtlas(const SkinnedModel& m, ByteView atlas, const std::string& label) {
+    if (!atlas.data && atlas.size) return makeLoadError(LoadCode::InvalidArgument, label, "atlas UV span pointer is null");
+    const size_t need = m.verts.size() * 2 * sizeof(float);
+    if (atlas.size != need)
+        return makeLoadError(LoadCode::AtlasSizeMismatch, label, "atlas UV span has " + std::to_string(atlas.size) + " bytes (" + std::to_string(atlas.size / 4) +
+                             " float32 values) but the model has " + std::to_string(m.verts.size()) + " vertices and needs " + std::to_string(need) + " bytes (2 x float32 per vertex)");
+    for (size_t i = 0; i < m.verts.size() * 2; ++i)
+        if (!std::isfinite(ReadLittleEndianFloat(atlas.data + i * sizeof(float))))
+            return makeLoadError(LoadCode::AtlasNotFinite, label, std::string("atlas UV value ") + std::to_string(i) + " (vertex " + std::to_string(i / 2) + ", " + ((i & 1) ? "V" : "U") + ") is not a finite number");
+    return LoadError();
+}
+
+void WriteAtlas(SkinnedModel& m, ByteView atlas) {
+    for (size_t i = 0; i < m.verts.size(); ++i) {
+        m.verts[i].u = ReadLittleEndianFloat(atlas.data + (i * 2) * sizeof(float));
+        m.verts[i].v = ReadLittleEndianFloat(atlas.data + (i * 2 + 1) * sizeof(float));
+    }
+    m.atlasUV = true;
+}
+
+LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
     out = SkinnedModel();
-    out.source = glbPath;
-    size_t slash = glbPath.find_last_of("/\\");
-    out.name = glbPath.substr(slash == std::string::npos ? 0 : slash + 1);
-    if (out.name.size() > 4 && out.name.compare(out.name.size() - 4, 4, ".glb") == 0) out.name.resize(out.name.size() - 4);
+    out.source = label;
+    out.name = ModelNameOf(label);
+    auto fail = [&](LoadCode code, const std::string& what) {
+        SkinnedModel empty; empty.source = out.source; empty.name = out.name; out = std::move(empty);
+        return makeLoadError(code, label, what);
+    };
+    if (glb.size == 0) return fail(LoadCode::Truncated, "GLB is empty");
+    if (!glb.data) return fail(LoadCode::InvalidArgument, "GLB pointer is null");
 
     cgltf_options opt{};
-    cgltf_data* data = nullptr;
-    cgltf_result r = cgltf_parse_file(&opt, glbPath.c_str(), &data);
-    if (r != cgltf_result_success) { err = "cgltf_parse_file failed (code " + std::to_string((int)r) + ") for " + glbPath; return false; }
-    r = cgltf_load_buffers(&opt, data, glbPath.c_str());
-    if (r != cgltf_result_success) { cgltf_free(data); err = "cgltf_load_buffers failed (code " + std::to_string((int)r) + ")"; return false; }
+    opt.file.read = &RefuseExternalRead;
+    opt.file.release = &IgnoreExternalRelease;
+    cgltf_data* parsed = nullptr;
+    cgltf_result r = cgltf_parse(&opt, glb.data, glb.size, &parsed);
+    if (r != cgltf_result_success) return fail(GltfResultCode(r), std::string("glTF parse failed: ") + GltfResultName(r));
+    GltfPtr owner(parsed);
+    cgltf_data* data = parsed;
+    r = cgltf_load_buffers(&opt, data, "");
+    if (r != cgltf_result_success)
+        return fail(GltfResultCode(r), std::string("glTF buffers could not be loaded: ") + GltfResultName(r) +
+                    (r == cgltf_result_io_error || r == cgltf_result_file_not_found ? " (external buffer files cannot be resolved from memory)" : ""));
+    r = cgltf_validate(data);
+    if (r != cgltf_result_success)
+        return fail(r == cgltf_result_data_too_short ? LoadCode::Malformed : GltfResultCode(r),
+                    std::string("glTF validation failed: ") + (r == cgltf_result_data_too_short ? "an accessor, buffer view or index lies outside its buffer" : GltfResultName(r)));
+    for (cgltf_size b = 0; b < data->buffers_count; ++b)
+        if (!data->buffers[b].data) return fail(LoadCode::Malformed, "glTF buffer " + std::to_string(b) + " has no data (missing BIN chunk)");
 
-    // ---- skeleton: the first skin's joint list, in palette order ----
     std::unordered_map<const cgltf_node*, int> jointOf;
     const cgltf_skin* skin = data->skins_count ? &data->skins[0] : nullptr;
     if (skin) {
+        if (skin->joints_count > 256) return fail(LoadCode::SkeletonInvalid, "skin has " + std::to_string(skin->joints_count) + " joints; the 8-bit joint index addresses at most 256");
+        if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->count < skin->joints_count)
+            return fail(LoadCode::Malformed, "inverse bind matrix accessor holds fewer matrices than the skin has joints");
         for (cgltf_size j = 0; j < skin->joints_count; ++j) jointOf[skin->joints[j]] = (int)j;
         for (cgltf_size j = 0; j < skin->joints_count; ++j) {
             const cgltf_node* n = skin->joints[j];
@@ -92,85 +183,117 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
             if (n->has_rotation) jt.r = XMFLOAT4(n->rotation[0], n->rotation[1], n->rotation[2], n->rotation[3]);
             if (n->has_scale) jt.s = XMFLOAT3(n->scale[0], n->scale[1], n->scale[2]);
             float ibm[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-            if (skin->inverse_bind_matrices) cgltf_accessor_read_float(skin->inverse_bind_matrices, j, ibm, 16);
+            if (skin->inverse_bind_matrices && !cgltf_accessor_read_float(skin->inverse_bind_matrices, j, ibm, 16))
+                return fail(LoadCode::Malformed, "inverse bind matrix " + std::to_string(j) + " could not be read");
             XMStoreFloat4x4(&jt.ibm, FromGltf(ibm));
             out.joints.push_back(jt);
         }
-        // parents must precede children for the single-pass global evaluation
         for (size_t j = 0; j < out.joints.size(); ++j)
-            if (out.joints[j].parent >= (int)j) { cgltf_free(data); err = "skin joint order is not parent-first in " + glbPath; return false; }
+            if (out.joints[j].parent >= (int)j) return fail(LoadCode::SkeletonInvalid, "skin joint order is not parent-first");
     }
 
-    // ---- geometry: same walk as bake_job.py (scene roots, depth-first, node mesh before children) ----
     bool first = true;
     auto grow = [&](float x, float y, float z) {
         if (first) { out.bbMin = out.bbMax = XMFLOAT3(x, y, z); first = false; return; }
         out.bbMin.x = std::min(out.bbMin.x, x); out.bbMin.y = std::min(out.bbMin.y, y); out.bbMin.z = std::min(out.bbMin.z, z);
         out.bbMax.x = std::max(out.bbMax.x, x); out.bbMax.y = std::max(out.bbMax.y, y); out.bbMax.z = std::max(out.bbMax.z, z);
     };
-    std::function<void(const cgltf_node*)> walk = [&](const cgltf_node* node) {
-        if (node->mesh) {
-            float world[16]; cgltf_node_transform_world(node, world);
-            XMMATRIX W = node->skin ? XMMatrixIdentity() : FromGltf(world);
-            XMMATRIX Wn = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
-            std::string nodeName = node->name ? node->name : "";
-            for (cgltf_size pi = 0; pi < node->mesh->primitives_count; ++pi) {
-                const cgltf_primitive* prim = &node->mesh->primitives[pi];
-                if (prim->type != cgltf_primitive_type_triangles) continue;
-                const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jn = nullptr, *wt = nullptr;
-                for (cgltf_size a = 0; a < prim->attributes_count; ++a) {
-                    const cgltf_attribute& at = prim->attributes[a];
-                    if (at.type == cgltf_attribute_type_position) pos = at.data;
-                    else if (at.type == cgltf_attribute_type_normal) nrm = at.data;
-                    else if (at.type == cgltf_attribute_type_texcoord && at.index == 0) uv = at.data;
-                    else if (at.type == cgltf_attribute_type_joints && at.index == 0) jn = at.data;
-                    else if (at.type == cgltf_attribute_type_weights && at.index == 0) wt = at.data;
-                }
-                if (!pos || !uv) continue;   // bake_job skips these too (keeps the atlas stream aligned)
-                Submesh sm; sm.node = nodeName;
-                if (prim->material) {
-                    sm.material = prim->material->name ? prim->material->name : "";
-                    if (prim->material->has_pbr_metallic_roughness) {
-                        const float* bc = prim->material->pbr_metallic_roughness.base_color_factor;
-                        sm.baseColor = XMFLOAT3(bc[0], bc[1], bc[2]);
-                    }
-                    sm.emissive = sm.material == "glow" || sm.material == "catchlight";
-                }
-                // Node semantics are interpreted by the selected project.
-                sm.firstIndex = (uint32_t)out.indices.size();
-                uint32_t base = (uint32_t)out.verts.size();
-                for (cgltf_size v = 0; v < pos->count; ++v) {
-                    float p[3] = { 0,0,0 }, nn[3] = { 0,1,0 }, t[2] = { 0,0 }, w[4] = { 1,0,0,0 };
-                    cgltf_uint j[4] = { 0,0,0,0 };
-                    cgltf_accessor_read_float(pos, v, p, 3);
-                    if (nrm) cgltf_accessor_read_float(nrm, v, nn, 3);
-                    cgltf_accessor_read_float(uv, v, t, 2);
-                    if (jn) cgltf_accessor_read_uint(jn, v, j, 4);
-                    if (wt) cgltf_accessor_read_float(wt, v, w, 4);
-                    XMFLOAT3 fp, fn;
-                    XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
-                    XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
-                    float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
-                    SkinVertex sv{};
-                    sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
-                    sv.u = t[0]; sv.v = t[1];
-                    for (int k = 0; k < 4; ++k) { sv.j[k] = (uint8_t)std::min<cgltf_uint>(j[k], 255u); sv.w[k] = w[k] / ws; }
-                    out.verts.push_back(sv);
-                    grow(fp.x, fp.y, fp.z);
-                }
-                if (prim->indices) for (cgltf_size i = 0; i < prim->indices->count; ++i) out.indices.push_back(base + (uint32_t)cgltf_accessor_read_index(prim->indices, i));
-                else for (cgltf_size i = 0; i < pos->count; ++i) out.indices.push_back(base + (uint32_t)i);
-                sm.indexCount = (uint32_t)out.indices.size() - sm.firstIndex;
-                out.subs.push_back(sm);
+    LoadError geometryError;
+    auto visit = [&](const cgltf_node* node) -> bool {
+        if (!node->mesh) return true;
+        float world[16]; cgltf_node_transform_world(node, world);
+        XMMATRIX W = node->skin ? XMMatrixIdentity() : FromGltf(world);
+        XMMATRIX Wn = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+        std::string nodeName = node->name ? node->name : "";
+        auto bad = [&](LoadCode code, cgltf_size pi, const std::string& what) {
+            geometryError = makeLoadError(code, label, "node '" + nodeName + "' primitive " + std::to_string(pi) + ": " + what);
+            return false;
+        };
+        for (cgltf_size pi = 0; pi < node->mesh->primitives_count; ++pi) {
+            const cgltf_primitive* prim = &node->mesh->primitives[pi];
+            if (prim->type != cgltf_primitive_type_triangles) continue;
+            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jn = nullptr, *wt = nullptr;
+            for (cgltf_size a = 0; a < prim->attributes_count; ++a) {
+                const cgltf_attribute& at = prim->attributes[a];
+                if (at.type == cgltf_attribute_type_position) pos = at.data;
+                else if (at.type == cgltf_attribute_type_normal) nrm = at.data;
+                else if (at.type == cgltf_attribute_type_texcoord && at.index == 0) uv = at.data;
+                else if (at.type == cgltf_attribute_type_joints && at.index == 0) jn = at.data;
+                else if (at.type == cgltf_attribute_type_weights && at.index == 0) wt = at.data;
             }
+            if (!pos || !uv) continue;
+            if (cgltf_num_components(pos->type) < 3) return bad(LoadCode::Malformed, pi, "POSITION has fewer than 3 components");
+            if (cgltf_num_components(uv->type) < 2) return bad(LoadCode::Malformed, pi, "TEXCOORD_0 has fewer than 2 components");
+            if (nrm && cgltf_num_components(nrm->type) < 3) return bad(LoadCode::Malformed, pi, "NORMAL has fewer than 3 components");
+            if (jn && cgltf_num_components(jn->type) < 4) return bad(LoadCode::Malformed, pi, "JOINTS_0 has fewer than 4 components");
+            if (wt && cgltf_num_components(wt->type) < 4) return bad(LoadCode::Malformed, pi, "WEIGHTS_0 has fewer than 4 components");
+            if (uv->count != pos->count || (nrm && nrm->count != pos->count) || (jn && jn->count != pos->count) || (wt && wt->count != pos->count))
+                return bad(LoadCode::Malformed, pi, "vertex attribute counts differ from POSITION (" + std::to_string(pos->count) + ")");
+            if (out.verts.size() + pos->count > 0xFFFFFFFFull) return bad(LoadCode::TooLarge, pi, "vertex total exceeds the 32-bit index range");
+            const cgltf_size triangleIndices = prim->indices ? prim->indices->count : pos->count;
+            if (triangleIndices % 3 != 0) return bad(LoadCode::Malformed, pi, "index count " + std::to_string(triangleIndices) + " is not a multiple of 3");
+            Submesh sm; sm.node = nodeName;
+            if (prim->material) {
+                sm.material = prim->material->name ? prim->material->name : "";
+                if (prim->material->has_pbr_metallic_roughness) {
+                    const float* bc = prim->material->pbr_metallic_roughness.base_color_factor;
+                    sm.baseColor = XMFLOAT3(bc[0], bc[1], bc[2]);
+                }
+                sm.emissive = sm.material == "glow" || sm.material == "catchlight";
+            }
+            sm.firstIndex = (uint32_t)out.indices.size();
+            uint32_t base = (uint32_t)out.verts.size();
+            for (cgltf_size v = 0; v < pos->count; ++v) {
+                float p[3] = { 0,0,0 }, nn[3] = { 0,1,0 }, t[2] = { 0,0 }, w[4] = { 1,0,0,0 };
+                cgltf_uint j[4] = { 0,0,0,0 };
+                if (!cgltf_accessor_read_float(pos, v, p, 3)) return bad(LoadCode::Malformed, pi, "POSITION element " + std::to_string(v) + " could not be read");
+                if (nrm && !cgltf_accessor_read_float(nrm, v, nn, 3)) return bad(LoadCode::Malformed, pi, "NORMAL element " + std::to_string(v) + " could not be read");
+                if (!cgltf_accessor_read_float(uv, v, t, 2)) return bad(LoadCode::Malformed, pi, "TEXCOORD_0 element " + std::to_string(v) + " could not be read");
+                if (jn && !cgltf_accessor_read_uint(jn, v, j, 4)) return bad(LoadCode::Malformed, pi, "JOINTS_0 element " + std::to_string(v) + " could not be read");
+                if (wt && !cgltf_accessor_read_float(wt, v, w, 4)) return bad(LoadCode::Malformed, pi, "WEIGHTS_0 element " + std::to_string(v) + " could not be read");
+                const bool finite = std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]) && std::isfinite(nn[0]) && std::isfinite(nn[1]) && std::isfinite(nn[2]) &&
+                                    std::isfinite(t[0]) && std::isfinite(t[1]) && std::isfinite(w[0]) && std::isfinite(w[1]) && std::isfinite(w[2]) && std::isfinite(w[3]);
+                if (!finite) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a non-finite position, normal, UV or weight");
+                if (jn) for (int k = 0; k < 4; ++k)
+                    if (w[k] > 0.0f && j[k] >= out.joints.size())
+                        return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
+                XMFLOAT3 fp, fn;
+                XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
+                XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
+                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
+                SkinVertex sv{};
+                sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
+                sv.u = t[0]; sv.v = t[1];
+                for (int k = 0; k < 4; ++k) { sv.j[k] = (uint8_t)std::min<cgltf_uint>(j[k], 255u); sv.w[k] = w[k] / ws; }
+                out.verts.push_back(sv);
+                grow(fp.x, fp.y, fp.z);
+            }
+            if (prim->indices) {
+                for (cgltf_size i = 0; i < prim->indices->count; ++i) {
+                    const cgltf_size index = cgltf_accessor_read_index(prim->indices, i);
+                    if (index >= pos->count) return bad(LoadCode::Malformed, pi, "index " + std::to_string(i) + " is " + std::to_string(index) + " but the primitive has " + std::to_string(pos->count) + " vertices");
+                    out.indices.push_back(base + (uint32_t)index);
+                }
+            } else for (cgltf_size i = 0; i < pos->count; ++i) out.indices.push_back(base + (uint32_t)i);
+            sm.indexCount = (uint32_t)out.indices.size() - sm.firstIndex;
+            out.subs.push_back(sm);
         }
-        for (cgltf_size c = 0; c < node->children_count; ++c) walk(node->children[c]);
+        return true;
     };
+    std::vector<const cgltf_node*> roots;
     const cgltf_scene* scene = data->scene ? data->scene : (data->scenes_count ? &data->scenes[0] : nullptr);
-    if (scene) for (cgltf_size i = 0; i < scene->nodes_count; ++i) walk(scene->nodes[i]);
-    else for (cgltf_size i = 0; i < data->nodes_count; ++i) if (!data->nodes[i].parent) walk(&data->nodes[i]);
+    if (scene) for (cgltf_size i = 0; i < scene->nodes_count; ++i) roots.push_back(scene->nodes[i]);
+    else for (cgltf_size i = 0; i < data->nodes_count; ++i) if (!data->nodes[i].parent) roots.push_back(&data->nodes[i]);
+    std::vector<const cgltf_node*> pending;
+    for (const cgltf_node* root : roots) {
+        pending.push_back(root);
+        while (!pending.empty()) {
+            const cgltf_node* node = pending.back(); pending.pop_back();
+            if (!visit(node)) { LoadError e = geometryError; SkinnedModel empty; empty.source = out.source; empty.name = out.name; out = std::move(empty); return e; }
+            for (cgltf_size c = node->children_count; c-- > 0;) pending.push_back(node->children[c]);
+        }
+    }
 
-    // ---- clips ----
     for (cgltf_size ai = 0; ai < data->animations_count; ++ai) {
         const cgltf_animation& an = data->animations[ai];
         Clip c; c.name = an.name ? an.name : ("clip" + std::to_string(ai)); c.loop = ClipLoops(c.name);
@@ -184,35 +307,77 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
             else if (ch.target_path == cgltf_animation_path_type_rotation) { k.path = 1; comps = 4; }
             else if (ch.target_path == cgltf_animation_path_type_scale) { k.path = 2; comps = 3; }
             else continue;
+            if (ch.sampler->interpolation == cgltf_interpolation_type_cubic_spline)
+                return fail(LoadCode::Unsupported, "clip '" + c.name + "' uses CUBICSPLINE interpolation, which the pose evaluator does not implement");
             k.times.resize(ch.sampler->input->count);
-            cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size());
+            if (cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size()) != k.times.size())
+                return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times could not be read");
             k.values.resize(ch.sampler->output->count * (size_t)comps);
-            cgltf_accessor_unpack_floats(ch.sampler->output, k.values.data(), k.values.size());
+            if (cgltf_accessor_unpack_floats(ch.sampler->output, k.values.data(), k.values.size()) != k.values.size())
+                return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe values could not be read");
             if (!k.times.empty()) c.duration = std::max(c.duration, k.times.back());
             c.channels.push_back(std::move(k));
         }
         out.clips.push_back(std::move(c));
     }
-    cgltf_free(data);
-    if (out.verts.empty() || out.indices.empty()) { err = "no textured triangle geometry in " + glbPath; return false; }
+    owner.reset();
+    if (out.verts.empty() || out.indices.empty()) return fail(LoadCode::NoGeometry, "no textured triangle geometry (needs triangle primitives with POSITION and TEXCOORD_0)");
 
-    // ---- atlas UV stream (bakes-v1): float32 [vertices][2] in the walk order above ----
-    if (!atlasUvBin.empty()) {
-        FILE* f = nullptr;
-        if (fopen_s(&f, atlasUvBin.c_str(), "rb") == 0 && f) {
-            std::vector<float> uvs(out.verts.size() * 2);
-            size_t got = fread(uvs.data(), sizeof(float), uvs.size(), f);
-            int extra = fgetc(f);
-            fclose(f);
-            if (got == uvs.size() && extra == EOF) {
-                for (size_t i = 0; i < out.verts.size(); ++i) { out.verts[i].u = uvs[i * 2]; out.verts[i].v = uvs[i * 2 + 1]; }
-                out.atlasUV = true;
-            } else err = "atlas uv count mismatch for " + out.name + " (bin has " + std::to_string(got / 2 + (extra == EOF ? 0 : 1)) + "+ verts, glb walk " + std::to_string(out.verts.size()) + "); keeping glb UVs";
-        } else err = "atlas uv bin not found: " + atlasUvBin + "; keeping glb UVs";
+    if (atlasUv) {
+        LoadError atlasError = CheckAtlas(out, *atlasUv, label);
+        if (atlasError.failed()) { SkinnedModel empty; empty.source = out.source; empty.name = out.name; out = std::move(empty); return atlasError; }
+        WriteAtlas(out, *atlasUv);
     }
     GenerateTangents(out);
     out.loaded = true;
+    return LoadError();
+}
+
+}
+
+LoadError loadSkinnedFromMemory(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
+    try { return LoadSkinnedImpl(glb, atlasUv, label, out); }
+    catch (const std::bad_alloc&) { out = SkinnedModel(); return makeLoadError(LoadCode::OutOfMemory, label, "not enough memory to load the model"); }
+    catch (const std::exception& e) { out = SkinnedModel(); return makeLoadError(LoadCode::Internal, label, std::string("unexpected exception while loading the model: ") + e.what()); }
+    catch (...) { out = SkinnedModel(); return makeLoadError(LoadCode::Internal, label, "unexpected exception while loading the model"); }
+}
+
+LoadError applyAtlasUv(SkinnedModel& model, ByteView atlasUv, const std::string& label) {
+    try {
+        if (!model.loaded) return makeLoadError(LoadCode::InvalidArgument, label, "model is not loaded");
+        LoadError e = CheckAtlas(model, atlasUv, label);
+        if (e.failed()) return e;
+        WriteAtlas(model, atlasUv);
+        GenerateTangents(model);
+        return LoadError();
+    }
+    catch (const std::bad_alloc&) { return makeLoadError(LoadCode::OutOfMemory, label, "not enough memory to apply the atlas UVs"); }
+    catch (...) { return makeLoadError(LoadCode::Internal, label, "unexpected exception while applying the atlas UVs"); }
+}
+
+bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, SkinnedModel& out, std::string& err) {
+    out = SkinnedModel();
+    err.clear();
+    try {
+    std::vector<uint8_t> glb, atlas;
+    LoadError e = readWholeFile(glbPath, glb);
+    if (e.failed()) { err = e.message; return false; }
+    std::string warning;
+    bool haveAtlas = false;
+    if (!atlasUvBin.empty()) {
+        if (readWholeFile(atlasUvBin, atlas).ok()) haveAtlas = true;
+        else warning = "atlas uv bin not found: " + atlasUvBin + "; keeping glb UVs";
+    }
+    const ByteView atlasView(atlas);
+    e = loadSkinnedFromMemory(ByteView(glb), haveAtlas ? &atlasView : nullptr, glbPath, out);
+    if (e.failed() && haveAtlas && (e.code == LoadCode::AtlasSizeMismatch || e.code == LoadCode::AtlasNotFinite)) {
+        warning = e.message + "; keeping glb UVs";
+        e = loadSkinnedFromMemory(ByteView(glb), nullptr, glbPath, out);
+    }
+    if (e.failed()) { err = e.message; return false; }
+    err = warning;
     return true;
+    } catch (...) { out = SkinnedModel(); err = glbPath + ": unexpected exception while loading the model"; return false; }
 }
 
 // ---- pose evaluation ----

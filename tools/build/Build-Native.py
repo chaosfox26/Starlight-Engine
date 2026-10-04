@@ -4,11 +4,13 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import sys
 
 root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', choices=['Debug', 'Release'], default='Release')
 parser.add_argument('--test', action='store_true')
+parser.add_argument('--compact', action='store_true', help='After success, remove OBJ/PCH/ILK intermediates from this build; retain binaries, libraries and symbols')
 parser.add_argument('--build-dir', type=Path, help='Isolated native build directory; leaves a running editor build untouched')
 args = parser.parse_args()
 env = os.environ.copy()
@@ -36,3 +38,9 @@ if args.build_dir:
     if args.test: commands.append(['ctest', '--test-dir', build, '-C', args.config, '--output-on-failure'])
 for command in commands:
     subprocess.run(command, cwd=root, env=env, check=True)
+if args.compact:
+    sys.path.insert(0, str(root/'tools/audit'))
+    from artifact_cleanup import native_compact_build
+    cleanup_build = args.build_dir.resolve() if args.build_dir else root/'out/native'
+    records = native_compact_build(cleanup_build/args.config/'Starlight.NativeCleanup.exe', root, cleanup_build)
+    print('Compact build: removed', sum(r['status'] == 'removed' for r in records), 'intermediate files; next build regenerates them.')

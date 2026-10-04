@@ -12,6 +12,8 @@ import datetime
 import hashlib
 import json
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 VERSION = '2.2'
@@ -148,9 +150,37 @@ def knowledge_model(capabilities,contract,evidence,index,provenance):
             'source_files_without_direct_feature_citation':[s['path'] for s in index if s['path'] not in covered],
             'unmapped_capabilities':[c['title'] for c in capabilities if c['title'] not in FEATURES]}
 
-def generate(root,out,state,index,capabilities,contract,evidence,provenance=None,inventory=()):
+def native_knowledge_model(root,program,capabilities,contract,evidence,index,provenance,inventory=(),graph_output=None):
+    with tempfile.TemporaryDirectory(prefix='starlight-knowledge-') as temp:
+        base=Path(temp)
+        (base/'input.json').write_text(json.dumps({'capabilities':capabilities,'contract':contract,
+            'evidence':evidence,'index':index,'provenance':provenance,'inventory':list(inventory)}),encoding='utf-8')
+        result=subprocess.run([str(program),str(base/'input.json'),str(root/'tools/audit/knowledge-rules.json'),str(base/'model.json')],
+                              capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode:
+            raise RuntimeError('Native knowledge interpretation failed: '+result.stderr.strip())
+        if graph_output is not None:
+            for name in ('feature-status.json','GENERATED-FEATURE-BRIEFING.md'):
+                with (graph_output/name).open('xb') as target: target.write((base/name).read_bytes())
+        return read_json(base/'model.json')
+
+
+def native_knowledge_documents(root,program,out,model,provenance):
+    with tempfile.TemporaryDirectory(prefix='starlight-knowledge-docs-') as temp:
+        base=Path(temp)
+        (base/'model.json').write_text(json.dumps(model),encoding='utf-8')
+        (base/'provenance.json').write_text(json.dumps(provenance),encoding='utf-8')
+        result=subprocess.run([str(program),str(root),str(base/'model.json'),str(root/'tools/audit/knowledge-templates.json'),str(base/'result'),str(base/'provenance.json')],
+                              capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode: raise RuntimeError('Native knowledge documents failed: '+result.stderr.strip())
+        for name in ('STARLIGHT-START-HERE.md','STARLIGHT-FEATURE-REFERENCE.md','STARLIGHT-WORKFLOWS.md','KNOWLEDGE-COVERAGE.md'):
+            with (out/name).open('xb') as target: target.write((base/'result'/name).read_bytes())
+
+
+def generate(root,out,state,index,capabilities,contract,evidence,provenance=None,inventory=(),native_program=None):
     provenance=provenance or {'mode':'fresh scan','evidenceTimestamp':state.get('finishedUtc'),'sourceCheck':'Source hashes checked during scan; see run-state.json.'}
-    model=knowledge_model(capabilities,contract,evidence,index,provenance)
+    model=native_knowledge_model(root,native_program or root/'out/classic/Release/Starlight.NativeKnowledge.exe',
+                                 capabilities,contract,evidence,index,provenance,inventory=inventory,graph_output=out)
     validation=model['validation']; features=model['features']
     # User direction is a separately dated input, never implementation evidence.
     direction=root/'Starlight Documents/Current/STARLIGHT-PRODUCT-DIRECTION.md'
@@ -167,11 +197,16 @@ def generate(root,out,state,index,capabilities,contract,evidence,provenance=None
             'capturedUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'provenance':'Current user-direction document captured at generation, independently of the source/test snapshot.',
             'content':direction_bytes.decode('utf-8')}
-    graph=feature_evidence.connect(model,index,evidence,inventory)
+    graph=read_json(out/'feature-status.json')
     model['feature_status_report']='feature-status.json'
-    feature_evidence.write_report(out,graph)
     write_json(out/'engine-knowledge.json',model)
-    engine_comparison.generate(out,model,graph)
+    engine_comparison.native_generate(root,(native_program or root/'out/classic/Release/Starlight.NativeKnowledge.exe').with_name('Starlight.NativeComparison.exe'),out,model,graph)
+    native_knowledge_documents(root,(native_program or root/'out/classic/Release/Starlight.NativeKnowledge.exe').with_name('Starlight.NativeKnowledgeDocs.exe'),out,model,provenance)
+    return model
+
+
+def write_knowledge_documents_python(root,out,model,provenance):
+    validation=model['validation']; features=model['features']
     policy='Current project documentation lives in `Starlight Documents/Current`; older documents outside Current remain historical. The current source snapshot and dated validation take precedence. A roadmap entry, source marker and passing test are three different kinds of evidence.'
     purpose='Starlight is a native Windows world/scene creator and D3D12 rendering/simulation toolkit, accompanied by a separate native project-module runtime. Its purpose is approachable creation: place content, shape a world, adjust its appearance, save it and preview its behavior through a familiar classic interface.'
     supported=sum(f['source_supported'] for f in features)
@@ -255,6 +290,7 @@ def generate(root,out,state,index,capabilities,contract,evidence,provenance=None
     coverage += ['- '+x for x in model['changed_source_review_required']] or ['None recorded.']
     (out/'KNOWLEDGE-COVERAGE.md').write_text('\n'.join(coverage)+'\n',encoding='utf-8')
     return model
+
 
 def regenerate(run,out,root,extra_evidence=None):
     """Recompose saved evidence without a new scan or altering the original seal."""

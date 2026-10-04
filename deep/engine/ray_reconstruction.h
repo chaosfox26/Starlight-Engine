@@ -1,4 +1,7 @@
 #pragma once
+#ifdef STARLIGHT_RR_STREAMLINE
+#include "ray_reconstruction_streamline.h"
+#else
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_helpers_dlssd.h>
 #include <mutex>
@@ -11,12 +14,20 @@ struct RayReconstruction {
  NVSDK_NGX_Parameter* parameters=nullptr; NVSDK_NGX_Handle* feature=nullptr;
  bool attempted=false,initialized=false,active=false,failed=false;
  std::string status="RR not requested";
- std::wstring directory=L"D:\\Upscaler updates";
+ std::wstring directory;
  void failure(const char* stage,NVSDK_NGX_Result result){failed=true;active=false;status=std::string(stage)+" (NGX "+std::to_string((unsigned)result)+"); native denoiser";}
  bool create(ID3D12Device* dev,ID3D12GraphicsCommandList* cmd,UINT width,UINT height){
   if(attempted)return feature&&!failed;attempted=true;
   if(GetEnvironmentVariableW(L"STARLIGHT_DISABLE_RR",nullptr,0)){status="RR disabled; native denoiser";return false;}
-  wchar_t path[32768];DWORD length=GetEnvironmentVariableW(L"STARLIGHT_RR_DIRECTORY",path,32768);if(length&&length<32768)directory=path;
+  wchar_t path[32768]{};DWORD length=GetEnvironmentVariableW(L"STARLIGHT_RR_DIRECTORY",path,32768);
+  if(length&&length<32768)directory=path;
+  else {
+   length=GetModuleFileNameW(nullptr,path,32768);
+   if(!length||length>=32768){status="RR runtime location unavailable; native denoiser";return false;}
+   directory.assign(path,length);auto slash=directory.find_last_of(L"\\/");
+   if(slash==std::wstring::npos){status="RR runtime location invalid; native denoiser";return false;}
+   directory.resize(slash);
+  }
   module=LoadLibraryExW((directory+L"\\nvngx_dlssd.dll").c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if(!module){status="RR DLL unavailable; native denoiser (Win32 "+std::to_string(GetLastError())+")";return false;}
   std::lock_guard<std::mutex> lock(sdkMutex);device=dev;
@@ -44,3 +55,4 @@ struct RayReconstruction {
  void shutdown(){std::lock_guard<std::mutex> lock(sdkMutex);if(feature)NVSDK_NGX_D3D12_ReleaseFeature(feature);feature=nullptr;if(parameters)NVSDK_NGX_D3D12_DestroyParameters(parameters);parameters=nullptr;if(initialized)NVSDK_NGX_D3D12_Shutdown1(device);initialized=false;if(module)FreeLibrary(module);module=nullptr;active=false;}
  ~RayReconstruction(){shutdown();}
 };
+#endif

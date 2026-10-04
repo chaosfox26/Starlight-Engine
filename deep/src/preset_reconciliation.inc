@@ -45,7 +45,7 @@ static json preset(const fs::path&path,const json&approved) {
         if(!fs::exists(backup))fs::copy_file(path,backup);
         fs::path temp=path;temp+=L".migrating";write(temp,p);
         if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))throw std::runtime_error("Could not save reconciled preset; backup preserved");
-        json report={{"status","reconciled"},{"fromVersion",version},{"toVersion",2},{"changes",changes},{"backup",backup.u8string()},{"registrySource",registry.at("sourceSha256")}};
+        json report={{"status","reconciled"},{"fromVersion",version},{"toVersion",2},{"changes",changes},{"backup",u8text(backup)},{"registrySource",registry.at("sourceSha256")}};
         write(reconciliation,report);fs::path migration=path;migration+=L".migration.json";write(migration,report);
     } else if(fs::exists(reconciliation)) {
         // Clear obsolete pending suggestions after a user manually resolves them.

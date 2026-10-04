@@ -1,7 +1,6 @@
 #pragma once
 #include "platform.hpp"
 namespace starlight::editor {
-// Self-contained native shapes/sculpts. Imported-model packaging is separate.
 std::string encode_object_template(const Character&);
 Character decode_object_template(std::string_view);
 void save_object_template(const Character&, const fs::path&);

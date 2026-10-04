@@ -11,7 +11,11 @@
         command(SettingsScale);
         auto zoomSlider=GetDlgItem(menuPanel,InterfaceSlider);SendMessage(zoomSlider,TBM_SETPOS,TRUE,percent);
         SendMessage(window,WM_HSCROLL,TB_ENDTRACK,reinterpret_cast<LPARAM>(zoomSlider));toggle_menu(0);
-        for(auto size:{SIZE{720,540},SIZE{1380,900}}) {
+        std::vector<SIZE> sizes{{720,540},{1380,900}};
+        for(const auto item:starlight::audit::display_test_sizes)sizes.push_back({item.width,item.height});
+        for(auto size:sizes) {
+            const bool stress=(size.cx==720 && size.cy==540)||(size.cx==1380 && size.cy==900)||(size.cx==1280 && size.cy==720)||(size.cx==1920 && size.cy==1080);
+            if(!stress && percent!=100 && percent!=150 && percent!=200)continue;
             SetWindowPos(window,nullptr,0,0,size.cx,size.cy,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
             show_help();SetWindowTextW(helpSearch,L"save");
             searchLabel &= text(helpSearchLabel)=="Search" && IsWindowVisible(helpSearchLabel);
@@ -42,6 +46,16 @@
     check("large-panel actions remain reachable in small windows at every interface size",reachable);
     check("enlarged panels do not overlap the bottom status line",noStatusOverlap);
     check("interface-size changes preserve all authored and hidden scene settings",preserved);
+    report["interfaceWindowSizes"]={{720,540},{1380,900}};
+    report["displayFamilies"]=json::array();
+    for(const auto item:starlight::audit::display_test_sizes){
+        report["interfaceWindowSizes"].push_back({item.width,item.height});
+        report["displayFamilies"].push_back({{"width",item.width},{"height",item.height},{"family",item.family}});
+    }
+    report["extendedAspectRatioZoomPercentages"]={100,150,200};
+    report["aspectRatioFamilies"]={"16:9","16:10","4:3","5:4","3:2","1:1","21:9-class","32:9","32:10","2:1","cinema","portrait","custom"};
+    report["interfaceZoomPercentages"]={25,37,50,75,100,125,150,200};
+    report["interfaceSizeScope"]="Outer window bounds with actual child-control and scrolling checks; injected DPI messages are not physical monitor certification";
     toggle_menu(0);toggle_menu(MenuFile);
     auto zoomSlider=GetDlgItem(menuPanel,InterfaceSlider);
     SendMessage(zoomSlider,TBM_SETPOS,TRUE,63);

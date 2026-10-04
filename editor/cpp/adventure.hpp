@@ -1,8 +1,17 @@
 #pragma once
+#include "event_log.h"
+#include "repair_switches.hpp"
+#include "object_cache.hpp"
+#include "spatial_index.hpp"
 #include "environment_events.hpp"
 #include "runtime_timing.hpp"
 #include "particle_physics.hpp"
+#include "terrain_contact.hpp"
 #include "fracture.hpp"
+#include "rock_fracture.hpp"
+#include "destruction_dust.hpp"
+#include "object_destruction.hpp"
+#include "terrain_destruction.hpp"
 #include "projectile_physics.hpp"
 #include "lightning_physics.hpp"
 #include "interactions.hpp"
@@ -18,11 +27,65 @@
 #include <memory>
 #endif
 #include <unordered_set>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <deque>
+#include <atomic>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 namespace starlight::editor {
 
 // Play state is separate from the authored scene. Collision bounds are cached
 // at session start; static geometry uses conservative world-space boxes.
+// Breaking a rock is a pure function of its mesh, pose and seed. It is computed here so a background worker can
+// finish it before the player ever hits the object (see AdventurePlayer::schedule_prefracture).
+// `rotation` is the turn applied to every piece when the result was prepared for an earlier pose of the object (see adapt_fracture).
+struct FractureResult {bool supported=false;std::vector<FracturePiece> pieces;uint32_t seed=0;std::array<double,4> rotation{0,0,0,1};};
+// The rigid motion that takes an object from the pose a fracture was prepared at to its pose now: pieces move with it, and the turn is given to
+// each piece as its starting orientation, so a prepared break stays valid however far the rock has been pushed or turned since.
+template<class P,class N> inline void adapt_fracture(FractureResult& result,const P& prepared,const N& now){
+    const auto o0=world_point(prepared,{}),o1=world_point(now,{});
+    Vec3 a0[3]={world_point(prepared,{1,0,0})-o0,world_point(prepared,{0,1,0})-o0,world_point(prepared,{0,0,1})-o0};
+    Vec3 a1[3]={world_point(now,{1,0,0})-o1,world_point(now,{0,1,0})-o1,world_point(now,{0,0,1})-o1};
+    // The rotation that takes the prepared axis directions to the current ones (the scale is the same in both poses, so only the turn differs).
+    std::array<std::array<double,3>,3> r{};
+    Vec3 u0=a0[0].unit(),v0=a0[1].unit(),w0=u0.cross(v0).unit();
+    Vec3 u1=a1[0].unit(),v1=a1[1].unit(),w1=u1.cross(v1).unit();
+    // R = [u1 v1 w1] * [u0 v0 w0]^T
+    const Vec3 c0[3]={u0,v0,w0},c1[3]={u1,v1,w1};
+    auto comp=[&](const Vec3& v,int axis){return axis==0?v.x:axis==1?v.y:v.z;};
+    for(int row=0;row<3;++row)for(int col=0;col<3;++col){double s=0;for(int k=0;k<3;++k)s+=comp(c1[k],row)*comp(c0[k],col);r[row][col]=s;}
+    const double trace=r[0][0]+r[1][1]+r[2][2];
+    double qx,qy,qz,qw;
+    if(trace>0){double s=std::sqrt(trace+1.)*2;qw=.25*s;qx=(r[2][1]-r[1][2])/s;qy=(r[0][2]-r[2][0])/s;qz=(r[1][0]-r[0][1])/s;}
+    else if(r[0][0]>r[1][1]&&r[0][0]>r[2][2]){double s=std::sqrt(1.+r[0][0]-r[1][1]-r[2][2])*2;qw=(r[2][1]-r[1][2])/s;qx=.25*s;qy=(r[0][1]+r[1][0])/s;qz=(r[0][2]+r[2][0])/s;}
+    else if(r[1][1]>r[2][2]){double s=std::sqrt(1.+r[1][1]-r[0][0]-r[2][2])*2;qw=(r[0][2]-r[2][0])/s;qx=(r[0][1]+r[1][0])/s;qy=.25*s;qz=(r[1][2]+r[2][1])/s;}
+    else{double s=std::sqrt(1.+r[2][2]-r[0][0]-r[1][1])*2;qw=(r[1][0]-r[0][1])/s;qx=(r[0][2]+r[2][0])/s;qy=(r[1][2]+r[2][1])/s;qz=.25*s;}
+    const double norm=std::sqrt(qx*qx+qy*qy+qz*qz+qw*qw);
+    result.rotation={qx/norm,qy/norm,qz/norm,qw/norm};
+    for(auto& piece:result.pieces){
+        const Vec3 d=piece.center-o0;
+        piece.center=o1+Vec3{r[0][0]*d.x+r[0][1]*d.y+r[0][2]*d.z,r[1][0]*d.x+r[1][1]*d.y+r[1][2]*d.z,r[2][0]*d.x+r[2][1]*d.y+r[2][2]*d.z};
+    }
+}
+template<class P> inline FractureResult compute_fracture(const Character& c,const P& moved,uint32_t serial){
+    FractureResult result;
+    auto fractureParts=object_parts(c);
+    result.supported=!fractureParts.empty();
+    const bool geological=!c.Sculpt&&(c.Shape=="rock"||c.Shape=="boulder"||c.Shape=="pebbles"||c.Shape=="chaos-rock");
+    auto origin=world_point(moved,{}),bx=world_point(moved,{1,0,0})-origin,by=world_point(moved,{0,1,0})-origin,bz=world_point(moved,{0,0,1})-origin;
+    uint32_t fractureSeed=serial*2654435761u;for(unsigned char byte:c.Id)fractureSeed=(fractureSeed^byte)*16777619u;
+    for(auto part:fractureParts){foliage_fragment_fallback(part.mesh,c);for(auto& v:part.mesh.vertices){v.position=world_point(moved,v.position);v.normal=(by.cross(bz)*v.normal.x+bz.cross(bx)*v.normal.y+bx.cross(by)*v.normal.z).unit();}auto pieces=geological?fracture_rock(part.mesh,part.color,part.emissive,fractureSeed++):std::vector<FracturePiece>{};if(pieces.empty())pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){result.supported=false;break;}result.pieces.insert(result.pieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
+    result.seed=fractureSeed;
+    return result;
+}
 class AdventurePlayer {
+  public:
+    AdventurePlayer()=default;
+    ~AdventurePlayer(){release_pins();}
+  private:
     GameSettings settings_;
     std::vector<std::pair<std::string,Bounds>> solids_;
     std::unordered_map<std::string,Bounds> interactionBounds_;
@@ -62,7 +125,15 @@ class AdventurePlayer {
     std::string selectedTarget_;
     struct Fragment : PhysicalParticle {Bounds localBounds;std::shared_ptr<const MeshPart> part;std::array<double,4> rotation{0,0,0,1};uint32_t body=UINT32_MAX;uint64_t serial=0;};
     std::vector<Fragment> fragments_;
+    DestructionDust dust_;
+    ObjectDestruction destruction_;
+    TerrainDestruction terrainDestruction_;
     uint64_t fragmentSerial_=0;
+    // Independent of playback/reset counters: replaying a break generates a
+    // fresh pattern. Explicit fracture seeds still permit diagnostic replay.
+    int breakOrdinal_=0;
+    std::string lastPursuitBlocker_;uint64_t pursuitBlocked_=0;uint64_t turnApplied_=0,turnBlocked_=0,astarCalls_=0,astarFails_=0;double astarMs_=0;std::string lastTurnBlocker_; // boss diagnostics
+    uint32_t fracturePatternSerial_=[](){uint32_t value=2166136261u;for(unsigned char byte:new_id())value=(value^byte)*16777619u;return value;}();
     ProjectilePhysics projectiles_;
     std::unordered_map<std::string,Bounds> projectileBounds_;
     std::shared_ptr<const LiquidSnapshot> liquidSnapshot_;
@@ -78,22 +149,199 @@ class AdventurePlayer {
     Vec3 slideVelocity_{};
     std::array<double,4> lastMovementPress_{{-1,-1,-1,-1}};
     double seconds_=0;
+    ObjectCache::PinOwner pinOwner_=0;
+  public:
+    struct GeometryReport {size_t objects=0,distinctGeometries=0,rayTrees=0,rayTreeBytes=0,geometryBytes=0,pinnedGeometries=0,pinnedBytes=0,treeBytesBuiltHere=0;bool overBudget=false;};
+  private:
+    GeometryReport geometryReport_;
+    void release_pins(){if(pinOwner_){ObjectCache::shared().unpin(pinOwner_);pinOwner_=0;}}
+    struct SpatialState {
+        SpatialIndex tree;
+        std::unordered_map<std::string,uint32_t> slotOf;
+        std::vector<const Character*> object;
+        std::vector<uint32_t> movers;
+        size_t characters=0,removedCount=0;
+        bool built=false,fresh=false;
+        std::vector<uint32_t> stamp;std::vector<Bounds> pursuit;uint32_t epoch=0;
+    };
+    mutable SpatialState spatial_;
+    mutable SpatialIndex solidIndex_;
+    std::unordered_map<std::string,uint32_t> solidSlot_;
+    bool spatialEnabled_=repair_switch("STARLIGHT_FIX_SPATIAL");
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
     std::unique_ptr<AdventureController> controller_;
 #endif
     std::optional<TerrainData> terrain_;
-    bool blocked(Vec3 p) const {
+    // Background break-ahead: static breakables are fractured on one low-priority worker after the session starts.
+    // States: 0 queued, 1 running, 2 prepared (a valid result), 3 abandoned (taken for synchronous work or superseded), 4 failed (reason says why).
+    struct PreFracture {Character source;ObjectPose pose;uint64_t key=0;uint32_t serial=0;int state=0;std::string reason;std::optional<FractureResult> result;};
+    std::unordered_map<std::string,std::shared_ptr<PreFracture>> preFractures_;
+    std::deque<std::shared_ptr<PreFracture>> preQueue_;
+    std::mutex preMutex_;
+    std::condition_variable_any preCv_;
+    std::atomic<uint64_t> preVersion_{0};
+    uint64_t preTaken_=0;
+    std::unordered_set<std::string> preTried_;double preTopUpAt_=-1;std::atomic<int> preActive_{0};
+    std::vector<std::jthread> preWorkers_; // up to four (one per prepared breakable), so the break-ahead results are ready sooner after the session starts
+    // Same object with the same geometry, scale and look; where it stands and how it is turned may differ (adapt_fracture follows it).
+    static bool same_fracture_source(const PreFracture& entry,const Character& b){
+        const Character& a=entry.source;
+        return a.Id==b.Id&&a.Shape==b.Shape&&a.Asset==b.Asset&&a.Size==b.Size&&a.Width==b.Width&&a.Height==b.Height&&a.Depth==b.Depth
+            &&a.Surface==b.Surface&&a.Color==b.Color&&a.BranchSpread==b.BranchSpread&&a.TargetX==b.TargetX&&a.TargetY==b.TargetY&&a.TargetZ==b.TargetZ&&a.Foliage==b.Foliage
+            &&a.Sculpt.has_value()==b.Sculpt.has_value()&&(!a.Sculpt||a.Sculpt->content_revision()==b.Sculpt->content_revision())
+            &&entry.key==fracture_source_key(b);
+    }
+  public:
+    // Meshes of finished break-ahead results that have not been used yet, so a renderer can have them on the GPU
+    // before the object is hit. Returns false when nothing changed since the previous call.
+    bool take_prefractured_parts(std::vector<std::shared_ptr<const MeshPart>>& out){
+        const uint64_t version=preVersion_.load();
+        if(version==preTaken_)return false;
+        preTaken_=version;out.clear();
+        std::lock_guard lock(preMutex_);
+        for(const auto& [id,entry]:preFractures_)
+            if(entry->state==2&&entry->result)for(const auto& piece:entry->result->pieces)if(piece.part)out.push_back(piece.part);
+        return true;
+    }
+  private:
+    void stop_prefracture(){
+        for(auto& worker:preWorkers_)worker.request_stop();for(auto& worker:preWorkers_)if(worker.joinable())worker.join();preWorkers_.clear();preActive_=0;
+        std::lock_guard lock(preMutex_);preQueue_.clear();preFractures_.clear();
+    }
+    void schedule_prefracture(){
+        stop_prefracture();
+        preTried_.clear();preTopUpAt_=-1;
+        top_up_prefracture(true);
+    }
+    // Rolling break-ahead. Up to STARLIGHT_PREFRACTURE_MAX (default 12) breakables are fractured on background workers at any time:
+    // the ones inside the player's attack cone first, then the nearest to the player. As results are used, further breakables
+    // are queued, so a rock hit later in a long fight is still ready and the gameplay thread does not stall for a fracture.
+    void top_up_prefracture(bool initial=false){
+        if(!rulesEnabled_)return;
+        const bool rolling=repair_prefracture();
+        if(!rolling&&!initial)return; // previous behaviour: one batch when the session starts
+        static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return std::numeric_limits<size_t>::max();}(); // every breakable object is prepared while the scene loads; a cap exists only as a test switch
+        if(limit==0)return;
+        const size_t cap=rolling?limit:std::min<size_t>(limit,4);
+        size_t held=0;{std::lock_guard lock(preMutex_);held=preFractures_.size();}
+        if(held>=cap)return;
+        // Every breakable, non-actor object that can turn into rubble (the Breakable flag, not only the explicit gameplay role).
+        std::vector<const Character*> candidates;
+        for(const auto& c:playScene_.Characters)
+            if(c.Breakable&&!preTried_.contains(c.Id)&&!rules_.removed.contains(c.Id)&&destruction_has_rubble(c))candidates.push_back(&c); // Dynamic rocks, route platforms and combat actors are prepared too; the result follows the object to its pose when it breaks
+        if(candidates.empty())return;
+        const Vec3 feet=rolling?position-Vec3{0,1.7,0}:Vec3{settings_.SpawnX,settings_.SpawnY,settings_.SpawnZ};const Vec3 aim=attack_direction();
+        auto inCone=[&](const Character* c){if(!rolling)return false;auto b=posed_bounds(*c);return inside_basic_telegraph(feet,aim,(b.low+b.high)*.5,basicAttackRange,basicAttackHalfAngle+.08);};
+        std::vector<std::pair<std::pair<int,double>,const Character*>> ranked;ranked.reserve(candidates.size());
+        for(const auto* c:candidates)ranked.push_back({{inCone(c)?0:1,(Vec3{c->X,c->Y,c->Z}-feet).length()},c});
+        std::sort(ranked.begin(),ranked.end(),[](const auto& a,const auto& b){return a.first<b.first;});
+        const size_t room=cap-held;
+        {
+            std::lock_guard lock(preMutex_);
+            for(size_t k=0;k<ranked.size()&&k<room;++k){
+                const auto* c=ranked[k].second;
+                auto entry=std::make_shared<PreFracture>();entry->source=*c;entry->pose=route_pose_of(*c,seconds_);entry->key=fracture_source_key(*c);entry->serial=uint32_t(++fracturePatternSerial_);
+                preFractures_.emplace(c->Id,entry);preQueue_.push_back(entry);preTried_.insert(c->Id);
+            }
+        }
+        if(preActive_.load()==0){for(auto& worker:preWorkers_)if(worker.joinable())worker.join();preWorkers_.clear();}
+        const bool buildHulls=settings_.Collision;
+        size_t queued=0;{std::lock_guard lock(preMutex_);queued=preQueue_.size();}
+        const int wanted=int(std::min<size_t>(4,queued));
+        while(preActive_.load()<wanted){
+            ++preActive_;
+            preWorkers_.emplace_back([this,buildHulls](std::stop_token stop){
+                (void)buildHulls;
+#ifdef _WIN32
+                SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
+#endif
+                for(;;){
+                    std::shared_ptr<PreFracture> entry;
+                    {
+                        std::unique_lock lock(preMutex_);
+                        while(!preQueue_.empty()&&preQueue_.front()->state!=0)preQueue_.pop_front();
+                        if(preQueue_.empty()||stop.stop_requested()){--preActive_;return;}
+                        entry=preQueue_.front();preQueue_.pop_front();entry->state=1;
+                    }
+                    FractureResult result;std::string failure;
+                    const double preStart=starlight_diag::events_enabled()?starlight_diag::evnow():0;
+                    try{result=compute_fracture(entry->source,entry->pose,entry->serial);}catch(const std::exception& error){result={};failure=std::string("fracture computation threw: ")+error.what();}catch(...){result={};failure="fracture computation threw an unknown error";}
+                    if(failure.empty()&&(!result.supported||result.pieces.empty()))failure="the object's geometry produced no fracture pieces";
+                    const double preFractured=preStart>0?starlight_diag::evnow():0;
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                    // Collision hulls are the slowest part of attaching debris to the physics world; build them here so the
+                    // gameplay thread only attaches finished shapes. A piece without a hull makes the entry Failed (it can still be used, with the hull built at the break and counted).
+                    if(buildHulls&&failure.empty()){
+                        size_t missing=0;
+                        try{for(auto& piece:result.pieces)if(piece.part){if(stop.stop_requested()){failure="preparation was stopped";break;}piece.hull=build_debris_hull(piece.part->mesh,entry->source.Density);if(piece.hull)piece.hullDensity=entry->source.Density;else ++missing;}}
+                        catch(const std::exception& error){for(auto& piece:result.pieces)piece.hull.reset();failure=std::string("collision hull construction threw: ")+error.what();}
+                        catch(...){for(auto& piece:result.pieces)piece.hull.reset();failure="collision hull construction threw an unknown error";}
+                        if(failure.empty()&&missing)failure="a collision hull could not be built for "+std::to_string(missing)+" of "+std::to_string(result.pieces.size())+" pieces";
+                    }
+#endif
+                    if(preStart>0)starlight_diag::evlog("pre.done",preFractured-preStart,starlight_diag::evnow()-preFractured,double(result.pieces.size()));
+                    {
+                        std::lock_guard lock(preMutex_);
+                        entry->result=std::move(result);entry->reason=failure;entry->state=entry->state==3?3:failure.empty()?2:4;
+                        ++preVersion_;
+                    }
+                    preCv_.notify_all();
+                }
+            });
+        }
+    }
+    // Returns the finished fracture of this exact, unchanged object, waiting for the worker if it is mid-way, or
+    // nothing (caller computes synchronously) when there is none, it was not started, or the object changed.
+    std::optional<FractureResult> obtain_prefracture(const Character& c,const ObjectPose& now){
+        std::shared_ptr<PreFracture> entry;
+        {
+            std::lock_guard lock(preMutex_);
+            auto found=preFractures_.find(c.Id);if(found==preFractures_.end()){++runtime_bypass().fractureNoEntry;std::fprintf(stderr,"prefracture: none held for %s\n",c.Name.c_str());return {};}
+            entry=found->second;preFractures_.erase(found);++preVersion_;
+        }
+        if(!same_fracture_source(*entry,c)){
+            ++runtime_bypass().fractureStaleSource;
+            std::fprintf(stderr,"prefracture: source changed for %s (state %d)\n",c.Name.c_str(),entry->state);
+            std::lock_guard lock(preMutex_);if(entry->state==0)entry->state=3;return {};
+        }
+        std::unique_lock lock(preMutex_);
+        if(entry->state==0){++runtime_bypass().fractureNotStarted;std::fprintf(stderr,"prefracture: not started for %s\n",c.Name.c_str());entry->state=3;lock.unlock();return compute_fracture(c,now,entry->serial);}
+        if(entry->state==1){++runtime_bypass().fractureWaited;std::fprintf(stderr,"prefracture: still running for %s, waiting\n",c.Name.c_str());}
+        preCv_.wait(lock,[&]{return entry->state==2||entry->state==3||entry->state==4;});
+        if(entry->state==4){
+            ++runtime_bypass().fractureFailedEntry;
+            std::fprintf(stderr,"prefracture: preparation failed for %s: %s\n",c.Name.c_str(),entry->reason.c_str());
+            if(!entry->result||!entry->result->supported||entry->result->pieces.empty())return {};
+        }
+        if(!entry->result||!entry->result->supported&&entry->result->pieces.empty())return {};
+        auto ready=std::move(entry->result);
+        lock.unlock();
+        if(ready)adapt_fracture(*ready,entry->pose,now);
+        return ready;
+    }
+    bool blocked(Vec3 p) const {return blocked_with(p,spatialEnabled_);}
+    bool blocked_with(Vec3 p,bool indexed) const {
         if(!settings_.Collision)return false;
         const double feet=p.y-1.7;
-        for(const auto& solid:solids_){
-            if(rules_.removed.contains(solid.first))continue;const auto& b=solid.second;
-            if(b.high.y<=feet+.05 || b.low.y>=p.y+.1)continue;
+        auto test=[&](const std::pair<std::string,Bounds>& solid){
+            if(rules_.removed.contains(solid.first))return false;const auto& b=solid.second;
+            if(b.high.y<=feet+.05 || b.low.y>=p.y+.1)return false;
             double x=std::clamp(p.x,b.low.x,b.high.x),z=std::clamp(p.z,b.low.z,b.high.z);
-            if(std::hypot(p.x-x,p.z-z)<settings_.PlayerRadius)return true;
+            return std::hypot(p.x-x,p.z-z)<settings_.PlayerRadius;
+        };
+        if(indexed&&solidIndex_.size()==solids_.size()){
+            SpatialBox query;const double reach=settings_.PlayerRadius+1e-6;
+            query.lo[0]=p.x-reach;query.hi[0]=p.x+reach;query.lo[1]=-1e300;query.hi[1]=1e300;query.lo[2]=p.z-reach;query.hi[2]=p.z+reach;
+            std::vector<uint32_t> slots;solidIndex_.overlap(query,slots);
+            for(uint32_t slot:slots)if(test(solids_[slot]))return true;
+            return false;
         }
+        for(const auto& solid:solids_)if(test(solid))return true;
         return false;
     }
   public:
+    // Diagnostics: cumulative milliseconds spent breaking objects (obtaining/computing the fracture, creating collision hulls).
+    struct DestructionTiming {double fractureMs=0,hullMs=0;} lastDestruction;
     RuntimeTiming lastTiming;
     Vec3 position{};
     bool finished=false;
@@ -101,11 +349,114 @@ class AdventurePlayer {
     std::vector<Character> dynamic_objects()const{
         std::vector<Character> result;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
-        if(controller_)for(const auto& c:playScene_.Characters)if(c.Dynamic)result.push_back(c);
+        // The render session only reads the pose of these objects, so each entry carries the pose and nothing else: copying a sculpted
+        // model's vertex and index arrays for every resting rock on every update was the largest cost of a scene with sculpted statues.
+        if(controller_)for(const auto& c:playScene_.Characters)if(c.Dynamic){
+            Character pose;pose.Id=c.Id;pose.Dynamic=true;pose.X=c.X;pose.Y=c.Y;pose.Z=c.Z;pose.PhysicsRotation=c.PhysicsRotation;pose.JointRuntimePoints=c.JointRuntimePoints;
+            result.push_back(std::move(pose));
+        }
 #endif
         return result;
     }
     double sight_range()const{return settings_.SightRange*(control_.active==ControlEffect::Blind?.5:1.);}
+    // Bounds of an object at the current time. Objects that never move, turn or get driven by physics keep their bounds,
+    // so sculpted models (tens of thousands of vertices) are not re-measured on every update.
+    Bounds posed_bounds(const Character& c)const{
+        if(!repair_bounds())return object_bounds(route_pose(c,seconds_));
+        if(bounds_cacheable(c)&&!combatActors_.contains(c.Id))return ObjectCache::shared().bounds(c); // the engine-wide cache; refreshes itself when the object changes
+        return ObjectCache::shared().bounds_at(c,route_pose_of(c,seconds_)); // routes and actors: shared geometry, this moment's pose, no Character copy
+    }
+    // Exact triangle hit against an object. Scenery that does not move on its own uses the engine-wide prepared collision mesh;
+    // everything else (routes, physics, actors) builds its mesh as before.
+    std::optional<MeshHit> object_hit(const Character& object,const Character& posed,Vec3 origin,Vec3 direction)const{
+        // The shape of an object does not change when it moves, so routed platforms and combat actors share the same geometry and tree.
+        if(repair_bounds())return ObjectCache::shared().raycast(object,posed,origin,direction);
+        return mesh_hit(object_mesh(posed),posed,origin,direction);
+    }
+    std::optional<MeshHit> object_hit(const Character& object,const ObjectPose& posed,Vec3 origin,Vec3 direction)const{
+        if(repair_bounds())return ObjectCache::shared().raycast(object,posed,origin,direction);
+        auto legacy=route_pose(object,seconds_);
+        return mesh_hit(object_mesh(legacy),legacy,origin,direction);
+    }
+    static SpatialBox spatial_box(const Bounds& b){SpatialBox s;s.lo[0]=b.low.x;s.lo[1]=b.low.y;s.lo[2]=b.low.z;s.hi[0]=b.high.x;s.hi[1]=b.high.y;s.hi[2]=b.high.z;return s;}
+    bool spatial_active()const{return spatialEnabled_&&repair_bounds();}
+    // Test hook: switch the shared candidate index off to compare against the full scan it replaces.
+    void use_spatial_index(bool on){spatialEnabled_=on;}
+    bool spatial_mover(const Character& c)const{return c.Dynamic||!c.Route.empty()||c.CombatHealth>0||c.CombatPursuit||combatActors_.contains(c.Id);}
+    // The obstacle bounds pursuit has always used: cached for scenery, this moment's route position (without its turn) for everything else.
+    Bounds pursuit_bounds(const Character& other)const{
+        if(bounds_cacheable(other)&&!combatActors_.contains(other.Id))return ObjectCache::shared().bounds(other);
+        auto pose=object_pose(other);if(!other.Route.empty()){auto at=other.at(seconds_);pose.X=at.X;pose.Z=at.Z;}
+        return ObjectCache::shared().bounds_at(other,pose,false);
+    }
+    // Conservative box of an object for the candidate index: covers every bounds any caller measures for it at this moment.
+    SpatialBox spatial_box_of(const Character& c)const{
+        auto box=spatial_box(posed_bounds(c));
+        if(!c.Route.empty())box.include(spatial_box(pursuit_bounds(c)));
+        return box;
+    }
+    void sync_spatial(bool preparing=false)const{
+        auto& s=spatial_;
+        const size_t count=playScene_.Characters.size(),removed=rules_.removed.size();
+        if(s.built&&s.characters==count&&s.removedCount==removed)return;
+        if(!s.built&&!preparing)++runtime_bypass().spatialIndexBuiltLate;
+        const bool first=!s.built;
+        std::vector<uint8_t> seen(s.object.size(),0);
+        if(first)s.tree.begin_bulk();
+        for(const auto& c:playScene_.Characters){
+            auto found=s.slotOf.find(c.Id);uint32_t slot=0;bool fresh=false;
+            if(found==s.slotOf.end()){slot=uint32_t(s.object.size());s.slotOf.emplace(c.Id,slot);s.object.push_back(nullptr);seen.push_back(0);fresh=true;}else slot=found->second;
+            s.object[slot]=&c;seen[slot]=1;
+            if(fresh)s.tree.set(slot,spatial_box_of(c));
+        }
+        for(uint32_t slot=0;slot<s.object.size();++slot)if(!seen[slot]){s.object[slot]=nullptr;s.tree.erase(slot);}
+        if(first)s.tree.end_bulk();
+        s.movers.clear();
+        for(uint32_t slot=0;slot<s.object.size();++slot)if(s.object[slot]&&spatial_mover(*s.object[slot]))s.movers.push_back(slot);
+        s.stamp.resize(s.object.size(),0);s.pursuit.resize(s.object.size());
+        s.characters=count;s.removedCount=removed;s.built=true;s.fresh=false;
+    }
+    // Brings the boxes of everything that can move up to date (once per change of pose, not once per query).
+    void refresh_spatial(bool preparing=false)const{
+        sync_spatial(preparing);
+        auto& s=spatial_;if(s.fresh)return;
+        for(uint32_t slot:s.movers)s.tree.set(slot,spatial_box_of(*s.object[slot]));
+        s.fresh=true;
+    }
+    // One object moved or turned: keep its own box exact without re-measuring every mover.
+    void touch_spatial(const Character& c)const{
+        auto& s=spatial_;if(!s.built)return;
+        auto found=s.slotOf.find(c.Id);
+        if(found!=s.slotOf.end()&&s.object[found->second])s.tree.set(found->second,spatial_box_of(c));
+    }
+    static bool spatial_verify(){static const bool on=[]{char v[8]{};return GetEnvironmentVariableA("STARLIGHT_SPATIAL_VERIFY",v,8)&&v[0]=='1';}();return on;}
+    // Calls visit(object) in scene order for every object a segment could touch (a superset of the objects whose bounds the segment reaches).
+    template<class F> void each_ray_candidate(Vec3 origin,Vec3 direction,double length,F&& visit)const{
+        if(!spatial_active()){for(const auto& c:playScene_.Characters)visit(c);return;}
+        refresh_spatial();
+        const double o[3]={origin.x,origin.y,origin.z},d[3]={direction.x,direction.y,direction.z};
+        std::vector<uint32_t> slots;spatial_.tree.segment(o,d,length,.05,slots);
+        if(spatial_verify())for(const auto& c:playScene_.Characters)if(ray_reaches_bounds(origin,direction,length,posed_bounds(c))&&!std::binary_search(slots.begin(),slots.end(),spatial_.slotOf.at(c.Id)))throw std::runtime_error("Spatial index missed "+c.Id);
+        for(uint32_t slot:slots)if(const Character* c=spatial_.object[slot])visit(*c);
+    }
+    // Calls visit(object) in scene order for every object whose box overlaps the given one.
+    template<class F> void each_box_candidate(Vec3 low,Vec3 high,F&& visit)const{
+        if(!spatial_active()){for(const auto& c:playScene_.Characters)visit(c);return;}
+        refresh_spatial();
+        SpatialBox query;query.lo[0]=low.x-1e-6;query.lo[1]=low.y-1e-6;query.lo[2]=low.z-1e-6;query.hi[0]=high.x+1e-6;query.hi[1]=high.y+1e-6;query.hi[2]=high.z+1e-6;
+        std::vector<uint32_t> slots;spatial_.tree.overlap(query,slots);
+        for(uint32_t slot:slots)if(const Character* c=spatial_.object[slot])visit(*c);
+    }
+    static bool ray_reaches_bounds(Vec3 origin,Vec3 direction,double distance,const Bounds& b){
+        double tNear=0,tFar=distance;
+        const double o[3]={origin.x,origin.y,origin.z},d[3]={direction.x,direction.y,direction.z},lo[3]={b.low.x-.02,b.low.y-.02,b.low.z-.02},hi[3]={b.high.x+.02,b.high.y+.02,b.high.z+.02};
+        for(int axis=0;axis<3;++axis){
+            if(std::abs(d[axis])<1e-12){if(o[axis]<lo[axis]||o[axis]>hi[axis])return false;continue;}
+            double t1=(lo[axis]-o[axis])/d[axis],t2=(hi[axis]-o[axis])/d[axis];if(t1>t2)std::swap(t1,t2);
+            tNear=std::max(tNear,t1);tFar=std::min(tFar,t2);if(tNear>tFar)return false;
+        }
+        return true;
+    }
     bool perceived(const Character& c)const{
         auto it=combatActors_.find(c.Id);
         if(control_.active==ControlEffect::Taunt && it!=combatActors_.end() && it->second.hostile_to(1) && combat_identity(c.Id)!=control_.source.id)return false;
@@ -154,11 +505,17 @@ class AdventurePlayer {
     }
     bool unobstructed(Vec3 origin,Vec3 point,const std::string& caster,const std::string& target)const{
         auto delta=point-origin;double distance=delta.length();if(distance<.01)return true;
-        for(const auto& c:playScene_.Characters)if(c.Id!=caster && c.Id!=target && !rules_.removed.contains(c.Id)){
-            auto moved=route_pose(c,seconds_);
-            auto hit=mesh_hit(object_mesh(moved),moved,origin,delta.unit());if(hit && hit->distance<distance-.01)return false;
-        }
-        if(terrain_)for(double d=.1;d<distance;d+=.1){auto at=origin+delta.unit()*d;if(at.y<terrain_->height_at(at.x,at.z))return false;}
+        const auto direction=delta.unit();
+        bool clear=true;
+        each_ray_candidate(origin,direction,distance,[&](const Character& c){
+            if(!clear || c.Id==caster || c.Id==target || rules_.removed.contains(c.Id))return;
+            if(repair_bounds()&&!ray_reaches_bounds(origin,direction,distance,posed_bounds(c)))return; // cannot be hit; skip building its mesh
+            // Scenery that does not move on its own uses the engine-wide prepared collision mesh instead of rebuilding it per query.
+            auto hit=object_hit(c,route_pose_of(c,seconds_),origin,direction);
+            if(hit && hit->distance<distance-.01)clear=false;
+        });
+        if(!clear)return false;
+        if(terrain_)for(double d=.1;d<distance;d+=.1){auto at=origin+delta.unit()*d;if(terrain_->Volumes.empty()?at.y<terrain_->height_at(at.x,at.z):terrain_->density_at(at.x,at.y,at.z)<0)return false;}
         return true;
     }
     void advance_healing(double dt){
@@ -168,14 +525,14 @@ class AdventurePlayer {
             else {
                 auto it=combatActors_.find(h.caster);if(it==combatActors_.end()){h.cycle.clear();continue;}
                 auto& actor=it->second;h.team=actor.team;blocked=actor.health<=0 || rules_.removed.contains(h.caster) || actor.control.blocks_skills() || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered);rate=actor.control.firing_factor();
-                for(const auto& c:playScene_.Characters)if(c.Id==h.caster){auto moved=route_pose(c,seconds_);auto b=object_bounds(moved);h.origin={(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5};}
+                for(const auto& c:playScene_.Characters)if(c.Id==h.caster){auto b=posed_bounds(c);h.origin={(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5};}
                 h.aim=actor.attackAim.length()>.1?actor.attackAim:Vec3{0,0,-1};
             }
             if(!h.cycle.advance(dt,blocked,rate))continue;
             auto feet=position-Vec3{0,1.7,0},playerContact=feet+Vec3{0,.85,0};
             if(h.team==1 && surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,feet-Vec3{.3,0,.3},feet+Vec3{.3,posture_==0?1.8:posture_==2?.5:1.,.3},playerContact,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},playerContact,h.caster,""))restore_health(20);
             for(const auto& c:playScene_.Characters)if(auto it=combatActors_.find(c.Id);it!=combatActors_.end() && it->second.team==h.team){
-                auto moved=route_pose(c,seconds_);auto b=object_bounds(moved);auto point=(b.low+b.high)*.5;if(surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,b.low,b.high,point,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},point,h.caster,c.Id))it->second.heal(20,h.team);
+                auto b=posed_bounds(c);auto point=(b.low+b.high)*.5;if(surface_telegraph_contact(terrain_?&*terrain_:nullptr,h.origin,h.aim,b.low,b.high,point,3,.7853981633974483) && unobstructed(h.origin+Vec3{0,.85,0},point,h.caster,c.Id))it->second.heal(20,h.team);
             }
         }
     }
@@ -217,7 +574,7 @@ class AdventurePlayer {
     void fire_button(bool down){ability_button('1',down);}
     void select_target(){
         std::vector<std::pair<double,std::string>> targets;
-        for(const auto& c:playScene_.Characters)if((c.GameplayRole=="breakable" || (combatActors_.contains(c.Id) && combatActors_.at(c.Id).hostile_to(1))) && !rules_.removed.contains(c.Id) && perceived(c)){
+        for(const auto& c:playScene_.Characters)if((combatActors_.contains(c.Id) ? combatActors_.at(c.Id).hostile_to(1) : c.Breakable) && !rules_.removed.contains(c.Id) && perceived(c)){
             const auto b=object_bounds(c);const auto delta=(b.low+b.high)*.5-view_position();
             if(delta.length()<=25 && delta.unit().dot(camera_direction())>0)targets.push_back({1-delta.unit().dot(camera_direction())+delta.length()*.0001,c.Id});
         }
@@ -226,17 +583,49 @@ class AdventurePlayer {
         auto it=std::find_if(targets.begin(),targets.end(),[&](const auto& t){return t.second==selectedTarget_;});
         selectedTarget_=it==targets.end() || ++it==targets.end()?targets.front().second:it->second;
     }
+    inline static double mvTarget_=0,mvTurn_=0,mvMoveLoop_=0;
+    // Turns an actor toward `direction`. The actor's box is axis-aligned, so turning in place can make it wider and push it into a neighbour
+    // (a square grows by about a fifth of its half-width). It therefore turns as far as it can without overlapping anything that blocks
+    // movement, and never into an overlap: an actor inside an obstacle cannot move at all.
     void turn_actor(Character& c,Vec3 direction,double dt){
         if(c.PhysicsRotation || std::hypot(direction.x,direction.z)<1e-8)return;
         double wanted=std::atan2(-direction.x,-direction.z)*57.29577951308232;
         double difference=std::remainder(wanted-c.RotationY,360.);double change=std::clamp(difference,-360*dt,360*dt);
         if(std::abs(change)<1e-8)return;
-        auto candidate=c;candidate.RotationY=std::remainder(c.RotationY+change,360.);auto proposed=object_bounds(candidate);
-        for(const auto& other:playScene_.Characters)if(other.Id!=c.Id && !rules_.removed.contains(other.Id)){
-            auto moved=route_pose(other,seconds_);auto b=object_bounds(moved);
-            if(proposed.low.x<b.high.x && proposed.high.x>b.low.x && proposed.low.z<b.high.z && proposed.high.z>b.low.z && proposed.low.y<b.high.y-1e-5 && proposed.high.y>b.low.y+1e-5)return;
+        auto candidate=object_pose(c);
+        auto boxAt=[&](double fraction){
+            candidate.RotationY=std::remainder(c.RotationY+change*fraction,360.);
+            if(repair_bounds())return ObjectCache::shared().bounds_at(c,candidate,false);
+            Character legacy=c;legacy.RotationY=candidate.RotationY;return object_bounds(legacy);
+        };
+        const Bounds full=boxAt(1);
+        const double reachX=(full.high.x-full.low.x)+1,reachZ=(full.high.z-full.low.z)+1;
+        std::vector<std::pair<const Character*,Bounds>> neighbours;
+        each_box_candidate({full.low.x-reachX,-1e300,full.low.z-reachZ},{full.high.x+reachX,1e300,full.high.z+reachZ},[&](const Character& other){
+            if(!(other.Id!=c.Id && !rules_.removed.contains(other.Id) && (!repair_solids()||blocks_movement(other))))return;
+            auto b=posed_bounds(other);
+            if(b.high.x<full.low.x-reachX||b.low.x>full.high.x+reachX||b.high.z<full.low.z-reachZ||b.low.z>full.high.z+reachZ)return;
+            neighbours.emplace_back(&other,b);
+        });
+        const Character* blocker=nullptr;
+        auto overlaps=[&](const Bounds& box){
+            for(const auto& [other,b]:neighbours)
+                if(box.low.x<b.high.x && box.high.x>b.low.x && box.low.z<b.high.z && box.high.z>b.low.z && box.low.y<b.high.y-1e-5 && box.high.y>b.low.y+1e-5){blocker=other;return true;}
+            return false;
+        };
+        Bounds proposed=full;
+        if(overlaps(full)){
+            if(!repair_turn()){++turnBlocked_;lastTurnBlocker_=blocker->Id;return;}
+            double clear=0,blocked=1;
+            for(int refinement=0;refinement<8;++refinement){
+                const double mid=(clear+blocked)*.5;
+                if(overlaps(boxAt(mid)))blocked=mid;else clear=mid;
+            }
+            if(clear<1e-3){++turnBlocked_;if(blocker)lastTurnBlocker_=blocker->Id;return;}
+            proposed=boxAt(clear); // candidate now holds the largest turn that stays clear
         }
-        c.RotationY=candidate.RotationY;interactionBounds_[c.Id]=proposed;++rules_.revision;
+        ++turnApplied_;
+        c.RotationY=candidate.RotationY;interactionBounds_[c.Id]=proposed;++rules_.revision;touch_spatial(c);
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
         if(controller_)controller_->move_actor(c.Id,{c.X,c.Y,c.Z},dt,c.RotationY);
 #endif
@@ -254,14 +643,50 @@ class AdventurePlayer {
         for(const auto& c:playScene_.Characters){
             auto it=combatActors_.find(c.Id);
             if(c.Id==caster.Id || it==combatActors_.end() || it->second.health<=0 || !actor.hostile_to(it->second.team) || rules_.removed.contains(c.Id))continue;
-            auto moved=route_pose(c,seconds_);
-            auto b=object_bounds(moved);consider(c.Id,{(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5},combat_identity(c.Id));
+            auto b=posed_bounds(c);consider(c.Id,{(b.low.x+b.high.x)*.5,b.low.y,(b.low.z+b.high.z)*.5},combat_identity(c.Id));
         }
         return result;
     }
     void advance_pursuit(double dt){
         if(!rulesEnabled_ || !std::isfinite(dt) || dt<=0)return;
         dt=std::min(dt,.05);
+        // Obstacle bounds for the pathing checks below are gathered once per update. Recomputing every object's bounds (and
+        // copying the object) inside each sample of each search edge made one failed search cost seconds on a populated scene.
+        std::vector<std::pair<const Character*,Bounds>> pursuitObstacles;bool pursuitObstaclesReady=false;
+        auto ensurePursuitObstacles=[&]{
+            if(pursuitObstaclesReady)return;pursuitObstaclesReady=true;pursuitObstacles.reserve(playScene_.Characters.size());
+            for(const auto& other:playScene_.Characters){
+                if(rules_.removed.contains(other.Id))continue;
+                if(repair_solids()&&!blocks_movement(other))continue; // grass, lights, fire, keys never stop an enemy
+                if(bounds_cacheable(other)&&!combatActors_.contains(other.Id)){
+                    pursuitObstacles.emplace_back(&other,ObjectCache::shared().bounds(other));
+                }else{
+                    auto obstacle=other;if(!other.Route.empty()){auto at=other.at(seconds_);obstacle.X=at.X;obstacle.Z=at.Z;}
+                    pursuitObstacles.emplace_back(&other,object_bounds(obstacle));
+                }
+            }
+        };
+        const bool indexedPursuit=spatial_active();
+        if(indexedPursuit){refresh_spatial();++spatial_.epoch;}
+        auto lazyObstacle=[&](uint32_t slot,const Character& other)->const Bounds&{
+            if(spatial_.stamp[slot]!=spatial_.epoch){spatial_.pursuit[slot]=pursuit_bounds(other);spatial_.stamp[slot]=spatial_.epoch;}
+            return spatial_.pursuit[slot];
+        };
+        auto anyObstacle=[&](const Character& self,Vec3 low,Vec3 high,double pad,auto&& blocks)->bool{
+            if(!indexedPursuit){
+                ensurePursuitObstacles();
+                for(const auto& [other,b]:pursuitObstacles)if(other!=&self&&blocks(*other,b))return true;
+                return false;
+            }
+            SpatialBox query;query.lo[0]=low.x-pad-1e-6;query.lo[1]=low.y-pad-1e-6;query.lo[2]=low.z-pad-1e-6;query.hi[0]=high.x+pad+1e-6;query.hi[1]=high.y+pad+1e-6;query.hi[2]=high.z+pad+1e-6;
+            std::vector<uint32_t> slots;spatial_.tree.overlap(query,slots);
+            for(uint32_t slot:slots){
+                const Character* other=spatial_.object[slot];
+                if(!other||other==&self||rules_.removed.contains(other->Id)||(repair_solids()&&!blocks_movement(*other)))continue;
+                if(blocks(*other,lazyObstacle(slot,*other)))return true;
+            }
+            return false;
+        };
         for(auto& c:playScene_.Characters){
             auto found=combatActors_.find(c.Id);if(found==combatActors_.end())continue;
             const bool hasRoute=actorRoutes_.contains(c.Id);
@@ -270,7 +695,7 @@ class AdventurePlayer {
             const bool launched=found->second.launchAirborne;
             const bool tethered=found->second.control.active==ControlEffect::Tether;
             if(!c.CombatPursuit && !hasRoute && !fleeing && !displaced && !launched && !tethered)continue;
-            auto& actor=found->second;auto victim=actor_target(c,actor);Vec3 origin{c.X,c.Y,c.Z};
+            auto& actor=found->second;const double tgA=starlight_diag::evnow();auto victim=actor_target(c,actor);mvTarget_+=starlight_diag::evnow()-tgA;Vec3 origin{c.X,c.Y,c.Z};
             bool followingRoute=hasRoute && (!c.CombatPursuit || !victim);
             if(followingRoute){
                 if(!actor.control.blocks_mobility() && !(actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered))actorRouteTimes_[c.Id]+=dt*actor.control.movement_factor();
@@ -291,14 +716,20 @@ class AdventurePlayer {
             double spacing=std::max(2.,radius+settings_.PlayerRadius+.2);
             auto routeClear=[&](Vec3 from,Vec3 to){
                 auto span=to-from;int samples=std::max(1,int(std::ceil(span.length()/.2)));
+                double previousFeet=bounds.low.y+from.y-origin.y;
                 for(int i=1;i<=samples;i++){
                     auto at=from+span*(double(i)/samples);auto offset=at-origin;
-                    if(terrain_){double oldHeight=terrain_->height_at(from.x,from.z),height=terrain_->height_at(at.x,at.z);if(std::abs(height-oldHeight)>std::hypot(at.x-from.x,at.z-from.z)+.05)return false;offset.y=height-terrain_->height_at(origin.x,origin.z);}
-                    auto low=bounds.low+offset,high=bounds.high+offset;
-                    for(const auto& other:playScene_.Characters)if(other.Id!=c.Id && !rules_.removed.contains(other.Id)){
-                        auto obstacle=other;if(!other.Route.empty()){auto at=other.at(seconds_);obstacle.X=at.X;obstacle.Z=at.Z;}auto b=object_bounds(obstacle);
-                        if(low.x<b.high.x+.03 && high.x>b.low.x-.03 && low.z<b.high.z+.03 && high.z>b.low.z-.03 && low.y<b.high.y-.05 && high.y>b.low.y+.05)return false;
+                    if(terrain_){
+                        if(!terrain_->Volumes.empty()){
+                            auto floor=terrain_body_support(*terrain_,bounds,offset,previousFeet);
+                            if(!floor||std::abs(*floor-previousFeet)>std::hypot(span.x,span.z)/samples+.05)return false;
+                            offset.y=*floor-bounds.low.y;previousFeet=*floor;
+                        }else{double oldHeight=terrain_->height_at(from.x,from.z),height=terrain_->height_at(at.x,at.z);if(std::abs(height-oldHeight)>std::hypot(at.x-from.x,at.z-from.z)+.05)return false;offset.y=height-terrain_->height_at(origin.x,origin.z);}
                     }
+                    auto low=bounds.low+offset,high=bounds.high+offset;
+                    if(anyObstacle(c,low,high,.06,[&](const Character&,const Bounds& b){
+                        return low.x<b.high.x+.03 && high.x>b.low.x-.03 && low.z<b.high.z+.03 && high.z>b.low.z-.03 && low.y<b.high.y-.05 && high.y>b.low.y+.05;
+                    }))return false;
                 }return true;
             };
             auto steeringTarget=target;double steeringSpacing=followingRoute?.001:spacing;
@@ -310,7 +741,7 @@ class AdventurePlayer {
                     if((actor.navigationGoal-goal).length()>1)actor.navigationPath.clear();
                     while(!actor.navigationPath.empty() && (actor.navigationPath.front()-origin).length()<.2)actor.navigationPath.erase(actor.navigationPath.begin());
                     if(!actor.navigationPath.empty() && !routeClear(origin,actor.navigationPath.front()))actor.navigationPath.clear();
-                    if(actor.navigationPath.empty() && actor.navigationRetry<=0){actor.navigationPath=ground_path(origin,goal,routeClear);actor.navigationGoal=goal;actor.navigationRetry=.5;}
+                    if(actor.navigationPath.empty() && actor.navigationRetry<=0){{const auto astarT0=std::chrono::steady_clock::now();actor.navigationPath=ground_path(origin,goal,routeClear);++astarCalls_;if(actor.navigationPath.empty())++astarFails_;astarMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-astarT0).count();}actor.navigationGoal=goal;actor.navigationRetry=.5;}
                     while(!actor.navigationPath.empty() && (actor.navigationPath.front()-origin).length()<.2)actor.navigationPath.erase(actor.navigationPath.begin());
                     if(!actor.navigationPath.empty()){steeringTarget=actor.navigationPath.front();steeringSpacing=0;}
                 }
@@ -330,34 +761,49 @@ class AdventurePlayer {
                 if(offset.length()>6 && actor.tetherYank<=0 && actor.tetherGuard<=0){actor.tetherYank=.5;actor.tetherGuard=.5;}
                 if(actor.tetherYank>0){actor.tetherYank=std::max(0.,actor.tetherYank-dt);delta=offset.unit()*-std::min(16.*dt,std::max(0.,offset.length()-5.5));actor.steering.stop();}
             }else actor.tetherYank=0;
-            if(!launched && terrain_)delta.y=terrain_->height_at(c.X+delta.x,c.Z+delta.z)-terrain_->height_at(c.X,c.Z);
+            bool volumeTerrain=terrain_&&!terrain_->Volumes.empty();
+            if(!launched && terrain_){
+                if(volumeTerrain){auto floor=terrain_body_support(*terrain_,bounds,delta,bounds.low.y);if(floor)delta.y=*floor-bounds.low.y;else{delta={};actor.steering.stop();}}
+                else delta.y=terrain_->height_at(c.X+delta.x,c.Z+delta.z)-terrain_->height_at(c.X,c.Z);
+            }
             auto obstructed=[&](Vec3 offset){
                 auto low=bounds.low+offset,high=bounds.high+offset;
-                for(const auto& other:playScene_.Characters)if(other.Id!=c.Id && !rules_.removed.contains(other.Id)){
-                    auto obstacle=other;if(!other.Route.empty()){auto at=other.at(seconds_);obstacle.X=at.X;obstacle.Z=at.Z;}
-                    auto b=object_bounds(obstacle);
-                    if(low.x<b.high.x && high.x>b.low.x && low.z<b.high.z && high.z>b.low.z && low.y<b.high.y-1e-5 && high.y>b.low.y+1e-5)return true;
-                }
-                return false;
+                return anyObstacle(c,low,high,.001,[&](const Character& other,const Bounds& b){
+                    if(low.x<b.high.x && high.x>b.low.x && low.z<b.high.z && high.z>b.low.z && low.y<b.high.y-1e-5 && high.y>b.low.y+1e-5){lastPursuitBlocker_=other.Id;++pursuitBlocked_;return true;}
+                    return false;
+                });
             };
-            Vec3 allowed{};bool landed=false;
+            Vec3 allowed{};bool landed=false;const double mlA=starlight_diag::evnow();
             for(int axis=0;axis<3;axis++){
-                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,delta.y,0};
+                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,volumeTerrain&&!launched?delta.y-allowed.y:delta.y,0};
                 int steps=std::max(1,int(std::ceil(portion.length()/.025)));auto increment=portion*(1./steps);
                 for(int i=0;i<steps;i++){
                     auto next=allowed+increment;double floor=terrain_?terrain_->height_at(c.X+next.x,c.Z+next.z):0;
-                    if(launched && axis==2 && increment.y<0 && bounds.low.y+next.y<=floor){allowed.y=floor-bounds.low.y;landed=true;break;}
-                    if(!launched && terrain_ && std::abs(floor-terrain_->height_at(c.X,c.Z))>.05){actor.steering.stop();break;}
+                    if(volumeTerrain){
+                        if(!launched&&axis!=2){auto support=terrain_body_support(*terrain_,bounds,next,bounds.low.y+allowed.y);if(!support||std::abs(*support-(bounds.low.y+allowed.y))>increment.length()+.05){actor.steering.stop();break;}next.y=*support-bounds.low.y;}
+                        if(!terrain_body_clear(*terrain_,bounds,next)){
+                            if(launched){double low=0,high=1;for(int refinement=0;refinement<12;++refinement){double mid=(low+high)*.5;if(terrain_body_clear(*terrain_,bounds,allowed+increment*mid))low=mid;else high=mid;}allowed=allowed+increment*low;if(axis==2){landed=increment.y<0;actor.launchVelocity.y=0;}}
+                            actor.steering.stop();break;
+                        }
+                    }else{
+                        if(launched && axis==2 && increment.y<0 && bounds.low.y+next.y<=floor){allowed.y=floor-bounds.low.y;landed=true;break;}
+                        if(!launched && terrain_ && std::abs(floor-terrain_->height_at(c.X,c.Z))>.05){actor.steering.stop();break;}
+                    }
                     if(obstructed(next)){actor.steering.stop();if(launched && axis==2){landed=increment.y<0;actor.launchVelocity.y=0;}break;}
                     allowed=next;
                 }
             }
-            delta=allowed;
+            mvMoveLoop_+=starlight_diag::evnow()-mlA;delta=allowed;
             if(landed){actor.launchAirborne=false;actor.launchVelocity={};actor.control.remaining=1;}
             if(delta.length()<1e-9)continue;
             c.X+=delta.x;c.Y+=delta.y;c.Z+=delta.z;
-            if(!c.CombatAutoAttack && !fleeing && !displaced && !launched)turn_actor(c,delta,dt);
+            if(!c.CombatAutoAttack && !fleeing && !displaced && !launched){const double tuA=starlight_diag::evnow();turn_actor(c,delta,dt);mvTurn_+=starlight_diag::evnow()-tuA;}
             interactionBounds_[c.Id]=object_bounds(c);++rules_.revision;
+            if(pursuitObstaclesReady)for(auto& entry:pursuitObstacles)if(entry.first==&c){entry.second=interactionBounds_[c.Id];break;}
+            if(indexedPursuit){
+                if(auto slot=spatial_.slotOf.find(c.Id);slot!=spatial_.slotOf.end()){spatial_.pursuit[slot->second]=interactionBounds_[c.Id];spatial_.stamp[slot->second]=spatial_.epoch;}
+                touch_spatial(c);
+            }
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
             if(controller_)controller_->move_actor(c.Id,{c.X,c.Y,c.Z},dt,c.RotationY);
 #endif
@@ -369,14 +815,13 @@ class AdventurePlayer {
         for(auto& c:playScene_.Characters){
             auto it=combatActors_.find(c.Id);if(it==combatActors_.end())continue;
             auto& actor=it->second;
-            auto moved=route_pose(c,seconds_);
-            auto bounds=object_bounds(moved);
+            auto bounds=posed_bounds(c);
             Vec3 origin{(bounds.low.x+bounds.high.x)*.5,bounds.low.y,(bounds.low.z+bounds.high.z)*.5};
-            auto victim=actor_target(c,actor);
+            const double tgB=starlight_diag::evnow();auto victim=actor_target(c,actor);mvTarget_+=starlight_diag::evnow()-tgB;
             auto delta=victim?victim->feet-origin:Vec3{};delta.y=0;
             bool eligible=c.CombatAutoAttack && victim.has_value() && actor.health>0 && !rules_.removed.contains(c.Id);
             bool blocked=!eligible || actor.tetherYank>0 || actor.control.blocks_basic() || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered);
-            if(eligible && !actor.control.blocks_basic())turn_actor(c,delta,dt);
+            if(eligible && !actor.control.blocks_basic()){const double tuB=starlight_diag::evnow();turn_actor(c,delta,dt);mvTurn_+=starlight_diag::evnow()-tuB;}
             double facing=c.RotationY*.0174532925199433;
             actor.attackOrigin=origin;actor.attackAim={-std::sin(facing),0,-std::cos(facing)}; // Cone and hit share current bounded actor facing.
             actor.attack.press(eligible && delta.length()<=(c.CombatProjectileSpeed>0?20:3));
@@ -384,8 +829,7 @@ class AdventurePlayer {
             auto point=victim->feet+Vec3{0,.85,0};
             Vec3 targetLow=victim->feet-Vec3{.3,0,.3},targetHigh=victim->feet+Vec3{.3,posture_==0?1.8:posture_==2?.5:1.,.3};
             if(!victim->id.empty())for(const auto& target:playScene_.Characters)if(target.Id==victim->id){
-                auto moved=route_pose(target,seconds_);
-                auto targetBounds=object_bounds(moved);targetLow=targetBounds.low;targetHigh=targetBounds.high;break;
+                auto targetBounds=posed_bounds(target);targetLow=targetBounds.low;targetHigh=targetBounds.high;break;
             }
             if(c.CombatProjectileSpeed>0){auto eye=origin+Vec3{0,1,0};auto aim=actor.attackAim*std::max(.1,delta.length());aim.y=point.y-eye.y;projectiles_.fire(eye,aim.unit(),c.CombatProjectileSpeed,c.CombatProjectileGravity,c.Id,actor.team,c.CombatProjectileMass,c.CombatControlEffect,actor.control.hit_factor());++shotSerial_;continue;}
             if(!surface_telegraph_contact(terrain_?&*terrain_:nullptr,actor.attackOrigin,actor.attackAim,targetLow,targetHigh,point,3,.7853981633974483))continue;
@@ -401,10 +845,10 @@ class AdventurePlayer {
                 }
             }
         }
-        for(const auto& id:defeated){
-            rules_.remove_object(playScene_,id);rules_.emit("object-broken",id,playScene_);
-            if(selectedTarget_==id)selectedTarget_.clear();
-        }
+        // Complete removal after the scene iteration; fracture and rule actions
+        // may change the character list. All damage producers share this finish.
+        for(const auto& id:defeated)finish_destruction(id);
+        finished=rules_.finished;
     }
     void advance_combat(double dt){
         for(auto& [id,actor]:combatActors_){
@@ -415,23 +859,53 @@ class AdventurePlayer {
                 if(!valid)actor.control.end();
             }
         }
-        advance_pursuit(dt);
-        advance_enemy_attacks(dt);
+        const double mvT0=starlight_diag::events_enabled()?starlight_diag::evnow():0;
+        advance_pursuit(dt);const double mvT1=mvT0>0?starlight_diag::evnow():0;
+        advance_enemy_attacks(dt);const double mvT2=mvT0>0?starlight_diag::evnow():0;
         advance_healing(dt);
         advance_projectiles(dt);
-        advance_lightning();
-        if(!fragments_.empty()){
-            std::vector<Bounds> obstacles;obstacles.reserve(playScene_.Characters.size()+fragments_.size()+1);
-            for(const auto& object:playScene_.Characters)if(lightning_solid(object)&&!rules_.removed.contains(object.Id)&&object.GameplayRole!="key"&&object.GameplayRole!="exit")obstacles.push_back(object_bounds(route_pose(object,seconds_)));
-            for(const auto& body:environment_objects())obstacles.push_back(object_bounds(body));
-            obstacles.push_back(body_bounds());
+        advance_lightning();const double mvT3=mvT0>0?starlight_diag::evnow():0;
+        if(mvT0>0){starlight_diag::evlog("mv1",mvT1-mvT0,mvT2-mvT1,mvT3-mvT2);starlight_diag::evlog("mv2",mvTarget_,mvTurn_,mvMoveLoop_);mvTarget_=mvTurn_=mvMoveLoop_=0;}
+        if(!fragments_.empty()||!dust_.puffs().empty()||!dust_.grains().empty()){
+            // Obstacles are only read by free-flying particles and dust; rigid-body fragments are driven by the physics world,
+            // so a field of finished rock fragments must not pay for rebuilding every object's bounds each update.
+            bool needObstacles=!dust_.puffs().empty()||!dust_.grains().empty();
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+            for(const auto& f:fragments_)if(!controller_||f.body==UINT32_MAX){needObstacles=true;break;}
+#else
+            needObstacles=true;
+#endif
+            std::vector<Bounds> obstacles;
+            const double obstacleStart=starlight_diag::events_enabled()?starlight_diag::evnow():0;size_t obstacleMisses=0;double missMs=0,environmentMs=0;
+            if(needObstacles){
+                obstacles.reserve(playScene_.Characters.size()+fragments_.size()+1);
+                for(const auto& object:playScene_.Characters)if(lightning_solid(object)&&!rules_.removed.contains(object.Id)&&object.GameplayRole!="key"&&object.GameplayRole!="exit"){
+                    // Objects that never move keep their bounds; everything else is posed as before.
+                    if(bounds_cacheable(object)){
+                        const double m0=obstacleStart>0?starlight_diag::evnow():0;const auto before=obstacleStart>0?ObjectCache::shared().stats().misses:0;
+                        const Bounds cachedBounds=ObjectCache::shared().bounds(object);
+                        if(obstacleStart>0&&ObjectCache::shared().stats().misses!=before){missMs+=starlight_diag::evnow()-m0;++obstacleMisses;}
+                        {static const bool verify=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_OBSTACLE_VERIFY",value,8)&&value[0]=='1';}();
+                         if(verify){const auto fresh=object_bounds(route_pose(object,seconds_));if(std::memcmp(&fresh,&cachedBounds,sizeof(Bounds))!=0)throw std::runtime_error("Cached obstacle bounds differ from the posed bounds of "+object.Id);}}
+                        obstacles.push_back(cachedBounds);
+                    }else obstacles.push_back(posed_bounds(object));
+                }
+                const double e0=obstacleStart>0?starlight_diag::evnow():0;
+                for(const auto& body:environment_objects())obstacles.push_back(object_bounds(body));
+                obstacles.push_back(body_bounds());
+                if(obstacleStart>0)environmentMs=starlight_diag::evnow()-e0;
+            }
+            if(obstacleStart>0)starlight_diag::evlog("obst",double(obstacleMisses),missMs,environmentMs);
             for(auto& f:fragments_){
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
                 if(controller_ && f.body!=UINT32_MAX){f.age+=dt;controller_->debris_pose(f.body,f.position,f.rotation);if(f.age>=f.lifetime)controller_->remove_debris(f.body);continue;}
 #endif
                 step_particle(f,dt,terrain_?&*terrain_:nullptr,obstacles);
             }
-            std::erase_if(fragments_,[](const auto& f){return f.age>=f.lifetime;});
+            {const size_t before=fragments_.size();std::erase_if(fragments_,[](const auto& f){return f.age>=f.lifetime;});if(starlight_diag::events_enabled()&&fragments_.size()!=before)starlight_diag::evlog("frag.erase",double(before-fragments_.size()),double(fragments_.size()));}
+            {const double d0=obstacleStart>0?starlight_diag::evnow():0;
+            dust_.advance(dt,terrain_?&*terrain_:nullptr,obstacles,{.3+playScene_.RainWindX*.15,0,.15+playScene_.RainWindZ*.15});
+            if(obstacleStart>0)starlight_diag::evlog("dust",starlight_diag::evnow()-d0,double(obstacles.size()),double(fragments_.size()));}
         }
         if(!launchAirborne_)control_.advance(dt);
         if(control_.active==ControlEffect::Taunt){
@@ -450,9 +924,8 @@ class AdventurePlayer {
         ++shotSerial_;lastShotTime_=seconds_;
         if(settings_.ProjectileSpeed>0){projectiles_.fire(position-Vec3{0,.7,0},attack_direction(),settings_.ProjectileSpeed,settings_.ProjectileGravity,projectile_player_id,1,settings_.ProjectileMass,-1,control_.hit_factor());advance_projectiles(0);return;}
         std::vector<std::string> hit;
-        for(const auto& c:playScene_.Characters)if((c.GameplayRole=="breakable" || (combatActors_.contains(c.Id) && combatActors_.at(c.Id).hostile_to(1))) && !rules_.removed.contains(c.Id) && perceived(c)){
-            auto moved=route_pose(c,seconds_);
-            auto b=object_bounds(moved);auto point=(b.low+b.high)*.5;
+        for(const auto& c:playScene_.Characters)if((combatActors_.contains(c.Id) ? combatActors_.at(c.Id).hostile_to(1) : c.Breakable) && !rules_.removed.contains(c.Id) && perceived(c)){
+            auto b=posed_bounds(c);auto point=(b.low+b.high)*.5;
             if(!surface_telegraph_contact(terrain_?&*terrain_:nullptr,position-Vec3{0,1.7,0},attack_direction(),b.low,b.high,point))continue;
             if(unobstructed(position-Vec3{0,.7,0},point,"",c.Id) && hitChance_.roll(control_.hit_factor()))hit.push_back(c.Id);
         }
@@ -469,48 +942,187 @@ class AdventurePlayer {
             auto [it,fresh]=lightningCycles_.try_emplace(emitter.Id,-1);if(it->second>=cycle)continue;it->second=cycle;
             auto playerBox=body_bounds();
             auto arcs=trace_lightning(emitter,scene,seconds_,health_>0?std::optional<Bounds>{playerBox}:std::nullopt);if(arcs.empty())continue;++lightningSerial_;lightningSounds_.push_back({lightningSerial_,arcs.front().target,seconds_});if(lightningSounds_.size()>128)lightningSounds_.erase(lightningSounds_.begin());
+            std::unordered_set<std::string> dustContacts;
+            for(const auto& arc:arcs)if(arc.contact&&arc.hit!=lightning_player_id&&!combatActors_.contains(arc.hit)){
+                auto key=arc.hit.empty()?std::to_string(int(arc.target.x*4))+":"+std::to_string(int(arc.target.y*4))+":"+std::to_string(int(arc.target.z*4)):arc.hit;
+                if(!dustContacts.insert(key).second)continue;
+                Vec3 tint{.4,.36,.3};bool mineralContact=true;for(const auto& body:scene.Characters)if(body.Id==arc.hit){tint=rgb(body.Color);mineralContact=destruction_has_rubble(body);break;}if(!mineralContact)continue;
+                dust_.burst(arc.target,arc.normal,tint,.22,uint32_t(lightningSerial_)*2654435761u,false);
+            }
             if(emitter.LightningDamage<=0)continue;
-            std::unordered_set<std::string> contacted;for(const auto& arc:arcs)if(!arc.hit.empty()&&contacted.insert(arc.hit).second){if(arc.hit==lightning_player_id){if(emitter.CombatTeam!=1&&emitter.CombatTeam!=0)take_damage(emitter.LightningDamage);continue;}for(const auto& body:scene.Characters)if(body.Id==arc.hit&&(body.GameplayRole=="breakable"||combatActors_.contains(body.Id))){apply_attack_hits({body.Id},emitter.LightningDamage,emitter.CombatTeam);break;}}
+            for(const auto& arc:arcs)if(arc.contact&&arc.hit.empty()&&!arc.branch){damage_terrain(arc.target,arc.normal,emitter.LightningDamage);break;}
+            std::unordered_set<std::string> contacted;for(const auto& arc:arcs)if(!arc.hit.empty()&&contacted.insert(arc.hit).second){if(arc.hit==lightning_player_id){if(emitter.CombatTeam!=1&&emitter.CombatTeam!=0)take_damage(emitter.LightningDamage);continue;}for(const auto& body:scene.Characters)if(body.Id==arc.hit&&(body.Breakable||combatActors_.contains(body.Id))){apply_attack_hits({body.Id},emitter.LightningDamage,emitter.CombatTeam);break;}}
         }
     }
+    bool damage_terrain(Vec3 point,Vec3 normal,double damage){
+        if(!rulesEnabled_||!terrain_)return false;
+        auto candidate=*terrain_;auto damageState=terrainDestruction_;if(!damageState.damage(candidate,point,normal,damage)){terrainDestruction_=std::move(damageState);return false;}
+        Mesh grappleMesh;
+        for(const auto& part:terrain_geometry(candidate)){int offset=int(grappleMesh.vertices.size());grappleMesh.vertices.insert(grappleMesh.vertices.end(),part.mesh.vertices.begin(),part.mesh.vertices.end());for(int index:part.mesh.indices)grappleMesh.indices.push_back(index+offset);}
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+        if(controller_)controller_->terrain(candidate);
+#endif
+        terrain_=std::move(candidate);terrainDestruction_=std::move(damageState);playScene_.Terrain=terrain_;grappleTerrain_=std::move(grappleMesh);
+        if(grappleTarget_=="@terrain"&&terrain_->density_at(grapple_.anchor.x,grapple_.anchor.y,grapple_.anchor.z)>.05){grapple_.detach();grappleFalling_=true;}
+        dust_.burst(point,normal,{.4,.36,.3},terrain_->DestructionRadius,uint32_t(++impactSerial_)*2654435761u,true);
+        ++rules_.revision;return true;
+    }
+    double destruction_health(const std::string& id)const{
+        auto object=std::find_if(playScene_.Characters.begin(),playScene_.Characters.end(),[&](const auto& c){return c.Id==id;});
+        if(object==playScene_.Characters.end())return 0;
+        if(auto actor=combatActors_.find(id);actor!=combatActors_.end())return actor->second.health;
+        return destruction_.remaining(*object);
+    }
+  private:
+    bool finish_destruction(const std::string& id){
+        // Idempotence prevents duplicate rubble or quest events if several
+        // attacks finish the same actor in one simulation step.
+        if(rules_.removed.contains(id)||std::none_of(playScene_.Characters.begin(),playScene_.Characters.end(),[&](const auto& c){return c.Id==id;}))return false;
+        for(const auto& c:playScene_.Characters)if(c.Id==id&&c.Breakable&&destruction_has_rubble(c)){auto b=posed_bounds(c);auto center=(b.low+b.high)*.5;
+            const auto destructionStart=std::chrono::steady_clock::now();
+            auto moved=route_pose_of(c,seconds_);
+            FractureResult fracture;
+            if(auto ready=obtain_prefracture(c,moved))fracture=std::move(*ready);
+            else{++runtime_bypass().fractureComputedAtBreak;fracture=compute_fracture(c,moved,uint32_t(++fracturePatternSerial_));}
+            auto physicalPieces=std::move(fracture.pieces);const bool fractureSupported=fracture.supported;uint32_t fractureSeed=fracture.seed;
+            lastDestruction.fractureMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-destructionStart).count();
+            if(fractureSupported){
+                {
+                    for(auto piece:physicalPieces){
+                        Fragment f;f.position=piece.center;f.rotation=fracture.rotation;auto outward=(piece.center-center).unit();f.velocity=outward*2+Vec3{0,3,0};f.radius=piece.radius;f.restitution=c.Restitution;f.part=std::move(piece.part);for(const auto& vertex:f.part->mesh.vertices){auto p=vertex.position;f.localBounds.low={std::min(f.localBounds.low.x,p.x),std::min(f.localBounds.low.y,p.y),std::min(f.localBounds.low.z,p.z)};f.localBounds.high={std::max(f.localBounds.high.x,p.x),std::max(f.localBounds.high.y,p.y),std::max(f.localBounds.high.z,p.z)};}
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                        if(controller_){if(!(piece.hull&&piece.hullDensity==c.Density))++runtime_bypass().hullBuiltAtBreak;const auto hullStart=std::chrono::steady_clock::now();auto motion=controller_->body_motion(c.Id,piece.center);f.velocity=f.velocity+motion.first;f.body=controller_->add_debris(f.part->mesh,f.position,f.velocity,c.Density,c.Friction,c.Restitution,motion.second+Vec3{outward.z,1,-outward.x},piece.hull&&piece.hullDensity==c.Density?piece.hull:DebrisHull{},fracture.rotation);lastDestruction.hullMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-hullStart).count();}
+#endif
+                        f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));
+                    }
+                }
+            }else for(int i=0;i<16;i++){double angle=i*2.3999632297;Fragment f;f.position=center;f.velocity={std::cos(angle)*(1+i%3),2.+i%4,std::sin(angle)*(1+i%3)};f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));}
+            dust_.burst(center,{0,1,0},rgb(c.Color),std::clamp((b.high-b.low).length()*.35,.15,3.),fractureSeed,true);
+            starlight_diag::evlog("brk.fin",lastDestruction.fractureMs,lastDestruction.hullMs,double(fragments_.size()));
+            if(fragments_.size()>256){auto excess=fragments_.size()-256;
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+                if(controller_)for(size_t i=0;i<excess;++i)if(fragments_[i].body!=UINT32_MAX)controller_->remove_debris(fragments_[i].body);
+#endif
+                fragments_.erase(fragments_.begin(),fragments_.begin()+excess);
+            }break;
+        }
+        if(auto actor=combatActors_.find(id);actor!=combatActors_.end()){
+            actor->second.attack.clear();actor->second.steering.stop();
+        }
+        rules_.remove_object(playScene_,id);rules_.emit("object-broken",id,playScene_);if(selectedTarget_==id)selectedTarget_.clear();
+        ++shatterSerial_;
+        return true;
+    }
+  public:
+    struct BossDebug{double rotationY=0,distance=0,facingErrorDeg=0,windup=0;bool winding=false;size_t pathSize=0;std::string pursuitBlocker;uint64_t pursuitBlocked=0;uint64_t turnApplied=0,turnBlocked=0,astarCalls=0,astarFails=0;double astarMs=0;std::string turnBlocker;bool found=false;};
+    BossDebug boss_debug(const std::string& id)const{
+        BossDebug d;d.turnApplied=turnApplied_;d.turnBlocked=turnBlocked_;d.astarCalls=astarCalls_;d.astarFails=astarFails_;d.astarMs=astarMs_;d.turnBlocker=lastTurnBlocker_;d.pursuitBlocker=lastPursuitBlocker_;d.pursuitBlocked=pursuitBlocked_;
+        auto actor=combatActors_.find(id);if(actor==combatActors_.end())return d;
+        for(const auto& c:playScene_.Characters)if(c.Id==id){
+            d.found=true;d.rotationY=c.RotationY;auto toPlayer=position-Vec3{c.X,position.y,c.Z};toPlayer.y=0;d.distance=toPlayer.length();
+            const double f=c.RotationY*.0174532925199433;const Vec3 aim{-std::sin(f),0,-std::cos(f)};
+            if(d.distance>1e-6){double dot=std::clamp(aim.dot(toPlayer.unit()),-1.,1.);d.facingErrorDeg=std::acos(dot)*57.29577951308232;}
+            break;
+        }
+        d.windup=actor->second.attack.windup;d.winding=actor->second.attack.winding;d.pathSize=actor->second.navigationPath.size();
+        return d;
+    }
+    // ---- Scene preparation (shared loading path). The host (editor Play, player) calls these before gameplay starts, while it shows the
+    // loading screen; each reports real completed work through `fraction`. Everything they build goes into the engine-wide caches, so a
+    // scene that is started again, or an object added later, reuses or lazily refreshes the same data.
+    // Warms the shared object cache for every object in the scene: world bounds, the collision mesh and the ray tree of each distinct geometry (statics, route
+    // platforms, actors and plain boxes alike), pins them so eviction cannot discard them, and builds the shared candidate index. The ray-tree memory is part of
+    // the cache's geometry budget; geometry_report() lists what was prepared.
+    GeometryReport geometry_report()const{return geometryReport_;}
+    void prepare_geometry(std::atomic<double>& fraction){
+        auto& cache=ObjectCache::shared();
+        cache.begin_preparation();
+        release_pins();pinOwner_=cache.new_pin_owner();
+        struct Item {const Character* object;bool bounds;};
+        std::vector<Item> work;work.reserve(playScene_.Characters.size());
+        for(const auto& c:playScene_.Characters)work.push_back({&c,bounds_cacheable(c)&&!combatActors_.contains(c.Id)&&(c.Sculpt||!(c.Shape&&*c.Shape=="cube"))});
+        geometryReport_={};geometryReport_.objects=work.size();
+        fraction=work.empty()?1.:0.;
+        if(work.empty())return;
+        std::atomic<size_t> next{0},done{0},treeBytes{0};
+        std::exception_ptr failure;std::mutex failureLock;
+        const unsigned threads=std::max(1u,std::min<unsigned>(8,std::thread::hardware_concurrency()?std::thread::hardware_concurrency()/2:2));
+        std::vector<std::thread> pool;
+        for(unsigned k=0;k<threads;++k)pool.emplace_back([&]{
+            try{
+                for(size_t i;(i=next.fetch_add(1))<work.size();){
+                    const Character& c=*work[i].object;
+                    if(work[i].bounds)(void)cache.bounds(c);
+                    const auto warmed=cache.warm_query_geometry(c);
+                    if(warmed.builtTree)treeBytes+=warmed.treeBytes;
+                    cache.pin(pinOwner_,c,work[i].bounds);
+                    fraction=double(done.fetch_add(1)+1)/double(work.size());
+                }
+            }catch(...){std::lock_guard guard(failureLock);if(!failure)failure=std::current_exception();next=work.size();}
+        });
+        for(auto& worker:pool)worker.join();
+        if(failure)std::rethrow_exception(failure);
+        for(const auto& item:work)if(!item.bounds)(void)posed_bounds(*item.object);
+        if(spatial_active())refresh_spatial(true);
+        const auto stats=cache.stats();
+        geometryReport_.distinctGeometries=stats.geometries;geometryReport_.rayTrees=stats.rayTrees;geometryReport_.rayTreeBytes=stats.rayTreeBytes;geometryReport_.geometryBytes=stats.geometryBytes;
+        geometryReport_.pinnedGeometries=stats.pinnedGeometries;geometryReport_.pinnedBytes=stats.pinnedBytes;geometryReport_.treeBytesBuiltHere=treeBytes.load();geometryReport_.overBudget=stats.overBudget;
+        fraction=1.;
+    }
+    // Builds the collision world now instead of on the first movement update.
+    void prepare_collision(std::atomic<double>& fraction){
+        fraction=0.;
+#ifdef STARLIGHT_CHARACTER_CONTROLLER
+        if(settings_.Collision&&!controller_)controller_=std::make_unique<AdventureController>(playScene_,position);
+#endif
+        ObjectCache::shared().mark_prepared();
+        fraction=1.;
+    }
+    // Break-ahead state of every declared destructible: prepared (a valid result), failed (with the reason), abandoned (taken for work at the break) or still
+    // queued/running. `ready` counts valid prepared results only; the work is finished when settled() is true, and ok() says every one of them is valid.
+    struct FractureProgress{
+        size_t ready=0,total=0,prepared=0,failed=0,abandoned=0;
+        std::vector<std::string> failures,pending;
+        bool settled()const{return prepared+failed+abandoned>=total;}
+        bool ok()const{return prepared==total;}
+    };
+    FractureProgress fracture_progress(){
+        FractureProgress p;std::lock_guard lock(preMutex_);
+        for(const auto& [id,entry]:preFractures_){
+            ++p.total;
+            if(entry->state==2)++p.prepared;
+            else if(entry->state==0||entry->state==1)p.pending.push_back(entry->source.Id+(entry->state==1?" (running)":" (queued)"));
+            else if(entry->state==3)++p.abandoned;
+            else if(entry->state==4){++p.failed;p.failures.push_back(entry->source.Name+" ("+entry->source.Id+"): "+entry->reason);}
+        }
+        p.ready=p.prepared;
+        return p;
+    }
+
+    size_t fragment_count()const{return fragments_.size();}
+    size_t dust_count()const{return dust_.puffs().size()+dust_.grains().size();}
+    int break_count()const{return breakOrdinal_;}
     void apply_attack_hits(const std::vector<std::string>& hit,double damage=10,int sourceTeam=1){
+        if(!rulesEnabled_||!std::isfinite(damage)||damage<=0)return;
+        std::unordered_set<std::string> visited;
         for(const auto& id:hit){
-            if(rules_.removed.contains(id))continue;
+            if(rules_.removed.contains(id)||!visited.insert(id).second)continue;
+            auto object=std::find_if(playScene_.Characters.begin(),playScene_.Characters.end(),[&](const auto& c){return c.Id==id;});
+            if(object==playScene_.Characters.end())continue;
             if(auto it=combatActors_.find(id);it!=combatActors_.end()){
                 if(!it->second.hostile_to(sourceTeam))continue;
                 it->second.damage(damage,sourceTeam);if(it->second.health>0)continue;
-            }
-            for(const auto& c:playScene_.Characters)if(c.Id==id){auto b=object_bounds(route_pose(c,seconds_));auto center=(b.low+b.high)*.5;
-                auto fractureParts=object_parts(c);
-                std::vector<FracturePiece> physicalPieces;bool fractureSupported=!fractureParts.empty();auto moved=route_pose(c,seconds_);
-                for(auto part:fractureParts){for(auto& v:part.mesh.vertices)v.position=world_point(moved,v.position);auto pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){fractureSupported=false;break;}physicalPieces.insert(physicalPieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
-                if(fractureSupported){
-                    {
-                        for(auto piece:physicalPieces){
-                            Fragment f;f.position=piece.center;auto outward=(piece.center-center).unit();f.velocity=outward*2+Vec3{0,3,0};f.radius=piece.radius;f.restitution=c.Restitution;f.part=std::move(piece.part);for(const auto& vertex:f.part->mesh.vertices){auto p=vertex.position;f.localBounds.low={std::min(f.localBounds.low.x,p.x),std::min(f.localBounds.low.y,p.y),std::min(f.localBounds.low.z,p.z)};f.localBounds.high={std::max(f.localBounds.high.x,p.x),std::max(f.localBounds.high.y,p.y),std::max(f.localBounds.high.z,p.z)};}
-#ifdef STARLIGHT_CHARACTER_CONTROLLER
-                            if(controller_){auto motion=controller_->body_motion(c.Id,piece.center);f.velocity=f.velocity+motion.first;f.body=controller_->add_debris(f.part->mesh,f.position,f.velocity,c.Density,c.Friction,c.Restitution,motion.second+Vec3{outward.z,1,-outward.x});}
-#endif
-                            f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));
-                        }
-                    }
-                }else for(int i=0;i<16;i++){double angle=i*2.3999632297;Fragment f;f.position=center;f.velocity={std::cos(angle)*(1+i%3),2.+i%4,std::sin(angle)*(1+i%3)};f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));}
-                if(fragments_.size()>256){auto excess=fragments_.size()-256;
-#ifdef STARLIGHT_CHARACTER_CONTROLLER
-                    if(controller_)for(size_t i=0;i<excess;++i)if(fragments_[i].body!=UINT32_MAX)controller_->remove_debris(fragments_[i].body);
-#endif
-                    fragments_.erase(fragments_.begin(),fragments_.begin()+excess);
-                }break;
-            }
-            rules_.remove_object(playScene_,id);rules_.emit("object-broken",id,playScene_);if(selectedTarget_==id)selectedTarget_.clear();
-            ++shatterSerial_;
+            }else if(!destruction_.damage(*object,damage))continue;
+            starlight_diag::evlog("brk.hit",double(++breakOrdinal_));
+            finish_destruction(id);
         }
+        finished=rules_.finished;
     }
     void advance_projectiles(double dt){
         if(projectiles_.shots().empty()){projectileBounds_.clear();return;}
         std::vector<ProjectileTarget> targets;
-        for(auto object:playScene_.Characters){auto kind=object.Shape.value_or("");if(rules_.removed.contains(object.Id)||object.GameplayRole=="key"||object.GameplayRole=="exit"||kind=="light-shard"||kind=="grass"||kind=="fire"||kind=="light"||kind=="lava"||kind=="chaos-lightning"||kind=="craxis-smoke")continue;
-            object=route_pose(object,seconds_);auto after=object_bounds(object);auto before=projectileBounds_.contains(object.Id)?projectileBounds_.at(object.Id):after;targets.push_back({object.Id,before,after});projectileBounds_[object.Id]=after;
+        for(const auto& object:playScene_.Characters){if(rules_.removed.contains(object.Id)||(!object.Breakable&&!lightning_solid(object)))continue;
+            auto after=posed_bounds(object);auto before=projectileBounds_.contains(object.Id)?projectileBounds_.at(object.Id):after;targets.push_back({object.Id,before,after});projectileBounds_[object.Id]=after;
         }
         for(const auto& c:environment_objects()){auto bounds=object_bounds(c);auto before=projectileBounds_.contains(c.Id)?projectileBounds_.at(c.Id):bounds;targets.push_back({c.Id,before,bounds});projectileBounds_[c.Id]=bounds;}
         if(health_>0){auto bounds=body_bounds();auto before=projectileBounds_.contains(projectile_player_id)?projectileBounds_.at(projectile_player_id):bounds;targets.push_back({projectile_player_id,before,bounds});projectileBounds_[projectile_player_id]=bounds;}
@@ -519,11 +1131,14 @@ class AdventurePlayer {
             if(controller_&&!impact.target.empty()){controller_->impulse(impact.target,impact.position,impact.velocity*impact.mass);for(const auto& fragment:fragments_)if(fragment.body!=UINT32_MAX&&impact.target=="debris-"+std::to_string(fragment.serial))controller_->impulse_body(fragment.body,impact.position,impact.velocity*impact.mass);}
 #endif
             ++impactSerial_;
+            Vec3 impactTint{.4,.36,.3};bool mineralImpact=true;for(const auto& object:playScene_.Characters)if(object.Id==impact.target){impactTint=rgb(object.Color);mineralImpact=destruction_has_rubble(object);break;}
+            if(mineralImpact&&impact.target!=projectile_player_id&&!combatActors_.contains(impact.target))dust_.burst(impact.position,impact.normal,impactTint,.18,uint32_t(impactSerial_)*2654435761u,false);
             static const auto sparkPart=[](){Character c;c.Shape="cube";auto part=std::make_shared<MeshPart>(shape_geometry(c).front());part->color={1,.65,.15};part->emissive=true;for(auto& v:part->mesh.vertices)v.position=(v.position-Vec3{0,.5,0})*.025;return part;}();
             for(int i=0;i<6&&fragments_.size()<256;++i){Fragment f;f.position=impact.position+impact.normal*.05;double angle=i*2.3999632297;f.velocity=impact.normal*1.5+Vec3{std::cos(angle),.5+double(i%3)*.5,std::sin(angle)};f.radius=.015;f.lifetime=.4;f.part=sparkPart;f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));}
+            if(impact.target.empty()){damage_terrain(impact.position,impact.normal,impact.damage);continue;}
             if(!hitChance_.roll(impact.accuracy))continue;
             if(impact.target==projectile_player_id){if(impact.team!=0&&impact.team!=1){take_damage(impact.damage);if(impact.control>=0)apply_control(static_cast<ControlEffect>(impact.control),{combat_identity(impact.source),false},true,false,impact.position);}continue;}
-            for(const auto& object:playScene_.Characters)if(object.Id==impact.target&&(object.GameplayRole=="breakable"||(combatActors_.contains(object.Id)&&combatActors_.at(object.Id).hostile_to(impact.team)))){if(impact.control>=0)if(auto actor=combatActors_.find(object.Id);actor!=combatActors_.end())actor->second.apply(static_cast<ControlEffect>(impact.control),{combat_identity(impact.source),false},impact.team);apply_attack_hits({object.Id},impact.damage,impact.team);break;}
+            for(const auto& object:playScene_.Characters)if(object.Id==impact.target&&(combatActors_.contains(object.Id)?combatActors_.at(object.Id).hostile_to(impact.team):object.Breakable)){if(impact.control>=0)if(auto actor=combatActors_.find(object.Id);actor!=combatActors_.end())actor->second.apply(static_cast<ControlEffect>(impact.control),{combat_identity(impact.source),false},impact.team);apply_attack_hits({object.Id},impact.damage,impact.team);break;}
         }
         finished=rules_.finished;
     }
@@ -563,6 +1178,8 @@ class AdventurePlayer {
         std::optional<Bounds> targetBounds;
         struct FragmentView {Vec3 position;std::shared_ptr<const MeshPart> part;std::array<double,4> rotation;uint64_t serial=0;};
         std::vector<FragmentView> fragments;
+        std::vector<DustPuff> dust;
+        std::vector<DustGrain> grit;
         std::vector<PhysicalProjectile> projectiles;
         std::vector<LightningSoundEvent> lightningSounds;
         struct ActorTelegraph {Vec3 origin,aim;double progress;TelegraphKind kind;std::string identity;};
@@ -589,7 +1206,8 @@ class AdventurePlayer {
         p.channelProgress=attack_.winding?std::clamp(1-attack_.windup/attack_.cycleSeconds,0.,1.):0;
         p.projectiles=projectiles_.shots();p.lightningSounds=lightningSounds_;
         for(const auto& f:fragments_)p.fragments.push_back({f.position,f.part,f.rotation,f.serial});
-        for(const auto& c:playScene_.Characters)if(c.Id==selectedTarget_ && perceived(c)){auto moved=route_pose(c,seconds_);p.targetBounds=object_bounds(moved);break;}
+        p.dust=dust_.puffs();p.grit=dust_.grains();
+        for(const auto& c:playScene_.Characters)if(c.Id==selectedTarget_ && perceived(c)){p.targetBounds=posed_bounds(c);break;}
         using M=Presentation::Motion;
         const double horizontal=std::hypot(p.velocity.x,p.velocity.z);
         if(dodging())p.motion=M::Dodge;
@@ -660,20 +1278,48 @@ class AdventurePlayer {
         return up*std::cos(angle)+right*std::sin(angle);
     }
     Vec3 camera_eye() const {
+        const double camT0=starlight_diag::events_enabled()?starlight_diag::evnow():0;
+        struct CamLog{double t0;~CamLog(){if(t0>0){const double ms=starlight_diag::evnow()-t0;if(ms>.2)starlight_diag::evlog("cam",ms,0,0);}}} camLog{camT0};
         if(cameraDistance<=.001)return view_position();
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
-        for(const auto& object:playScene_.Characters){
-            if(object.GameplayRole=="key" || object.GameplayRole=="exit")continue;
-            auto moved=route_pose(object,seconds_);
-            auto hit=mesh_hit(object_mesh(moved),moved,view_position(),backward);
+        each_ray_candidate(view_position(),backward,cameraDistance+.2,[&](const Character& object){
+            if(object.GameplayRole=="key" || object.GameplayRole=="exit")return;
+            // Session-start bounds come from every actual mesh vertex. Static
+            // objects outside the finite boom cannot change its exact triangle
+            // hit. Moving/routed/combat actors retain the original query path.
+            if(repair_bounds()){
+                // Same test for every object, moving or not: the shared cache returns current bounds (it re-measures an object only when it
+                // has changed), so objects the editor marks Dynamic, such as every rock and boulder, are skipped when the boom cannot reach them.
+                if(!ray_reaches_bounds(view_position(),backward,cameraDistance+.2,posed_bounds(object)))return;
+            }else if(!object.Dynamic && object.Route.empty() && object.CombatHealth<=0){
+                auto cached=interactionBounds_.find(object.Id);
+                if(cached!=interactionBounds_.end()){
+                    const auto& box=cached->second;auto origin=view_position();
+                    double enter=0,leave=cameraDistance+.2;bool outside=false;
+                    for(auto axis:std::array<std::array<double,4>,3>{{
+                        {origin.x,backward.x,box.low.x,box.high.x},
+                        {origin.y,backward.y,box.low.y,box.high.y},
+                        {origin.z,backward.z,box.low.z,box.high.z}}}){
+                        if(!std::isfinite(axis[2])||!std::isfinite(axis[3])){outside=false;break;}
+                        double padding=1e-7*(1+std::max({std::abs(axis[0]),std::abs(axis[2]),std::abs(axis[3])}));
+                        double low=axis[2]-padding,high=axis[3]+padding;
+                        if(axis[1]==0){if(axis[0]<low||axis[0]>high){outside=true;break;}}
+                        else{double a=(low-axis[0])/axis[1],b=(high-axis[0])/axis[1];if(a>b)std::swap(a,b);
+                            enter=std::max(enter,a);leave=std::min(leave,b);if(enter>leave){outside=true;break;}}
+                    }
+                    if(outside)return;
+                }
+            }
+            auto hit=object_hit(object,route_pose_of(object,seconds_),view_position(),backward);
             if(hit)distance=std::min(distance,std::max(0.,hit->distance-.2));
-        }
+        });
         // Sample the short camera boom against terrain to avoid looking through hills.
         for(double d=.1;d<=distance;d+=.1){auto p=view_position()+backward*d;
-            if(terrain_ && p.y<terrain_->height_at(p.x,p.z)+.15){distance=std::max(0.,d-.1);break;}}
+            if(terrain_ && (terrain_->Volumes.empty()?p.y<terrain_->height_at(p.x,p.z)+.15:terrain_->density_at(p.x,p.y,p.z)<.15)){distance=std::max(0.,d-.1);break;}}
         return view_position()+backward*distance;
     }
     bool standing_inside_solid() const {return blocked(position);}
+    bool solid_at(Vec3 p,bool indexed) const {return blocked_with(p,indexed);}
     void rebuild_for_authoring(const SceneData& scene){
         auto savedPosition=position;double savedYaw=yaw,savedPitch=pitch,savedCameraYaw=cameraYaw,savedCameraPitch=cameraPitch,savedDistance=cameraDistance;
         start(scene,false);position=savedPosition;yaw=savedYaw;pitch=savedPitch;cameraYaw=savedCameraYaw;cameraPitch=savedCameraPitch;cameraDistance=savedDistance;
@@ -692,12 +1338,12 @@ class AdventurePlayer {
         if(health_<=0 || control_.blocks_mobility())return;
         if(grapple_.held)return;
         std::optional<MeshHit> nearest;std::string id;Vec3 offset{},localNormal{};int grappleMode=0;
-        for(const auto& object:playScene_.Characters){
-            if(rules_.removed.contains(object.Id) || (object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="craxis-smoke")))continue;
-            auto moved=route_pose(object,seconds_);
-            auto hit=mesh_hit(object_mesh(moved),moved,view_position(),camera_direction());
+        each_ray_candidate(view_position(),camera_direction(),25,[&](const Character& object){
+            if(rules_.removed.contains(object.Id) || (object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="craxis-smoke")))return;
+            auto moved=route_pose_of(object,seconds_);
+            auto hit=object_hit(object,moved,view_position(),camera_direction());
             if(hit && hit->distance<=25 && (!nearest || hit->distance<nearest->distance)){nearest=hit;id=object.Id;grappleMode=object.GrappleMode;offset=local_point(moved,hit->point);localNormal=local_point(moved,hit->point+hit->normal)-offset;}
-        }
+        });
         if(!grappleTerrain_.indices.empty()){
             Character ground;auto hit=mesh_hit(grappleTerrain_,ground,view_position(),camera_direction());
             if(hit && hit->distance<=25 && (!nearest || hit->distance<nearest->distance)){nearest=hit;id="@terrain";grappleMode=0;offset=hit->point;localNormal=hit->normal;}
@@ -770,6 +1416,7 @@ class AdventurePlayer {
     }}
     void start(const SceneData& scene,bool gameplayRules=true){
         if(!scene.Game)throw std::runtime_error("Choose an adventure preset first");
+        ObjectCache::shared().begin_preparation();release_pins();spatial_=SpatialState{};solidIndex_.clear();solidSlot_.clear();geometryReport_={};
         lightningCycles_.clear();lightningSerial_=0;lightningSounds_.clear();
         ++presentationEpoch_;shotSerial_=shatterSerial_=impactSerial_=0;lastShotTime_=-1;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
@@ -780,7 +1427,7 @@ class AdventurePlayer {
         if(scene.Terrain)for(const auto& part:terrain_geometry(*scene.Terrain)){int offset=int(grappleTerrain_.vertices.size());grappleTerrain_.vertices.insert(grappleTerrain_.vertices.end(),part.mesh.vertices.begin(),part.mesh.vertices.end());for(int index:part.mesh.indices)grappleTerrain_.indices.push_back(index+offset);}
         seconds_=0;jumpRequested_=false;sprintHeld_=false;movement_={};
         dodgeRemaining_=0;dodgeVelocity_={};presentationVelocity_={};lastMovementPress_.fill(-1);
-        cancel_mobility_input();attack_={};hitChance_={};lastDisplayControl_.reset();lastVisibleIds_.clear();control_={};control_.player=true;health_=100;controlOrigin_=controlVelocity_={};launchAirborne_=false;tetherPull_=tetherCooldown_=0;selectedTarget_.clear();fragments_.clear();combatActors_.clear();healingCasts_.clear();lunging_=false;
+        cancel_mobility_input();attack_={};hitChance_={};lastDisplayControl_.reset();lastVisibleIds_.clear();control_={};control_.player=true;health_=100;controlOrigin_=controlVelocity_={};launchAirborne_=false;tetherPull_=tetherCooldown_=0;selectedTarget_.clear();fragments_.clear();dust_.clear();destruction_.reset();terrainDestruction_.reset();combatActors_.clear();healingCasts_.clear();lunging_=false;
         for(const auto& c:scene.Characters)if(c.CombatHealth>0){CombatActor actor;actor.health=actor.maximum=c.CombatHealth;actor.team=c.CombatTeam;actor.boss=c.CombatBoss;actor.attack.cycleSeconds=1.5;combatActors_.emplace(c.Id,actor);}
         posture_=0;controlHeld_=controlConsumed_=false;controlTime_=slideRemaining_=0;slideVelocity_={};
         scene.validate();playScene_=scene;actorRoutes_.clear();actorRouteTimes_.clear();
@@ -792,8 +1439,18 @@ class AdventurePlayer {
             if(object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="craxis-smoke"))continue;
             if(object.GameplayRole!="key" && object.GameplayRole!="exit")solids_.push_back({object.Id,bounds});
         }
+        solidIndex_.begin_bulk();
+        for(size_t i=0;i<solids_.size();++i){solidSlot_[solids_[i].first]=uint32_t(i);solidIndex_.set(uint32_t(i),spatial_box(solids_[i].second));}
+        solidIndex_.end_bulk();
         position={settings_.SpawnX,settings_.SpawnY,settings_.SpawnZ};yaw=pitch=0;
         cameraYaw=cameraPitch=0;cameraDistance=5;
+        // The first dust update needs the bounds of every immutable solid; computing them lazily cost about 15 ms in the middle of the
+        // first break. Same objects, same calculation, done while the scene is being prepared.
+        if(GetEnvironmentVariableA("STARLIGHT_DISABLE_PREWARM",nullptr,0)==0){const double w0=starlight_diag::events_enabled()?starlight_diag::evnow():0;
+         for(const auto& object:playScene_.Characters)if(lightning_solid(object)&&bounds_cacheable(object)&&object.GameplayRole!="key"&&object.GameplayRole!="exit")(void)ObjectCache::shared().bounds(object);
+         if(w0>0)starlight_diag::evlog("obst.warm",starlight_diag::evnow()-w0,double(ObjectCache::shared().stats().entries));}
+        starlight_diag::evlog("adv.start");
+        schedule_prefracture();
     }
     void look(double horizontal,double vertical){
         if(!std::isfinite(horizontal)||!std::isfinite(vertical))return;
@@ -805,6 +1462,7 @@ class AdventurePlayer {
         right=std::clamp(right,-1.,1.);forward=std::clamp(forward,-1.,1.);
         double length=std::max(1.,std::hypot(right,forward));
         const double dt=std::min(seconds,.05);
+        if(seconds_-preTopUpAt_>=.25){preTopUpAt_=seconds_;top_up_prefracture();}
         if(position.y<settings_.SpawnY-100 && health_>0)defeat();
         {ScopedTiming timer{lastTiming.combatAiMs};advance_combat(dt);}
         if(health_<=0 || control_.blocks_mobility()){right=forward=0;jumpRequested_=false;}
@@ -834,13 +1492,13 @@ class AdventurePlayer {
             if(grapple_.state!=GrappleMotion::State::Free){
                 bool found=grappleTarget_=="@terrain";
                 for(const auto& object:playScene_.Characters)if(object.Id==grappleTarget_ && !rules_.removed.contains(object.Id) && (!combatActors_.contains(object.Id) || combatActors_.at(object.Id).health>0)){
-                    auto moved=route_pose(object,seconds_);
+                    auto moved=route_pose_of(object,seconds_);
                     grapple_.move_anchor(world_point(moved,grappleOffset_),dt);grapple_.normal=(world_point(moved,grappleOffset_+grappleLocalNormal_)-world_point(moved,grappleOffset_)).unit();if(grapple_.state==GrappleMotion::State::Free)grappleFalling_=true;found=true;break;
                 }
                 if(!found){grapple_.detach();grappleFalling_=true;}
                 if(grapple_.state==GrappleMotion::State::Wall && forward>0 && !control_.blocks_mobility()){
                     for(const auto& object:playScene_.Characters)if(object.Id==grappleTarget_){
-                        auto moved=route_pose(object,seconds_);auto bounds=object_bounds(moved);
+                        auto bounds=posed_bounds(object);
                         if(position.y-1.7>=bounds.high.y+.04 && controller_->traverse(position,grapple_.normal*(-.8*control_.movement_factor())+Vec3{0,.2,0})){mantleRemaining_=.4;grapple_.velocity=grapple_.normal*(-2*control_.movement_factor())+Vec3{0,.5,0};grapple_.detach();grappleFalling_=true;break;}
                     }
                 }
@@ -859,7 +1517,8 @@ class AdventurePlayer {
             auto before=position;
             {ScopedTiming timer{lastTiming.physicsMs};controller_->liquids(liquidSnapshot_);position=controller_->step(position,velocity,dt,jumpRequested_,rulesEnabled_?seconds_:-1,rules_.removed,forced);}
             controller_->sync_dynamic(playScene_);
-            for(const auto& c:playScene_.Characters)if(c.Dynamic){auto bounds=object_bounds(c);interactionBounds_[c.Id]=bounds;for(auto& solid:solids_)if(solid.first==c.Id){solid.second=bounds;break;}}
+            spatial_.fresh=false;
+            for(const auto& c:playScene_.Characters)if(c.Dynamic){auto bounds=object_bounds(c);interactionBounds_[c.Id]=bounds;if(auto slot=solidSlot_.find(c.Id);slot!=solidSlot_.end()){solids_[slot->second].second=bounds;solidIndex_.set(slot->second,spatial_box(bounds));}}
             presentationVelocity_=(position-before)*(1./dt);
             if(launchAirborne_ && controller_->grounded && controlVelocity_.y<=0){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}
             if(grappleFalling_ && controller_->grounded && velocity.y<=0){grappleFalling_=false;grapple_.velocity={};}
@@ -871,14 +1530,13 @@ class AdventurePlayer {
             }else grappleBlockedSeconds_=0;
 
             jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
-            for(const auto& object:playScene_.Characters)if(!object.Route.empty()){
-                auto moved=route_pose(object,seconds_);
-                interactionBounds_[object.Id]=object_bounds(moved);
-            }
+            spatial_.fresh=false;
+            for(const auto& object:playScene_.Characters)if(!object.Route.empty())interactionBounds_[object.Id]=posed_bounds(object);
             update_rules();return;
         }
 #endif
         jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
+        spatial_.fresh=false;
         presentationVelocity_={};
         if(right==0 && forward==0 && dodgeFraction==0){update_rules();return;}
         const auto presentationStart=position;
@@ -928,7 +1586,9 @@ class AdventurePlayer {
             return rules_.message.empty() ? "Collected key: "+object.GameplayKey : rules_.message;
         }
         if(object.GameplayRole=="breakable"){
-            rules_.remove_object(playScene_,object.Id);rules_.emit("object-broken",object.Id,playScene_);finished=rules_.finished;
+            if(!object.Breakable)return "This object cannot be broken.";
+            apply_attack_hits({object.Id},object.CombatHealth>0?object.CombatHealth:object.DestructionHealth);
+            if(!rules_.removed.contains(object.Id))return "This object cannot be broken by this interaction.";
             return rules_.message.empty()?"Broken: "+object.Name:rules_.message;
         }
         if(!object.GameplayKey.empty() && !rules_.items.contains(object.GameplayKey))return "Requires key: "+object.GameplayKey;
@@ -950,6 +1610,8 @@ inline std::vector<std::string> adventure_readiness(const SceneData& scene){
 
     }
     for(const auto& rule:scene.Rules)if(rule.Enabled) {
+        if(rule.Event=="item-collected" && !rule.Subject.empty() && !keys.contains(rule.Subject))
+            findings.push_back(rule.Name+": collection event expects an item key, but no collectible item is named "+rule.Subject+".");
         for(const auto& action:rule.Actions) {
             if(action.Type=="finish-game")exit=true;
             if(action.Type=="open-door" && std::none_of(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==action.Target && c.GameplayRole=="door";}))

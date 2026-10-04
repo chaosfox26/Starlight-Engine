@@ -59,6 +59,32 @@
 !/tools/profiling/
 !/tools/launch/
 
+# Migration tool (the only legacy scene reader), shipped starter key cards and the small in-repo starter asset library.
+!/tools/migration/
+/tools/migration/*
+!/tools/migration/*.cpp
+!/tools/migration/*.md
+!/starters/
+/starters/*
+!/starters/*/
+/starters/*/*
+!/starters/*/*.starscene
+!/library/
+/library/*
+!/library/library.json
+!/library/sculpt-*.slasset
+!/library/terrain-*.slasset
+
+# Packaging scripts and sources referenced by the build; outputs and staged payloads stay ignored.
+!/tools/packaging/
+/tools/packaging/*
+!/tools/packaging/*.py
+!/tools/packaging/*.cpp
+!/tools/packaging/*.hpp
+!/tools/packaging/*.ps1
+!/tools/packaging/*.json
+!/tools/packaging/*.txt
+
 # Maintained editor asset-workflow documentation.
 !/docs/
 /docs/*

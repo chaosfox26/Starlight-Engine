@@ -1,0 +1,167 @@
+{
+  "operations": [
+    {
+      "kind": "replace",
+      "find": "static const UINT kFrameCbBytes = 2048;",
+      "replacement": "static const UINT kFrameCbBytes = 8192;"
+    },
+    {
+      "kind": "replace",
+      "find": "struct Vertex { float px, py, pz; float nx, ny, nz; };",
+      "replacement": "struct Vertex { float px, py, pz; float nx, ny, nz; float r=1,g=1,b=1,kind=0; float previousX=0,previousY=0,previousZ=0,hasPrevious=0; };"
+    },
+    {
+      "kind": "replace",
+      "find": "    SpotLight  spots[32];",
+      "replacement": "    SpotLight  spots[32];\n    XMFLOAT4 shadowBounds[16];\n    XMFLOAT4 motionTime;\n    XMFLOAT4X4 inverseViewProjection,viewProjection;\n    XMFLOAT4 weather;\n    XMFLOAT4 weatherLow[64],weatherHigh[64];\n    XMFLOAT4X4 sunShadow[3];\n    XMFLOAT4 shadowCuts,shadowTexel;\n    XMFLOAT4 localShadow[32];"
+    },
+    {
+      "kind": "replace",
+      "find": "\"  Spot spots[32];\\n\"",
+      "replacement": "\"  Spot spots[32]; float4 shadowBounds[16]; float4 motionTime; row_major float4x4 inverseViewProjection,viewProjection; float4 weather; float4 weatherLow[64],weatherHigh[64]; row_major float4x4 sunShadow[3]; float4 shadowCuts,shadowTexel; float4 localShadow[32];\\n\""
+    },
+    {
+      "kind": "replace",
+      "find": "PSOut PSBg(BgOut i) { PSOut po; po.color = float4(fog.rgb, 1.0); po.mvec = 0; return po; }",
+      "replacement": "PSOut PSBg(BgOut i) { PSOut po; float2 uv=i.pos.xy/float2(mvScale.x*2,-mvScale.y*2);float4 farPoint=mul(float4(uv*float2(2,-2)+float2(-1,1),1,1),inverseViewProjection);float3 direction=normalize(farPoint.xyz/farPoint.w-camPos.xyz);float footprint=max(length(ddx(direction)),length(ddy(direction)));po.color=float4(slSkyRadiance(direction,ambient.rgb,lightDir,footprint,weather.y),1);po.mvec=0;return po; }"
+    },
+    {
+      "kind": "replace",
+      "find": "float3 nrm : NORMAL; };",
+      "replacement": "float3 nrm : NORMAL; float4 surface : COLOR0; float4 history : TEXCOORD3; };"
+    },
+    {
+      "kind": "replace",
+      "find": "float4 prv : TEXCOORD2; };",
+      "replacement": "float4 prv : TEXCOORD2; float4 surface : COLOR0; nointerpolation float foliageBits : TEXCOORD4; };"
+    },
+    {
+      "kind": "replace",
+      "find": "\"  VSOut o;\\n\"",
+      "replacement": "\"  VSOut o; o.surface=i.surface; o.foliageBits=i.surface.z;\\n\""
+    },
+    {
+      "kind": "replace",
+      "find": "{ \"NORMAL\",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },",
+      "replacement": "{ \"NORMAL\",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },\n            { \"COLOR\", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },\n            { \"TEXCOORD\", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 40, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },"
+    },
+    {
+      "kind": "shader-lines",
+      "start": "            \"float3 brdf(",
+      "end": "            \"float3 tonemap(",
+      "source": "editor/native/lighting_surface.hlsl"
+    },
+    {
+      "kind": "shader-lines",
+      "start": "            \"PSOut PSMain(VSOut i) {",
+      "end": "            \"PSOut PSAdd",
+      "source": "editor/native/world_surface.hlsl"
+    },
+    {
+      "kind": "replace",
+      "find": "s.params = XMFLOAT4(rough, textured ? 1.0f : 0.0f, metal, 0.0f);",
+      "replacement": "s.params = XMFLOAT4(rough, textured ? 1.0f : 0.0f, metal, (float)editorTime); s.params.y=editorRaytracing?2:s.params.y;"
+    },
+    {
+      "kind": "replace",
+      "find": "            \"VSOut VSMain(VSIn i) {\\n\"",
+      "replacement": "            \"float3 environmentPosition(float3 p,float4 surface,float time) {\\n\"\n            \" float3 world=mul(float4(p,1),model).xyz;\\n\"\n            \" if(surface.w>.5&&surface.w<1.2){float bend=max(p.y,0);bend*=bend;float gust=sin(time*1.7+world.x*.4+world.z*.25);p.x+=bend*(.12*gust+.035*sin(time*4.1+world.z));p.z+=bend*(.075*cos(time*1.3+world.z*.3)+.02*sin(time*3+world.x));}\\n\"\n            \" if(params.y<2&&surface.w>8.5&&surface.w<9.2){float anchor=surface.y;p.x+=anchor*(sin(p.y*13+time*29)*.12+sin(p.y*29-time*41)*.045);p.z+=anchor*(cos(p.y*17-time*31)*.12+sin(p.y*31+time*37)*.045);}\\n\"\n            \" return p;\\n\"\n            \"}\\n\"\n            \"VSOut VSMain(VSIn i) {\\n\""
+    },
+    {
+      "kind": "shader-lines",
+      "start": "            \"float3 environmentPosition",
+      "end": "            \"VSOut VSMain",
+      "source": "editor/native/grass_wind.hlsl"
+    },
+    {
+      "kind": "replace",
+      "find": "o.pos = mul(float4(i.pos, 1.0), mvp);",
+      "replacement": "float3 position=environmentPosition(i.pos,i.surface,motionTime.x);float3 previousPosition=environmentPosition((i.history.w>0&&(motionTime.z>0||(i.surface.w>1.365&&i.surface.w<1.375)))?i.history.xyz:i.pos,i.surface,motionTime.y);o.pos=mul(float4(position,1),mvp);"
+    },
+    {
+      "kind": "replace",
+      "find": "o.wp  = mul(float4(i.pos, 1.0), model).xyz;",
+      "replacement": "o.wp=mul(float4(position,1),model).xyz;"
+    },
+    {
+      "kind": "replace",
+      "find": "o.cur = mul(float4(i.pos, 1.0), mvpNoJit);",
+      "replacement": "o.cur=mul(float4(position,1),mvpNoJit);"
+    },
+    {
+      "kind": "replace",
+      "find": "o.prv = mul(float4(i.pos, 1.0), prevMvp);",
+      "replacement": "o.prv=mul(float4(previousPosition,1),prevMvp);"
+    },
+    {
+      "kind": "replace",
+      "find": "o.wn  = mul(float4(i.nrm, 0.0), model).xyz;",
+      "replacement": "float3 scale2=float3(dot(model[0].xyz,model[0].xyz),dot(model[1].xyz,model[1].xyz),dot(model[2].xyz,model[2].xyz)); o.wn=gpuGrassSurface(i.surface.w)?gpuGrassNormal(i.pos,i.nrm,motionTime.x):mul(float4(i.nrm/max(scale2,.000001),0),model).xyz;"
+    },
+    {
+      "kind": "replace",
+      "find": "    std::function<void()> editorDraw;",
+      "replacement": "    std::function<void()> editorDraw;\n    double editorTime=0; bool editorRaytracing=false;\n    std::function<void()> editorPost;"
+    },
+    {
+      "kind": "replace",
+      "find": "        if(!linearHdrScene)ups->evaluate(fi);",
+      "replacement": "        if(!linearHdrScene)ups->evaluate(fi);\n        if(editorPost)editorPost();"
+    },
+    {
+      "kind": "replace",
+      "find": "    std::function<void()> editorDraw;",
+      "replacement": "    uint64_t editorMotionKey=0; bool editorKeyedHistory=false;\n    std::function<void()> editorDraw;"
+    },
+    {
+      "kind": "replace",
+      "find": "        s.mvScale = XMFLOAT4(0.5f * (float)rw, -0.5f * (float)rh, 0, 0);",
+      "replacement": "        if(editorKeyedHistory){\n            auto previous=prevModelByKey.find(editorMotionKey);\n            if(resetHistory)s.prevMvp=s.mvpNoJit;\n            else if(editorMotionKey && previous!=prevModelByKey.end())XMStoreFloat4x4(&s.prevMvp,XMMatrixMultiply(XMLoadFloat4x4(&previous->second),prevViewProjNoJit));\n            else XMStoreFloat4x4(&s.prevMvp,XMMatrixMultiply(model,prevViewProjNoJit));\n            if(editorMotionKey)XMStoreFloat4x4(&curModelByKey[editorMotionKey],model);\n        }\n        s.mvScale = XMFLOAT4(0.5f * (float)rw, -0.5f * (float)rh, 0, 0);"
+    },
+    {
+      "kind": "replace",
+      "find": "resetHistory = (instCursor != prevInstCount);",
+      "replacement": "resetHistory = !editorKeyedHistory && (instCursor != prevInstCount);"
+    },
+    {
+      "kind": "replace",
+      "find": "D3D12_ROOT_PARAMETER rp[6] = {};",
+      "replacement": "D3D12_DESCRIPTOR_RANGE surfaceRange{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,7,8,0,0};\n        D3D12_ROOT_PARAMETER rp[7] = {};"
+    },
+    {
+      "kind": "replace",
+      "find": "D3D12_STATIC_SAMPLER_DESC ss{};",
+      "replacement": "rp[6].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;rp[6].DescriptorTable={1,&surfaceRange};rp[6].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;\n        D3D12_STATIC_SAMPLER_DESC ss{};"
+    },
+    {
+      "kind": "replace",
+      "find": "D3D12_ROOT_SIGNATURE_DESC rsd{}; rsd.NumParameters = 6; rsd.pParameters = rp; rsd.NumStaticSamplers = 1; rsd.pStaticSamplers = &ss;",
+      "replacement": "D3D12_STATIC_SAMPLER_DESC samplers[4]={ss,ss,ss,ss};samplers[1].ShaderRegister=1;samplers[1].MaxAnisotropy=anisotropySetting();samplers[2].ShaderRegister=2;samplers[2].Filter=D3D12_FILTER_MIN_MAG_MIP_LINEAR;samplers[2].AddressU=samplers[2].AddressV=samplers[2].AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;samplers[3].ShaderRegister=3;samplers[3].Filter=D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;samplers[3].ComparisonFunc=D3D12_COMPARISON_FUNC_LESS_EQUAL;samplers[3].AddressU=samplers[3].AddressV=samplers[3].AddressW=D3D12_TEXTURE_ADDRESS_MODE_BORDER;samplers[3].BorderColor=D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;\n        D3D12_ROOT_SIGNATURE_DESC rsd{}; rsd.NumParameters = 7; rsd.pParameters = rp; rsd.NumStaticSamplers = 4; rsd.pStaticSamplers = samplers;"
+    },
+    {
+      "kind": "replace",
+      "find": "#pragma once",
+      "replacement": "#pragma once\n#ifdef STARLIGHT_CMAKE_RENDERER\n#include <raster_shader.h>\n#endif"
+    },
+    {
+      "kind": "replace",
+      "find": "            ComPtr<ID3DBlob> blob, e;\n            if (FAILED(D3DCompile(hlsl, strlen(hlsl), \"shaders\", macros, nullptr, entry, target, cflags, 0, &blob, &e)))",
+      "replacement": "            ComPtr<ID3DBlob> blob, e;\n#if defined(STARLIGHT_CMAKE_RENDERER) && !defined(_DEBUG)\n            if (linearHdrScene) {\n                const auto compiled = slRasterBytecode(entry);\n                if (!compiled.data || !compiled.size) throw std::runtime_error(\"Embedded raster shader missing\");\n                must(D3DCreateBlob(compiled.size, &blob), \"embedded raster shader\");\n                memcpy(blob->GetBufferPointer(), compiled.data, compiled.size);\n                return blob;\n            }\n#endif\n            if (FAILED(D3DCompile(hlsl, strlen(hlsl), \"shaders\", macros, nullptr, entry, target, cflags, 0, &blob, &e)))"
+    },
+    {
+      "kind": "replace",
+      "find": "\"    c += fuzz * (pow(sqrt(saturate(1.0 - th * th)), shin) * gl * saturate(dot(n, L)) + rim * saturate(dot(n, L) * 0.5 + 0.5)) * lightDir.w;\\n\"",
+      "replacement": "\"    c += fuzz * (pow(sqrt(saturate(1.0 - th * th)), shin) * gl * saturate(dot(n, L)) + rim * saturate(dot(n, L) * 0.5 + 0.5)) * slSolarRadiance(lightDir);\\n\""
+    },
+    {
+      "kind": "replace",
+      "find": "\"  c += (albedo * 0.85 + 0.15) * pow(sqrt(saturate(1.0 - th * th)), shin) * gl * saturate(dot(n, L)) * lightDir.w;\\n\"",
+      "replacement": "\"  c += (albedo * 0.85 + 0.15) * pow(sqrt(saturate(1.0 - th * th)), shin) * gl * saturate(dot(n, L)) * slSolarRadiance(lightDir);\\n\""
+    },
+    {
+      "kind": "replace",
+      "find": "\"  c += albedo * lightDir.w * pow(saturate(dot(v, -L)), 4.0) * (0.04 * h);\\n\"",
+      "replacement": "\"  c += albedo * slSolarRadiance(lightDir) * pow(saturate(dot(v, -L)), 4.0) * (0.04 * h);\\n\""
+    }
+  ]
+}

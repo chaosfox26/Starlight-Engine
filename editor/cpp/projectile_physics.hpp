@@ -33,9 +33,10 @@ public:
                     bool inside=p.x>=box.low.x-.04&&p.x<=box.high.x+.04&&p.y>=box.low.y-.04&&p.y<=box.high.y+.04&&p.z>=box.low.z-.04&&p.z<=box.high.z+.04;
                     if((inside||particle_box_hit(p,travel-shift*(1./count),box,.04,hit,n))&&hit<=first){first=hit;normal=inside?travel.unit()*-1:n;target=object.id;collided=true;}
                 }
-                auto gap=[&](double t){auto p=shot.position+travel*t;return p.y-.04-(terrain?terrain->height_at(p.x,p.z):0);};
-                int samples=std::max(1,int(std::ceil(travel.length()/.05)));
-                for(int j=0;j<=samples;++j){double b=double(j)/samples;if(b>first+1./samples)break;if(gap(b)<=0){double a=std::max(0.,double(j-1)/samples);for(int k=0;k<12;++k){double m=(a+b)*.5;if(gap(m)>0)a=m;else b=m;}if(b<=first){first=b;auto at=shot.position+travel*b;constexpr double e=.025;auto height=[&](double x,double z){return terrain?terrain->height_at(x,z):0.;};normal=Vec3{(height(at.x-e,at.z)-height(at.x+e,at.z))/(2*e),1,(height(at.x,at.z-e)-height(at.x,at.z+e))/(2*e)}.unit();target.clear();collided=true;}break;}}
+                bool volume=terrain&&!terrain->Volumes.empty();
+                auto gap=[&](double t){auto p=shot.position+travel*t;return (volume?terrain->density_at(p.x,p.y,p.z):p.y-(terrain?terrain->height_at(p.x,p.z):0))-.04;};
+                int samples=std::max(1,int(std::ceil(travel.length()/(volume?.02:.05))));
+                for(int j=0;j<=samples;++j){double b=double(j)/samples;if(b>first+1./samples)break;if(gap(b)<=0){double a=std::max(0.,double(j-1)/samples);for(int k=0;k<12;++k){double m=(a+b)*.5;if(gap(m)>0)a=m;else b=m;}if(b<=first){first=b;auto at=shot.position+travel*b;constexpr double e=.025;auto height=[&](double x,double z){return terrain?terrain->height_at(x,z):0.;};normal=volume?Vec3{terrain->density_at(at.x+e,at.y,at.z)-terrain->density_at(at.x-e,at.y,at.z),terrain->density_at(at.x,at.y+e,at.z)-terrain->density_at(at.x,at.y-e,at.z),terrain->density_at(at.x,at.y,at.z+e)-terrain->density_at(at.x,at.y,at.z-e)}.unit():Vec3{(height(at.x-e,at.z)-height(at.x+e,at.z))/(2*e),1,(height(at.x,at.z-e)-height(at.x,at.z+e))/(2*e)}.unit();target.clear();collided=true;}break;}}
                 shot.position=shot.position+travel*first;shot.remaining-=travel.length()*first;shot.age+=slice;
                 if(collided){impacts.push_back({target,shot.position,normal,shot.velocity,shot.source,shot.team,shot.control,shot.damage,shot.mass,shot.accuracy});shot.remaining=0;}
             }

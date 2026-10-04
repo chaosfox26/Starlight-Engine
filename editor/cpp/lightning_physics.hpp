@@ -1,5 +1,7 @@
 #pragma once
 #include "particle_physics.hpp"
+#include "lightning_geometry.hpp"
+#include "object_cache.hpp"
 #include <unordered_set>
 namespace starlight::editor {
 inline constexpr const char* lightning_player_id="@starlight-player";
@@ -7,24 +9,28 @@ struct LightningSegment {Vec3 source,target,normal;std::string hit;bool contact=
 inline bool lightning_solid(const Character& c){auto k=c.Shape.value_or("");return k!="grass"&&k!="fire"&&k!="light"&&k!="lava"&&k!="chaos-lightning"&&k!="light-shard"&&k!="craxis-smoke";}
 inline std::vector<LightningSegment> trace_lightning(const Character& emitter,const SceneData& scene,double time,std::optional<Bounds> player={}){
     std::vector<std::pair<std::string,Bounds>> bodies;
-    for(auto c:scene.Characters)if(lightning_solid(c)){c=route_pose(c,time);bodies.push_back({c.Id,object_bounds(c)});}
+    // Scenery that does not move on its own is measured once by the shared cache, not copied and re-measured per strike.
+    for(const auto& source:scene.Characters)if(lightning_solid(source)||(source.Breakable&&source.Id==emitter.LightningTargetId))bodies.push_back({source.Id,bounds_cacheable(source)?ObjectCache::shared().bounds(source):ObjectCache::shared().bounds_at(source,route_pose_of(source,time))});
     if(player)bodies.push_back({lightning_player_id,*player});
-    auto moved=route_pose(emitter,time);
-    Vec3 source=world_point(moved,{0,3,0}),target=world_point(moved,{moved.TargetX,moved.TargetY,moved.TargetZ});
-    if(!moved.LightningTargetId.empty()){auto found=std::find_if(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==moved.LightningTargetId;});if(found==scene.Characters.end())return {};auto c=*found;c=route_pose(c,time);target=world_point(c,{moved.TargetX,moved.TargetY,moved.TargetZ});}
+    const auto moved=route_pose_of(emitter,time);
+    Vec3 source=world_point(moved,{0,3,0}),target=world_point(moved,{emitter.TargetX,emitter.TargetY,emitter.TargetZ});
+    if(!emitter.LightningTargetId.empty()){auto found=std::find_if(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==emitter.LightningTargetId;});if(found==scene.Characters.end())return {};target=world_point(route_pose_of(*found,time),{emitter.TargetX,emitter.TargetY,emitter.TargetZ});}
     auto cast=[&](Vec3 a,Vec3 b,const std::unordered_set<std::string>& skip){LightningSegment s{a,b,{},{},false};auto travel=b-a;double first=1;
         for(const auto& [id,box]:bodies)if(!skip.contains(id)){double t=0;Vec3 normal;
             bool inside=a.x>=box.low.x&&a.x<=box.high.x&&a.y>=box.low.y&&a.y<=box.high.y&&a.z>=box.low.z&&a.z<=box.high.z;
             if(inside)normal=travel.length()>1e-10?travel.unit()*-1:Vec3{0,1,0};
             if((inside||particle_box_hit(a,travel,box,0,t,normal))&&t<=first){first=t;s.normal=normal;s.hit=id;s.contact=true;}}
-        auto gap=[&](double t){auto p=a+travel*t;return p.y-(scene.Terrain?scene.Terrain->height_at(p.x,p.z):0.);};int count=std::max(1,int(std::ceil(travel.length()/.1)));
-        for(int i=1;i<=count;++i){double b=double(i)/count;if(b>first+1./count)break;if(gap(b)<=0){double a=double(i-1)/count;for(int j=0;j<12;++j){double m=(a+b)*.5;if(gap(m)>0)a=m;else b=m;}if(b<=first){first=b;s.normal={0,1,0};s.hit.clear();s.contact=true;}break;}}
+        bool volume=scene.Terrain&&!scene.Terrain->Volumes.empty();
+        auto gap=[&](double t){auto p=a+travel*t;return volume?scene.Terrain->density_at(p.x,p.y,p.z):p.y-(scene.Terrain?scene.Terrain->height_at(p.x,p.z):0.);};
+        int count=std::max(1,int(std::ceil(travel.length()/(volume?.025:.1))));
+        for(int i=1;i<=count;++i){double high=double(i)/count;if(high>first+1./count)break;if(gap(high)<=0){double low=double(i-1)/count;for(int j=0;j<14;++j){double m=(low+high)*.5;if(gap(m)>0)low=m;else high=m;}if(high<=first){first=low;s.normal={0,1,0};if(volume){auto p=a+travel*first;constexpr double e=.002;s.normal=Vec3{scene.Terrain->density_at(p.x+e,p.y,p.z)-scene.Terrain->density_at(p.x-e,p.y,p.z),scene.Terrain->density_at(p.x,p.y+e,p.z)-scene.Terrain->density_at(p.x,p.y-e,p.z),scene.Terrain->density_at(p.x,p.y,p.z+e)-scene.Terrain->density_at(p.x,p.y,p.z-e)}.unit();}s.hit.clear();s.contact=true;}break;}}
         s.target=a+travel*first;return s;};
     uint32_t seed=2166136261u;for(unsigned char c:emitter.Id){seed^=c;seed*=16777619u;}seed^=uint32_t(std::floor(std::max(0.,time)/.22))*2654435761u;
     auto random=[&](){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return double(seed&65535)/32767.5-1;};
     auto pathCast=[&](Vec3 a,Vec3 b,const std::unordered_set<std::string>& skip,bool branch){
-        auto direct=cast(a,b,skip);b=direct.target;auto delta=b-a;auto direction=delta.unit();auto side=direction.cross({0,1,0});if(side.length()<1e-6)side=direction.cross({1,0,0});side=side.unit();auto other=direction.cross(side);LightningSegment arc{a,b,{},{},false};arc.branch=branch;arc.path.push_back(a);auto previous=a;const int steps=branch?16:64;
-        for(int i=1;i<=steps;++i){double t=double(i)/steps;auto next=a+delta*t;if(i<steps)next=next+(side*random()+other*random())*(emitter.BranchSpread*emitter.Size*.12*std::sin(t*3.141592653589793));auto contact=cast(previous,next,skip);arc.path.push_back(contact.target);if(contact.contact){arc.target=contact.target;arc.normal=contact.normal;arc.hit=contact.hit;arc.contact=true;break;}previous=next;}
+        auto direct=cast(a,b,skip);b=direct.target;LightningSegment arc{a,b,{},{},false};arc.branch=branch;arc.path.push_back(a);auto previous=a;
+        auto proposed=lightning_path(a,b,emitter.BranchSpread*emitter.Size*(branch?.12:.2),branch?4:6,random);
+        for(size_t i=1;i<proposed.size();++i){auto next=proposed[i];auto contact=cast(previous,next,skip);arc.path.push_back(contact.target);if(contact.contact){arc.target=contact.target;arc.normal=contact.normal;arc.hit=contact.hit;arc.contact=true;break;}previous=next;}
         if(!arc.contact&&direct.contact){arc.target=direct.target;arc.normal=direct.normal;arc.hit=direct.hit;arc.contact=true;arc.path.back()=arc.target;}return arc;
     };
     std::vector<LightningSegment> result;std::unordered_set<std::string> visited{emitter.Id};result.push_back(pathCast(source,target,visited,false));

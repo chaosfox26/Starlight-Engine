@@ -1,6 +1,11 @@
 #pragma once
 #include "adventure.hpp"
 #include <windows.h>
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <mmsystem.h>
 #pragma comment(lib,"winmm.lib")
 namespace starlight::editor {
@@ -28,34 +33,75 @@ inline std::vector<short> gameplay_sound(GameplayCue cue){
 struct SpatialSound {double delay=0,gain=1,pan=0;};
 inline SpatialSound spatial_sound(Vec3 source,Vec3 listener,Vec3 forward,Vec3 up){auto delta=source-listener;double distance=delta.length();auto right=forward.cross(up).unit();return {distance/343.,1./(1.+distance*distance/100.),distance>1e-6?std::clamp(delta.dot(right)/distance,-1.,1.):0};}
 inline std::vector<short> stereo_sound(std::span<const short> mono,double gain,double pan){gain=std::clamp(gain,0.,1.);pan=std::clamp(pan,-1.,1.);double left=gain*std::sqrt((1-pan)*.5),right=gain*std::sqrt((1+pan)*.5);std::vector<short> out;out.reserve(mono.size()*2);for(auto sample:mono){out.push_back(short(sample*left));out.push_back(short(sample*right));}return out;}
-// Bounded independent waveOut voices; audio never sleeps or blocks gameplay.
-// Buffers remain alive until the device returns them, including on shutdown.
+// Bounded independent waveOut voices. Opening and closing a wave device blocks for 8-30 ms in the driver, so every device call
+// runs on a dedicated audio thread: play() and stop() only queue a request and never block gameplay (the first shatter used to
+// freeze camera and character updates for about 30 ms). Devices stay open between sounds. Buffers remain alive until the device
+// returns them, including on shutdown.
 class GameplayAudio {
-    struct Voice{HWAVEOUT device{};WAVEHDR header{};std::vector<short> pcm;};
+    struct Voice{HWAVEOUT device{};WAVEHDR header{};std::vector<short> pcm;bool prepared=false;};
+    struct Request{bool stopAll=false;GameplayCue cue=GameplayCue::Shot;double gain=1,pan=0;};
     std::array<Voice,8> voices_{};
+    std::array<std::vector<short>,5> cues_{};
+    std::mutex mutex_;
+    std::condition_variable_any wake_;
+    std::deque<Request> queue_;
+    std::atomic<bool> voicesOpen_{false};
     uint64_t epoch_=0,shots_=0,shatters_=0,impacts_=0,lightning_=0;
     double chirpAt_=0;
     struct PendingThunder {LightningSoundEvent event;double arrival;};
     std::vector<PendingThunder> thunder_;
     bool baseline_=false;
-    void release(Voice& v){if(!v.device)return;waveOutReset(v.device);waveOutUnprepareHeader(v.device,&v.header,sizeof(v.header));waveOutClose(v.device);v.device=nullptr;v.header={};v.pcm.clear();}
-public:
-    uint64_t submitted=0,failed=0;
-    GameplayAudio()=default;
-    GameplayAudio(const GameplayAudio&)=delete;
-    GameplayAudio& operator=(const GameplayAudio&)=delete;
-    ~GameplayAudio(){stop();}
-    void stop(){for(auto& v:voices_)release(v);baseline_=false;thunder_.clear();}
-    void play(GameplayCue cue,double gain=1,double pan=0){
+    // Audio-thread only: the device stays open so the next sound does not pay for waveOutOpen.
+    void retire(Voice& v){if(v.prepared){waveOutUnprepareHeader(v.device,&v.header,sizeof(v.header));v.prepared=false;}v.header={};v.pcm.clear();}
+    void release(Voice& v){if(!v.device)return;waveOutReset(v.device);retire(v);waveOutClose(v.device);v.device=nullptr;}
+    void play_now(const Request& r){
+        if(cues_[size_t(r.cue)].empty())cues_[size_t(r.cue)]=gameplay_sound(r.cue);
         for(auto& v:voices_){
             if(v.device && !(v.header.dwFlags&WHDR_DONE))continue;
-            release(v);v.pcm=stereo_sound(gameplay_sound(cue),gain,pan);
-            WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=2;format.nSamplesPerSec=22050;format.wBitsPerSample=16;format.nBlockAlign=4;format.nAvgBytesPerSec=88200;
-            if(waveOutOpen(&v.device,WAVE_MAPPER,&format,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){v.device=nullptr;++failed;return;}
+            if(v.device)retire(v);
+            v.pcm=stereo_sound(cues_[size_t(r.cue)],r.gain,r.pan);
+            if(!v.device){
+                WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=2;format.nSamplesPerSec=22050;format.wBitsPerSample=16;format.nBlockAlign=4;format.nAvgBytesPerSec=88200;
+                if(waveOutOpen(&v.device,WAVE_MAPPER,&format,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){v.device=nullptr;v.pcm.clear();std::atomic_ref<uint64_t>(failed).fetch_add(1);return;}
+            }
             v.header.lpData=reinterpret_cast<LPSTR>(v.pcm.data());v.header.dwBufferLength=static_cast<DWORD>(v.pcm.size()*sizeof(short));
-            if(waveOutPrepareHeader(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR || waveOutWrite(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){++failed;release(v);return;}
-            ++submitted;return;
+            if(waveOutPrepareHeader(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){std::atomic_ref<uint64_t>(failed).fetch_add(1);release(v);return;}
+            v.prepared=true;
+            if(waveOutWrite(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){std::atomic_ref<uint64_t>(failed).fetch_add(1);release(v);return;}
+            voicesOpen_=true;std::atomic_ref<uint64_t>(submitted).fetch_add(1);return;
         }
+    }
+    void run(std::stop_token stop){
+        for(;;){
+            Request r;
+            {
+                std::unique_lock lock(mutex_);
+                wake_.wait(lock,stop,[&]{return !queue_.empty();});
+                if(queue_.empty())break; // stop requested
+                r=queue_.front();queue_.pop_front();
+            }
+            if(r.stopAll){for(auto& v:voices_)release(v);voicesOpen_=false;}
+            else play_now(r);
+        }
+        for(auto& v:voices_)release(v);
+    }
+    std::jthread worker_;
+public:
+    // Written by the audio thread through atomic_ref; other threads read them as plain integers (aligned 64-bit reads on x64).
+    uint64_t submitted=0,failed=0;
+    GameplayAudio():worker_([this](std::stop_token stop){run(stop);}){}
+    GameplayAudio(const GameplayAudio&)=delete;
+    GameplayAudio& operator=(const GameplayAudio&)=delete;
+    ~GameplayAudio(){worker_.request_stop();wake_.notify_all();worker_.join();}
+    void stop(){
+        baseline_=false;thunder_.clear();
+        if(!voicesOpen_.load()){std::lock_guard lock(mutex_);if(queue_.empty())return;}
+        {std::lock_guard lock(mutex_);queue_.clear();queue_.push_back({true});}
+        wake_.notify_one();
+    }
+    void play(GameplayCue cue,double gain=1,double pan=0){
+        {std::lock_guard lock(mutex_);if(queue_.size()>=16)return;queue_.push_back({false,cue,gain,pan});}
+        wake_.notify_one();
     }
     void update(const AdventurePlayer::Presentation* p,bool enabled){
         if(!p || !enabled || !p->audioActive){stop();return;}

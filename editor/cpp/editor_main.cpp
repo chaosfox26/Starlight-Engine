@@ -1,4 +1,6 @@
+#include "motion_trace.hpp"
 #include "solid_fixture.hpp"
+#include "../../tools/audit/display_test_sizes.hpp"
 #include "../../deep/engine/crash_diagnostics.h"
 
 #include "commands.hpp"
@@ -17,7 +19,9 @@
 #include "projects.hpp"
 #include "object_template.hpp"
 #include "asset_library.hpp"
+#include "engine_assets.hpp"
 #include "adventure.hpp"
+#include "scene_preparation.hpp"
 #include "player_presentation.hpp"
 #include "gameplay_audio.hpp"
 #include "movement_hud.hpp"
@@ -26,6 +30,7 @@
 #include "quest_tracker.hpp"
 #include "object_behaviors.hpp"
 #include "startup_activation.hpp"
+#include "boot_splash.hpp"
 #include "adventure_template.hpp"
 #include "tutorial_progress.hpp"
 
@@ -34,6 +39,10 @@
 #include <functional>
 #include <cwctype>
 #include <fstream>
+#include <psapi.h>
+#include <atomic>
+#include <thread>
+#include <filesystem>
 #include <iomanip>
 
 #include <future>
@@ -121,6 +130,17 @@ enum : int {
     CopyObjects, PasteObjects, AdventurePreset, ApplyGameplay, ExportGame, NewAdventure, InteractiveBuild, CheckGameplay, HelpOpen, HelpClose, HelpLesson, HelpBack, HelpNext, HelpRestart, HelpSearch, AddGameplayRule, RemoveGameplayRule, SaveQuest, LoadQuest, RemoveQuest, NewQuestAdventure, ObjectBehaviorMenu, BehaviorOpen, BehaviorBreak, BehaviorCollect, BehaviorNone, BehaviorQuest, BehaviorStandQuest, LearnOpen, LearnBreak, EndCreationGuide, BehaviorCarry, LearnWorkshop
 };
 
+static const char* volatile gCrumb="";static volatile unsigned gMsg=0;
+template <class F> auto open_with_context(const fs::path& path, const char* kind, F&& action) -> decltype(action()) {
+    const std::string name = utf8(path.filename().wstring());
+    try {
+        return action();
+    } catch (const ConversionRequired&) {
+        throw std::runtime_error(std::string("Cannot open the ") + kind + " \"" + name + "\". It uses the old Starlight file format, where the geometry is stored inside the file. Convert it first with Starlight.SceneMigration, then open the converted copy. Opening never changes the file on disk, and nothing in the editor was changed.");
+    } catch (const AssetMissing& missing) {
+        throw std::runtime_error(std::string("Cannot open the ") + kind + " \"" + name + "\". An engine asset it needs is missing or damaged. Details: " + missing.what() + ". " + EngineAssets::describe_roots() + ". Register the library that holds the missing asset with Starlight.NativeCommands --asset-root-add <folder> (or reconnect the drive it lives on) and open it again. The file on disk and the editor were not changed.");
+    }
+}
 struct Editor {
     std::optional<AdventurePlayer> adventure;
     std::optional<AdventurePlayer> explorer;
@@ -140,8 +160,18 @@ struct Editor {
     GameplayAudio gameplayAudio;
     CombatHud combatHud;
     bool mockBattle=false,mockClimb=false,mockPush=false;
+    PreparationReport lastPreparation{};
+    bool loadingActive=false;
+    uint64_t installedScene=0,verifiedScene=0;
+    bool mockStress=false;std::string stressTarget;double stressAmp=.5,stressAmpBreak=.1,stressHeading=0,stressFireSim=0,stressPhaseA=25,stressHomeX=0,stressHomeZ=0;uint64_t stressLastBlocked=0;bool stressAimRocks=false;double stressCam[8]={.55,41,-.62,.2,29,9,2.5,53};uint64_t stressFrame=0;
+    struct StressKey{double t,yaw,pitch,dist;};std::vector<StressKey> stressRoute;int stressExpected=0,stressBreaksSeen=0,stressSeg=-1;std::vector<std::string> stressIds;
+    double stressLastBreakSim=-1;ULONGLONG stressLastBreakWall=0;
+    struct StressStats{double simStart=-1,simLast=0,pathLength=0,bossStartX=0,bossStartZ=0,bossMaxDisp=0,bossMinHealth=1e18,bossStartHealth=0,playerMinHealth=1e18,playerMaxHealth=0;
+        size_t fragPeak=0,dustPeak=0,fragPeakLate=0;int telegraphTicks=0,ticks=0;bool havePos=false;Vec3 last{};}stressStats;
+
     CreationGuide creationGuide;std::string behaviorTarget,carriedId;Vec3 carryPoint{};
     bool startupActivated=false;
+    bool deferStartupActivation=false;
     ULONG_PTR graphicsToken = 0;
     std::unique_ptr<Gdiplus::Image> logo;
     HWND tips = nullptr, dock = nullptr, playbackPanel = nullptr, propertiesPanel = nullptr,
@@ -159,6 +189,8 @@ struct Editor {
     bool rebuildingInspector = false;
     std::optional<bool> pendingPour;
     fs::path characterAsset;
+    std::string characterModelId;
+    std::string defaultCharacterProblem;
     HWND characterCard = nullptr, inspectorTitle = nullptr;
     std::unordered_set<std::string> choices;
     std::unordered_map<std::string, double> sliders;
@@ -166,6 +198,8 @@ struct Editor {
     std::vector<fs::path> songs;
     size_t songIndex = 0;
     double musicVolume = .5, flattenHeight = 0;
+    std::optional<TerrainData> terrainStrokeSurface;
+    std::optional<Vec3> terrainVolumeStamp;
     double terrainRadius = 2, terrainStrength = 1, sculptRadius = .45, sculptStrength = .65;
     bool fullScreen = false, gridSnap = false, objectSnap = false, groundSnap = false;
     bool rotationSnap=false;
@@ -205,6 +239,49 @@ struct Editor {
         try { scale_settings_controls(previous);scale_interface_controls(previous); }
         catch(...) { changingInterfaceScale=false;throw; }
         changingInterfaceScale=false;
+    }
+    fs::path default_character_file() const { return application_data()/L"default-character.json"; }
+    void load_default_character() {
+        characterAsset.clear();
+        characterModelId.clear();
+        defaultCharacterProblem.clear();
+        std::vector<fs::path> files{default_character_file()};
+        try {
+            for (const auto &status : EngineAssets::root_status())
+                if (status.Origin == "shipped library") files.push_back(status.Path.parent_path() / L"default-character.json");
+        } catch (const std::exception &) {}
+        std::string problem;
+        for (const auto &file : files) {
+            std::error_code ec;
+            if (!fs::is_regular_file(file, ec)) continue;
+            std::string id;
+            try {
+                const auto settings = json::parse(read_file(file));
+                if (settings.at("format").get<std::string>() != "starlight-default-character" || settings.at("version").get<int>() != 1)
+                    throw std::runtime_error("unsupported format or version");
+                id = settings.at("model").get<std::string>();
+                if (!EngineAssets::valid_id(AssetKind::Model, id)) throw std::runtime_error("\"model\" is not a model asset id");
+                if (!model_available(id)) {
+                    std::string roots;
+                    try { roots = EngineAssets::describe_roots(); } catch (const std::exception &e) { roots = e.what(); }
+                    throw std::runtime_error("the model " + id + " is not in any asset library on this machine. Register the library that holds it with Starlight.NativeCommands --asset-root-add <folder>, or choose another character with Import character. " + roots);
+                }
+                characterModelId = id;
+                characterAsset = wide(settings.value("name", std::string("Character")));
+                problem.clear();
+                break;
+            } catch (const std::exception &e) {
+                problem = "The default character setting " + utf8(file.wstring()) + " cannot be used: " + e.what();
+            }
+        }
+        defaultCharacterProblem = problem;
+    }
+    void save_default_character() {
+        if (interface_audit() || characterModelId.empty()) return;
+        try {
+            atomic_write(default_character_file(), json{{"format", "starlight-default-character"}, {"version", 1}, {"model", characterModelId}, {"name", utf8(characterAsset.stem().wstring())}}.dump(2));
+            defaultCharacterProblem.clear();
+        } catch (const std::exception &e) { diagnostic("default character", e.what()); }
     }
     bool interface_audit() const { return wcsstr(GetCommandLineW(),L"--ui-")!=nullptr; }
     fs::path interfacePreferenceOverride; // Isolated process-relaunch acceptance fixture.
@@ -325,7 +402,17 @@ struct Editor {
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
 
+    #define playback_command playback_command_prepared
     #include "classic_completion.inl"
+    #undef playback_command
+    void playback_command(int id) {
+        if (id == Play && !playing && !scene.Game && verifiedScene != installedScene) {
+            LoadingScreen loading;
+            if (!settle_scene(loading, "Getting your scene ready")) return;
+        }
+        LoadingGuard guard(*this);
+        playback_command_prepared(id);
+    }
     #include "asset_browser.inl"
     #include "selection_clipboard.inl"
     #include "reference_menu.inl"
@@ -719,7 +806,7 @@ struct Editor {
         DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
         COLORREF caption = RGB(14, 20, 35);
         DwmSetWindowAttribute(window, 35, &caption, sizeof(caption));
-        startupActivated=activate_startup_window(window);
+        if(!deferStartupActivation)startupActivated=activate_startup_window(window);
         UpdateWindow(window);
     }
 
@@ -848,10 +935,10 @@ struct Editor {
             bool active = false;
             if (id >= 2200 && id < 2203)
                 active = currentMode == std::array<std::string, 3>{"Move", "Rotate", "Scale"}[id - 2200];
-            if (id >= 2100 && id < 2110)
-                active = currentBrush == std::array<std::string, 10>{"pull",   "push",   "smooth", "flatten",
+            if (id >= 2100 && id < 2112)
+                active = currentBrush == std::array<std::string, 12>{"pull",   "push",   "smooth", "flatten",
                                                                      "raise",  "lower",  "paint",  "hill",
-                                                                     "crater", "plateau"}[id - 2100];
+                                                                     "crater", "plateau", "carve", "build"}[id - 2100];
             if (active)
                 SetPropW(h, L"sl.checked", reinterpret_cast<HANDLE>(1));
             else
@@ -908,6 +995,8 @@ struct Editor {
             button(2107, L"Hill", 4);
             button(2109, L"Plateau", 5);
             button(2108, L"Crater", 6);
+            button(2110,L"Carve solid terrain",-1,135);
+            button(2111,L"Build solid terrain",-1,135);
             button(PourWater, L"Place water pour on the ground", 7);
             button(PourLava, L"Place lava pour on the ground", 8);
             button(MenuWorld + 100, L"Water and lava settings", 9);
@@ -1027,6 +1116,10 @@ struct Editor {
         auto root = fs::path(executable);
         for (int n = 0; n < 4; n++)
             root = root.parent_path();
+        wchar_t resourceRoot[32768];
+        auto resourceLength = GetEnvironmentVariableW(L"STARLIGHT_RESOURCE_ROOT", resourceRoot, 32768);
+        if (resourceLength && resourceLength < 32768 && fs::path(resourceRoot).is_absolute())
+            root = resourceRoot;
         appIcon =
             static_cast<HICON>(LoadImageW(nullptr, (root / L"design/branding/starlight-editor.ico").c_str(),
                                           IMAGE_ICON, 32, 32, LR_LOADFROMFILE));
@@ -1054,7 +1147,7 @@ struct Editor {
         control(dock, L"BUTTON", L"＋ Add", Add, 277, 12, 66, 34);
         brush = control(dock, L"COMBOBOX", L"", Brush, 350, 14, 105, 330, CBS_DROPDOWNLIST | WS_VSCROLL);
         for (auto label : {L"pull", L"push", L"smooth", L"flatten", L"raise", L"lower", L"paint", L"hill",
-                           L"crater", L"plateau"})
+                           L"crater", L"plateau", L"carve", L"build"})
             SendMessage(brush, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
         SendMessage(brush, CB_SETCURSEL, 0, 0);
         // Preserve internal selection controls while the original icon dock drives them.
@@ -1065,12 +1158,11 @@ struct Editor {
         build_dock(BuildTerrain);
         playbackPanel = panel(1000, 760, 232, 60);
         control(playbackPanel, L"BUTTON", L"Repeat", Repeat, 6, 12, 70, 36, BS_AUTOCHECKBOX);
-        playState = control(playbackPanel, L"STATIC", L"Ready", 0, 76, 12, 48, 36);
+        playState = control(playbackPanel, L"STATIC", L"Loading", 0, 76, 12, 48, 36);
         control(playbackPanel, L"BUTTON", L"↺", Stop, 126, 10, 42, 40);
         playButton = control(playbackPanel, L"BUTTON", L"▶", Play, 176, 10, 42, 40);
         SetPropW(playButton, L"sl.accent", reinterpret_cast<HANDLE>(1));
-        characterAsset = root / L"projects/GameProject/build/models/fox-lead.glb";
-        if (!fs::exists(characterAsset)) characterAsset.clear();
+        load_default_character();
         assetPanel = panel(24, 76, 260, 500);
         SetWindowLongPtrW(assetPanel, GWL_STYLE, GetWindowLongPtrW(assetPanel, GWL_STYLE) | WS_VSCROLL);
         control(assetPanel, L"STATIC", L"YOUR CHARACTERS", 0, 20, 20, 220, 22);
@@ -1107,7 +1199,7 @@ struct Editor {
         adventureHudPanel=panel(14,104,620,46);
         adventureHud=control(adventureHudPanel,L"STATIC",L"WASD: walk | Space: jump | Right-drag: look | F / E: use | Escape: pause",0,12,12,596,22);
         ShowWindow(adventureHudPanel,SW_HIDE);
-        status = control(window, L"STATIC", L"Ready • Native performance first", 0, 14, 840, 1100, 20);
+        status = control(window, L"STATIC", L"Starting the graphics engine...", 0, 14, 840, 1100, 20);
         renderer = std::make_unique<NativeSession>(view, 1200, 750);
         renderer->pacing_enabled(pacingShown);
         SetTimer(window, 1, 16, nullptr);
@@ -1213,7 +1305,7 @@ struct Editor {
         if (!fullScreen && width>settings_px(640)) {
         style::text(dc, brandFont, L"STARLIGHT", {settings_px(108),settings_px(15),settings_px(200),settings_px(50)}, style::ink,
                     DT_SINGLELINE | DT_VCENTER | DT_LEFT);
-        style::text(dc, font, wide(scene.Name), {settings_px(200),settings_px(15),width-settings_px(200),settings_px(50)}, RGB(175, 191, 219),
+        style::text(dc, font, wide(scene.Name), {settings_px(200),settings_px(15),std::max(settings_px(200),width-settings_px(340)),settings_px(50)}, RGB(175, 191, 219),
                     DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
         }
         EndPaint(window, &ps);
@@ -1221,8 +1313,108 @@ struct Editor {
 
     void error(std::string_view text) {
         diagnostic("native editor", text);
+        std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
         SetWindowTextW(status, wide(text).c_str());
-        MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+        static const bool quiet = [] { char v[8]{}; return GetEnvironmentVariableA("STARLIGHT_SUPPRESS_DIALOGS", v, 8) && v[0] == '1'; }(); // automated runs: report, do not block on a modal box
+        if (!quiet) MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+    }
+
+    struct LoadingGuard {
+        Editor& editor;
+        explicit LoadingGuard(Editor& owner) : editor(owner) { editor.loadingActive = true; }
+        ~LoadingGuard() { editor.loadingActive = false; release_deferred_close(); }
+        LoadingGuard(const LoadingGuard&) = delete;
+        LoadingGuard& operator=(const LoadingGuard&) = delete;
+    };
+    uint64_t install_scene(const SceneData& data, bool live = false) {
+        return installedScene = renderer->scene(data, live);
+    }
+    void drop_preparation() {
+        if (!playing) lastPreparation = PreparationReport{};
+    }
+    bool settle_scene(LoadingScreen& loading, const std::string& label) {
+        loading.show(window, view);
+        loading.update(0, label);
+        PreparationReport report;
+        report.sceneGeneration = installedScene;
+        auto idle = std::make_unique<AdventurePlayer>();
+        const auto before = renderer->status();
+        {
+            LoadingGuard guard(*this);
+            finish_scene_upload(*renderer, before, *idle, loading, report);
+        }
+        loading.close();
+        if (report.ready()) {
+            verifiedScene = report.sceneGeneration;
+            return true;
+        }
+        if (!report.cancelled)
+            error("The scene is open, but the graphics engine did not finish preparing it. " + report.reason + ". Nothing in your scene was changed. Play checks again before it starts and will not start until the graphics are ready.");
+        return false;
+    }
+    bool start_walk_mode() {
+        LoadingScreen loading;
+        loading.show(window, view);
+        loading.update(0, "Getting the walk-through ready");
+        const auto statusBefore = renderer->status();
+        PreparationReport report;
+        {
+            LoadingGuard guard(*this);
+            explorer.emplace();
+            try {
+                explorer->start(scene, false);
+                report = prepare_scene(*explorer, loading);
+                if (!report.stopped()) {
+                    report.sceneGeneration = installedScene;
+                    finish_scene_upload(*renderer, statusBefore, *explorer, loading, report);
+                }
+            } catch (...) {
+                explorer.reset();
+                throw;
+            }
+        }
+        loading.close();
+        if (report.ready()) {
+            verifiedScene = report.sceneGeneration;
+            return true;
+        }
+        explorer.reset();
+        explorerLook = false;
+        ShowWindow(adventureHudPanel, SW_HIDE);
+        if (!report.cancelled)
+            error("Walk mode could not start. " + report.reason + ". Your scene was not changed.");
+        return false;
+    }
+    void await_startup(BootSplash& splash, bool automated) {
+        LoadingScreen loading;
+        PreparationReport report;
+        report.sceneGeneration = installedScene;
+        auto idle = std::make_unique<AdventurePlayer>();
+        loading_observer() = [&](double) {
+            if (!splash.finished() || loading.visible()) return;
+            if (!startupActivated) startupActivated = activate_startup_window(window);
+            loading.show(window, view);
+        };
+        {
+            LoadingGuard guard(*this);
+            finish_scene_upload(*renderer, renderer->status(), *idle, loading, report);
+        }
+        loading_observer() = nullptr;
+        loading.close();
+        splash.dismiss();
+        if (report.cancelled) return;
+        if (!startupActivated) startupActivated = activate_startup_window(window);
+        if (report.ready()) {
+            verifiedScene = report.sceneGeneration;
+            SetWindowTextW(status, L"Ready • Native performance first");
+            SetWindowTextW(playState, L"Ready");
+            return;
+        }
+        const std::string text = "The editor is open, but the graphics engine did not finish getting ready. " + report.reason + ". You can keep working on your scene. Play checks again before it starts and will not start until the graphics are ready.";
+        if (automated) {
+            diagnostic("editor startup", text);
+            SetWindowTextW(status, wide(text).c_str());
+        } else error(text);
     }
 
     Character *actor() {
@@ -1441,6 +1633,8 @@ struct Editor {
                 choice("gameRole","Gameplay interaction",role,{L"None",L"Collectible key",L"Locked door",L"Finish / exit",L"Breakable"});
                 choice("grappleMode","Grapple attachment",c->GrappleMode,{L"Automatic",L"Wall attachment",L"Swing anchor"});
                 field("gameKey","Key name (shared by key and door)",c->GameplayKey);
+                field("breakable","Can be broken",c->Breakable?"1":"0",true);
+                field("destructionHealth","Durability (scenery)",c->DestructionHealth);
                 field("combatHealth","Combat health (0 = scenery)",std::to_string(c->CombatHealth));field("combatSight","Sight range (m)",c->CombatSightRange);
                 choice("combatTeam","Combat affiliation",c->CombatTeam==1?1:c->CombatTeam==0?0:2,{L"Neutral",L"Friendly",L"Enemy"});
                 field("combatBoss","Boss break bar",c->CombatBoss?"1":"0",true);
@@ -1471,7 +1665,11 @@ struct Editor {
                         field("rx", "Rotate X", c->RotationX); field("ry", "Rotate Y", c->RotationY);
                         field("rz", "Rotate Z", c->RotationZ);
                         field("color", "Color", c->Color);
-                        choice("surface", "Surface", c->Surface, {L"Plain", L"Grass", L"Earth", L"Sand", L"Stone", L"Snow", L"Rock", L"Water", L"Lava", L"Lightning", L"Chaos rock", L"Light-bound"});
+                        choice("surface", "Surface", c->Surface, {L"Plain", L"Grass", L"Earth", L"Sand", L"Stone", L"Snow", L"Rock", L"Water", L"Lava", L"Lightning", L"Chaos rock", L"Light-bound", L"Bark", L"Leaf"});
+                        if(c->Surface==12||c->Surface==13){auto f=c->Foliage.value_or(FoliageMaterial{});
+                            if(c->Surface==12){field("barkScale","Bark scale",f.BarkScale);field("barkRelief","Bark relief",f.BarkRelief);field("barkRough","Bark roughness",f.BarkRoughness);}
+                            else{field("leafTransmission","Leaf thin light",f.LeafTransmission);field("leafVeins","Leaf vein contrast",f.LeafVeins);field("leafRough","Leaf roughness",f.LeafRoughness);}
+                        }
                         field("floor", "Keep above floor", c->KeepAboveFloor ? "1" : "0", true);
                         form_button(ApplyBuild, L"Apply changes");
                     }
@@ -1544,6 +1742,12 @@ struct Editor {
             field("cycle", "Day/night cycle", scene.DayCycle ? "1" : "0", true);
             field("daylength", "Day duration (s)", scene.DayLength);
             field("fog", "Fog density", scene.FogDensity);
+            choice("bloomquality", "Glow quality", scene.BloomQuality, {L"Off",L"Low",L"Medium",L"High"});
+            choice("shadowquality", "Shadow quality", scene.ShadowQuality, {L"Off",L"Low",L"Medium",L"High"});
+            slider("bloomstrength", "Glow intensity", scene.BloomStrength, 0, .5);
+            slider("rain", "Rain intensity", scene.RainIntensity, 0, 1);
+            field("rainwindx", "Rain wind X (m/s)", scene.RainWindX);
+            field("rainwindz", "Rain wind Z (m/s)", scene.RainWindZ);
             field("rt", "Ray tracing", scene.RaytracingEnabled ? "1" : "0", true);
             choice("tier", "Quality", scene.RaytracingQuality, {L"Off", L"Low · Shadows", L"Medium · AO / reflections", L"High · Hybrid", L"Path tracing"});
             field("bounces", "Bounces (2–4)", double(scene.PathBounces));
@@ -1563,6 +1767,16 @@ struct Editor {
             field("lava", "Lava", scene.Terrain && scene.Terrain->Lava ? "1" : "0", true);
             field("water", "Show water", scene.Terrain && scene.Terrain->WaterEnabled ? "1" : "0", true);
             field("level", "Water level", scene.Terrain ? scene.Terrain->WaterLevel : -.5);
+            field("terrainBreakable","Terrain can be damaged",!scene.Terrain||scene.Terrain->Breakable?"1":"0",true);
+            field("terrainDurability","Terrain durability",scene.Terrain?scene.Terrain->DestructionHealth:10);
+            field("terrainDamageRadius","Impact carve radius (m)",scene.Terrain?scene.Terrain->DestructionRadius:.65);
+            field("waterwindx","Water wind X (m/s)",scene.WaterWindX);
+            field("waterwindz","Water wind Z (m/s)",scene.WaterWindZ);
+            slider("waterwaves","Wind wave strength",scene.WaterWaveStrength,0,1);
+            slider("lavaheat","Initial lava heat",scene.LavaInitialHeat,0,1);
+            slider("lavacooling","Lava cooling rate",scene.LavaCoolingRate,0,1);
+            field("lavacrust","Lava crust depth (m)",scene.LavaCrustDepth);
+            slider("lavalight","Lava emitted light",scene.LavaLightStrength,0,8);
         } else if (page == 6) {
             form_button(CheckGameplay,L"Check gameplay setup");
             if(!gameplayReport.empty()){
@@ -1649,12 +1863,12 @@ struct Editor {
         if(!explorer){POINT p{};GetCursorPos(&p);ScreenToClient(view,&p);RECT bounds{};GetClientRect(view,&bounds);if(PtInRect(&bounds,p)){auto hit=terrain_hit(scene.Terrain?&*scene.Terrain:nullptr,camera_state().eye,ray(p.x,p.y));if(hit)next=*hit;}}
         if((next-carryPoint).length()<.02)return;carryPoint=next;
         auto preview=scene;for(auto& c:preview.Characters)if(c.Id==carriedId){c.X=next.x;c.Y=next.y;c.Z=next.z;snap_object(preview,c,gridSnap,objectSnap,groundSnap,gridStep);}
-        renderer->scene(preview);
+        install_scene(preview);
     }
     void finish_carry(bool place){
         if(carriedId.empty())return;const auto id=carriedId;carriedId.clear();
         if(place)edit([&]{auto c=std::find_if(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==id;});if(c==scene.Characters.end())throw std::runtime_error("Carried object no longer exists");c->X=carryPoint.x;c->Y=carryPoint.y;c->Z=carryPoint.z;snap_object(scene,*c,gridSnap,objectSnap,groundSnap,gridStep);});
-        else {renderer->scene(scene);if(explorer)explorer->rebuild_for_authoring(scene);}
+        else {install_scene(scene);if(explorer)explorer->rebuild_for_authoring(scene);}
         if(place){creationGuide.carried(id);update_creation_guide();}
         SetWindowTextW(status,place?L"Block placed. Undo restores its previous position.":L"Move cancelled; original position preserved.");
     }
@@ -1662,7 +1876,7 @@ struct Editor {
         if(playing)return;if(!carriedId.empty()){finish_carry(true);return;}RECT bounds{};GetClientRect(view,&bounds);POINT point{bounds.right/2,bounds.bottom/2};
         if(!explorer){GetCursorPos(&point);ScreenToClient(view,&point);if(!PtInRect(&bounds,point)){SetWindowTextW(status,L"Point at an object in the scene and press F.");return;}}
         int hit=pick(point.x,point.y);if(hit<0){SetWindowTextW(status,L"Point at a block and press F to choose its behavior.");return;}
-        if(explorer){auto mesh=mesh_hit(object_mesh(scene.Characters[hit]),scene.Characters[hit],camera_state().eye,ray(point.x,point.y));if(!mesh || mesh->distance>3.){SetWindowTextW(status,L"Move within three metres of the object.");return;}}
+        if(explorer){auto mesh=ObjectCache::shared().raycast(scene.Characters[hit],scene.Characters[hit],camera_state().eye,ray(point.x,point.y));if(!mesh || mesh->distance>3.){SetWindowTextW(status,L"Move within three metres of the object.");return;}}
         selected=hit;behaviorTarget=scene.Characters[hit].Id;selectionIds={behaviorTarget};
         creationGuide.opened(behaviorTarget);update_creation_guide();
         if(openMenu==ObjectBehaviorMenu)toggle_menu(0);toggle_menu(ObjectBehaviorMenu);
@@ -1686,7 +1900,7 @@ struct Editor {
             SendMessage(list, LB_SETSEL, selectionIds.contains(scene.Characters[i].Id) || int(i) == selected,
                         i);
         inspector_fields();
-        renderer->scene(scene);
+        install_scene(scene);drop_preparation();
         if(gamePreview)gamePreview->sync(scene);
         renderer->tools(actor() ? actor()->Id : std::string{}, currentMode);
         camera();
@@ -1706,7 +1920,7 @@ struct Editor {
             else {
                 explorerNeedsRefresh=bool(explorer);
                 // Live slider edits must preserve the control and its mouse capture.
-                renderer->scene(scene);
+                install_scene(scene);drop_preparation();
                 renderer->tools(actor() ? actor()->Id : std::string{}, currentMode);
                 camera();
                 SetWindowTextW(window, L"Starlight Engine Editor *");
@@ -1722,12 +1936,18 @@ struct Editor {
         auto answer = MessageBoxW(window, L"Save your changes before continuing?\nYes: Save   No: Discard   Cancel: Keep editing", L"Starlight", MB_YESNOCANCEL | MB_ICONQUESTION);
         return answer == IDNO || (answer == IDYES && save(false));
     }
-    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired) {
-        auto next = load_scene(path);
-        auto result = repair_scene_models(next, [&](const fs::path& missing) -> std::optional<fs::path> {
-            auto title = L"Locate missing model: " + missing.filename().wstring();
+    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired, LoadingScreen* loading = nullptr) {
+        if (loading) {
+            loading->show(window, view);
+            loading->update(0, "Reading " + utf8(path.filename().wstring()));
+        }
+        auto next = open_with_context(path, "scene", [&] { return load_scene(path); });
+        auto result = repair_scene_models(next, [&](const std::string&, const std::string& objectName) -> std::optional<fs::path> {
+            auto title = L"Locate missing model: " + wide(objectName);
+            if (loading) loading->close();
             auto files = file_dialog(window, "repair-models", {{L"Replacement GLB model", L"*.glb"}},
                 false, false, path.parent_path(), title);
+            if (loading) loading->show(window, view);
             if (files.empty()) return std::nullopt;
             return files.front();
         });
@@ -1775,6 +1995,7 @@ struct Editor {
                 n("rx", c->RotationX); n("ry", c->RotationY); n("rz", c->RotationZ);
                 if (inputs.contains("color")) c->Color = text(inputs.at("color"));
                 if (inputs.contains("surface")) c->Surface = integer("surface");
+                if(c->Surface==12||c->Surface==13){auto f=c->Foliage.value_or(FoliageMaterial{});n("barkScale",f.BarkScale);n("barkRelief",f.BarkRelief);n("barkRough",f.BarkRoughness);n("leafTransmission",f.LeafTransmission);n("leafVeins",f.LeafVeins);n("leafRough",f.LeafRoughness);f.validate();c->Foliage=f;}else c->Foliage.reset();
                 if(inputs.contains("jointKind")){c->JointKind=integer("jointKind");int target=integer("jointTarget");c->JointTargetId=target>0&&size_t(target)<=scene.Characters.size()?scene.Characters[target-1].Id:"";}
                 n("jointX", c->JointX);
                 n("jointY", c->JointY);
@@ -1813,6 +2034,9 @@ struct Editor {
             } else if (page == 1) {
                 scene.Name = text(inputs.at("name"));
                 n("hour", scene.Hour); b("cycle", scene.DayCycle); n("daylength", scene.DayLength); n("fog", scene.FogDensity);
+                n("rain", scene.RainIntensity); n("rainwindx", scene.RainWindX); n("rainwindz", scene.RainWindZ);
+                scene.BloomQuality=integer("bloomquality");n("bloomstrength",scene.BloomStrength);
+                scene.ShadowQuality=integer("shadowquality");
                 b("rt", scene.RaytracingEnabled); scene.RaytracingQuality = integer("tier");
                 scene.PathBounces = integer("bounces"); b("rr", scene.RayReconstructionEnabled); b("freeze", scene.FreezeRaytracingAnimation);
             } else if(page==6){
@@ -1824,6 +2048,10 @@ struct Editor {
             } else if (page == 4) {
                 if (!scene.Terrain) scene.Terrain.emplace();
                 b("water", scene.Terrain->WaterEnabled); n("level", scene.Terrain->WaterLevel); b("lava", scene.Terrain->Lava);
+                scene.Terrain->Breakable=SendMessage(inputs.at("terrainBreakable"),BM_GETCHECK,0,0)==BST_CHECKED;
+                n("terrainDurability",scene.Terrain->DestructionHealth);n("terrainDamageRadius",scene.Terrain->DestructionRadius);
+                n("waterwindx",scene.WaterWindX);n("waterwindz",scene.WaterWindZ);n("waterwaves",scene.WaterWaveStrength);
+                n("lavaheat",scene.LavaInitialHeat);n("lavacooling",scene.LavaCoolingRate);n("lavacrust",scene.LavaCrustDepth);n("lavalight",scene.LavaLightStrength);
             } else if (page == 5 && integer("ground") < 6) scene.GroundColor = floorColors[std::clamp(integer("ground"),0,5)];
         });
     }
@@ -1858,7 +2086,7 @@ struct Editor {
             auto candidate=*actor();int role=integer("gameRole");
             if(role<0||role>4)throw std::runtime_error("Choose an interaction");
             candidate.GameplayRole=std::array<std::string,5>{"none","key","door","exit","breakable"}[role];
-            candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");candidate.CombatTeam=integer("combatTeam");candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.CombatProjectileSpeed=number("CombatProjectileSpeed");candidate.CombatProjectileGravity=number("CombatProjectileGravity");candidate.CombatProjectileMass=number("CombatProjectileMass");candidate.validate();
+            candidate.Breakable=checked("breakable");candidate.DestructionHealth=number("destructionHealth");candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");candidate.CombatTeam=integer("combatTeam");candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.CombatProjectileSpeed=number("CombatProjectileSpeed");candidate.CombatProjectileGravity=number("CombatProjectileGravity");candidate.CombatProjectileMass=number("CombatProjectileMass");candidate.validate();
             edit([&]{*actor()=candidate;});return;
         }
         if (id == ApplyExact || id == ApplyBuild || id == ApplyBody || id == ApplyLightning || id == ApplyParticles || id == ApplyExtras) {
@@ -2016,7 +2244,7 @@ struct Editor {
             dock_selection();
             return;
         }
-        if (id >= 2100 && id < 2110) {
+        if (id >= 2100 && id < 2112) {
             SendMessage(brush, CB_SETCURSEL, id - 2100, 0);
             command(Brush);
             dock_selection();
@@ -2247,8 +2475,7 @@ struct Editor {
                 throw std::runtime_error("Select an imported model to replace. Shapes and sculpts keep their own geometry.");
             auto files = file_dialog(window, "replacement-models", {{L"GLB model", L"*.glb"}});
             if (files.empty()) return;
-            load_glb(files.front());
-            auto asset = utf8(fs::absolute(files.front()).lexically_normal().wstring());
+            auto asset = import_model(fs::absolute(files.front()).lexically_normal());
             edit([&] { actor()->Asset = asset; });
             SetWindowTextW(status, L"Model replaced. Name, placement and route kept. Undo restores the previous model.");
             return;
@@ -2276,7 +2503,7 @@ struct Editor {
                 auto source = open_scene_data(files.front(), repaired);
                 if (!source) return;
                 objects = std::move(source->Characters);
-            } else objects = load_object_group(files.front());
+            } else objects = open_with_context(files.front(), "reusable group", [&] { return load_object_group(files.front()); });
             for (auto &object : objects) object.Id = new_id();
             place_object_group(objects, scene, placement_point().x, placement_point().z, gridSnap, objectSnap, groundSnap,gridStep);
             const auto oldSelected = selected;
@@ -2309,7 +2536,7 @@ struct Editor {
         if (id == LoadObject) {
             auto files = file_dialog(window, "reusable-objects", {{L"Starlight reusable object", L"*.starobject"}});
             if (files.empty()) return;
-            auto object = load_object_template(files.front());
+            auto object = open_with_context(files.front(), "reusable object", [&] { return load_object_template(files.front()); });
             place_object_template(object, placement_point().x, placement_point().z);
             const auto oldSelected = selected;
             const auto oldSelectionIds = selectionIds;
@@ -2340,7 +2567,8 @@ struct Editor {
                 SetWindowTextW(status,L"Returned to editor view. World edits are preserved.");
             }else{
                 if(!scene.Game)edit([&]{scene.Game.emplace();});
-                explorer.emplace();explorer->start(scene,false);camera();
+                if(!start_walk_mode()){toggle_menu(0);return;}
+                camera();
                 explorer_hint();SetFocus(view);
                 SetWindowTextW(status,L"Walk and build: W A S D, right-drag to look, use Builder tools with left click. Play tests your world.");
             }
@@ -2387,9 +2615,10 @@ struct Editor {
             if (files.empty())
                 return;
             bool repaired = false;
-            auto next = open_scene_data(files[0], repaired);
+            LoadingScreen loading;
+            auto next = open_scene_data(files[0], repaired, &loading);
             if (!next) return;
-            render_scene(*next);
+            open_with_context(files[0], "scene", [&] { render_scene(*next); });
             scene = std::move(*next);
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             filename = files[0];
@@ -2398,13 +2627,15 @@ struct Editor {
             selected = -1;
             dirty = repaired;
             refresh();
-            if (repaired) SetWindowTextW(status, L"Missing models located. Save to keep the repaired paths; original scene file is unchanged.");
+            const bool settled = settle_scene(loading, "Preparing " + utf8(files[0].filename().wstring()));
+            if (settled && repaired) SetWindowTextW(status, L"Missing models located. Save to keep the repaired paths; original scene file is unchanged.");
         } else if (id == Import) {
             auto files = file_dialog(window, "models", {{L"GLB model", L"*.glb"}});
             if (files.empty())
                 return;
-            load_glb(files[0]);
+            characterModelId = import_model(files[0]);
             characterAsset = files[0];
+            save_default_character();
             SetWindowTextW(characterCard, wide("★  " + utf8(characterAsset.stem().wstring())).c_str());
         } else if (id == Add) {
             edit([&] {
@@ -2588,7 +2819,7 @@ struct Editor {
         snap_object(scene, *c, false, false, false);
         move_group(scene, *c, dragOriginals);
         dirty = true;
-        renderer->scene(scene);
+        install_scene(scene);drop_preparation();
     }
 
     int pick(int x, int y) {
@@ -2596,7 +2827,7 @@ struct Editor {
         double nearest = INFINITY;
         for (size_t i = 0; i < scene.Characters.size(); i++) {
             const auto &c = scene.Characters[i];
-            auto hit = mesh_hit(object_mesh(c), c, camera_state().eye, ray(x, y));
+            auto hit = ObjectCache::shared().raycast(c, c, camera_state().eye, ray(x, y));
             if (hit && hit->distance < nearest) {
                 nearest = hit->distance;
                 result = int(i);
@@ -2624,6 +2855,7 @@ struct Editor {
             pendingPour.reset(); return;
         }
         last = {x, y};
+        terrainStrokeSurface.reset();terrainVolumeStamp.reset();
         reverseBrush = message == WM_RBUTTONDOWN;
         brushTick = GetTickCount64();
         if (message == WM_RBUTTONDOWN && currentMode != "Sculpt" && currentMode != "Terrain") {
@@ -2659,6 +2891,7 @@ struct Editor {
                 return;
             dragFloor = *ground;
             flattenHeight = ground->y;
+            if(currentMode=="Terrain")terrainStrokeSurface=scene.Terrain.value_or(TerrainData{});
         }
         history.begin(scene);
         begin_group();
@@ -2682,7 +2915,7 @@ struct Editor {
     void brush_at(int x, int y, bool reverse) {
         Vec3 p;
         if (currentMode != "Sculpt") {
-            auto hit = terrain_hit(scene.Terrain ? &*scene.Terrain : nullptr, camera_state().eye, ray(x, y));
+            auto hit = terrain_hit(currentMode=="Terrain" && terrainStrokeSurface ? &*terrainStrokeSurface : scene.Terrain ? &*scene.Terrain : nullptr, camera_state().eye, ray(x, y));
             if (!hit)
                 return;
             p = *hit;
@@ -2696,8 +2929,17 @@ struct Editor {
             int paint = paintMaterial;
             if (reverse && tool == "raise")
                 tool = "lower";
-            scene.Terrain->brush(p.x, p.z, std::clamp(radius, .4, 5.), strength, tool, paint, flattenHeight,
+            if(tool=="carve" || tool=="build"){
+                double stampRadius=std::clamp(radius,.4,5.);
+                if(terrainVolumeStamp && (p-*terrainVolumeStamp).length()<stampRadius*.35)return;
+                auto terrain=*scene.Terrain;
+                terrain.Volumes.push_back({std::clamp(p.x,-12.,12.),std::clamp(p.y,-20.,20.),std::clamp(p.z,-12.,12.),stampRadius,(tool=="carve")!=reverse});
+                terrain.validate();scene.Terrain=std::move(terrain);terrainVolumeStamp=p;
+            }else {
+            double appliedStrength=(tool=="hill" || tool=="crater")?strength*.07:strength;
+            scene.Terrain->brush(p.x, p.z, std::clamp(radius, .4, 5.), appliedStrength, tool, paint, flattenHeight,
                                  .035);
+            }
         } else if (auto c = actor()) {
             if (currentMode == "Move") {
                 auto before = dragOriginals.at(c->Id);
@@ -2723,7 +2965,7 @@ struct Editor {
         if (auto c = actor())
             move_group(scene, *c, dragOriginals);
         dirty = true;
-        renderer->scene(scene);
+        install_scene(scene);drop_preparation();
     }
 
     void pointer_move(int x, int y, WPARAM flags) {
@@ -2807,6 +3049,7 @@ struct Editor {
         dragAxis = -1;
         if (stroke) {
             stroke = false;
+            terrainStrokeSurface.reset();
             if (auto c = actor()) {
                 if(rotationSnap && currentMode=="Rotate" && finishedAxis>=0){
                     double& angle=finishedAxis==0 ? c->RotationX : finishedAxis==1 ? c->RotationY : c->RotationZ;
@@ -2831,6 +3074,7 @@ struct Editor {
     }
 
     void tick(bool frameDriven=false) {
+        const bool btOn=starlight_diag::events_enabled();const double btT0=btOn?starlight_diag::evnow():0;double btMove=0,btScene=0,btPublish=0,btHud=0;
         if(!frameDriven){
         poll_asset_browser();
         if (music.ended() && !songs.empty()) {
@@ -2853,7 +3097,7 @@ struct Editor {
             }
         }
         }
-        auto now = GetTickCount64();
+        gCrumb="tick.start";auto now = GetTickCount64();
         auto preciseNow=std::chrono::steady_clock::now();
         double dt=std::clamp(std::chrono::duration<double>(preciseNow-motionTick).count(),0.,.05);motionTick=preciseNow;
         lastTick = now;
@@ -2876,14 +3120,27 @@ struct Editor {
                             SetWindowTextW(status,
                                            L"Scene changed outside the editor. Unsaved edits are preserved.");
                         else {
-                            auto next = load_scene(filename);
-                            render_scene(next);
-                            creationGuide.active=false;questTracker.hide();
-            scene = std::move(next);
-                            diskHash = hash;
-                            history.clear();
-                            selected = -1;
-                            refresh();
+                            LoadingScreen loading;
+                            std::optional<SceneData> next;
+                            try {
+                                loading.show(window, view);
+                                loading.update(0, "Reloading " + utf8(filename.filename().wstring()));
+                                next = open_with_context(filename, "scene", [&] { return load_scene(filename); });
+                                open_with_context(filename, "scene", [&] { render_scene(*next); });
+                            } catch (const std::exception &failure) {
+                                loading.close();
+                                next.reset();
+                                error(failure.what());
+                            }
+                            if (next) {
+                                creationGuide.active=false;questTracker.hide();
+                                scene = std::move(*next);
+                                diskHash = hash;
+                                history.clear();
+                                selected = -1;
+                                refresh();
+                                settle_scene(loading, "Preparing " + utf8(filename.filename().wstring()));
+                            }
                         }
                     }
                 }
@@ -2892,16 +3149,63 @@ struct Editor {
             }
         }
 
-        if(now-hudTick>=33){hudTick=now;
+        gCrumb="tick.hud";if(now-hudTick>=33){hudTick=now;
         update_creation_guide();update_carry();
         combatHud.update(playing && adventure?&*adventure:nullptr,view,settingsScale);
         movementHud.update(playing && adventure?&adventure->movement_resources():explorer?&explorer->movement_resources():nullptr,view,settingsScale);
         }
-        if(playing && adventure){
+        gCrumb="tick.play";if(playing && adventure){
             if(GetForegroundWindow()==window && GetFocus()==view){
                 double right=((GetAsyncKeyState('D')&0x8000)?1.:0)-((GetAsyncKeyState('A')&0x8000)?1.:0);
                 double forward=((GetAsyncKeyState('W')&0x8000)?1.:0)-((GetAsyncKeyState('S')&0x8000)?1.:0);
                 if(mockClimb || mockPush){right=0;forward=1;}
+                if(mockStress){
+                    const auto& all=adventure->scene().Characters;
+                    auto boss=std::find_if(all.begin(),all.end(),[&](const auto& c){return c.Id==stressTarget;});
+                    const double t=adventure->seconds();
+                    {
+                        const Character* aim=boss!=all.end()?&*boss:nullptr;
+                        if(aim){auto delta=Vec3{aim->X,aim->Y,aim->Z}-adventure->position;adventure->yaw=std::atan2(delta.x,-delta.z);}
+                        else adventure->yaw=stressHeading;
+                        adventure->pitch=0;
+                        adventure->cameraYaw=adventure->yaw+stressCam[0]*std::sin(6.283185307*t/stressCam[1]);
+                        adventure->cameraPitch=stressCam[2]+stressCam[3]*std::sin(6.283185307*t/stressCam[4]);
+                        adventure->cameraDistance=stressCam[5]+stressCam[6]*std::sin(6.283185307*t/stressCam[7]);
+                    }
+                    {const double amp=(stressExpected>0&&stressBreaksSeen<stressExpected)?stressAmpBreak:stressAmp;right=std::sin(t*.6)*amp;forward=std::sin(t*.45)*amp*.43;
+                     // Tether: the scripted player drifts back toward its start so dodges and strafing never walk it off the map.
+                     const double ox=adventure->position.x-stressHomeX,oz=adventure->position.z-stressHomeZ,od=std::hypot(ox,oz);
+                     if(od>1.5){const double pull=std::min(1.,(od-1.5)*.5);right+=-(ox*std::cos(adventure->yaw)+oz*std::sin(adventure->yaw))/od*pull;forward+=-(ox*std::sin(adventure->yaw)-oz*std::cos(adventure->yaw))/od*pull;right=std::clamp(right,-1.,1.);forward=std::clamp(forward,-1.,1.);}}
+                    {
+                        auto& st=stressStats;++st.ticks;if(st.simStart<0)st.simStart=t;st.simLast=t;
+                        if(st.havePos)st.pathLength+=(adventure->position-st.last).length();st.last=adventure->position;st.havePos=true;
+                        st.fragPeak=std::max(st.fragPeak,adventure->fragment_count());if(stressLastBreakSim>=0&&stressBreaksSeen>=stressExpected&&t-stressLastBreakSim>20)st.fragPeakLate=std::max(st.fragPeakLate,adventure->fragment_count());st.dustPeak=std::max(st.dustPeak,adventure->dust_count());
+                        const double ph=adventure->health();st.playerMinHealth=std::min(st.playerMinHealth,ph);st.playerMaxHealth=std::max(st.playerMaxHealth,ph);
+                        if(adventure->presentation().showTelegraph)++st.telegraphTicks;
+                        if(boss!=all.end()){
+                            auto actor=adventure->combat_actors().find(stressTarget);const double bh=actor!=adventure->combat_actors().end()?actor->second.health:0;
+                            if(st.bossStartHealth==0){st.bossStartHealth=bh;st.bossStartX=boss->X;st.bossStartZ=boss->Z;}
+                            st.bossMinHealth=std::min(st.bossMinHealth,bh);st.bossMaxDisp=std::max(st.bossMaxDisp,std::hypot(boss->X-st.bossStartX,boss->Z-st.bossStartZ));
+                        }
+                        int bc=0;for(const auto& id:stressIds)if(std::none_of(all.begin(),all.end(),[&](const auto& c){return c.Id==id;}))++bc;
+                        if(bc!=stressBreaksSeen){stressBreaksSeen=bc;stressLastBreakSim=t;stressLastBreakWall=GetTickCount64();starlight_diag::evlog("stress.brk",double(bc),t,double(adventure->fragment_count()));}
+                        if(!stressRoute.empty()&&(stressExpected==0?t>=stressFireSim+stressPhaseA:(bc>=stressExpected&&stressLastBreakSim>=0))){
+                            const double u=t-(stressExpected==0?stressFireSim+stressPhaseA:stressLastBreakSim);size_t i=0;while(i+1<stressRoute.size()&&stressRoute[i+1].t<=u)++i;
+                            StressKey k=stressRoute[i];if(i+1<stressRoute.size()){const auto& n=stressRoute[i+1];const double f=std::clamp((u-k.t)/std::max(1e-6,n.t-k.t),0.,1.);const double e=f*f*(3-2*f);k={u,k.yaw+(n.yaw-k.yaw)*e,k.pitch+(n.pitch-k.pitch)*e,k.dist+(n.dist-k.dist)*e};}
+                            adventure->cameraYaw=adventure->yaw+k.yaw;adventure->cameraPitch=k.pitch;adventure->cameraDistance=std::min(12.,k.dist);
+                            if(int(i)!=stressSeg){stressSeg=int(i);starlight_diag::evlog("stress.cam",double(i),k.yaw,u);}
+                        }
+                        if(!(++stressFrame%20)){
+                            starlight_diag::evlog("stress.s",double(adventure->fragment_count()),double(adventure->break_count()),t);
+                            starlight_diag::evlog("stress.p",adventure->position.x,adventure->position.z,ph);
+                            if(boss!=all.end()){auto actor=adventure->combat_actors().find(stressTarget);starlight_diag::evlog("stress.b",boss->X,boss->Z,actor!=adventure->combat_actors().end()?actor->second.health:0);}
+                            starlight_diag::evlog("stress.d",double(adventure->dust_count()),double(all.size()),0);
+                            {const auto bd=adventure->boss_debug(stressTarget);if(bd.found){starlight_diag::evlog("stress.f",bd.rotationY,bd.facingErrorDeg,bd.distance);starlight_diag::evlog("stress.n",double(bd.pathSize),double(bd.astarCalls),bd.astarMs);starlight_diag::evlog("stress.t",double(bd.turnApplied),double(bd.turnBlocked),bd.winding?bd.windup:-1.);
+                                {static uint64_t lastPursuit=0;if(bd.pursuitBlocked!=lastPursuit&&!bd.pursuitBlocker.empty()){lastPursuit=bd.pursuitBlocked;{std::string blockerName,blockerPose;for(const auto& o:scene.Characters)if(o.Id==bd.pursuitBlocker){blockerName=o.Name;blockerPose=std::to_string(o.X)+","+std::to_string(o.Y)+","+std::to_string(o.Z);}std::fprintf(stderr,"boss movement blocked by %s [%s at %s] (count %llu)%c",bd.pursuitBlocker.c_str(),blockerName.c_str(),blockerPose.c_str(),(unsigned long long)bd.pursuitBlocked,10);}}}
+                                if(bd.turnBlocked!=stressLastBlocked&&!bd.turnBlocker.empty()){stressLastBlocked=bd.turnBlocked;std::fprintf(stderr,"boss turn blocked by %s (blocked=%llu applied=%llu)%c",bd.turnBlocker.c_str(),(unsigned long long)bd.turnBlocked,(unsigned long long)bd.turnApplied,10);}}}
+                        }
+                    }
+                }
                 if(mockBattle && !adventure->scene().Characters.empty()){
                     const auto& enemy=adventure->scene().Characters[0];auto delta=Vec3{enemy.X,enemy.Y,enemy.Z}-adventure->position;
                     adventure->yaw=std::atan2(delta.x,-delta.z);adventure->pitch=0;adventure->cameraYaw=adventure->yaw;adventure->cameraPitch=-.75;adventure->cameraDistance=9;
@@ -2909,13 +3213,14 @@ struct Editor {
                 }
                 auto revision=adventure->rules().revision;
                 adventure->posture_button((GetAsyncKeyState(VK_CONTROL)&0x8000)!=0,right,forward,dt);adventure->mobility_button((GetAsyncKeyState('V')&0x8000)!=0,right,forward,dt);adventure->sprint((GetAsyncKeyState(VK_SHIFT)&0x8000)!=0);
-                adventure->move(right,forward,dt);
-                renderer->gameplay_time(adventure->seconds());
-                if(adventure->rules().revision!=revision)renderer->scene(adventure->visible_scene(),true);
+                gCrumb="tick.move";const double btM0=btOn?starlight_diag::evnow():0;adventure->move(right,forward,dt);{static MotionTrace gameTrace;gameTrace.sample(adventure->scene(),"mot.game");}const double btM1=btOn?starlight_diag::evnow():0;btMove=btM1-btM0;if(btOn)starlight_diag::evlog("bt3",adventure->lastTiming.simulationMs,adventure->lastTiming.combatAiMs,adventure->lastTiming.physicsMs);
+                gCrumb="tick.moved";renderer->gameplay_time(adventure->seconds());
+                gCrumb="tick.scene";if(adventure->rules().revision!=revision)renderer->scene(adventure->visible_scene(),true);
+                btScene=btOn?starlight_diag::evnow()-btM1:0;
                 if(!adventure->rules().message.empty())adventureHint=adventure->rules().message;
                 questTracker.update(scene,adventure->rules(),playing);
             }
-            renderer->camera(camera_state());
+            gCrumb="tick.camera";renderer->camera(camera_state());
             edgeFeedback.hide();
         } else if(explorer){
             if(explorerNeedsRefresh && !stroke && GetFocus()==view){explorer->rebuild_for_authoring(scene);explorerNeedsRefresh=false;}
@@ -2953,18 +3258,24 @@ struct Editor {
             if(mover){auto p=mover->presentation();renderer->pacing_player(p.feet,{p.feet.x,p.feet.y,p.feet.z,p.facing,p.bodyHeight});}
             else renderer->pacing_player({},{});
         }
-        auto publishPresentation=[&](AdventurePlayer& mover){gameplayPresentationActive=true;renderer->player_body(mover.body_bounds());renderer->collision_objects(mover.environment_objects());mover.liquids(renderer->liquid_snapshot());renderer->runtime_objects(mover.dynamic_objects());renderer->pacing_debris(mover.debris_poses());double started=timing_seconds();auto p=mover.presentation();auto timing=mover.lastTiming;renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers,!scene.RaytracingEnabled));timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));};
+        auto publishPresentation=[&](AdventurePlayer& mover){gameplayPresentationActive=true;const double pq0=starlight_diag::evnow();renderer->player_body(mover.body_bounds());renderer->collision_objects(mover.environment_objects());mover.liquids(renderer->liquid_snapshot());const double pq1=starlight_diag::evnow();renderer->runtime_objects(mover.dynamic_objects());renderer->pacing_debris(mover.debris_poses());const double pq2=starlight_diag::evnow();double started=timing_seconds();auto p=mover.presentation();auto timing=mover.lastTiming;const double pq3=starlight_diag::evnow();{std::vector<std::shared_ptr<const MeshPart>> preloadParts;if(mover.take_prefractured_parts(preloadParts))renderer->rubble_preload(!scene.RaytracingEnabled?std::move(preloadParts):std::vector<std::shared_ptr<const MeshPart>>{});}const double pq4=starlight_diag::evnow();renderer->rubble_instances(resident_rubble(p,!scene.RaytracingEnabled));const double pq5=starlight_diag::evnow();renderer->gameplay_overlays(battle_presentation(p,timing.battleWorkers,!scene.RaytracingEnabled,!scene.RaytracingEnabled));const double pq6=starlight_diag::evnow();starlight_diag::evlog("pub1",pq1-pq0,pq2-pq1,pq3-pq2);starlight_diag::evlog("pub2",pq4-pq3,pq5-pq4,pq6-pq5);timing.presentationMs=(timing_seconds()-started)*1000;renderer->runtime_timing(timing,int(p.actorTelegraphs.size())+int(p.showTelegraph));};
+        gCrumb="tick.publish";const double btP0=btOn?starlight_diag::evnow():0;
         if(playing && adventure)publishPresentation(*adventure);
         else if(explorer)publishPresentation(*explorer);
-        else if(gameplayPresentationActive){renderer->gameplay_overlays({});renderer->player_body({});renderer->collision_objects({});renderer->runtime_objects({});renderer->pacing_debris({});gameplayPresentationActive=false;}
+        else if(gameplayPresentationActive){renderer->gameplay_overlays({});renderer->rubble_instances({});renderer->rubble_preload({});renderer->player_body({});renderer->collision_objects({});renderer->runtime_objects({});renderer->pacing_debris({});gameplayPresentationActive=false;}
         {auto mover=playing && adventure?&*adventure:explorer?&*explorer:nullptr;
          auto presentation=mover?mover->presentation():AdventurePlayer::Presentation{};
          if(!mover&&playing){auto status=renderer->status();auto viewState=camera_state();presentation.audioActive=true;presentation.epoch=(uint64_t(1)<<63)|status.environment_epoch;presentation.poseTime=status.seconds;presentation.eye=viewState.eye;presentation.viewAim=(viewState.target-viewState.eye).unit();presentation.viewUp=viewState.up;presentation.lightning=status.environment_lightning;presentation.lightningSounds=std::move(status.environment_sounds);}
-         gameplayAudio.update(mover||playing?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);}
-        renderer->frame_updates((playing && adventure) || explorer?window:nullptr);
+         const double au0=starlight_diag::evnow();gameplayAudio.update(mover||playing?&presentation:nullptr,GetForegroundWindow()==window && GetFocus()==view);starlight_diag::evlog("pub3",starlight_diag::evnow()-au0,0,0);}
+        const double btP1=btOn?starlight_diag::evnow():0;btPublish=btP1-btP0;
+        gCrumb="tick.frameupdates";renderer->frame_updates((playing && adventure) || explorer?window:nullptr);gCrumb="tick.after";
         if (renderer) {
-            pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);
-            auto s = renderer->status();
+            gCrumb="tick.hud2";const double btH0=btOn?starlight_diag::evnow():0;pacingHud.update(pacingShown,*renderer,view,camera_state(),settingsScale);btHud=btOn?starlight_diag::evnow()-btH0:0;
+            if(btOn){starlight_diag::evlog("bt1",btMove,btScene,btPublish);starlight_diag::evlog("bt2",btHud,starlight_diag::evnow()-btT0,0);}
+            // The transparent full-viewport timing overlay must remain below
+            // the persistent status control, including in fullscreen mode.
+            if(pacingShown)SetWindowPos(status,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            gCrumb="tick.status";auto s = renderer->status();gCrumb="tick.status2";
             if ((!gamePreview || !gamePreview->visible()) && playing && !adventure && s.frames>inlinePlayFrame+1 && !s.playing && s.seconds > 0) {
                 playing = false;inlineFinished=true;
                 SetWindowTextW(playButton, L"▶");
@@ -2985,14 +3296,16 @@ struct Editor {
                     << " ms · native resolution";
             telemetryFrames = s.frames;
             telemetryTick = now;
-            SetWindowTextW(status, wide(out.str()).c_str());
+            SetWindowTextW(status, wide(out.str()).c_str());gCrumb="tick.end";
         }
     }
 
     #include "classic_ui_checks.inl"
+    #include "bar_scene_builder.inl"
     #include "visible_ui_checks.inl"
 
     LRESULT message(UINT m, WPARAM w, LPARAM l) {
+        gMsg=m;
         if(renderer && ((m>=WM_KEYFIRST && m<=WM_KEYLAST)||(m>=WM_MOUSEFIRST && m<=WM_MOUSELAST)))renderer->input_event();
         switch (m) {
         case WM_HSCROLL:
@@ -3096,9 +3409,11 @@ struct Editor {
             reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {MulDiv(720,GetDpiForWindow(window),96),MulDiv(540,GetDpiForWindow(window),96)};
             return 0;
         case NativeSession::frameUpdateMessage:
+            if(loadingActive){renderer->frame_update_handled();return 0;}
             tick(true);renderer->frame_update_handled();
             return 0;
         case WM_TIMER:
+            if(loadingActive)return 0;
             tick();
             return 0;
         case WM_COMMAND:
@@ -3131,6 +3446,12 @@ struct Editor {
             SetBkColor(reinterpret_cast<HDC>(w), style::panel);
             return reinterpret_cast<LRESULT>(style::panelBrush());
         case WM_CLOSE:
+            if (loadingActive) {
+                preparation_cancel() = true;
+                auto &waiting = preparation_deferred_close();
+                if (std::find(waiting.begin(), waiting.end(), window) == waiting.end()) waiting.push_back(window);
+                return 0;
+            }
             if (!discard())
                 return 0;
             KillTimer(window, 1);
@@ -3174,7 +3495,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
             CoUninitialize();
             return code;
         }
+        BootSplash splash(!automatedCheck);
         Editor editor(instance);
+        editor.deferStartupActivation=splash.active();
         for(int i=1;i+1<commandArgc;++i)if(std::wstring_view(commandArgv[i])==L"--interface-preference-check") {
             const fs::path requestPath=commandArgv[i+1];
             auto request=json::parse(read_file(requestPath));
@@ -3205,6 +3528,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         }
         LocalFree(commandArgv);
         editor.create();
+        editor.await_startup(splash, automatedCheck);
         int argc = 0;
         auto argv = CommandLineToArgvW(GetCommandLineW(), &argc);
         for (int i = 1; i + 1 < argc; ++i) {
@@ -3229,14 +3553,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
             } else if (std::wstring_view(argv[i]) == L"--scene" && i + 1 < argc) {
                 auto path = fs::absolute(argv[++i]);
                 bool repaired = false;
-                auto next = editor.open_scene_data(path, repaired);
-                if (!next) continue;
-                render_scene(*next);
-                editor.scene = std::move(*next);
-                editor.filename = path;
-                editor.diskHash = hash_file(path);
-                editor.dirty = repaired;
-                editor.refresh();
+                LoadingScreen loading;
+                try {
+                    auto next = editor.open_scene_data(path, repaired, &loading);
+                    if (!next) continue;
+                    open_with_context(path, "scene", [&] { render_scene(*next); });
+                    editor.scene = std::move(*next);
+                    editor.filename = path;
+                    editor.diskHash = hash_file(path);
+                    editor.dirty = repaired;
+                    editor.refresh();
+                    editor.settle_scene(loading, "Preparing " + utf8(path.filename().wstring()));
+                } catch (const std::exception &failure) {
+                    loading.close();
+                    editor.error(failure.what());
+                }
             }
         LocalFree(argv);
         ACCEL keys[] = {{FCONTROL | FVIRTKEY, 'N', New},       {FCONTROL | FVIRTKEY, 'O', Open},

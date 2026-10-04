@@ -1,4 +1,5 @@
-// Starlight DX12 client — milestone 5 "off" backend: bilinear compute upscale, no vendor SDK.
+#include "../d3d12_descriptors.h"
+// Starlight DX12 client — "off" backend: bilinear compute upscale, no vendor SDK.
 // This is the floor of "playable on any system": every quality mode renders at the SDK-standard
 // ratio and gets filtered to the output size by an 8x8 compute kernel that exists on any D3D12
 // adapter. It also serves as the reference the vendor paths are compared against in the results
@@ -97,7 +98,7 @@ struct OffUpscaler : Upscaler {
 
     void evaluate(const FrameIn& f) override {
         if (f.color != lastSrc || f.output != lastDst) {
-            D3D12_CPU_DESCRIPTOR_HANDLE h = heap->GetCPUDescriptorHandleForHeapStart();
+            D3D12_CPU_DESCRIPTOR_HANDLE h = starlight_cpu_heap_start(heap);
             D3D12_SHADER_RESOURCE_VIEW_DESC sv{}; sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; sv.Texture2D.MipLevels = 1;
             sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -111,7 +112,7 @@ struct OffUpscaler : Upscaler {
         f.cmd->SetDescriptorHeaps(1, heaps);
         f.cmd->SetComputeRootSignature(rs.Get());
         f.cmd->SetPipelineState(pso.Get());
-        f.cmd->SetComputeRootDescriptorTable(0, heap->GetGPUDescriptorHandleForHeapStart());
+        f.cmd->SetComputeRootDescriptorTable(0, starlight_gpu_heap_start(heap));
         struct { float ix, iy; UINT w, h; } c{ 1.0f / (float)f.outW, 1.0f / (float)f.outH, f.outW, f.outH };
         f.cmd->SetComputeRoot32BitConstants(1, 4, &c, 0);
         f.cmd->Dispatch((f.outW + 7) / 8, (f.outH + 7) / 8, 1);

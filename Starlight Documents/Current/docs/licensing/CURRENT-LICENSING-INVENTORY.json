@@ -1,0 +1,2665 @@
+{
+  "scope": "Current publication tracked files plus pending untracked documentation; submodule represented by pinned revision. Runtime DLLs inventoried separately. No ownership or legal clearance implied.",
+  "files": [
+    {
+      "path": ".gitignore",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "fa501164f4ada53d88800580ff7f7057c6b06fee604b38b8cba0ea775c8829cb",
+      "bytes": 2845,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": ".gitmodules",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "124f9f6838a288af548c9b287417c894e89749bfa43b3d0357b4ebdb228e9bc0",
+      "bytes": 132,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "Build-Native.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "76d196bab439ff8ca30d8ea3c1cde1dce2d9d9aff2b508baafaeba50a4d33960",
+      "bytes": 238,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "CLAUDE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "dbc1c2a21faea2eee01df1034040d3c111fc4f9f9dd7ab40fbb35bc253a2733e",
+      "bytes": 1861,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "CLEANUP-STATUS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "f381d420d8aa42173c1c44c51eb5ab1e6aa060d6f487fea1041d3f693959a0ba",
+      "bytes": 12243,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "7a63b1031fd0ea70b90fb477132bcc4242c544a8fee930641c1550644cdb7bd4",
+      "bytes": 9045,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "CMakePresets.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "2892687d5d38c8f1ce29e0abbe0dcbd65a68606b66a34cfe790bf9fb96e1f070",
+      "bytes": 890,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "Launch-Starlight-Analysis.cmd",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "46777a3f70e9961cda90eb8c20e062bfbba37b43a18368ba6a07e984ec19cc8c",
+      "bytes": 81,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Launch-Starlight-Editor.cmd",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3d251eddb1a201430519aca61c8309b74e6a9020c312e76843eae693e4b967f8",
+      "bytes": 68,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "e9fe67b750dba94d8318a6909dccc3c1774103e3ad86f1709ba89b581a5e0c86",
+      "bytes": 973,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/CHAT-SUMMARY-2026-09-18.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "a39226b34681a39cd444a370dfa5c6538abf6d49d01328c176e8ce3fe56d7e02",
+      "bytes": 12421,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/DOCUMENT-MOVES.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c8afbd6c9d2a18e01f86732b174a13bd762198dafb1cc9e83f1446c7a6b9cd82",
+      "bytes": 6704,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/EDITOR-PARITY-2026-09-23.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "544a9fb99a68c7567b842148906db3ff0173867c365c3452b704479c4494e2ee",
+      "bytes": 28799,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/GATE0-RELIABILITY-2026-09-22.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "965d558e560c32f5de741b58914db50a0330a99c4f1b3544c87a8d5f64f2ac9b",
+      "bytes": 13013,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/INTERACTION-RESEARCH.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "07ab8b10928cf6ecc30f91bf7f725ea893f4bcf129b664a659ec077d54de1312",
+      "bytes": 12755,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/PROMPTING-GUIDE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "ed2e0943888e9599b93e599e1f5c2a543309e2e2dc5f147bcd3f29c462b4de0b",
+      "bytes": 5251,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "906f92491c7f729e7a210149d5773789ddf3dac4c06193f58e671908f05213b2",
+      "bytes": 4061,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-CONTINUATION-2026-09-18.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "79cc73c88ee183a23221dbe5015e246dec5cd321eb04963856aac0a11c879822",
+      "bytes": 28550,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-CORE-PILLARS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "02b328be6a592999ef9c56ff68fef7f77d691b63b82c59ab7165e0c626555529",
+      "bytes": 5372,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-ENGINE-CURRENT-STATE-2026-09-17.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "52d190f846b8078c71b173c93b3ecdae9d94ca5a325958338180eae3de73de49",
+      "bytes": 48831,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-KNOWLEDGE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "55e2bf7056c9af4b93c753e74237c6d061b64bef2cfdfde8493ac9da4fa9b441",
+      "bytes": 13944,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-NATIVE-PERFORMANCE-STRATEGY.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "29c622f242a595b7a12287ceb7415dfbdd77ce308963df2f87bdd7406d252c2e",
+      "bytes": 24703,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-PRODUCT-DIRECTION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "9912351537d61bb3a0563eb75550663c07be4de4d256a49085f4310bbcc947e2",
+      "bytes": 23470,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "a65bb1e0118a32985eb9d56134e5fe6c288076a7092bf05f8db4fe0c9def4d5b",
+      "bytes": 13869,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-SCULPTING-FEASIBILITY-2026-09-18.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "8cc14076aea190e661268d47ba5087702c988f7b464ee076f9651df100f268ed",
+      "bytes": 19169,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-TECHNICAL-SPECIFICATION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "7ec014f563eaaba5b0b2c4c6e2d4c39e8a02a1486ba55935c3fc2c60d711227c",
+      "bytes": 50513,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/STARLIGHT-TEN-TASK-PLAN.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "8753c380164fc3c65815ed4724354361bdbb659a8c0c160a0ab8d35698abe3df",
+      "bytes": 29959,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/TASK-3-OBJECT-AUTHORING-REPORT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "e0bcfd4c35e6d301fbc94de6a79ae338d2d200608f207b9756b524345a8cc2cb",
+      "bytes": 2411,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/TASK-3-QUEST-FINAL-REPORT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "f2e59b4bfc22711a8eebbebf8ae26b592de3080a79d82c0b9af729d79c1ffc40",
+      "bytes": 3577,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/TERRAIN-BUILDER-GUIDE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "a2978675a0b8a578dfb598a35b225ef259a36be3cd4143affc80ccaf10fde567",
+      "bytes": 5238,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/deep/projects/SampleGame/net/NET-LOG.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c6df393e1fed98ae4e1afafa77ef436f98f1fd3b56d5e7dd064cd2dde17906a5",
+      "bytes": 4886,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/design/branding/SIMILARITY-SEARCH.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "bf61c205543741ed3e276f887c86bc505211662cd1bcc395ef929c2c5fc82cb0",
+      "bytes": 1149,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/design/branding/starlight-glass-icon-v1-prompt.txt",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "076696959731afd0c6268d9c44546724f1e32ac3ecf635b3f253821a1e72f5d4",
+      "bytes": 1343,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/design/branding/starlight-star-concept-v1-prompt.txt",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "1f55da9e4d8f8dc4c880e1ec4fded2c6f321696ff82c6063569a4123e3f62e3e",
+      "bytes": 1197,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/ADVENTURE-CONTROLS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "750b3a47d3ba16e2677776f079313dee06695615fe24f53a79694334a53e1c2f",
+      "bytes": 10020,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/CURRENT-DEPENDENCIES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "5d34c1d108c740b5eaca740f11cf5f98ae6b137d62eac04db40c4f880b1e6c91",
+      "bytes": 4175,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/DYNAMIC-ENVIRONMENT-IMPLEMENTATION-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "0fc18fd490706de06628177b0ee8c980856eadb752860642c3bc4a53e7aa9548",
+      "bytes": 31796,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/FRAME-PACING-OVERLAY-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "637a722ae7d00bf6a6b1baf33f6cbe7b789e23d7182d7beb62b3d1ef1953d634",
+      "bytes": 10426,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/FULL-ANALYSIS-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "b28619f096203f2ea69a132d12e0026e0e01199ecf8ee04c26e6c1f6778ef87d",
+      "bytes": 1513,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/GIT-WORKFLOW.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "91ad0f7086861e211fe070fdc541b86920f15880efdb1478c7df9f6dfae96dee",
+      "bytes": 3494,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/INTERFACE-SCALING.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "cbf81de26cf37d2118b4973054bab462695f3f5e7f86d196defc3427180b1dae",
+      "bytes": 1923,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/MMO-MOVEMENT-REFERENCE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "8c01df770f10a6c54fdaa7ee5d262f3c75e7014d7015a05dc58f3a018efaddf9",
+      "bytes": 568,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/MOVEMENT-TUNING-NOTES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "bf2c50264bcce99a88f3443b16e29fdf47983c1fb364d3df55f3afc2d75199dc",
+      "bytes": 595,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/OBJECT-FIRST-AUTHORING.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c13ab5c953ecab242156f84119edb4c884dbc03abc23efd59cf58128c1e20f14",
+      "bytes": 1852,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-AND-MOTION-TASK-LIST.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "72d93758a803cd9ffadd11bc5a2c991bcfb0f105028008e355187163f799a3d7",
+      "bytes": 9337,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-BOUNDARY-REVIEW-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "65a8d206f6e09a3b2b0526034ff5346f3d3906c052c29bdf03a06ab01fc67d1b",
+      "bytes": 3244,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-CLOSEOUT-CHECKS-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "d61fa22b8c2088f70375d328fb111e555386b5367763b7e9c0053ad8eca8d1fe",
+      "bytes": 3335,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-COVERAGE-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "a95753183c52c826d4ef663440569f5204cafdafb5bca3405886357281874c67",
+      "bytes": 8893,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-HANDOFF.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c70f0dd45f1732c66aa7deceec0c04f4bb543ec959b81073daa45dd3665b76c0",
+      "bytes": 3813,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PHYSICS-PUBLICATION-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "689f059bdcc62be98a39bc10507c62c937a8d1b5a52bfbd8596e1907ed38c3e9",
+      "bytes": 2522,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/PORTABLE-SCENES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "2fb8b43a9351f899bf7955adca14d450c18b12a8e2ea0338b7cad89d0e53d9c9",
+      "bytes": 3612,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/QUEST-TRACKER-REFERENCE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "d4bba06d7c1297f26068f711dcf7a48f43a3187c9ce25789933cd351d885c5e7",
+      "bytes": 3169,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/QUESTS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "740c958d0a7f9b86f0ec5f6489d9a4430d48970611d42d45d5fa6e8fc9f8cc62",
+      "bytes": 6640,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/REUSABLE-OBJECTS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "32754e398fa34e6251d6a6a087f24f3fc15a5e244e08a5ca17c0791cc6dfb8bd",
+      "bytes": 9429,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/SOURCE-HISTORY-NOTES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "db0096426b93988354d1830f2fa8a315de9d264cf99dc844d71f92e0f66b3fd6",
+      "bytes": 6215,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/STEP-4-ACCEPTANCE-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "8b209a35e3850b1de35e0edbc70ee3b95e12aaf93a13f3e9f06e8acada110a2d",
+      "bytes": 10878,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/STEP-4-CLEAN-WINDOWS-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "bcdc730b1db1dd1930b7031309ed7df9c43cdb4fff12652548bf1d2bc20c6585",
+      "bytes": 2093,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/STEP-4-IMPLEMENTATION-STATUS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "29a342059be11115877f1d8bea52a7e6b725a97f722bc38606ec0f0e0e62e2ea",
+      "bytes": 42091,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/STEP-4-MOVEMENT-AND-COMBAT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "68d88bbf197c282003defd59fde5ef5e532b3bf814e92a642527fc06c34dfb63",
+      "bytes": 69343,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/STEP-4-PERFORMANCE-20260927.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "0ef3eac02b9d4c6d686075b961185815beacccff9049307472bb1c5609ac8984",
+      "bytes": 4081,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/CLAUDE-START-PROMPT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c07f5d92fdcf374cf7d97b13a5a1cd9cf67552b2d604d9d7958a51241526b9e2",
+      "bytes": 23918,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/CURRENT-ENGINE-WORKUP.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "22daba783544899ee654203287aab2b3704bdd3011588fb929f790b1d453543d",
+      "bytes": 11757,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/FEATURE-CATALOG.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "7b5137fe577a5fc73d6dfbf37dd644dc47cc65eeba503e4cefbfdc12b604fe08",
+      "bytes": 59158,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/GEMINI-ENGINE-BRIEF.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "1a6b86dd2b0c538626c670fe623d5971200ca04cf28343264513fa1b6e1b1108",
+      "bytes": 18192,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/OPUS-5.5-RESEARCH.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "2fa5b848e284d4a60d5c978b5f6105f2894983963640ccb5050553ebc2334a5c",
+      "bytes": 1088,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c0c7aa991eeba96861e7f46bb623c2dca371d3d30199da5d609caa5b48993854",
+      "bytes": 18056,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/START-HERE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c3c25bc2a6a7471299c5f8250441d00ed68d355be5dd6230576f82d959841152",
+      "bytes": 1119,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/TOOL-CATALOG.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "3e9aabedc68ed1e60410b489db9c70ed46cc17ec182a4237e2e93bb5b8fd4a00",
+      "bytes": 8757,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/AUDIT-SHAREABLE-REPORT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "eedf2ffb49779a315af19b380aeda3a5cdce1d999a5657d5724a31c57db4515d",
+      "bytes": 119852,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "548689b9aa389386922e01864221e3f9330ee9104c3b51f5b5b94152858e7e61",
+      "bytes": 522,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/audit-findings.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "382b6be2b6900eaee0d0847cd4aa9535a91c897dfa05e91c0fa8b8a90408ec5b",
+      "bytes": 768,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/audit-summary.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "8407727b45859891fdbdced3dfa141b307de71851cfb0ebe790bc9da98190d90",
+      "bytes": 6240,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/capabilities.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "46972e8bae03bac87660a9c4fc636f3b6c10ada3a5e8c0e67fb511cf830575c4",
+      "bytes": 47439,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/denoiser-result.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "3961f05822abfb6ed138d049559a880b11abf6e98b910abbee02c9b35e05b87c",
+      "bytes": 2297,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/run-state.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "9f12994ad4c37e63c05af183e6da84aab4537a1ed243b97cd662bdff112d2ee5",
+      "bytes": 1744,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/docs/claude-handoff/analysis/visible-editor-result.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "5d1dcb43114ec2bc9c5bf3d6e330607538a1110292bb846c6aa4774e195fb1a5",
+      "bytes": 13292,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/AI-INTERFACE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "f35b0af6591814442c22c4a3f15f38ead6a6e98985d503a57e289b0b4673fa5b",
+      "bytes": 4671,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/AUDIT-2026-09-17.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "95dd855b602fe326effbd094a567448125386f139ece0af95a95a9d47bd912d7",
+      "bytes": 17533,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/CHAOS-RELEASE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "0cad4966c0ab4ad4166f32a22cedc68833d24b8ca8ee3ca68c0b75b3d48411b0",
+      "bytes": 7271,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/DENOISING-RELEASE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "622223d12a6a6fb3fb536fe00b7c2b8be06d61d2ebbea2de434fae1006bf6e69",
+      "bytes": 13788,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/DXR-RELEASE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "284c14a4d3b6ef8071e8a43db232a501c97d7dbd34d453de5880ca1da11c4bdc",
+      "bytes": 14646,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/editor/WORLD-QUALITY-RELEASE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "58fec5e15d2aff15ca8232d0284823d874be1c3d2183a9d493a553de475d3576",
+      "bytes": 4799,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/CLASSIC-RELEASE-HISTORICAL-NOTE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "bb911059f64771941f97ccc1e0aaaa6aba831cf357ff147a373e05e3dd221dec",
+      "bytes": 2758,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/CLASSIC-RESTORATION-EXECUTION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "0ec174513cb7fce64b1a9e36472ad1d6c2c83dae5ef5fd32ac57818bb302c633",
+      "bytes": 8528,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/COMPETITIVE-GAP-ANALYSIS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "d5ad716c90b24aa8b6e6b439c6e0c9c7ada68dbefe33338ed660738a9254b232",
+      "bytes": 12843,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/DEPENDENCIES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "927bff0a26ad5b92dd29d4a30ec8c2a7c40b21b2733ee352e202253aeb6afd3a",
+      "bytes": 4284,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/INTERFACE-RESTORATION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "c9a101a50145bca4a658e28527530eee29b45d4a6c7b23661d6c984dce4283e8",
+      "bytes": 3497,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/NATIVE-MIGRATION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "7cd1367e7505e001d63feb1633c0412e6e767611dc42f75e2a976f439f1b97b2",
+      "bytes": 15308,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/OLD-INTERFACE-CONTROLS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "50d8111744e81bf3a577832461e3a9735324c672ad8ed0a235186de073feee69",
+      "bytes": 83449,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/OLD-INTERFACE-SPECIFICATION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "2a84c71a7bae7009e40d8c01d24fab10e1debd28ca3905e0ed5c832f64c9b82c",
+      "bytes": 43191,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/migration/TEXTURE-PIPELINE-AUDIT.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "2173e5bb43b5a81a587c08444dbc27905ca41ff8e28f8467ee33d4871c460b35",
+      "bytes": 4650,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "Starlight Documents/Current/optimization_audit_report.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "3c597067128c51d3a2c61b268dfdc0a00bbebb5250549fc66a18c660a13137ab",
+      "bytes": 47907,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "THIRD-PARTY-NOTICES.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "76226656fb1debd6f15359110acc4277cbe298272355d192466db3f4db817859",
+      "bytes": 3061,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "TOOLS-MAP-2026-09-23.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "acf45ea2f9deccb73d9b6f0e402dd0ef9bf12e3d7019bd9d4229675025f61956",
+      "bytes": 19231,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "WORKSPACE-STRUCTURE.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "ce78e2613338ce9ef78dee88024bad4700873c1055c4d81bf6620b73181e878e",
+      "bytes": 7579,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "audit-runs/run-20260917-192850/comparison.bin",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8c1f65801d1c6ddafb3210714102b0d4b7e8ab160066bb9f473621daf44f0810",
+      "bytes": 3665356,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/Physics/CMakeLists.txt",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "970c135791cef4d74d1fb24e436789eeca0dbb07f843bc5d0153da17de9a8704",
+      "bytes": 911,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/Physics/PhysicsWorld.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4df23806906401d9a7c485f50099ec78a8424db83bee330db90941d61dca04d4",
+      "bytes": 29014,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/Physics/rope_physics.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "97c7ac9d111dd089a2528dcb9407b64fad6cddbd68e69b73bcb21d8d77322631",
+      "bytes": 4937,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "3df6aa2bef96f5c671590bcd1ebbcdd61f87cae44491281ee4aecc3bd509675f",
+      "bytes": 715,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/atmosphere.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b93a854ff4a7c094cf30cc9583d17ae464535e656b83ee8e0af4f467882e2532",
+      "bytes": 10812,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/atmosphere.hlsl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "aff8f313233a064c2e2fa8db461edbacf60006a873979d89af5656f7d2c70a70",
+      "bytes": 8309,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/atmosphere_shader.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8bda2a91a85214d67bf2203f1b64f3e467990986eadd5a46f4f5b7dc679d3a9b",
+      "bytes": 4692,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/chaos_lightning.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b44b7f9f0195c31529f229b4daf672805d21ee32933469a4c655fc4c85460376",
+      "bytes": 1603,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/crash_diagnostics.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1808070fefc7fb80fc4b6a080758926f8b55cbc8db25c256316fab3b61e9d609",
+      "bytes": 1321,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/dxr.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "a917967c8b9c426b003eaa25f836ad131865687fed07b3f9793eb0bf07f7c2a2",
+      "bytes": 22495,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/dxr.hlsl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "82519d0826dd16cf2b0f06eaf647bb8c141984d16606a9dc5adb82b09d0ebd04",
+      "bytes": 12095,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/dxr_shader.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e81c06aa64e2a7ec1eeb132b6db211d2d3a8beb5445dd861f3151dd43e556320",
+      "bytes": 357948,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/gen/gen_config.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d0570c561ff9217b60b71fc04cf4451bb38ea9268d927094b0dd8e62b4efa450",
+      "bytes": 605,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/latency/antilag2.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4a74cc0e2cd5329809ba87eb28feaaad2030a18c73dc430cc6c374b6831cd181",
+      "bytes": 2121,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/latency/antilag2.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "660f5f28583a93e6bd898e5bdfd283de92c36412f66ff50870c244a1c1f6d20c",
+      "bytes": 1411,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/model/skinned.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "7aa2de453cd307452e648bc057ab02c6c7ed474b3fdb24c647cecb5600bc8c48",
+      "bytes": 16644,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/model/skinned.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b3714d7e0067411f9407b0a55276ab8ac1ea907d4e856537cb8aefc8f985ad51",
+      "bytes": 3425,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/model/texture.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c1cfad49d75c3f74e935a03f99f5659becb1c2fc38f4c04c33f1973efa6cd7aa",
+      "bytes": 14724,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/model/texture.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "16b9e4522e7764eac5a3f805b4f062597f5579cc122dffecd2c87696737c4b1e",
+      "bytes": 1926,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/parallel_metrics.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "2bc4dce198ea58c22785346452e4c4088f33c5480659067b841d7b8753fd5c5f",
+      "bytes": 1803,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/persistent_workers.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "767cec9a366c11feb63079ca0a2f7148c38b4fccdc92ef0288c6f032dea0cda3",
+      "bytes": 2786,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/ray_reconstruction.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "af8a277bf73859f81b36b1081d17b18d6f1f0af7c719e1a106488ad294f5fbba",
+      "bytes": 4495,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/render_device.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3d7b982ffde8edd28eafa2712eeea3e1c05678cc7a5efabccd2182eb7f4259ee",
+      "bytes": 140152,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/svgf.hlsl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "418bb7be80b36937fcfd3781469fad536a3025a4fbee2c9ab5dd388a4885fbcc",
+      "bytes": 4778,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/third_party/cgltf.h",
+      "classification": "vendored-third-party",
+      "license": "MIT (cgltf and embedded jsmn)",
+      "sha256": "efb169dee911696b5d35fc8e3f7ea0c56d679debc529eba9ca6aa6443ba9d5e9",
+      "bytes": 205754,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/engine/upscale/upscale.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b516649d8835b614ab31c820a6514325eeea56c6666cf76845b305c84774412b",
+      "bytes": 7784,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_dlss.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1292ede217c4842df41ef35a42597ff07f7f62ad60dfac4dc6fe5baa88354390",
+      "bytes": 23987,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_fsr.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9ce06a58fcb365fa9f1d66c441c165fedbb0a2e5bbea78802c20664041dd1920",
+      "bytes": 14681,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_off.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "7591d63e9fec96e5c20087796d2b0d0feb4939077844991d80bd5b0ec96abc47",
+      "bytes": 6990,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_stubs.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "48af8f94b06e6f1214cb98ee263ca83e3e2da359ca0763b581a4ffa70ffc1ee2",
+      "bytes": 350,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/engine/upscale/upscale_xess.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "765e2d4ff5c3c30c855b2127f895185d8c1b93146ef9b11d966850c9431e5a5c",
+      "bytes": 22945,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/projects/Empty/Empty.star",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "29e96e1d74b0cb6f18f650b35ca29d917bb8299c0e8d63303e7dd5e390f96a11",
+      "bytes": 400,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/Empty/Empty.starlight.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "7832311abee965ffd6454e96d1f5c4abce25db200d0d380bf96fff7b2f9c7ccc",
+      "bytes": 92,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/Empty/project.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "766736d05f323cccc53b2438df561cd8e16345803b27a6cfc382801c112051cc",
+      "bytes": 2779,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/SampleGame.star",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c37465319cfeec826ee21d5ecc520bf6c2e89523b0382fe16c3642508e942715",
+      "bytes": 1524,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/SampleGame.starlight.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "88041af3a45d14cf22782be4caff27466a3e3d08ecf077c9038f9fbf4bcc26c6",
+      "bytes": 552,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/gen/gen_flags.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "cd05f5e96db05b47bac5f0a139a79040151a076cad8c84d8fda5eae9eda7b3ca",
+      "bytes": 9384,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/build-net.bat",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c735e473844b7d883b815c4bb1357e6cda5fd465353d64e55443bf97476d13e6",
+      "bytes": 1047,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/json.hpp",
+      "classification": "vendored-third-party",
+      "license": "MIT",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "bytes": 919975,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/test_net.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ef72d2741d0fb31a50a5dd3f00db1b23a5bdb081d6bea0595c6b7d8a89084c1a",
+      "bytes": 10297,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/world_state.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "15ba1c2c09555cbf09749fc0293a4a2ee0fbd81db03e8bca8b81c8d90cb6f65e",
+      "bytes": 15744,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/ws_client.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "aa3894e6b224f272e0022b0bfe173444e1dc481a30899800f6ca3961505ed251",
+      "bytes": 12300,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/net/ws_client.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d5d523f1cfdfc96cd2f8f9a2b7440776cca3255b40e1c31907ff604c9d69a8f3",
+      "bytes": 2430,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/projects/SampleGame/project.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3812106b58fe3c4cf76873020abaef228579434748ea604ee13950e774c220cd",
+      "bytes": 93123,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "deep/settings/default.startest",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "243ae06da96e1a8de93bfbddd9aadbcb75dd5246e06af0deaeb078897cfc2679",
+      "bytes": 374,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/settings/native-1440p.startest",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "243ae06da96e1a8de93bfbddd9aadbcb75dd5246e06af0deaeb078897cfc2679",
+      "bytes": 374,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/settings/settings-registry.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "3a0de575c95a4c8793c3e897f2db6271ed9833cc23638c501918a447eb7cc5be",
+      "bytes": 620,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/src/json.hpp",
+      "classification": "vendored-third-party",
+      "license": "MIT",
+      "sha256": "9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6",
+      "bytes": 919975,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/src/preset_reconciliation.inc",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "435fc9476218363e71657d1aa98c4048881c00a927e433fdf34508f92a161c7d",
+      "bytes": 5171,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/src/runtime.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "a1dbb35703049455d59e6de913efc327f4c6c86fd76e3dec5be0cff13ab15da6",
+      "bytes": 8047,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/src/settings_registry.generated.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e246f539a655f7b18667f432f1420c06d6644638677244cefa1645f92f983358",
+      "bytes": 528,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "deep/third_party/JoltPhysics",
+      "classification": "pinned-third-party-submodule",
+      "license": "MIT",
+      "revision": "0373ec0dd762e4bc2f6acdb08371ee84fa23c6db"
+    },
+    {
+      "path": "design/branding/starlight-analysis.ico",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "6e6f2291c628c7525d4bfb23e2ba42052a4f0e13e36b205f0f98437a31035a7c",
+      "bytes": 197706,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "design/branding/starlight-analysis.png",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "3533f91990952b610f4318d5b06c1439a681e5ab668a9cadd58b74358b41ca14",
+      "bytes": 2330629,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "design/branding/starlight-editor.ico",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "2f0aac0e0144c9698be3ea1b8dfebd784a92a8738efd7d7a84c1d8f74e11cfb5",
+      "bytes": 188567,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "design/branding/starlight-glass-icon-v1.png",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "8dcc9b9ea20b6d7358f23f19df64a15147a757e3cad03889cb50e557429170a1",
+      "bytes": 2270516,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "design/branding/starlight-star-concept-v1.png",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "f1c0cf5f8309ae976f658ccd6c9ac413748252f330bef41a0ceb4a2dda5f3644",
+      "bytes": 2113593,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "docs/LICENSING-INVENTORY.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "653d9c1a4e07b879477d1bc2a22426b46671c937d8b08d7655a1a085842ea05e",
+      "bytes": 63398,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "docs/LICENSING-STATUS.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "b2d12439b700252588de262a77872b95258ccd89289c4988c76d00b910ffbb9b",
+      "bytes": 3200,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "docs/PUBLICATION-BOUNDARY.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "17b48738e2079d1e08f4c26a977b661108b7d89826abc735ab0b3e39575babf7",
+      "bytes": 988,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "docs/PUBLICATION-VERIFICATION.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "de9feee7c1bdd8c5169d447f0c3646750b968e6fdeec67aa98f1d54ddda080c4",
+      "bytes": 5771,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/checks/denoise/regression/DXR-preview.starscene",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "bb15d15e8467b10924f8e2c7b781d85d17c3e45d99c1b7357c36157775e21b92",
+      "bytes": 190776,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/checks/denoise/regression/chaos-rt.packet",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "6751c0f9912dc75da4e3fe77f3a8e0d8d3bff3425c4fe8c06fe3b53ed6daf95f",
+      "bytes": 2492696,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/ability_slots.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "440795d9b6d940f3e99a86484f1af2ce6f0090361c347d7d4a851c7773a63402",
+      "bytes": 583,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/adventure.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "69893f7eaaea5c083c5653d1d503377bad87a202bae0b1d89690c90aec0f3a65",
+      "bytes": 73642,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/adventure_controller.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "38898b6215f2ee0742f483af216927068900475654c03ade85e4a8c53fb4b84f",
+      "bytes": 10882,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/adventure_controller.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9826b319bd04aa6ccae867eb9883aa48af3cd46007e398c74dd50224efae89b2",
+      "bytes": 1678,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/adventure_template.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ceeb54fbcf1026c659beb4ae9410ac904c4ba37260c98726506e5c911851ccf8",
+      "bytes": 3879,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/asset_browser.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1f7b0482fddc49a0e85e35d9536736d230dcb3a8e66996fbdc5b43785a1c5ae3",
+      "bytes": 8241,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/asset_library.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4f3cf7fd74471b33874110a626641e035e86fd6fb4e55f8a4a444e86739259b3",
+      "bytes": 2802,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/asset_library.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "40f9119e4c23610fd2df6ab62d1f2f6aab25216d212d4fec1b3cc3284c6e1a25",
+      "bytes": 386,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/assets.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d18df16de49fee658c1484feb64018ae88028313a2dd8a235ff179b65dce49ba",
+      "bytes": 10068,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/assets.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "67dc8b2e160a53d86b66b96de862e799e59f555aed1d1bc34fe21b94cd9c5f3a",
+      "bytes": 154,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/basic_attack.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "21fa3df4f6e5828093f388c41beb21894547b8a71aabc8c0e20e7dd7d699cceb",
+      "bytes": 6666,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/body_constraints.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c6b11019322252c41407697de9c2d08c1204a44d463eee7cf98449f7ef9b5db7",
+      "bytes": 2250,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/classic_completion.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c97bd474b7d79157d5ce63ff17ffd21b37cd981327a516a5634af6ff51bafe14",
+      "bytes": 28989,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/cli.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d2332af56df514416aa15fd6abe17f33a91623297b6c5b353f0702ad75141995",
+      "bytes": 118,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/color.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9528a661fa9a0eae5be1d90647a1ba7ad0643a3987e868c336b0026b69bae37d",
+      "bytes": 2242,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/combat_control.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4b3f939efba5f278ef46a97b564ed8e337f1b6416a7a5f29197ed8f65fd5a32d",
+      "bytes": 7434,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/combat_hud.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d03ca264c20e46c9d63db4a4e705fcd8670e8889323bc89e601b2c84e13e0fe2",
+      "bytes": 4302,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/command_runner.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1d9a372874924e6f36d8a016182f2be875b0811ea7bf40f1f073756e45def304",
+      "bytes": 2494,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/commands.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3f235eb62b1b31771ff99a4f15b0a754aa174e9594d0c0be6b656029a826e975",
+      "bytes": 16742,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/commands.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3513e9d925a5d96095e36e35a9623bf27907b4743027dd8558f1bbc7da4b6b29",
+      "bytes": 286,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/edge_feedback.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d22b21517f07686c3efc782f23299355816fa84c7b1cfce5936658c20f8ec4b6",
+      "bytes": 4405,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/editor.manifest",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1f3543bcc792dde20ec1a3548fe7f505fa91b42577fff2b47c7c57c98e862970",
+      "bytes": 332,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/editor_icons.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "a97999b3a9f1dbfc0bce68503eeba63596e05cbeea2fc7c81b2dbc2265b6dc31",
+      "bytes": 4352,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/editor_main.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "68053df899b463d6d32f0831b287eed2df2818095f302a7c528cee6c72fde953",
+      "bytes": 188682,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/editor_style.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e1250f51a4a02f4d025acb613eac57275b1083d7341b441232b64a09d0134859",
+      "bytes": 23240,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/environment_effects.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4bf96103b3e19ee67579c6ecef940c3013fadbf94822f2489fd313cdb1d05b4b",
+      "bytes": 16776,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/environment_events.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1d110540d3262f2af4c277e0088e87487564baea3da2c987b052dcde7bad7649",
+      "bytes": 169,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/features.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "96c019c398c75b32dac9eb2eefbfbdcdf57192dede753d0cc2d80fb82ce62f31",
+      "bytes": 10620,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/flow.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "78c133f06f5a26ca06f23de38729daefa29ea306b6806f88a18e3925a59cf919",
+      "bytes": 15536,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/flow.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "5290db20c7ef7b8670d5df17493677269c947da3b8e3a7cc4b42f149fff8aaaf",
+      "bytes": 4631,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/fracture.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "39e2454a9f48c3817c417465b5371e3e5d4a99ceace144b9bc8bfb993958f61c",
+      "bytes": 22442,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/frame_pacing.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "df7e8b2a6161ec359a1284b35235b5ad721a01fb0aa63e5ba0507a0ed5188674",
+      "bytes": 3940,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/game_export.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "09361c2cd2131704557ceb8cfee3d32962e13a1f5ce27a6beab00d2f993a376d",
+      "bytes": 2827,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/game_preview.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "62733c57a026a6f46336b2819fefb993a197eb8d05bdabbd5bd0f61a5af96b15",
+      "bytes": 11296,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/gameplay_audio.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "50c7b21ace5555c368d674d6e09f0944f624268047fdc826d605cdc6c68753eb",
+      "bytes": 5374,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/gameplay_rules.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "691240849be4b9879fce54201d61b8fa3dc26db3492e4fec4f7a40a565df6388",
+      "bytes": 3964,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/geometry.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c24ef815d2fb68e76d24fd01e7ad13e3c42291b3fcd261b61b8e09def2c578ce",
+      "bytes": 13786,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/geometry.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3ff8d64d830ee9c6178f674c1913d33d2e02527f7593e8cd309954d683f5bc22",
+      "bytes": 723,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/grapple_motion.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ffbc903397c16cf028cb16efe207e97f672479e66fac1c6e47c6c06b308a1781",
+      "bytes": 3511,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/ground_navigation.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "58672790cf5f97f427be3b25d0c4b0dbde135dcd9264e5362913e0cc7136a791",
+      "bytes": 1951,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/ground_steering.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "bc3928ef15846572d9f16e3257759c4634f7dc066f1eb87ec271caab4d1f86d3",
+      "bytes": 1254,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/interactions.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4b7a323e417dc61f365eeba2e854cb955181d897e0a3c1993e21e78c6f6dc4fd",
+      "bytes": 9605,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/interactions.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "2c0caa2dd976022ac8bb508f2f405933c2720b6432bc4d6fa5ed4c0825a48a9f",
+      "bytes": 978,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/joint_geometry.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "29157fc764573cb552a7b41f9004d0caec16cf1f6844ddb5219a01f658f55b65",
+      "bytes": 2334,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/lightning_physics.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d18d60e2584cfdb81e05af9f6808a0c8280b70de00b5186db0cd3a5a06852ec7",
+      "bytes": 4773,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/mesh.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1a9a663b0055b25f2274d97f4f887b110433812f5285ef71a8f8def946264367",
+      "bytes": 8584,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/mesh.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b81e9b3a599e43f1c60efb446cb6a48df3a6d8e22ea0433468ece218e070b958",
+      "bytes": 3269,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/movement_hud.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "48affe1ab8bd1bd357b3682964649b16807c8e67b3eeafe304b3cad3b73e0aab",
+      "bytes": 3516,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/movement_resources.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1b4dbcbd2f4087da67f7574fab6e1e3f9deea32cf8dcc13f2ac1036ea610edc3",
+      "bytes": 2498,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/music.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d5510974da678eecaf63518f611d76e0b5da636ebe05391d7fb993d5423f306f",
+      "bytes": 2308,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/named_colors.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "a3fd285c4b84fdb26e8c28d8c57308f536d32e1c61227f129ee3890908209833",
+      "bytes": 4793,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/native_session.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "df0891e5fef94788cf0faa57fed3023fbc3b640c19238f36d41d046761773401",
+      "bytes": 33218,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/native_session.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1d35fa1b4323429a758e4507773f2e6b89c87f1b90eca9d9cd35ce99afadc134",
+      "bytes": 4322,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/object_behaviors.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "da5712fb80c86a75af8320a26853cd16cfe27422d63021a2e2520c63e2da7b3f",
+      "bytes": 8779,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/object_template.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "362a24f19eda26d80a891fb9006b1a37d8f0e322ae20cf4d29621436cd9795fa",
+      "bytes": 7162,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/object_template.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "dbba46d648946771fdc741e0a32a756474018880230e94de5f8ba1dfb7a4171e",
+      "bytes": 869,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/pacing_hud.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e029d0e9ba62b8ecbd8f586aa9763e05c3fc2cc635a33d15d09c74e220ac63cd",
+      "bytes": 8112,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/pacing_log.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8117b41523f4d0d60d207158a0a498b5d246cbde88be0451211f294ef3b2e729",
+      "bytes": 5192,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/particle_physics.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4480f80db19c58da089d1ee6e2025b11662a154bed2546fcaff8b2a691cf7b23",
+      "bytes": 4280,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/physics.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1105e7ead558c8bda31a1fa2f3e7a1cf83d5c9f02b0fffa3063783a852317229",
+      "bytes": 6921,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/physics.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8d56a65e97f3cf5af1bb11f78bc6b232cb2fe8d9c3a7e4727f53fad395f399f0",
+      "bytes": 690,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/platform.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "06a5d4f2aeed1b2b8d025ddb4f38df68773355d63878f77886fa63293f5cb055",
+      "bytes": 12270,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/platform.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3a2e1aa311dfeb02789a152a05a5c3e50c213e4e3cb49daa4a7e75c82f243d81",
+      "bytes": 2234,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/player_gameplay_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b4d1bc5da419a48eaf29f0e9027afb5e8426ecfc27ea7d8d5e9da0f4dee3fc47",
+      "bytes": 18082,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/player_main.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3c0f9e07da692547718634c895033a7359d258cb4686d8827543de06df8caa28",
+      "bytes": 14071,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/player_presentation.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "455844b06dd0281fdfbfd733ef5c438b47a817fd3be2f304ddeea972ad105c90",
+      "bytes": 13663,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/portable_scene.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4dceba79c82915e13353868fa293bbb7c6938b9690e6c55ade9da4741247e64f",
+      "bytes": 7715,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/projectile_physics.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "308e0d4e185903c4cfa2b0113f9d7f8b0c52c0c321b51812849b17a9a27fc83b",
+      "bytes": 4648,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/projects.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "848d94e206c20ff10fb42e66445a73c6b96e312aff7d1e336047e6617be60daa",
+      "bytes": 4285,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/projects.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "7b6edbfca8ca06b657ab0830ad92d89c461e18b5896b21ad2a4b475669c38dc5",
+      "bytes": 510,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/quest_model.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "de6385409a7840decac010f4566b078a358db341f26a6b0c199352eedc7ebaec",
+      "bytes": 2504,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/quest_tracker.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "69d2dc592f9b85b217f6afb36996303ba76c31da2d3928f59521cba95741a099",
+      "bytes": 18679,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/reference_menu.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "501319e120a3efb42ee8a1fd88e3877c7995dbc8828d323ef8d83394c3c6a6a3",
+      "bytes": 11559,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/render_scene.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "bdb7e691e370824d3bcef2dc80691405c22f56e2c3fba7138b312b533b0ff466",
+      "bytes": 8598,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/render_scene.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9cefe9167f48599a034eff791ea2541dfe7e9cebd6f3b6124b48cda7881bae3f",
+      "bytes": 976,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/runtime_timing.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "bd6a93642934b296f55ca2267d2844d3d5bc048dbc2f66f912a3b9ab6119137f",
+      "bytes": 513,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/scene.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8dd7f2c07d63df1ddc62193d56cc6b94f3b58c567cbd473a0c0d6e89298867fc",
+      "bytes": 17328,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/scene.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3a379b4814ac86d68dc3be0dad698242093d623600441d9faad590c75b3bd00b",
+      "bytes": 7277,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/scene_json.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "94a72819854f498e2aa764619b84ec0d74ff47ed6794e996e8dd3c0990f44512",
+      "bytes": 16931,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/cpp/selection_clipboard.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e6cfd9ed78d67ef910b87c9c376336e35b4192440fcab21967ad42deb239a2c4",
+      "bytes": 2390,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/startup_activation.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e2dc1a22840b1f103bb3a5e04bc91931ff5c5fc7ad0dc7f084c7360209dacf23",
+      "bytes": 1050,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/tutorial_progress.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ee67dbe5c2345d4b1a714caf7dd18a70dbb67bb6e9ed5fa21ea505ccda0c04c3",
+      "bytes": 2627,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/cpp/tutorials.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "213ee2c30e111bdeee045e304024567183bcb820612315b7191b0231d67dd532",
+      "bytes": 10940,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/build.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ddc21d124ee8505fa76f2482f659b7b502539b2c9f81efc06bf4f3700873cdde",
+      "bytes": 242,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/check_denoise.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "281a1dadbef772a59d08c289c874a6a8cb2181ee751038f3e62a32f6599e9b6c",
+      "bytes": 244,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/cmake_shaders.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "4c2a88b8bb57360c4a0d8d55ccae39418b76bcc859eeda80c86550603abf7d8a",
+      "bytes": 243,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/edge_aa.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "574a3defbbf06a159c624916e4cf4516ae8b90ad22264eaeefa80ff076202d97",
+      "bytes": 3690,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/prepare_renderer.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "7800a172fa6658e4e5626e73227006a8ecf4b2aad1e182bd89d4041e990e37e4",
+      "bytes": 246,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "editor/native/render_device_editor.h",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "471c957d859353981809fd0e51158a8875774b716bc12dd76427931fb7327e57",
+      "bytes": 134912,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/native/viewport.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "69797deee8417ffa3be55aaae7f4a26de70e6fb307fe72d416a47fcaea7d9402",
+      "bytes": 40429,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "editor/native/world_surface.hlsl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "6d28f88b20b523b0463059a9def87fb7156ccb183ac594fe4bc6b0de30e345fb",
+      "bytes": 4256,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/Jolt-MIT.txt",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "8d1c7e0303333dfdafcc6583c620eb163e9c6c53c7cebcb53db78eaa9807e76c",
+      "bytes": 1059,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/cgltf-MIT.txt",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "f619925f80ef862497aaf8e8155ef218fa6a2190055129523ca3df9119a9ba95",
+      "bytes": 1066,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/jsmn-MIT.txt",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "86e73cd390fe2180bbb12e7188287a15a53fffe4a35a8f85f32c7611944133bd",
+      "bytes": 1124,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/json-embedded-credits.txt",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "fb6b847b6909e2498a1b0333d0ebd3fb4027fbd056136cfab4ba86d783fd033c",
+      "bytes": 424,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/nlohmann-json-MIT.txt",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14",
+      "bytes": 1076,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "licenses/sources.json",
+      "classification": "dependency-license-evidence",
+      "license": "Preserve original upstream terms and authors",
+      "sha256": "73e7f77fc475159b31fd8b700fd7ce94a29e2012f107375595d6206f6c70548c",
+      "bytes": 686,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "migration/fixtures/deep-node-graph.glb",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "f4baeaf762825f49ab3ff7faffc8090d4637c89c6e1ba9867c0689a81db8c5c1",
+      "bytes": 5920,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "migration/fixtures/triangle.glb",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "ef70e22a22d4e0c8ca2c69b5250a76efec2fee8131f1c3d6a56d49841291881b",
+      "bytes": 356,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "migration/geometry-reference.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "d7efcd2491c7d5f2b566a823f4951523939a9d053a4de9b207b2f421084d331a",
+      "bytes": 38622,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "migration/verify_no_managed.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "dd7b33c765adfcfd68a0585d80240589747944dccf9618923ec4e2d19a82bb96",
+      "bytes": 248,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "projects/SampleGame/build/models/fox-lead.glb",
+      "classification": "asset",
+      "license": "Asset-specific redistribution decision required",
+      "sha256": "1128346b5489e2eff42547e1694557cda1dd0b18cbbe282a247c143296c5b65f",
+      "bytes": 3644732,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "6294016d1cd7eac62192eef7bb1c8d162abe91eef3bc6aa392c698c544c0a80a",
+      "bytes": 5915,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/DEEP-ANALYSIS-README.md",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "b2c095fe5a910492813f7210098c748f6ce5946bc2842aef52cbbd250017c972",
+      "bytes": 12006,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/artifact_cleanup.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "381c682ab2f614dca55e2448ef389ee234e69dc1ec90badd984b1b1a16c6d7ec",
+      "bytes": 7424,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/audit.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "77383d905a625598e665183bc50083da9227bc9c8363a9b06deb836735bb0b2c",
+      "bytes": 56258,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/audit_engine.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "dca5bcc9a61f6571ea1610dc7c8181d6ce535fac384fa5cd6e9c2dfa92e16724",
+      "bytes": 24637,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/audit_theme.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d0f008f69e88c064c86424dc4753a6198ab0828dad0b6a63f4c335b1163a6e6d",
+      "bytes": 3252,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/build_deep_analysis.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "fba6373f3d33845088393fbc6b82f220561a84ce9ce7a6966213de3dc8507adc",
+      "bytes": 249,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/contract_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "487d0bfa5f631614885859681aa92d8a9ec833b8ac0f26df94b1e3346db81361",
+      "bytes": 2780,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/deep_analysis.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "c2ab247071efa8f53d6b87f19b31d1046bceeff0f94ec7185bed97b49c8ff819",
+      "bytes": 56859,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/deep_analysis_gui.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "637b7f1b3d3a499d01dec91876b5017d747a1ffbfde1fa18de4dd29ace7fa762",
+      "bytes": 11317,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/engine_comparison.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "8ef79bfac27a505b5a9cf128827f2bcc5086666d23f90eac6d3fa7aed8d431a1",
+      "bytes": 8814,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/feature_evidence.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e2dced6f1802c4a59e2ede7ca33093441bded716babafb3f03b432343d5588c3",
+      "bytes": 5676,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/handle_control.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "00cdac9515c23333824fd2a143890410ab92c166ede88e95ad5ee704bdbce95c",
+      "bytes": 1436,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/knowledge_report.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "91b7b32f1ef0b67db96ddf1b2b605a1fd39b040fbff96e39d521f047a7779a2c",
+      "bytes": 48371,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/optimization_scan.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "87aaa71b1bc056651676d13fe169129c5f4d5c42cd39c96a850d9779dd3a44ae",
+      "bytes": 251,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/render_contract.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ae52cba845310d4e59c8a0f1938736819d03bcad7b491eb94d7df534cc7bf6f0",
+      "bytes": 3245,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/run_editor_parity_checks.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d27f848ff06a4ebbb50d5fe624d5d178d3a16bb4fa693ad270bb38ece4ef9491",
+      "bytes": 3705,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/source_lookup.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1cb08657889e8e3bffc6ebee7fccf94a91450c159b35a07ea388153bad388ded",
+      "bytes": 4568,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/test_artifact_cleanup.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "1d407748d7097f1e8be9d9c8dc0d73e6122cad472a6718d97b733e69aadf66c1",
+      "bytes": 4535,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/test_audit_engine.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ffa5fb4fefb0de442ed6038d8a0485b42ab87fd8bea0740900835056ae535bcb",
+      "bytes": 4019,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/test_deep_analysis.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b754ec2d26f547cb9d50f2b24a95ad22e5b83f1ac016c0aa1a94bdc082445d97",
+      "bytes": 10375,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/audit/test_engine_comparison.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d53420a84433466cdfc8f60336a7fde5a22b10b87608f32f96834407feb2ca4a",
+      "bytes": 1440,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/test_source_lookup.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "58bcbd07c93125d116b7606a44d9e81eb5744466bc46347c887956b1edbeebf8",
+      "bytes": 2531,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/audit/tool-inventory.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "f23dbd0d569ddc193735b403fcd789398d9aa47b6e5bac9419e6578fe4096274",
+      "bytes": 20939,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/build/Build-Native.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3b412607410e7c3e70f8ae9205fe6a26a964a824255c1813aa22bbc8545b3919",
+      "bytes": 2687,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/build/build_deep_analysis.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "13fdd9068109b253a9f5996e12f360f41e475e3164151e035b36d3e0a91cdd14",
+      "bytes": 3015,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/build/cmake_shaders.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "165b43d97ee1d6c2375192376b56b75a7598b8b9c1a190189e0cdadf34c7afa7",
+      "bytes": 1143,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/build/prepare_renderer.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9499606fbc2d5fd6969745cc96068345e4c11e72c464be247d16422287f3e00b",
+      "bytes": 5191,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/character_controller_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "2978376764dc313aa2bdd244106fc6876ba08223397e93576e4522f562ade502",
+      "bytes": 22949,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/check_adventure_export.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "b2cc9741338428d470f26820790612c870523a205e814aa2a89df3706d24e83a",
+      "bytes": 7090,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/classic_completion_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "3cad1f3a82c410422ec80f5c876c95890b3fdf3e161daf8520c99ef88eafabda",
+      "bytes": 9160,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/classic_ui_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ead0b74e94e040d8b351d8fe4104427b5ccee0cea00403fef5015672abe7c45c",
+      "bytes": 24533,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/core_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "79d76cc33f828f78d672cf7c03f4eab0c5d38a57346f5eea4a1cd906a1e932fe",
+      "bytes": 151193,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/diagnostic_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d36612f57e8c9db0c7ac5eb7454ae2119d0f1fa6fb176f87f8d29003a39076d5",
+      "bytes": 1874,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/gameplay_rule_ui_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9dbf0fec0157eccac11c2816e3ee1a897f0763590ae01fa15eba87437507adae",
+      "bytes": 6520,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/gameplay_rules_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9d122271182ef975a614a29e80f73b3cb1f531cee0eb150555e159e7d3fce66a",
+      "bytes": 4951,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/historical-managed-references.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "96e53880f898c07174d40663c3ea35e80340b06916e844034b30c4a4a859d087",
+      "bytes": 591,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/interface_scale_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "71c22b365692fa2cafec99ba7a806d2c2bb0bab523010f6f5d0109b48e5b0286",
+      "bytes": 5671,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/mixed_physics_fixture.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "fcc75a8c64ce3eed4dca26e9a92288d0c56e7530d68e39c8243aa20469a444be",
+      "bytes": 1794,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/physics_boundary_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "da73ecd66dbc7d19b37aaebe4d3f0705ba02d7f69b7ba4e232ea46db253cb21b",
+      "bytes": 4797,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/physics_presentation_check.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "58944ced00296ef8300796512ebc9bb1a5a90a31cd5b1529f87d0117f7fb160e",
+      "bytes": 2794,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/quest_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "694406a54a2f2738b71d80a5bff4d0cfd12ed78aed34151551a8f48ef3307dfb",
+      "bytes": 13240,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/render_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "80e195651c429ef4c022030392702f2f4a95a17e8fbde0162ba2d7043841ab23",
+      "bytes": 13888,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/scroll_layout_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "bf02055d1ebcf11443874b712e397f09e91bce4a350bfc6700fe57c9d746d0ad",
+      "bytes": 5496,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/session_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "ea01b599af27e47c0583cee6ebe825205635cd15eca9effedfda5b2f221631a8",
+      "bytes": 29780,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/solid_fixture.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d23cd2f823d7e23b451767abb28f4a111a9bd41244cbbfdaf7650df0a49ab352",
+      "bytes": 3142,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/checks/test_verify_no_managed.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "03ea2a1f140f3c638e9c31e93be7ab152c646925cc11307e830d16706c33ce64",
+      "bytes": 2211,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/texture_checks.cpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "dc3d9f71e3c9e6a665473dc9c97be2a6d4b0ec7447befef09c58cc1a6cf73bc3",
+      "bytes": 7728,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/verify_no_managed.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "86f2a4c31716fc12a61a70b805b208eac6f71a314e17e580bf7dd3a9bf5eb1da",
+      "bytes": 2758,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/checks/visible_ui_checks.inl",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "06104c61fb66fa56e29fba8c4dfb163e0cd84c98440d8f5b27ddf3bb979e65fa",
+      "bytes": 109531,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/diagnostics/analyze_pacing.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "f50dc295e365b5f2c5a304049a326ff22bc34bff945bbfb5b1be2508d7844349",
+      "bytes": 5344,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/diagnostics/audit_input_runtime.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9adfbcd398ffe17f2ec9a26f08d059eea62940eeff0b9e549b209c21faef385f",
+      "bytes": 2242,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/diagnostics/audit_window_trace.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "9d82d8077ea719826e4b7f981e1822b055814241d19a2e3fef92a1de619ddeb0",
+      "bytes": 4756,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/diagnostics/gate0_handle_trace.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "659be299b6f299e7e763b71c24117008818d0dbaa8367131c6ba732e4642444d",
+      "bytes": 4256,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/diagnostics/memory_allocation_trace.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "40a416f18db81a4e5913e2d6bd37b18f37607186cae611fed55ca2b967e135e0",
+      "bytes": 8402,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/diagnostics/menu_timing.hpp",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "d26414d87bbc2d5295949ac9ea463269557c67ce1467b266360a03a618987362",
+      "bytes": 1884,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/launch/Launch-Starlight-Editor.cmd",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "392dd0830dc759414e49e25b61e917fc7c9505c496889ddd573fb677c6448915",
+      "bytes": 337,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/launch/launch_analysis.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "e58f1d9bff621d15d1611e0893f34c53f66345741da29864a068b54781bf2bd3",
+      "bytes": 761,
+      "previousInventory": "changed-or-new"
+    },
+    {
+      "path": "tools/profiling/optimization_scan.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "dd510c1b58485f1c4335fb4c2e61a25321ce0d8cdf1e7efed0052898c8905427",
+      "bytes": 4544,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/render/check_denoise.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "65d9795588e85dffdb1f90e165471654cc4abc65f9457dcbe0ca3764a83819a4",
+      "bytes": 8119,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/render/validate_native.py",
+      "classification": "project-content",
+      "license": "Owner license selection pending",
+      "sha256": "abee719706cfda2e68a65fea37d37f6c7ae4fbb82f588ef6d2db88d1687dcc2b",
+      "bytes": 3757,
+      "previousInventory": "unchanged"
+    },
+    {
+      "path": "tools/tool-relocations-2026-09-23.json",
+      "classification": "documentation-or-data",
+      "license": "Owner terms pending; embedded third-party material retains its terms",
+      "sha256": "d3c9538df024f6c617a3a8ea8e0b54a613943b9999641885d10ec8103be3ca86",
+      "bytes": 5823,
+      "previousInventory": "unchanged"
+    }
+  ],
+  "runtimeDlls": [
+    {
+      "file": "concrt140.dll",
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\concrt140.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "msvcp140.dll",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\msvcp140.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "msvcp140_1.dll",
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\msvcp140_1.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "msvcp140_2.dll",
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\msvcp140_2.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "msvcp140_atomic_wait.dll",
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\msvcp140_atomic_wait.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "msvcp140_codecvt_ids.dll",
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\msvcp140_codecvt_ids.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "Starlight.Physics.dll",
+      "sha256": "253e2e546a2863c47d0f9cc22f1788c4ee9e5b602f018bd124580a5bc81a21d7",
+      "redistributableSourceMatches": [],
+      "review": "project library with linked dependency terms"
+    },
+    {
+      "file": "Starlight.Viewport.dll",
+      "sha256": "2f1445c3f723fa1889428d084562600d918d95ce6ccf70b6128efbb3d34cadf4",
+      "redistributableSourceMatches": [],
+      "review": "project library with linked dependency terms"
+    },
+    {
+      "file": "vcruntime140.dll",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\vcruntime140.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    },
+    {
+      "file": "vcruntime140_1.dll",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+      "redistributableSourceMatches": [
+        "x64\\Microsoft.VC145.CRT\\vcruntime140_1.dll"
+      ],
+      "review": "Matches installed VC redistributable; distribution subject to Microsoft terms"
+    }
+  ],
+  "priorInventoryCount": 256
+}

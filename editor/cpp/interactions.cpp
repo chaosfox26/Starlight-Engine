@@ -1,7 +1,60 @@
 #include "interactions.hpp"
+#include "object_cache.hpp"
 #include <numbers>
+#include <cstring>
+#include <array>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 namespace starlight::editor {
+// Plain cubes (rigid fragments and other box proxies) are posed from the eight corners of one cached unit box; the generic path
+// builds and walks the full mesh. Identical results: the cube's vertices are its corners and world_point is applied to each.
+static bool cube_corners(std::array<Vec3,8>& corners){
+    static const std::array<Vec3,8> cached=[]{
+        std::array<Vec3,8> result{};Character proto;proto.Shape="cube";proto.Width=proto.Height=proto.Depth=proto.Size=1;
+        Vec3 low{1e300,1e300,1e300},high{-1e300,-1e300,-1e300};std::vector<Vec3> seen;
+        for(const auto& v:object_mesh(proto).vertices){low={std::min(low.x,v.position.x),std::min(low.y,v.position.y),std::min(low.z,v.position.z)};high={std::max(high.x,v.position.x),std::max(high.y,v.position.y),std::max(high.z,v.position.z)};}
+        for(int k=0;k<8;++k)result[k]={k&1?high.x:low.x,k&2?high.y:low.y,k&4?high.z:low.z};
+        // Only valid when the generic mesh really has a vertex at every corner.
+        std::array<bool,8> present{};
+        for(const auto& v:object_mesh(proto).vertices)for(int k=0;k<8;++k)if(v.position.x==result[k].x&&v.position.y==result[k].y&&v.position.z==result[k].z)present[k]=true;
+        for(bool p:present)if(!p)return std::array<Vec3,8>{Vec3{1e300,0,0}};
+        return result;
+    }();
+    if(cached[0].x==1e300)return false;
+    corners=cached;return true;
+}
 Bounds object_bounds(const Character &c) {
+    // Every caller in the engine reaches the shared cache here, so a new feature that asks for an object's bounds is cached without
+    // knowing the cache exists. Plain cubes are cheaper to compute than to look up and objects that move on their own cannot be cached.
+    if(!in_object_cache()&&(c.Sculpt||!(c.Shape&&*c.Shape=="cube"))){
+        if(bounds_cacheable(c))return ObjectCache::shared().bounds(c);
+        return ObjectCache::shared().bounds_at(c,object_pose(c),false); // a route object at its present spot: shared geometry, no mesh rebuilt
+    }
+    return object_bounds_raw(c);
+}
+Bounds object_bounds_raw(const Character &c) {
+    if(!in_object_cache()&&counts_as_static_bypass(c)){bypass_counters().staticBounds.fetch_add(1,std::memory_order_relaxed);if(bypass_trace()){bypass_counters().record(_ReturnAddress(),0);}}
+    static const bool noCubeFast=GetEnvironmentVariableA("STARLIGHT_DISABLE_CUBE_FAST",nullptr,0)>0;
+    if(!noCubeFast&&c.Shape&&*c.Shape=="cube"&&!c.Sculpt){
+        std::array<Vec3,8> corners;
+        if(cube_corners(corners)){
+            c.validate();
+            Bounds fast;
+            for(const auto& corner:corners){auto p=world_point(c,corner);
+                fast.low={std::min(fast.low.x,p.x),std::min(fast.low.y,p.y),std::min(fast.low.z,p.z)};
+                fast.high={std::max(fast.high.x,p.x),std::max(fast.high.y,p.y),std::max(fast.high.z,p.z)};}
+            static const bool verify=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_BOUNDS_VERIFY",value,8)&&value[0]=='1';}();
+            if(!verify)return fast;
+            Bounds slow;
+            for(const auto& v:object_mesh(c).vertices){auto p=world_point(c,v.position);
+                slow.low={std::min(slow.low.x,p.x),std::min(slow.low.y,p.y),std::min(slow.low.z,p.z)};
+                slow.high={std::max(slow.high.x,p.x),std::max(slow.high.y,p.y),std::max(slow.high.z,p.z)};}
+            if(std::memcmp(&fast,&slow,sizeof(Bounds))!=0)throw std::runtime_error("Fast cube bounds differ from the mesh bounds");
+            return fast;
+        }
+    }
     Bounds b;
     for (const auto &v : object_mesh(c).vertices) {
         auto p = world_point(c, v.position);
@@ -65,20 +118,20 @@ void snap_object(SceneData &scene, Character &c, bool grid, bool objects, bool g
 std::optional<Vec3> terrain_hit(const TerrainData *terrain, Vec3 origin, Vec3 ray) {
     double previous = 0;
     bool had = false;
-    auto height = [&](Vec3 p) { return terrain ? terrain->height_at(p.x, p.z) : 0.; };
+    auto gapAt = [&](Vec3 p) { return terrain ? (terrain->Volumes.empty()?p.y-terrain->height_at(p.x,p.z):terrain->density_at(p.x,p.y,p.z)) : p.y; };
     for (double t = 0; t < 180; t += .08) {
         auto p = origin + ray * t;
         if (std::abs(p.x) > 12 || std::abs(p.z) > 12) {
             had = false;
             continue;
         }
-        double gap = p.y - height(p);
+        double gap = gapAt(p);
         if (gap <= 0 && had && previous > 0) {
             double lo = t - .08, hi = t;
             for (int n = 0; n < 12; n++) {
                 double mid = (lo + hi) / 2;
                 auto q = origin + ray * mid;
-                if (q.y > height(q))
+                if (gapAt(q)>0)
                     lo = mid;
                 else
                     hi = mid;

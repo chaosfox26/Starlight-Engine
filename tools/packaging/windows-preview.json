@@ -1,0 +1,56 @@
+{
+  "product": "Starlight Engine Preview",
+  "publisher": "ChaosFox",
+  "personalIdentity": "ChaosFox",
+  "runtimeDirectory": "out/classic/Release",
+  "required": [
+    "Starlight.NativeEditor.exe",
+    "Starlight.NativePlayer.exe",
+    "Starlight.exe",
+    "Starlight.NativeCommands.exe",
+    "Starlight.NativeShaders.exe",
+    "Starlight.NativeBuild.exe",
+    "Starlight.Viewport.dll",
+    "Starlight.Physics.dll"
+  ],
+  "checks": [
+    "Starlight.NativeCoreChecks.exe",
+    "Starlight.NativeDiagnosticChecks.exe",
+    "Starlight.NativeRenderChecks.exe",
+    "Starlight.NativeSessionChecks.exe",
+    "Starlight.NativeTextureChecks.exe",
+    "Starlight.AuditContractChecks.exe",
+    "Starlight.NativeGuardChecks.exe",
+    "Starlight.NativeExportChecks.exe",
+    "Starlight.NativeFallbackChecks.exe",
+    "Starlight.NativeDenoiseChecks.exe",
+    "Starlight.NativeInventory.exe",
+    "Starlight.NativeCleanup.exe",
+    "Starlight.NativeSourceAnalysis.exe",
+    "Starlight.NativeEvidence.exe",
+    "Starlight.NativeKnowledge.exe",
+    "Starlight.NativeComparison.exe",
+    "Starlight.NativeKnowledgeDocs.exe",
+    "Starlight.NativeReports.exe",
+    "Starlight.NativeAnalysis.exe",
+    "Starlight.NativeAuditRecords.exe",
+    "Starlight.NativeAudit.exe",
+    "Starlight.HandleControl.exe"
+  ],
+  "releaseGates": {
+    "nativeAnalysisParity": false,
+    "resourceRelocationVerified": false,
+    "exportedNoticesIncluded": false,
+    "assetAndSdkRedistributionReviewed": false,
+    "developmentToolsSelfContained": false,
+    "sandboxFullFeatureCheck": false,
+    "portableSettingsAndRelocationVerified": false,
+    "firstLaunchChoiceAndLocalInstallVerified": false
+  },
+  "distribution": "portable-with-optional-local-install",
+  "dataDirectory": "data",
+  "firstLaunchChoices": [
+    "Run portable",
+    "Install on this PC"
+  ]
+}

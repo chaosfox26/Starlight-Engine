@@ -17,6 +17,7 @@ inline void assign_object_behavior(SceneData& scene,const std::string& id,const 
         }
     }
     it->GameplayRole=role;it->GameplayKey=role=="key"?it->Id:std::string{};
+    if(role=="breakable")it->Breakable=true;
     if(!scene.Game)scene.Game.emplace();
     scene.validate();
 }

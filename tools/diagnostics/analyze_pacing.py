@@ -64,7 +64,23 @@ def summarize(path, start=0):
                        maximumFills=max((f.get("gpuEffectCount",0) for f in selected),default=0),
                        maximumMeshBufferBytes=max((f.get("gpuEffectBytes",0) for f in selected),default=0),
                        scope="Resident attack-fill buffers only, not total GPU memory usage")
+    def window_state(frame):
+        if "applicationForeground" not in frame:
+            return "unknown"
+        if frame.get("windowMinimized"):
+            return "minimized"
+        if not frame.get("windowVisible"):
+            return "hidden"
+        return "foreground" if frame["applicationForeground"] else "background"
+    window_states = {}
+    for state in ("foreground", "background", "minimized", "hidden", "unknown"):
+        group = [f for f in selected if window_state(f) == state]
+        window_states[state] = dict(frames=len(group), frameTimeMs=distribution([f["intervalMs"] for f in group]),
+            waits={key: distribution([f[key] for f in group if key in f and f[key] >= 0])
+                   for key in ("gpuMs", "fenceWaitMs", "pacingWaitMs", "presentWaitMs")})
     return dict(source=str(path), completed=ended, multicore=multicore, battleWorkers=battle, gpuEffects=gpu_effects,
+                windowStates=window_states,
+                windowStateScope="Sampled at render completion; transition intervals may span states. Unknown includes older logs. No causal throttling inference.",
                 coverage=dict(recordedFrames=len(frames), selectedFrames=len(selected),
                               startSeconds=start, droppedRecords=dropped,
                               malformedLines=malformed, frameSequenceGaps=gaps),

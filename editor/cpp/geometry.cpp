@@ -1,4 +1,10 @@
 #include "geometry.hpp"
+#include "terrain_volume.hpp"
+#include "rock_geometry.hpp"
+#include "fire_geometry.hpp"
+#include "crystal_geometry.hpp"
+#include "grass_geometry.hpp"
+#include "lightning_geometry.hpp"
 #include "../../deep/engine/chaos_lightning.h"
 #include "color.hpp"
 #include <map>
@@ -58,6 +64,18 @@ void uniform(Mesh &m, int kind) {
     m.normals();
 }
 Mesh nature(std::string_view kind) {
+    if(kind=="grass")return grass_surface();
+    if(kind=="rock" || kind=="boulder" || kind=="pebbles" || kind=="chaos-rock"){
+        static const std::array<Mesh,4> stones=[]{
+            std::array<Mesh,4> result;
+            result[0]=rock_surface(.62,4,8241,RockForm::Outcrop);result[1]=rock_surface(1.05,4,9173,RockForm::Boulder);result[3]=rock_surface(.85,4,15317,RockForm::Crystal);
+            SeededRandom random(8241);
+            for(int i=0;i<9;++i){double scale=.15+random.next()*.2,x=(random.next()-.5)*1.7,z=(random.next()-.5)*1.7;auto pebble=rock_surface(.62,3,8241+i*7919,RockForm::Pebble);int base=int(result[2].vertices.size());for(auto v:pebble.vertices){v.position=v.position*scale+Vec3{x,0,z};result[2].vertices.push_back(v);}for(int index:pebble.indices)result[2].indices.push_back(base+index);}
+            for(int i=0;i<4;++i)for(auto& vertex:result[i].vertices)vertex.kind=i==3?10.f:6.f;
+            return result;
+        }();
+        return stones[kind=="rock"?0:kind=="boulder"?1:kind=="pebbles"?2:3];
+    }
     Mesh m;
     SeededRandom random(8241);
     if (kind == "grass") {
@@ -133,6 +151,18 @@ Vec3 rgb(std::string_view s) {
     auto c = color_rgb(std::string(s));
     return {c[0], c[1], c[2]};
 }
+inline float foliage_leaf_pack(double seed,const FoliageMaterial& f){
+    auto q=[](double x){return uint32_t(std::round(std::clamp(x,0.,1.)*63));};
+    return float(q(seed)|(q(f.LeafTransmission)<<6)|(q(f.LeafVeins)<<12)|(q((f.LeafRoughness-.4)/.45)<<18));
+}
+inline void foliage_surface_payload(Mesh& mesh,const Character& c){
+    if(c.Surface!=12&&c.Surface!=13)return;
+    const auto f=c.Foliage.value_or(FoliageMaterial{});f.validate();
+    for(auto& v:mesh.vertices){
+        if(c.Surface==12)v.color={f.BarkScale,f.BarkRelief,f.BarkRoughness};
+        else{if(!v.materialCoordinate)throw std::runtime_error("Leaf mesh lost material coordinates");auto p=*v.materialCoordinate;v.color={p.x,p.y,foliage_leaf_pack(p.z,f)};}
+    }
+}
 std::vector<MeshPart> shape_geometry(const Character &c) {
     c.validate();
     if (!c.Shape && !c.Sculpt)
@@ -140,22 +170,19 @@ std::vector<MeshPart> shape_geometry(const Character &c) {
     auto kind = c.Shape.value_or("");
     auto tint = rgb(c.Color);
     if (kind == "chaos-lightning") {
-        Mesh m;
-        for (auto v : starlight::Lightning({float(c.TargetX), float(c.TargetY), float(c.TargetZ)},
-                                           float(c.BranchSpread))) {
-            m.indices.push_back(int(m.vertices.size()));
-            Vec3 point{v.x,v.y,v.z};
-            double anchor=std::clamp(std::min((point-Vec3{0,3,0}).length(),(point-Vec3{c.TargetX,c.TargetY,c.TargetZ}).length())/.35,0.,1.);
-            m.vertices.push_back({point, {}, {v.edge < 0 ? 0. : 1., anchor, 1}, 9});
-        }
-        m.normals();
-        return {{std::move(m), {1, 1, 1}, false}};
+        uint32_t seed=8241;auto random=[&](){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return double(seed&65535)/32767.5-1;};
+        auto path=lightning_path({0,3,0},{c.TargetX,c.TargetY,c.TargetZ},c.BranchSpread*.2,6,random);
+        std::vector<MeshPart> parts{{lightning_channel(path,.035,false),{1,1,1},true}};
+        if(c.BranchSpread>0)for(int i=1;i<=3;++i){auto root=path[(path.size()-1)*i/4];auto tip=root+Vec3{random(),-std::abs(random()),random()}*c.BranchSpread;parts.push_back({lightning_channel(lightning_path(root,tip,c.BranchSpread*.12,4,random),.017,true),{1,1,1},true});}
+        return parts;
     }
     if (c.Sculpt) {
         auto m = mesh_from(*c.Sculpt);
         uniform(m, c.Surface);
-        return {{std::move(m), tint}};
+        foliage_surface_payload(m,c);
+        return {{std::move(m), tint, c.Glow > 0}};
     }
+    if(kind=="light-shard")return {{crystal_surface(),tint}};
     if (kind == "rock" || kind == "boulder" || kind == "pebbles" || kind == "grass" || kind == "chaos-rock" ||
         kind == "light-shard" || kind == "craxis-smoke")
         return {{nature(kind), tint}};
@@ -172,10 +199,7 @@ std::vector<MeshPart> shape_geometry(const Character &c) {
         parts.push_back({std::move(m), color, true});
     };
     if (kind == "fire") {
-        cone(.35, 1.4, 0, tint);
-        cone(.23, .9, -.01, {1, 215. / 255, 0});
-        cone(.12, .5, -.02, {1, 1, 224. / 255});
-        return parts;
+        return {fire_volume(tint)};
     }
     if (kind == "light") {
         cone(.18, .3, .3, tint);
@@ -191,6 +215,38 @@ std::vector<MeshPart> shape_geometry(const Character &c) {
             m.indices.insert(m.indices.end(), {0, i + 1, i});
         uniform(m, 8);
         return {{std::move(m), tint, true}};
+    }
+    if (kind == "cylinder" || kind == "ring") {
+        constexpr int segments = 48;
+        const double inner = kind == "ring" ? c.RingInner : 0;
+        std::vector<Vec3> outerBottom, outerTop, innerBottom, innerTop;
+        for (int i = 0; i < segments; i++) {
+            const double a = i * tau / segments, x = std::cos(a), z = std::sin(a);
+            outerBottom.push_back({x, 0, z});
+            outerTop.push_back({x, 1, z});
+            innerBottom.push_back({x * inner, 0, z * inner});
+            innerTop.push_back({x * inner, 1, z * inner});
+        }
+        Mesh solid;
+        if (inner <= 0) {
+            auto reverse = outerBottom;
+            std::reverse(reverse.begin(), reverse.end());
+            face(solid, reverse);
+            face(solid, outerTop);
+        }
+        for (int i = 0; i < segments; i++) {
+            const int n = (i + 1) % segments;
+            face(solid, {outerBottom[i], outerBottom[n], outerTop[n], outerTop[i]});
+            if (inner > 0) {
+                face(solid, {outerTop[i], outerTop[n], innerTop[n], innerTop[i]});
+                face(solid, {outerBottom[i], innerBottom[i], innerBottom[n], outerBottom[n]});
+                face(solid, {innerBottom[i], innerTop[i], innerTop[n], innerBottom[n]});
+            }
+        }
+        solid.normals();
+        for (auto &vertex : solid.vertices) vertex.kind = float(c.Surface);
+        foliage_surface_payload(solid, c);
+        return {{std::move(solid), tint, c.Glow > 0}};
     }
     if (kind == "octagon") {
         std::vector<Vec3> bottom, top;
@@ -213,10 +269,13 @@ std::vector<MeshPart> shape_geometry(const Character &c) {
             face(m, {p[indices[0]], p[indices[1]], p[indices[2]], p[indices[3]]});
     }
     m.normals();
-    return {{std::move(m), tint}};
+    for(auto& vertex:m.vertices)vertex.kind=float(c.Surface);
+    foliage_surface_payload(m,c);
+    return {{std::move(m), tint, c.Glow > 0}};
 }
 std::vector<MeshPart> terrain_geometry(const TerrainData &t) {
     t.validate();
+    if(!t.Volumes.empty() && !t.WaterEnabled)return {{terrain_volume_geometry(t)}};
     Mesh ground, water;
     constexpr int n = 193;
     Vec3 palette[] = {rgb("#477345"), rgb("#80634A"), rgb("#C8B581"), rgb("#777D86"), rgb("#C4D2DC")};
@@ -263,14 +322,23 @@ std::vector<MeshPart> terrain_geometry(const TerrainData &t) {
             triangle(k, k + n, k + 1);
             triangle(k + 1, k + n, k + n + 1);
         }
-    ground.normals();
+    double base=*std::min_element(t.Heights.begin(),t.Heights.end())-1.;
+    auto wall=[&](int a,int b){
+        auto first=ground.vertices[a].position,last=ground.vertices[b].position;
+        size_t begin=ground.vertices.size();
+        face(ground,{first,last,{last.x,base,last.z},{first.x,base,first.z}});
+        for(size_t k=begin;k<ground.vertices.size();++k){ground.vertices[k].color=palette[3];ground.vertices[k].kind=4.f;}
+    };
+    for(int k=0;k<n-1;++k){wall(k,k+1);wall(k*n+n-1,(k+1)*n+n-1);wall((n-1)*n+k+1,(n-1)*n+k);wall((k+1)*n,k*n);}
+    size_t underside=ground.vertices.size();
+    face(ground,{{-12,base,-12},{12,base,-12},{12,base,12},{-12,base,12}});
+    for(size_t k=underside;k<ground.vertices.size();++k){ground.vertices[k].color=palette[3];ground.vertices[k].kind=4.f;}
+    if(t.Volumes.empty())ground.normals();else ground=terrain_volume_geometry(t);
     std::vector<MeshPart> parts;
     parts.push_back({std::move(ground)});
     if (!water.indices.empty()) {
         for (auto &v : water.vertices) {
-            v.color = {std::floor(std::clamp((v.position.y - t.height_at(v.position.x, v.position.z)) * 127,
-                                             0., 255.)) /
-                           255,
+            v.color = {std::clamp((v.position.y-t.height_at(v.position.x,v.position.z))*.5,0.,1.),
                        1, 1};
             v.kind = t.Lava ? 8.f : 7.f;
         }

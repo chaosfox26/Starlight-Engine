@@ -1,5 +1,15 @@
 #pragma once
+#if defined(__MINGW32__)
+// LLVM-MinGW issue #489: BYTE and boolean alias the same type, so the
+// generated header defines IReference<unsigned char> twice. This queue-only
+// adapter does not use boxed Boolean values; leave all queue/action APIs intact.
+#pragma push_macro("____FIReference_1_boolean_INTERFACE_DEFINED__")
+#define ____FIReference_1_boolean_INTERFACE_DEFINED__
+#endif
 #include <DispatcherQueue.h>
+#if defined(__MINGW32__)
+#pragma pop_macro("____FIReference_1_boolean_INTERFACE_DEFINED__")
+#endif
 #include <wrl/client.h>
 // UI-churn diagnostics explicitly initialize the Windows queue which TSF can
 // otherwise create late during control destruction. No windows are excluded
@@ -20,7 +30,11 @@ struct AuditInputRuntime {
     bool finish() {
         if(!queue)return true;
         Microsoft::WRL::ComPtr<ABI::Windows::Foundation::IAsyncAction> action;
+#ifdef __MINGW32__
+        Microsoft::WRL::ComPtr<::IAsyncInfo> info;
+#else
         Microsoft::WRL::ComPtr<ABI::Windows::Foundation::IAsyncInfo> info;
+#endif
         bool okay=SUCCEEDED(queue->ShutdownQueueAsync(&action)) && SUCCEEDED(action.As(&info));
         auto deadline=GetTickCount64()+5000;
         AsyncStatus status=AsyncStatus::Started;

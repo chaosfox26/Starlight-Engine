@@ -43,5 +43,5 @@ json export_playable_game(const SceneData &, const fs::path &destination, const 
 json export_portable_scene(const SceneData &, const fs::path &destination);
 json verify_portable_scene(const fs::path &folder);
 json export_scene_selection(const SceneData &, const std::vector<std::string>& ids, const fs::path &destination);
-std::optional<size_t> repair_scene_models(SceneData &, const std::function<std::optional<fs::path>(const fs::path&)>& choose);
+std::optional<size_t> repair_scene_models(SceneData &, const std::function<std::optional<fs::path>(const std::string& missingId, const std::string& objectName)>& choose);
 } // namespace starlight::editor

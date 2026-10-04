@@ -15,6 +15,7 @@ struct PacingFrameRecord {
     std::vector<std::string> events;
     ParallelWorkReading multicore,battleWorkers;
     uint64_t gpuEffectCount=0,gpuEffectBytes=0;
+    bool applicationForeground=false,windowMinimized=false,windowVisible=false;
 };
 inline json multicore_json(const ParallelWorkReading& r){return {{"parallelBatches",r.parallelBatches},{"serialBatches",r.serialBatches},{"participants",r.participants},{"items",r.items},{"wallMs",r.wallMs},{"callerWaitMs",r.callerWaitMs},{"chunkMs",r.chunkMs}};}
 class PacingLog {
@@ -28,18 +29,19 @@ class PacingLog {
         try{
             fs::create_directories(path_.parent_path());std::ofstream file(path_,std::ios::binary);
             if(!file)throw std::runtime_error("Cannot open frame pacing log");
-            file<<json{{"type","header"},{"version",4},{"process",GetCurrentProcessId()},
+            file<<json{{"type","header"},{"version",5},{"process",GetCurrentProcessId()},
                 {"scope","CPU render completion intervals; not display scanout"},
                 {"lowDefinition","1000 / mean of slowest ceil(N*fraction) frame times; overlay uses rolling two seconds"},
                 {"timingNotes","Simulation includes combat/AI and physics; frame call includes pacing/present waits. GPU time is delayed hardware query. Input ages are receipt/sample-to-render-completion proxies, not input-to-photon latency. Repeated updateSequence reuses the same simulation measurement. Multicore measures instrumented renderer pool callbacks, not OS core utilization. Chunk zero is the submitting thread; chunk times are elapsed wall time, can overlap and include preemption. Zero batches means this frame did not use this pool."},
-                {"frameColumns",{"frame","sessionSeconds","intervalMs","sceneBuildUploadMs","frameCallMs","gpuMs","simulationMs","combatAiMs","physicsMs","presentationMs","fenceWaitMs","pacingWaitMs","presentWaitMs","inputSampleAgeMs","inputEventAgeMs","updateSequence","inputSequence","events","multicore","battleWorkers","gpuEffectCount","gpuEffectBytes"}}}.dump()<<'\n';
+                {"windowStateScope","Sampled at render completion, not continuous focus coverage or proof of throttling cause"},
+                {"frameColumns",{"frame","sessionSeconds","intervalMs","sceneBuildUploadMs","frameCallMs","gpuMs","simulationMs","combatAiMs","physicsMs","presentationMs","fenceWaitMs","pacingWaitMs","presentWaitMs","inputSampleAgeMs","inputEventAgeMs","updateSequence","inputSequence","events","multicore","battleWorkers","gpuEffectCount","gpuEffectBytes","applicationForeground","windowMinimized","windowVisible"}}}.dump()<<'\n';
             while(true){Record record;{
                 std::unique_lock lock(mutex_);wake_.wait(lock,[&]{return closing_||!queue_.empty();});
                 if(queue_.empty()&&closing_)break;record=std::move(queue_.front());queue_.pop_front();
             }
                 json objects=json::array(),frames=json::array();
                 for(auto& o:record.overlay.objects)objects.push_back({{"id",o.id},{"name",o.name},{"position",{o.position.x,o.position.y,o.position.z}},{"updatesPerSecond",o.updatesPerSecond},{"unchangedMs",o.unchangedMs},{"moving",o.moving},{"effectUpdatesPerSecond",o.effectUpdatesPerSecond},{"effectMeasurement",o.effectMeasurement}});
-                for(auto& f:record.frames)frames.push_back({f.frame,f.time,f.intervalMs,f.sceneMs,f.submitMs,f.gpuMs,f.simulationMs,f.combatAiMs,f.physicsMs,f.presentationMs,f.fenceWaitMs,f.pacingWaitMs,f.presentWaitMs,f.inputSampleAgeMs,f.inputEventAgeMs,f.updateSequence,f.inputSequence,f.events,multicore_json(f.multicore),multicore_json(f.battleWorkers),f.gpuEffectCount,f.gpuEffectBytes});
+                for(auto& f:record.frames)frames.push_back({f.frame,f.time,f.intervalMs,f.sceneMs,f.submitMs,f.gpuMs,f.simulationMs,f.combatAiMs,f.physicsMs,f.presentationMs,f.fenceWaitMs,f.pacingWaitMs,f.presentWaitMs,f.inputSampleAgeMs,f.inputEventAgeMs,f.updateSequence,f.inputSequence,f.events,multicore_json(f.multicore),multicore_json(f.battleWorkers),f.gpuEffectCount,f.gpuEffectBytes,f.applicationForeground,f.windowMinimized,f.windowVisible});
                 const auto& s=record.overlay;
                 file<<json{{"type","sample"},{"sessionSeconds",record.time},{"frames",frames},
                     {"overlay",{{"fps",s.fps},{"medianMs",s.p50},{"p95Ms",s.p95},{"p99Ms",s.p99},{"worstMs",s.worst},{"low1Fps",s.low1},{"low01Fps",s.low01},{"graphMs",s.frameMs},{"objects",objects},{"multicore",multicore_json(s.multicore)},{"battleWorkers",multicore_json(s.battleWorkers)},{"gpuEffectCount",s.gpuEffectCount},{"gpuEffectBytes",s.gpuEffectBytes}}},

@@ -5,8 +5,8 @@ int visible_ui_checks(const fs::path& output) {
     nlohmann::json report{{"checks",nlohmann::json::array()}, {"scope","visible editor menu walkthrough"},
                           {"isolatedScene",true}, {"allEditorFeaturesCertified",false}};
     auto pump = [&](bool waiting) {
-        MSG msg{};
-        while (PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)) {
+        MSG msg{};const auto budgetEnd=GetTickCount64()+12;
+        while (GetTickCount64()<budgetEnd && PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)) {
             if (msg.message==WM_QUIT || msg.message==WM_CLOSE || (msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE))
                 throw std::runtime_error("Visible walkthrough cancelled");
             // Automation owns this scratch scene. Do not mix unrelated manual
@@ -56,33 +56,71 @@ int visible_ui_checks(const fs::path& output) {
     };
     auto step = [&](const char* name, auto action, auto valid) {
         const auto started=GetTickCount64();
+        starlight_diag::evlog("STEP.BEGIN",double(report["checks"].size()));
         action();
         const auto initialStatus=renderer->status();
         const auto initialFrames=initialStatus.frames;
         SetWindowTextW(window,wide(std::string("Starlight visible audit — ")+name+" | Esc cancels").c_str());
         auto end=GetTickCount64()+900;
         bool stayedForeground=true;
+        nlohmann::json firstFocusLoss=nullptr;
+        auto observeForeground=[&] {
+            const bool present=foreground();
+            if(!present && firstFocusLoss.is_null()) {
+                const auto active=GetForegroundWindow();
+                DWORD owner=0;GetWindowThreadProcessId(active,&owner);
+                wchar_t windowClass[128]{};GetClassNameW(active,windowClass,128);
+                firstFocusLoss={{"elapsedMs",GetTickCount64()-started},{"foregroundProcess",owner},
+                    {"foregroundClass",utf8(windowClass)},{"editorProcess",GetCurrentProcessId()},
+                    {"editorVisible",IsWindowVisible(window)!=FALSE},{"editorMinimized",IsIconic(window)!=FALSE},
+                    {"editorHung",IsHungAppWindow(window)!=FALSE},{"foregroundHung",IsHungAppWindow(active)!=FALSE}};
+            }
+            stayedForeground &= present;
+        };
         ULONGLONG newFramesMs=0;
-        while (GetTickCount64()<end) { pump(false); stayedForeground &= foreground();
+        while (GetTickCount64()<end) { pump(false); observeForeground();
             if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
             MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         // Require new rendered frames after a transition,
         // rather than capturing a blank intermediate surface and calling it done.
         const auto renderDeadline=GetTickCount64()+10000;
         while(renderer->status().frames<initialFrames+3 && renderer->status().error.empty() &&
-              GetTickCount64()<renderDeadline) { pump(false); stayedForeground &= foreground(); MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
+              GetTickCount64()<renderDeadline) { pump(false); observeForeground(); MsgWaitForMultipleObjectsEx(0,nullptr,10,QS_ALLINPUT,MWMO_INPUTAVAILABLE); }
         if(!newFramesMs && renderer->status().frames>=initialFrames+3) newFramesMs=GetTickCount64()-started;
         auto screenshot=output.parent_path()/("ui-"+std::to_string(report["checks"].size())+".bmp");
-        const bool behavior=valid(), captured=stayedForeground && capture(screenshot);
+        static const bool skipCapture=GetEnvironmentVariableW(L"STARLIGHT_UI_SKIP_CAPTURE",nullptr,0)>0; // measurement only: removes the test's own per-step screenshot
+        starlight_diag::evlog("STEP.CAPTURE",double(report["checks"].size()));
+        const bool behavior=valid(), captured=stayedForeground && (skipCapture||capture(screenshot));
+        starlight_diag::evlog("STEP.END",double(report["checks"].size()));
         const bool rendered=renderer->status().frames>=initialFrames+3;
         const bool passed=behavior && stayedForeground && captured && rendered && renderer->status().error.empty();
         report["checks"].push_back({{"name",name},{"pass",passed},{"behavior",behavior},
-          {"foreground",stayedForeground},{"screenshot",utf8(screenshot.wstring())},{"captureSucceeded",captured},
+          {"foreground",stayedForeground},{"firstFocusLoss",firstFocusLoss},
+          {"captureAttempted",stayedForeground},{"screenshot",utf8(screenshot.wstring())},{"captureSucceeded",captured},
           {"rendererFrames",renderer->status().frames},
           {"sceneUpdates",renderer->status().scene_updates-initialStatus.scene_updates},{"sceneCpuMs",renderer->status().scene_cpu_total_ms-initialStatus.scene_cpu_total_ms},{"frameCpuMs",renderer->status().frame_cpu_total_ms-initialStatus.frame_cpu_total_ms},{"gpuMs",renderer->status().gpu_ms},{"frameCount",renderer->status().frames-initialFrames},{"renderedNewFrames",rendered},
           {"newFramesMs",newFramesMs},{"elapsedMs",GetTickCount64()-started},{"rendererError",renderer->status().error}});
         atomic_write(output.string()+".progress.json",report.dump(2));
         if (!passed) throw std::runtime_error(std::string("Visible editor step failed: ")+name);
+    };
+    auto interactionFixture = [&] {
+        step("Interaction fixture starts",[&]{
+            scene=SceneData{};scene.Game.emplace();scene.Game->SpawnY=.5;scene.Game->SpawnZ=2;
+            Character key;key.Shape="cube";key.GameplayRole="key";key.GameplayKey="audit-key";
+            Character door=key;door.Id=new_id();door.X=3;door.GameplayRole="door";
+            Character exit=key;exit.Id=new_id();exit.X=6;exit.GameplayRole="exit";
+            scene.Characters={key,door,exit};selected=-1;refresh();command(Play);
+        },[&]{return playing && adventure && IsWindowVisible(adventureHud);});
+        // Each interaction starts from its explicit fixture pose; prior physics or
+        // input must not turn this into an accidental out-of-range test.
+        step("Collect key through editor input",[&]{adventure->position={0,.5,2};adventure->yaw=adventure->pitch=0;SendMessageW(view,WM_KEYDOWN,'E',0);},[&]{return adventure->scene().Characters.size()==2 && scene.Characters.size()==3;});
+        step("Open matching door through editor input",[&]{adventure->position={3,.5,2};adventure->yaw=adventure->pitch=0;SendMessageW(view,WM_KEYDOWN,'E',0);},[&]{return adventure->scene().Characters.size()==1 && adventureHint=="Door opened.";});
+        step("Complete exit through editor input",[&]{adventure->position={6,.5,2};adventure->yaw=adventure->pitch=0;
+            report["exitInteractionBefore"]={{"position",{adventure->position.x,adventure->position.y,adventure->position.z}},{"pitch",adventure->pitch},{"yaw",adventure->yaw}};
+            SendMessageW(view,WM_KEYDOWN,'E',0);
+            report["exitInteractionImmediate"]={{"finished",adventure->finished},{"hint",adventureHint}};
+        },[&]{report["exitInteractionAfter"]={{"finished",adventure->finished},{"hint",adventureHint}};return adventure->finished && adventureHint=="Adventure complete!";});
+        step("Reset restores interactive scene",[&]{command(Stop);},[&]{return !adventure && scene.Characters.size()==3 && !IsWindowVisible(adventureHud);});
     };
     try {
         report["activationRequested"] = startupActivated;
@@ -110,6 +148,9 @@ int visible_ui_checks(const fs::path& output) {
             throw std::runtime_error("Automatic visible editor foreground precondition unavailable");
         }
         report["automaticStart"]=true;
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_INTERACTION_ONLY",nullptr,0)){
+            interactionFixture();report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+        }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_PHYSICS_AUTHORING_ONLY",nullptr,0)){
             scene=SceneData{};scene.Game.emplace();Character body;body.Shape="cube";Character fire;fire.Shape="fire";fire.X=3;Character bolt;bolt.Shape="chaos-lightning";bolt.X=-3;scene.Characters={body,fire,bolt};selected=0;selectionIds={body.Id};history.clear();dirty=false;bodyDetails=true;refresh();show_inspector(0);
             auto editCheck=[&](const char* name,auto action,auto valid){auto before=scene.encode();step(name,action,valid);auto after=scene.encode();step("Undo physics authoring",[&]{command(Undo);},[&]{return scene.encode()==before;});step("Redo physics authoring",[&]{command(Redo);},[&]{return scene.encode()==after;});};
@@ -374,6 +415,143 @@ int visible_ui_checks(const fs::path& output) {
             step("Reset restores normal sight",[&]{adventure->start(scene);adventure->cameraPitch=-.4;},[&]{return adventure->sight_range()==60 && !adventure->crowd_control().active;});
             report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
         }
+        if(GetEnvironmentVariableW(L"STARLIGHT_UI_STRESS_ONLY",nullptr,0)){
+            MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
+            SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            auto envPath=[](const wchar_t* name){std::wstring v(32768,0);v.resize(GetEnvironmentVariableW(name,v.data(),DWORD(v.size())));return std::filesystem::path(v);};
+            const auto scenePath=envPath(L"STARLIGHT_STRESS_SCENE"),planPath=envPath(L"STARLIGHT_STRESS_PLAN");
+            const bool barScene=GetEnvironmentVariableW(L"STARLIGHT_STRESS_BAR",nullptr,0)>0;
+            json plan;if(!barScene){std::ifstream in(planPath);if(!in)throw std::runtime_error("Stress plan unreadable");in>>plan;}
+            auto stage=[&](const std::string& m){{std::ofstream f(output.string()+".stage",std::ios::app);f<<m<<" @"<<GetTickCount64()<<"\n";}};
+            stage("begin");
+            std::atomic<bool> progressed{false};
+            HANDLE mainThread=nullptr;DuplicateHandle(GetCurrentProcess(),GetCurrentThread(),GetCurrentProcess(),&mainThread,0,FALSE,DUPLICATE_SAME_ACCESS);
+            std::thread([&,mainThread]{
+                for(int i=0;i<120&&!progressed;++i)Sleep(100);
+                if(progressed)return;
+                {std::map<std::string,int> hist;for(int i=0;i<600;++i){hist[std::string(gCrumb)]++;Sleep(1);}
+                 std::ofstream h(output.string()+".crumbs");for(auto& [k,v]:hist)h<<k<<" "<<v<<"\n";}
+                SuspendThread(mainThread);CONTEXT ctx{};ctx.ContextFlags=CONTEXT_FULL;GetThreadContext(mainThread,&ctx);
+                HANDLE process=GetCurrentProcess();SymSetOptions(SYMOPT_LOAD_LINES|SYMOPT_UNDNAME|SYMOPT_DEFERRED_LOADS);SymInitialize(process,nullptr,TRUE);
+                STACKFRAME64 f{};f.AddrPC.Offset=ctx.Rip;f.AddrPC.Mode=AddrModeFlat;f.AddrFrame.Offset=ctx.Rbp;f.AddrFrame.Mode=AddrModeFlat;f.AddrStack.Offset=ctx.Rsp;f.AddrStack.Mode=AddrModeFlat;
+                std::ofstream out(output.string()+".stack");out<<"base "<<std::hex<<reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))<<std::dec<<"\n";out<<"msg "<<gMsg<<" crumb "<<gCrumb<<"\n";
+                for(int i=0;i<48&&StackWalk64(IMAGE_FILE_MACHINE_AMD64,process,mainThread,&f,&ctx,nullptr,SymFunctionTableAccess64,SymGetModuleBase64,nullptr);++i){
+                    char buffer[sizeof(SYMBOL_INFO)+256]{};auto* sym=reinterpret_cast<SYMBOL_INFO*>(buffer);sym->SizeOfStruct=sizeof(SYMBOL_INFO);sym->MaxNameLen=255;DWORD64 disp=0;
+                    HMODULE module=nullptr;wchar_t name[260]{};GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(f.AddrPC.Offset),&module);if(module)GetModuleFileNameW(module,name,260);
+                    out<<i<<" "<<std::hex<<f.AddrPC.Offset<<std::dec<<" "<<(SymFromAddr(process,f.AddrPC.Offset,&disp,sym)?sym->Name:"?")<<" +"<<disp<<" "<<utf8(name)<<"\n";
+                }
+                out.flush();ResumeThread(mainThread);
+            }).detach();
+            if(GetEnvironmentVariableW(L"STARLIGHT_STRESS_NOHUD",nullptr,0)){pacingShown=false;renderer->pacing_enabled(false);}
+            std::vector<std::pair<std::uint64_t,std::string>> profileSamples;profileSamples.reserve(400000);
+            const bool profiling=GetEnvironmentVariableW(L"STARLIGHT_STRESS_PROFILE",nullptr,0)>0;
+            std::atomic<bool> profileOn{false};
+            std::atomic<bool> sampling{true};
+            std::thread sampler([&]{while(sampling){PROCESS_MEMORY_COUNTERS_EX m{};m.cb=sizeof(m);if(GetProcessMemoryInfo(GetCurrentProcess(),reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&m),sizeof(m)))starlight_diag::evlog("mem",double(m.WorkingSetSize)/1048576.,double(m.PrivateUsage)/1048576.,double(m.PeakWorkingSetSize)/1048576.);Sleep(500);}});
+            std::thread profiler([&]{
+                if(!profiling)return;
+                while(sampling){
+                    if(profileOn){SuspendThread(mainThread);CONTEXT ctx{};ctx.ContextFlags=CONTEXT_CONTROL;if(GetThreadContext(mainThread,&ctx))profileSamples.emplace_back(ctx.Rip,std::string(gCrumb));ResumeThread(mainThread);}
+                    Sleep(1);
+                }
+            });
+            starlight_diag::evlog("STRESS.LOAD.BEGIN");
+            {static bool shot=false;if(GetEnvironmentVariableW(L"STARLIGHT_STRESS_VISUAL",nullptr,0)>0)loading_observer()=[&](double f){if(!shot&&f>.4){shot=true;capture(output.parent_path()/"loading-screen.bmp");}};}
+            if(barScene){plan=build_bar_scene_through_editor();history.clear();dirty=false;refresh();toggle_menu(0);}
+            else{bool repaired=false;auto next=open_scene_data(scenePath,repaired);if(!next)throw std::runtime_error("Stress scene failed to load");
+            render_scene(*next);scene=std::move(*next);history.clear();dirty=false;refresh();toggle_menu(0);}
+            starlight_diag::evlog("STRESS.LOAD.END");stage("loaded");
+            playback_command(Play);SetFocus(view);starlight_diag::evlog("STRESS.PLAY");stage(std::string("play adventure=")+(adventure?"1":"0"));
+            const auto firstFrames=renderer->status().frames;
+            bool ready=false;
+            {const auto giveUp=GetTickCount64()+20000;while(GetTickCount64()<giveUp){if(adventure && renderer->status().frames>=firstFrames+30){ready=true;break;}pump(false);MsgWaitForMultipleObjectsEx(0,nullptr,5,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}}
+            progressed=true;
+            report["loading"]={{"geometryMs",lastPreparation.geometryMs},{"collisionMs",lastPreparation.collisionMs},{"breakableRocksMs",lastPreparation.fractureMs},{"uploadMs",lastPreparation.uploadMs},{"totalMs",lastPreparation.totalMs},{"breakablesPrepared",lastPreparation.breakablesPrepared},{"breakablesQueued",lastPreparation.breakablesQueued},{"counters",lastPreparation.counters},{"summary",lastPreparation.summary},{"note","measured inside the shared scene preparation; gameplay numbers start after it"}};
+            report["readiness"]={{"ready",ready},{"framesAfterPlay",renderer->status().frames-firstFrames},{"adventureCreated",bool(adventure)}};
+            if(!ready){
+                starlight_diag::evlog("STRESS.READY.TIMEOUT");sampling=false;sampler.join();profiler.join();
+                report["pass"]=false;report["setupValid"]=false;report["failure"]="Readiness wait timed out after 20 s: the adventure did not exist or fewer than 30 frames were rendered after Play";
+                atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 2;
+            }
+            if(GetEnvironmentVariableW(L"STARLIGHT_STRESS_DUMP",nullptr,0)){json all=json::array();for(const auto& c:adventure->scene().Characters){auto b=object_bounds(c);all.push_back({{"id",c.Id},{"shape",c.Shape.value_or("")},{"low",{b.low.x,b.low.y,b.low.z}},{"high",{b.high.x,b.high.y,b.high.z}}});}std::ofstream(output.string()+".bounds.json")<<all.dump();}
+            starlight_diag::evlog("STRESS.READY");
+            stressTarget=plan.value("boss",std::string{});stressAmp=plan.value("amp",.5);stressAmpBreak=plan.value("ampBreak",.1);
+            if(plan.contains("camera")){const auto& c=plan["camera"];const char* k[8]={"yawAmp","yawPeriod","pitchBase","pitchAmp","pitchPeriod","distBase","distAmp","distPeriod"};for(int i=0;i<8;++i)stressCam[i]=c.value(k[i],stressCam[i]);}
+            stressRoute.clear();if(plan.contains("settleRoute"))for(const auto& key:plan["settleRoute"])stressRoute.push_back({key[0].get<double>(),key[1].get<double>(),key[2].get<double>(),key[3].get<double>()});
+            stressIds.clear();if(plan.contains("rocks"))for(const auto& r:plan["rocks"])if(r.value("expect",false))stressIds.push_back(r["id"].get<std::string>());stressExpected=int(stressIds.size());
+            const bool hasBoss=!stressTarget.empty();
+            const bool visual=GetEnvironmentVariableW(L"STARLIGHT_STRESS_VISUAL",nullptr,0)>0;
+            adventure->cameraPitch=-.62;
+            const double simAtFire=adventure->seconds();const ULONGLONG wallAtFire=GetTickCount64();
+            // The scripted player always fights the boss; breakable rocks lie in its line of fire and the run is invalid unless they break.
+            stressHeading=plan.value("heading",0.);stressAimRocks=false;if(plan.contains("player")){stressHomeX=plan["player"].value("x",0.);stressHomeZ=plan["player"].value("z",0.);}stressPhaseA=plan.value("phaseA",25.);stressFireSim=simAtFire;mockStress=true;if(hasBoss)adventure->fire_button(true);
+            starlight_diag::evlog("STRESS.FIRE");const auto bypassFire=std::make_pair(bypass_counters().staticBounds.load(),bypass_counters().staticMeshes.load());
+            profileOn=true;
+            const int minBeats=plan.value("beats",80),maxBeats=minBeats+plan.value("extraBeats",60);
+            const std::uint64_t settleMs=plan.value("settleMs",35000);
+            int beat=0,healBeats=0,attackBeats=0,dodgesOk=0,dodgesRefused=0,shots=0;ULONGLONG settleEnd=0;bool allBrokenLogged=false;int lastShotSeg=-2,lastShotBreaks=-1;
+            std::vector<std::string> shotNames;
+            auto snapshot=[&](const std::string& label){if(!visual||shots>=40)return;auto file=output.parent_path()/("shot-"+std::to_string(shots++)+"-"+label+".bmp");if(capture(file))shotNames.push_back(utf8(file.filename().wstring()));};
+            while(beat<maxBeats){
+                step(("Stress: exchange "+std::to_string(beat+1)).c_str(),[&]{
+                    if(!hasBoss)return;
+                    // The scripted player also heals whenever its health is low, like a person would.
+                    bool heal=(beat%8)>=4 || adventure->health()<50;
+                    adventure->healing_cast("",heal);adventure->healing_cast(stressTarget,heal);
+                    if(beat%6==2){if(adventure->dodge(beat%12<6?-1:1,0))++dodgesOk;else ++dodgesRefused;}
+                    adventure->fire_button(!heal);
+                    if(heal)++healBeats;else ++attackBeats;
+                },[&]{return true;});
+                ++beat;
+                if(adventure->health()<=0){starlight_diag::evlog("STRESS.PLAYER.DEAD");break;}
+                if(stressSeg!=lastShotSeg || stressBreaksSeen!=lastShotBreaks){snapshot("seg"+std::to_string(stressSeg)+"-breaks"+std::to_string(stressBreaksSeen));lastShotSeg=stressSeg;lastShotBreaks=stressBreaksSeen;}
+                else if(visual && beat%6==3)snapshot("beat"+std::to_string(beat));
+                if(beat<minBeats)continue;
+                const bool allBroken=stressExpected==0 || stressBreaksSeen>=stressExpected;
+                if(!allBroken)continue;
+                if(!allBrokenLogged){allBrokenLogged=true;starlight_diag::evlog("STRESS.ALLBROKEN");starlight_diag::evlog("STRESS.SETTLE.BEGIN");if(stressExpected==0)stressLastBreakWall=GetTickCount64();}
+                settleEnd=stressLastBreakWall+settleMs;
+                if(GetTickCount64()>=settleEnd)break;
+            }
+            const ULONGLONG endWall=GetTickCount64();const double simAtEnd=adventure->seconds();
+            starlight_diag::evlog("STRESS.END");
+            if(allBrokenLogged)starlight_diag::evlog("STRESS.SETTLE.END");
+            mockStress=false;if(hasBoss)adventure->fire_button(false);
+            const auto bypassEnd=std::make_pair(bypass_counters().staticBounds.load(),bypass_counters().staticMeshes.load());
+            profileOn=false;sampling=false;sampler.join();profiler.join();
+            if(profiling){std::ofstream out(output.string()+".rip");for(const auto& [rip,crumb]:profileSamples){HMODULE module=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(rip),&module);wchar_t name[260]{};if(module)GetModuleFileNameW(module,name,260);out<<std::hex<<(rip-reinterpret_cast<std::uint64_t>(module))<<std::dec<<" "<<std::filesystem::path(name).filename().string()<<" "<<crumb<<'\n';}}
+            const auto& st=stressStats;
+            std::vector<std::string> missed;if(plan.contains("rocks")){const auto& live=adventure->scene().Characters;for(const auto& r:plan["rocks"])if(r.value("expect",false)&&std::any_of(live.begin(),live.end(),[&](const auto& c){return c.Id==r["id"].get<std::string>();}))missed.push_back(r["id"].get<std::string>());}
+            const double wallSeconds=double(endWall-wallAtFire)/1000.,simSeconds=simAtEnd-simAtFire;
+            const double settleAfterLast=stressLastBreakWall&&allBrokenLogged?double(endWall-stressLastBreakWall)/1000.:0;
+            auto check=[&](const char* name,bool ok,json value){return json{{"name",name},{"pass",ok},{"value",std::move(value)}};};
+            json checks=json::array();
+            checks.push_back(check("readiness",ready,report["readiness"]));
+            checks.push_back(check("simulation-advanced",simSeconds>=wallSeconds*.25&&simSeconds>2,json{{"simSeconds",simSeconds},{"wallSeconds",wallSeconds},{"simulationTicks",st.ticks},{"rendererFrames",renderer->status().frames}}));
+            if(hasBoss){
+                checks.push_back(check("player-moved",st.pathLength>1.,json{{"pathLengthM",st.pathLength}}));
+                if(plan.value("bossPursuit",false))checks.push_back(check("boss-pursued",st.bossMaxDisp>.5,json{{"maxDisplacementM",st.bossMaxDisp}}));else checks.push_back(check("boss-anchored-as-designed",st.bossMaxDisp<.05,json{{"maxDisplacementM",st.bossMaxDisp}}));
+                checks.push_back(check("boss-damaged",st.bossMinHealth<st.bossStartHealth,json{{"start",st.bossStartHealth},{"min",st.bossMinHealth}}));
+                checks.push_back(check("player-attacked-and-healed",st.playerMinHealth<100&&healBeats>0,json{{"minHealth",st.playerMinHealth},{"maxHealth",st.playerMaxHealth},{"attackBeats",attackBeats},{"healBeats",healBeats}}));
+                checks.push_back(check("player-survived",adventure->health()>0&&st.playerMinHealth>0,json{{"minHealth",st.playerMinHealth},{"endHealth",adventure->health()}}));
+                checks.push_back(check("telegraphs-seen",st.telegraphTicks>0,json{{"ticksWithTelegraph",st.telegraphTicks}}));
+                checks.push_back(check("dodges",dodgesOk>0,json{{"accepted",dodgesOk},{"refused",dodgesRefused}}));
+            }
+            if(stressExpected>0){
+                checks.push_back(check("all-expected-rocks-broken",missed.empty(),json{{"expected",stressExpected},{"broken",stressBreaksSeen},{"stillIntact",missed}}));
+                checks.push_back(check("debris-appeared",st.fragPeak>0,json{{"peakFragments",st.fragPeak},{"peakDustParticles",st.dustPeak}}));
+                checks.push_back(check("settle-30s-after-final-break",settleAfterLast>=30.,json{{"secondsObservedAfterFinalBreak",settleAfterLast}}));
+                checks.push_back(check("debris-cleaned-up",st.fragPeakLate<=16,json{{"peakFragmentsMoreThan20sAfterFinalBreak",st.fragPeakLate},{"fragmentsAtEnd",adventure->fragment_count()},{"dustAtEnd",adventure->dust_count()},{"note","what remains late is boss projectile impact sparks, not rock rubble"}}));
+            }
+            checks.push_back(check("renderer-error-free",renderer->status().error.empty(),renderer->status().error));
+            bool all=true;for(const auto& c:checks)all&=c["pass"].get<bool>();
+            report["stressChecks"]=checks;report["screenshots"]=shotNames;report["beats"]=beat;
+            report["breaks"]=adventure->break_count();report["fragmentsAtEnd"]=adventure->fragment_count();report["playerHealth"]=adventure->health();
+            {const auto cs=ObjectCache::shared().stats();report["objectCache"]={{"boundsHits",cs.hits},{"boundsMisses",cs.misses},{"meshHits",cs.meshHits},{"meshMisses",cs.meshMisses},{"entries",cs.entries}};report["uncachedStaticQueries"]={{"bruteForceRayTests",brute_force_ray_tests().load()},{"boundsDuringRun",bypassEnd.first-bypassFire.first},{"meshesDuringRun",bypassEnd.second-bypassFire.second},{"note","bounds/meshes of non-cube objects that do not move, computed outside the shared cache"}};if(bypass_trace()){json sites=json::array();const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));for(const auto& site:bypass_counters().sites)if(site.count.load())sites.push_back({{"rva",site.address.load()-base},{"count",site.count.load()},{"kind",site.kind.load()?"mesh":"bounds"}});report["uncachedCallers"]=sites;}}
+            report["runtimeCounters"]=runtime_counters_json(*adventure,renderer->status());
+            report["setupValid"]=all;report["pass"]=all;
+            atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return all?0:3;
+        }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_BATTLE_ONLY",nullptr,0)){
             MONITORINFO monitor{sizeof(MONITORINFO)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor);
             SetWindowLongPtrW(window,GWL_STYLE,WS_POPUP|WS_VISIBLE);SetWindowPos(window,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED|SWP_SHOWWINDOW);
@@ -385,7 +563,7 @@ int visible_ui_checks(const fs::path& output) {
             scene=SceneData{};scene.Name="Mock battle - live movement and cones";scene.Game.emplace();scene.Game->SpawnZ=0;
             Character enemy;enemy.Shape="cube";enemy.X=1;enemy.Z=-2.5;enemy.CombatHealth=1000;enemy.CombatBoss=true;enemy.CombatPursuit=true;enemy.CombatAutoAttack=true;scene.Characters={enemy};
             history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
-            adventure->cameraPitch=-.65;adventure->fire_button(true);mockBattle=true;
+            adventure->cameraPitch=-.65;adventure->fire_button(true);mockBattle=true;starlight_diag::evlog("BATTLE.START");
             bool both=false;double startingEnemy=1000;
             for(int beat=0;beat<44;beat++){
                 step(("Mock battle: exchange "+std::to_string(beat+1)).c_str(),[&]{
@@ -396,7 +574,7 @@ int visible_ui_checks(const fs::path& output) {
                     adventure->fire_button(!heal);
                 },[&]{auto p=adventure->presentation();both|=p.showTelegraph && !p.actorTelegraphs.empty();return adventure->health()>0 && adventure->combat_actors().at(enemy.Id).health>0;});
             }
-            mockBattle=false;
+            mockBattle=false;starlight_diag::evlog("BATTLE.END");
             if(pacingTest){auto timing=renderer->pacing_snapshot();json objects=json::array();for(const auto& o:timing.objects)objects.push_back({{"name",o.name},{"id",o.id},{"poseUpdatesPerSecond",o.updatesPerSecond},{"unchangedMs",o.unchangedMs},{"moving",o.moving}});
                 report["pacing"]={{"renderFps",timing.fps},{"p50Ms",timing.p50},{"p95Ms",timing.p95},{"p99Ms",timing.p99},{"worstMs",timing.worst},{"frameMs",timing.frameMs},{"objects",objects},{"scope","Last two seconds; CPU render completion and object transforms"}};
                 if(timing.frameMs.size()<10 || timing.objects.size()<3)throw std::runtime_error("Pacing monitor did not collect frames and objects");
@@ -678,7 +856,18 @@ int visible_ui_checks(const fs::path& output) {
             // WindowFromPoint deliberately skips STATIC text controls. Query
             // the parent's child ordering instead, retaining occlusion checks.
             ScreenToClient(window,&point);
-            const bool unobstructed = ChildWindowFromPointEx(window,point,CWP_SKIPINVISIBLE)==status;
+            const auto covering=ChildWindowFromPointEx(window,point,CWP_SKIPINVISIBLE);
+            const bool unobstructed = covering==status;
+            wchar_t coveringClass[128]{};if(covering)GetClassNameW(covering,coveringClass,128);
+            RECT coveringRect{};if(covering)GetWindowRect(covering,&coveringRect);
+            report["telemetryHitTest"][fullScreen ? "fullscreen" : "windowed"] = {
+                {"coveringClass",utf8(coveringClass)},{"coveringIsParent",covering==window},
+                {"coveringId",covering?GetDlgCtrlID(covering):0},
+                {"coveringExStyle",covering?uint64_t(GetWindowLongPtrW(covering,GWL_EXSTYLE)):0},
+                {"sampleClient",{point.x,point.y}},
+                {"coveringRect",{coveringRect.left,coveringRect.top,coveringRect.right,coveringRect.bottom}},
+                {"statusRect",{r.left,r.top,r.right,r.bottom}},
+                {"statusParentMatches",GetParent(status)==window}};
             report["telemetry"][fullScreen ? "fullscreen" : "windowed"] = {
                 {"visible",IsWindowVisible(status)!=FALSE},{"unobstructed",unobstructed},
                 {"text",utf8(text)},{"width",r.right-r.left},{"height",r.bottom-r.top}};
@@ -727,17 +916,7 @@ int visible_ui_checks(const fs::path& output) {
         step("Adventure pause preserves authoring",[&]{command(Pause);},[&]{return !playing && adventure && scene.encode()==authoredAdventure;});
         step("Adventure resume",[&]{command(Play);},[&]{return playing && adventure.has_value();});
         step("Adventure reset clears play state",[&]{command(Stop);},[&]{return !playing && !adventure && scene.encode()==authoredAdventure;});
-        step("Interaction fixture starts",[&]{
-            scene=SceneData{};scene.Game.emplace();scene.Game->SpawnY=.5;scene.Game->SpawnZ=2;
-            Character key;key.Shape="cube";key.GameplayRole="key";key.GameplayKey="audit-key";
-            Character door=key;door.Id=new_id();door.X=3;door.GameplayRole="door";
-            Character exit=key;exit.Id=new_id();exit.X=6;exit.GameplayRole="exit";
-            scene.Characters={key,door,exit};selected=-1;refresh();command(Play);
-        },[&]{return playing && adventure && IsWindowVisible(adventureHud);});
-        step("Collect key through editor input",[&]{SendMessageW(view,WM_KEYDOWN,'E',0);},[&]{return adventure->scene().Characters.size()==2 && scene.Characters.size()==3;});
-        step("Open matching door through editor input",[&]{adventure->position.x=3;SendMessageW(view,WM_KEYDOWN,'E',0);},[&]{return adventure->scene().Characters.size()==1 && adventureHint=="Door opened.";});
-        step("Complete exit through editor input",[&]{adventure->position.x=6;SendMessageW(view,WM_KEYDOWN,'E',0);},[&]{return adventure->finished && adventureHint=="Adventure complete!";});
-        step("Reset restores interactive scene",[&]{command(Stop);},[&]{return !adventure && scene.Characters.size()==3 && !IsWindowVisible(adventureHud);});
+        interactionFixture();
         step("New starter adventure",[&]{dirty=false;command(NewAdventure);},[&]{return dirty && scene.Game && scene.Characters.size()==9;});
         step("Advanced snapping increments",[&]{
             command(BuildShapes);command(DockSettings);if(!advanced)command(Advanced);

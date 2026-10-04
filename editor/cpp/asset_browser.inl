@@ -115,7 +115,7 @@ bool asset_browser_command(int id) {
         if (!source) return true;
         objects = std::move(source->Characters);
     } else {
-        load_glb(path); Character object; object.Asset = utf8(path.wstring()); object.Name = utf8(path.stem().wstring());
+        Character object; object.Asset = import_model(path); object.Name = utf8(path.stem().wstring());
         objects.push_back(std::move(object));
     }
     for (auto &object : objects) object.Id = new_id();

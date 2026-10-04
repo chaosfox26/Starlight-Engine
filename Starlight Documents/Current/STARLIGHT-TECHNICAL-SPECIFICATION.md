@@ -3,6 +3,7 @@
 # Starlight Engine and Creator Suite
 > **Latest implementation (2026-09-17):** multi-tier DXR 1.1 is now implemented. See [DXR-RELEASE.md](editor/DXR-RELEASE.md) for code architecture, verified tier behavior, native performance, and reference-rendering limits.
 > **Newer implementation:** the chaos/HDR/physics release adds capabilities beyond this snapshot. Read [CHAOS-RELEASE.md](editor/CHAOS-RELEASE.md) for delivered changes, tests and remaining limits.
+> **Key-card update (2026-10-04):** the scene-persistence statements in this snapshot (schema 5, sculpt arrays and absolute asset paths stored in the scene file, saved check scenes) are superseded. Scenes are now schema 16 key cards that reference content-addressed assets in one shared library; see [KEY-CARD-ARCHITECTURE.md](docs/architecture/KEY-CARD-ARCHITECTURE.md). Status of that work is compiled and headless-checked, not runtime-verified.
 ## Current-state technical architecture and capability specification
 
 **Snapshot:** 2026-09-16, after the `world-quality-release` editor update.  
@@ -177,7 +178,7 @@ Engine optimization is **stopped/paused** (`deep/automation/status.json` reports
 
 The creator uses a 24×24 metre ground domain, X/Z spanning −12 to +12. Y is height. `SceneData` owns characters/objects, optional terrain, liquid sources, name and ground color. The `Character` type also represents building shapes, nature props and effects; its name does not imply a full character-controller or actor-component framework.
 
-Object state includes stable ID, name, asset path or shape type, X/Y/Z, uniform size, per-axis dimensions, Euler rotations, color, speed, route, floor constraint, lighting properties, material kind and optional sculpted mesh. Default imported preview height is normalized to1.8 metres.
+Object state includes stable ID, name, asset path or shape type, X/Y/Z, uniform size, per-axis dimensions, Euler rotations, color, speed, route, floor constraint, lighting properties, material kind and optional sculpted mesh. Default imported preview height is normalized to1.8 metres. [Update 2026-10-04: an imported model is now referenced by a library id, not a path, and a sculpt by a library asset id.]
 
 ## 2.2 Terrain and terraforming
 
@@ -227,7 +228,7 @@ Undo/Redo use serialized **whole-scene JSON snapshots** in memory. `Remember()` 
 
 This is simple and provides exact scene restoration in tested cases, but it is not an operation/delta log. Large sculpted meshes inflate snapshot memory and serialization cost; no bounded memory policy or disk-backed undo journal is established here.
 
-JSON scene schema is now **5**, reading versions1–5 and upgrading them in memory. It stores sculpt arrays and liquid source settings. Older editor builds cannot read newly saved schema5 files. Save uses a temporary file, an exclusive participating-writer lock, atomic replacement and a timestamped backup of an existing file. SHA256 revision checks reject stale writes. File watching refreshes clean scenes changed externally and preserves unsaved local edits on conflict.
+JSON scene schema is now **5**, reading versions1–5 and upgrading them in memory. It stores sculpt arrays and liquid source settings. Older editor builds cannot read newly saved schema5 files. [Superseded 2026-10-04: the current scene schema is 16. Sculpt and terrain geometry are library assets referenced by id; scenes below 16 are refused with a conversion-required message and converted only by Starlight.SceneMigration.] Save uses a temporary file, an exclusive participating-writer lock, atomic replacement and a timestamped backup of an existing file. SHA256 revision checks reject stale writes. File watching refreshes clean scenes changed externally and preserves unsaved local edits on conflict.
 
 ## 2.5 Surface painting, materials and biome limitations
 
@@ -393,7 +394,7 @@ Delivered: tone mapping/color conversion, simple fog, the new edge-aware smoothi
 |---|---|---|
 | Native creator rendering | Windows WPF/native DX12 viewport, native-resolution correction, edge filter | No non-Windows creator port; no full rendering parity certification. |
 | Project runtime | `.star` DLL host and `.startest` reconciliation | Separate from creator scene Play/export. |
-| Scene persistence | Schema5, migration, atomic backup saves, revision checks | Absolute asset paths; snapshot-size growth; old binaries cannot read schema5. |
+| Scene persistence | Schema5, migration, atomic backup saves, revision checks | Absolute asset paths; snapshot-size growth; old binaries cannot read schema5. Superseded 2026-10-04: schema 16 key cards with library asset ids. |
 | Terrain | Brushes, stamps, painted materials, still liquids | Single heightfield, full rebuilds, no caves/streaming/dirty tiles. |
 | Object sculpting | Four brushes, mesh copy, subdivision, Undo/Redo, save | No advanced topology/UV/remesh tools or large-mesh performance guarantee. |
 | Nature | Manual procedural prop/tuft placement | No scatter brush, wind, density painting or vegetation LOD. |
@@ -494,9 +495,11 @@ All relative paths below are beneath `D:/projects/Starlight-Engine/`.
 | `editor/checks/flow/result.json` | Conservation, finite depths, downhill movement, slower lava, basin pooling and playback/reset. |
 | `editor/checks/corner-controls/result.txt` | Floating fullscreen controls, edge feedback and windowed restoration. |
 | `editor/checks/world-quality/{landscape,lava}.bmp` | Inspected native visual captures; not comprehensive art acceptance. |
-| `editor/checks/world-quality/Landscape-preview.starscene` | Sample landscape used for visual review. |
+| `editor/checks/world-quality/Landscape-preview.starscene` | Sample landscape used for visual review. Update 2026-10-04: still in the pre-key-card format (schema 7), so the current runtime reports conversion required for it until it is converted. |
 
 The final visible UI check used actual input injection to reshape a preview rock, then Ctrl+Z restored it. This supports the basic brush/undo workflow. It does not constitute the creator's final visual acceptance or validation of every mesh.
+
+[Update 2026-10-04: all 40 `.starscene` files in the repository, including the scene named above and the scenes under `editor/checks/` (terrain, world-quality, chaos, denoise, dxr, native, roundtrip), are still in the pre-key-card format (schemas 1 to 15). A staged conversion verified 20 of 20 convertible scenes and the other 20 are disposable generated check scenes; the conversion has not been applied to the repository, so nothing in this section has been re-run against key cards. See [KEY-CARD-ARCHITECTURE.md](docs/architecture/KEY-CARD-ARCHITECTURE.md).]
 
 # Appendix B. Build, Preservation and Operating Constraints
 

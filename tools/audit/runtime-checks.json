@@ -1,0 +1,176 @@
+{
+  "format": "starlight-runtime-checks-v1",
+  "profile": "prebuilt-runtime",
+  "sourceBuildExecuted": false,
+  "scope": "Run the supplied compiled checks. Does not compile source or establish source-to-binary equivalence.",
+  "stages": [
+    {
+      "name": "audit-contract",
+      "executable": "Starlight.AuditContractChecks.exe",
+      "arguments": [],
+      "timeoutSeconds": 270,
+      "features": [
+        "diagnostics-and-existing-audits"
+      ]
+    },
+    {
+      "name": "native-core",
+      "executable": "Starlight.NativeCoreChecks.exe",
+      "arguments": [
+        "{output}",
+        "{root}/migration/geometry-reference.json"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "scene-data-and-compatibility",
+        "scene-packet-abi",
+        "local-automation",
+        "persistence-and-editing-safety",
+        "adventure-gameplay-foundation",
+        "object-geometry-and-sculpting"
+      ]
+    },
+    {
+      "name": "native-diagnostics",
+      "executable": "Starlight.NativeDiagnosticChecks.exe",
+      "arguments": [
+        "{output}"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "diagnostics-and-existing-audits"
+      ]
+    },
+    {
+      "name": "native-no-managed",
+      "executable": "Starlight.NativeGuardChecks.exe",
+      "arguments": [
+        "--root",
+        "{root}",
+        "--manifest",
+        "{root}/tools/checks/historical-managed-references.json",
+        "--output",
+        "{output}/result.json"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "native-application-and-build"
+      ]
+    },
+    {
+      "name": "native-no-managed-policy",
+      "executable": "Starlight.NativeGuardChecks.exe",
+      "arguments": [
+        "--self-test"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "native-application-and-build"
+      ]
+    },
+    {
+      "name": "native-textures",
+      "executable": "Starlight.NativeTextureChecks.exe",
+      "arguments": [
+        "{output}"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "texture-foundation"
+      ]
+    },
+    {
+      "name": "native-classic-ui",
+      "executable": "Starlight.NativeEditor.exe",
+      "arguments": [
+        "--ui-check",
+        "{output}/result.json"
+      ],
+      "timeoutSeconds": 900,
+      "features": [
+        "classic-creator-interface"
+      ]
+    },
+    {
+      "name": "native-adventure-export",
+      "executable": "Starlight.NativeExportChecks.exe",
+      "arguments": [
+        "--runtime",
+        "{runtime}",
+        "--output",
+        "{output}"
+      ],
+      "timeoutSeconds": 270,
+      "features": [
+        "adventure-gameplay-foundation",
+        "windows-adventure-export"
+      ],
+      "identity": "Starlight.NativePlayer.exe"
+    },
+    {
+      "name": "native-session",
+      "executable": "Starlight.NativeSessionChecks.exe",
+      "arguments": [],
+      "timeoutSeconds": 270,
+      "features": [
+        "render-ownership-and-updates",
+        "routes-and-simulation-controls",
+        "rigid-body-simulation",
+        "water-and-lava-flow"
+      ],
+      "delegated": true
+    },
+    {
+      "name": "native-render-lifecycle-visible",
+      "executable": "audit/starlight_audit_tool.exe",
+      "arguments": [
+        "{root}",
+        "{output}",
+        "--gate0",
+        "--batch"
+      ],
+      "timeoutSeconds": 1200,
+      "features": [
+        "native-rendering-contract"
+      ]
+    },
+    {
+      "name": "renderer-fallbacks",
+      "executable": "Starlight.NativeFallbackChecks.exe",
+      "arguments": [
+        "--build-dir",
+        "{build}",
+        "--packet",
+        "{root}/audit-runs/run-20260917-192850/comparison.bin",
+        "--output",
+        "{output}"
+      ],
+      "timeoutSeconds": 800,
+      "features": [
+        "native-rendering-contract"
+      ],
+      "packet": "audit-runs/run-20260917-192850/comparison.bin",
+      "identity": "Starlight.Viewport.dll",
+      "createsOutput": true
+    },
+    {
+      "name": "denoiser-quality",
+      "executable": "Starlight.NativeDenoiseChecks.exe",
+      "arguments": [
+        "--build-dir",
+        "{build}",
+        "--packet",
+        "{root}/editor/checks/denoise/regression/chaos-rt.packet",
+        "--output",
+        "{output}"
+      ],
+      "timeoutSeconds": 600,
+      "features": [
+        "native-rendering-contract"
+      ],
+      "packet": "editor/checks/denoise/regression/chaos-rt.packet",
+      "identity": "Starlight.Viewport.dll",
+      "createsOutput": true
+    }
+  ]
+}

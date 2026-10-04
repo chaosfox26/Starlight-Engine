@@ -33,8 +33,20 @@ void playback_command(int id)
     // Play belongs to the existing editor canvas in both window modes.
     // Keep the same session so entering full screen cannot restart simulation.
     bool next = id == Play ? !playing : false;
+    std::optional<LoadingScreen> loading;RenderStatus statusBeforeInstall{};
     if(scene.Game && next && !adventure){
+        // Every scene starts through the same preparation: loading screen, cache warm-up, collision, break-ahead fracture, upload.
+        loading.emplace();loading->show(window,view);loading->update(0,"Starting your scene");statusBeforeInstall=renderer->status();
+        renderer->playback(false);
         questTracker.reset();adventure.emplace();adventure->start(scene);
+        lastPreparation=prepare_scene(*adventure,*loading);
+        if(lastPreparation.stopped()){ // never reveal a scene that did not finish preparing
+            loading->update(loading->fraction(),"Loading did not finish: "+lastPreparation.reason);
+            const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();adventure.reset();adventureHint.clear();
+            release_deferred_close();
+            if(!cancelled)error("Play could not start. "+reason);
+            return;
+        }
         if(explorer){adventure->position=explorer->position;adventure->yaw=explorer->yaw;adventure->pitch=explorer->pitch;}
     }
     if(!next && explorer){
@@ -49,17 +61,34 @@ void playback_command(int id)
         renderer->gameplay_time(adventure->seconds());
         renderer->camera({adventure->position,adventure->position+adventure->direction(),1});
         adventure->update_rules();
-        renderer->scene(adventure->scene());
+        const uint64_t installedScene=renderer->scene(adventure->scene());
+        if(loading)lastPreparation.sceneGeneration=installedScene;
         SetFocus(view);
     }
     {
         if(!adventure)renderer->gameplay_time(std::nullopt);
         inlinePlayFrame = renderer->status().frames;
         renderer->playback_options(repeat, follow && actor() ? actor()->Id : std::string{});
-        renderer->playback(next, id == Stop || (next && (inlineFinished || explorer.has_value())));
+        const bool startAfterReady = loading && adventure && next;
+        renderer->playback(next && !startAfterReady, id == Stop || (next && (inlineFinished || explorer.has_value())));
         inlineFinished = false;
-        preview_state(next);
+        if(!startAfterReady)preview_state(next);
     }
+    if(loading&&adventure){
+        finish_scene_upload(*renderer,statusBeforeInstall,*adventure,*loading,lastPreparation);
+        if(!lastPreparation.ready()){
+            const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();
+            playback_command(Stop);
+            release_deferred_close();
+            if(!cancelled)error("Play stopped because loading did not finish. "+reason);
+            return;
+        }
+        inlinePlayFrame = renderer->status().frames;
+        renderer->playback(true);
+        preview_state(true);
+    }
+    loading.reset();
+    release_deferred_close();
     if(adventure)questTracker.update(scene,adventure->rules(),next);else questTracker.hide();
     ShowWindow(adventureHudPanel,next && adventure ? SW_SHOW : SW_HIDE);
     if(!next && explorer)explorer_hint();
@@ -285,10 +314,12 @@ void place_character(Vec3 p)
     if (playing)
         throw std::runtime_error("Pause playback before editing");
     if (characterAsset.empty())
-        throw std::runtime_error("Import a GLB character first");
+        throw std::runtime_error(defaultCharacterProblem.empty() ? "Import a GLB character first" : defaultCharacterProblem);
+    if (!model_available(characterModelId))
+        throw std::runtime_error("The character model " + characterModelId + " is no longer in any asset library on this machine. Import the character again or register the library that holds it with Starlight.NativeCommands --asset-root-add <folder>. " + EngineAssets::describe_roots());
     edit([&] {
         Character c;
-        c.Asset = utf8(characterAsset.wstring());
+        c.Asset = characterModelId;
         c.Name = utf8(characterAsset.stem().wstring());
         c.X = std::clamp(p.x, -12., 12.);
         c.Z = std::clamp(p.z, -12., 12.);
@@ -442,7 +473,7 @@ void open_project()
 {
     if (projectWindow && IsWindowVisible(projectWindow))
     {
-        SetForegroundWindow(projectWindow);
+        if (projectOwnerEnabled) SetForegroundWindow(projectWindow);
         return;
     }
     end_stroke();
@@ -484,8 +515,8 @@ void open_project()
     projectOwnerEnabled = IsWindowEnabled(window);
     EnableWindow(window, FALSE);
     project_form();
-    ShowWindow(projectWindow, SW_SHOW);
-    SetFocus(GetDlgItem(projectHost, ChooseProject));
+    ShowWindow(projectWindow, projectOwnerEnabled ? SW_SHOW : SW_SHOWNOACTIVATE);
+    if (projectOwnerEnabled) SetFocus(GetDlgItem(projectHost, ChooseProject));
 }
 int projectScroll = 0;
 static LRESULT CALLBACK project_scroll_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data)
@@ -555,9 +586,12 @@ void close_project()
         SetWindowTextW(projectMessage, L"Finishing the settings check…");
         return;
     }
-    ShowWindow(projectWindow, SW_HIDE);
+    const bool restoreFocus = GetForegroundWindow() == projectWindow;
+    // Re-enable the modal owner before hiding its active dialog so Windows can
+    // return activation to it, rather than selecting an unrelated application.
     EnableWindow(window, projectOwnerEnabled);
-    if (projectOwnerEnabled)
+    ShowWindow(projectWindow, SW_HIDE);
+    if (projectOwnerEnabled && restoreFocus)
         SetFocus(view);
 }
 void project_buttons()

@@ -6,6 +6,16 @@ json export_playable_game(const SceneData& source,const fs::path& destination,co
     auto findings=adventure_readiness(source);
     const std::vector<std::wstring> required={L"Starlight.NativePlayer.exe",L"Starlight.Viewport.dll",L"Starlight.Physics.dll",L"msvcp140.dll",L"vcruntime140.dll",L"vcruntime140_1.dll"};
     for(const auto& name:required)if(!fs::is_regular_file(runtime/name))throw std::runtime_error("Build the standalone player and runtime files before exporting: "+utf8(name));
+    const std::vector<fs::path> notices={L"licenses/Starlight-LICENSE.txt",L"licenses/THIRD-PARTY-NOTICES.md",L"licenses/Jolt-MIT.txt",L"licenses/cgltf-MIT.txt",L"licenses/jsmn-MIT.txt",L"licenses/nlohmann-json-MIT.txt",L"licenses/json-embedded-credits.txt"};
+    for(const auto& name:notices)if(!fs::is_regular_file(runtime/name))throw std::runtime_error("Runtime license notice missing: "+utf8(name.wstring()));
+    const bool rayReconstruction=fs::is_regular_file(runtime/L"nvngx_dlssd.dll");
+    if(rayReconstruction&&!fs::is_regular_file(runtime/L"licenses/NVIDIA-RTX-SDK.txt"))throw std::runtime_error("Ray reconstruction runtime license notice missing");
+    const bool streamline=fs::is_regular_file(runtime/L"sl.interposer.dll");
+    const std::vector<fs::path> streamlineFiles={L"sl.interposer.dll",L"sl.common.dll",L"sl.dlss_d.dll",L"NvLowLatencyVk.dll",L"licenses/NVIDIA-Streamline-MIT.txt",L"licenses/NVIDIA-Streamline-third-party.md",L"licenses/NVIDIA-Reflex.txt"};
+    if(streamline){
+        if(!rayReconstruction)throw std::runtime_error("Streamline ray reconstruction runtime missing");
+        for(const auto& name:streamlineFiles)if(!fs::is_regular_file(runtime/name))throw std::runtime_error("Streamline export dependency missing: "+utf8(name.wstring()));
+    }
     auto target=fs::absolute(destination).lexically_normal();if(fs::exists(target))throw std::runtime_error("Choose a new game folder; existing exports are never overwritten");
     fs::create_directories(target.parent_path());auto stage=target.parent_path()/(L".starlight-game-"+wide(new_id()));
     if(!fs::create_directory(stage))throw std::runtime_error("Cannot create game staging folder");
@@ -14,6 +24,11 @@ json export_playable_game(const SceneData& source,const fs::path& destination,co
         json files=json::array();
         auto copy=[&](const fs::path& name){fs::copy_file(runtime/name,stage/name);files.push_back({{"path",utf8(name.wstring())},{"sha256",hash_file(stage/name)}});};
         for(const auto& name:required)copy(name);
+        fs::create_directory(stage/L"licenses");
+        for(const auto& name:notices)copy(name);
+        if(fs::is_regular_file(runtime/L"licenses/NVIDIA-RTX-SDK.txt"))copy(L"licenses/NVIDIA-RTX-SDK.txt");
+        if(rayReconstruction)copy(L"nvngx_dlssd.dll");
+        if(streamline)for(const auto& name:streamlineFiles)copy(name);
         for(const auto& name:{L"msvcp140_1.dll",L"msvcp140_2.dll",L"msvcp140_atomic_wait.dll",L"msvcp140_codecvt_ids.dll",L"concrt140.dll"})if(fs::is_regular_file(runtime/name))copy(name);
         atomic_write(stage/L"README.txt","Launch Starlight.NativePlayer.exe. W A S D: move. Space: jump/double jump. Shift: sprint. V: dodge (hold to lunge). Control: crouch/prone/slide. G: grapple. Tab: target. 1: attack. Right-drag: turn. Left-drag: orbit. Wheel: zoom. E/F: interact. Escape: pause. F5: restart. F8: toggle frame and motion monitor. Slots2-5/R are reserved and disabled.\nWindows x64 with Direct3D 12 graphics is required. Keep this entire folder together.\n");
         atomic_write(stage/L"game-manifest.json",json{{"format","starlight-playable-game"},{"version",1},{"platform","windows-x64"},{"files",files},{"scope","Shared adventure movement and combat runtime; native resolution"}}.dump(2));

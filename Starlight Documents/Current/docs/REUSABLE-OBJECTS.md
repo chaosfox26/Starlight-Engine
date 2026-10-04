@@ -1,5 +1,7 @@
 # Reusable native objects
 
+> **Update 2026-10-04 (key-card integration).** Reusable objects and groups are now format Version 2: geometry is a content-addressed library reference, and imported models are allowed and are bundled beside the saved file in an `assets` folder. Version 1 files (embedded sculpt) are refused with a plain-English "conversion required" message until converted with Starlight.SceneMigration. Statements below that conflict with this are marked "Superseded" and the original wording is kept as history. This is compiled and headless-checked only (no `.starobject` or `.stargroup` file exists in the repository, so conversion has been proven on synthetic files only). See [KEY-CARD-ARCHITECTURE.md](architecture/KEY-CARD-ARCHITECTURE.md).
+
 The scene menu now offers **Save selected shape / sculpt** and **Add saved object**.
 Select a built-in shape or sculpt, save a `.starobject` file, then add that file to another scene.
 Each insertion gets its own identity. Appearance, physics settings, sculpt geometry and routes
@@ -7,7 +9,7 @@ are preserved. Placement moves the route with the object; normal snapping still 
 Undo removes the inserted copy without changing the saved file. Redo restores the copy.
 
 This implementation supports native shapes and sculpts individually or in groups. Imported GLB
-object-template packaging remains future work; the searchable browser supports GLB files directly. Unsupported
+object-template packaging remains future work [superseded 2026-10-04: reusable objects and groups may contain imported models]; the searchable browser supports GLB files directly. Unsupported
 objects and malformed files produce errors rather than silently losing external geometry.
 Files are versioned and limited to 32 MiB; saves use the existing atomic-write/backup path.
 
@@ -38,7 +40,7 @@ omitting them preserves the saved object's values. Normal floor protection appli
 
 Duplication assigns a fresh ID, preserves settings and moves routes with the copy.
 Without a name override, it appends ` copy`. Imported objects can be duplicated inside
-their scene, but that retains their existing asset reference and does not package it.
+their scene, but that retains their existing asset reference and does not package it. [Superseded 2026-10-04: the reference is a library model id.]
 
 Both operations run inside the existing scene transaction and require the outer request's
 current scene hash. An invalid operation or stale object hash prevents the entire batch
@@ -78,7 +80,7 @@ model paths and missing files, then use the existing guarded command protocol:
 
 Relative replacement paths resolve against the request file. The replacement GLB is
 validated before the scene saves; invalid replacements leave the scene unchanged.
-Inspection checks file presence only, not geometry or runtime correctness.
+Inspection checks file presence only, not geometry or runtime correctness. [Superseded 2026-10-04: inspection now reports model ids and whether the library holds a verified copy of each; a missing model is re-imported from a replacement file.]
 
 Opening a scene in the editor now offers a **Locate missing model** file picker when
 a required model has moved. The same repair flow applies when adding objects from a
@@ -86,7 +88,7 @@ saved scene. Shared missing references are repaired once. Cancellation leaves th
 existing scene intact, including when another missing model was already located.
 Successful repairs are unsaved edits; the source scene file is untouched until Save.
 Existing but invalid GLB files still produce a validation error rather than being
-silently substituted. Command tools remain noninteractive.
+silently substituted. Command tools remain noninteractive. [Update 2026-10-04: the picker now imports the chosen file into the library and the scene is re-pointed to the new id; a model counts as missing when the library cannot produce a verified copy.]
 
 ## Integrated validation
 
@@ -141,7 +143,7 @@ spacing, and translated routes. One Undo removes the whole paste; Redo restores 
 This is an editor-session object clipboard, separate from the Windows text clipboard.
 It stays available across scene changes until the editor closes or another selection
 is copied. Imported models retain absolute references to their original files, which
-are revalidated before pasting. A missing/invalid model cancels the entire insertion.
+are revalidated before pasting. [Superseded 2026-10-04: models are library ids and the paste check is whether the library still holds a verified copy.] A missing/invalid model cancels the entire insertion.
 Use portable export when copying to another computer or preserving external models.
 
 The combined type-filter and Copy/Paste editor checks passed all 91 assertions and 80

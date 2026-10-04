@@ -1,0 +1,22 @@
+[
+  {
+    "path": "design/branding/starlight-alpha-one-cursive-v3.png",
+    "sha256": "347f6ff0c1f492a563dcd03c76b8a53e3a5d7891815d52dc758b92c2f1eb984f",
+    "bytes": 1245716
+  },
+  {
+    "path": "design/branding/starlight-alpha-one-audio.wav",
+    "sha256": "7acf889c02274e2208104ec7a7eea62087a5aea331c9e29933e2c8dbcf277591",
+    "bytes": 1780240
+  },
+  {
+    "path": "design/branding/starlight-alpha-one-splash-alpha-v1.webm",
+    "sha256": "b934f974b9cb484ed3be2df785d842896442b637315015c518dede2354c61b24",
+    "bytes": 3919227
+  },
+  {
+    "path": "design/branding/starlight-alpha-one-splash-mockup-v1.mp4",
+    "sha256": "90f4e39601f4175eb52305c09e177f9032d692b4ebba14723a4ceecae2bc53c0",
+    "bytes": 1273026
+  }
+]

@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <wrl/client.h>
 #include <d3d12.h>
+#include "d3d12_descriptors.h"
+#include "event_log.h"
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
@@ -23,7 +25,7 @@ static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x
 #include <memory>
 #include <functional>
 
-// Milestone 5: upscaler / frame-generation backends (upscale\*.cpp). One path is chosen at
+// upscaler / frame-generation backends (upscale\*.cpp). One path is chosen at
 // startup (--upscaler auto|dlss|fsr|xess|off); the scene renders to offscreen color+depth+mvec
 // at the mode's render size, the backend reconstructs to output size, the renderer copies to
 // the backbuffer. --bench <ms> + --report <json> make the client its own measurement program.
@@ -51,7 +53,7 @@ static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
-// M6: three frames in flight. Every per-frame GPU-read resource (command allocator, instance
+// three frames in flight. Every per-frame GPU-read resource (command allocator, instance
 // CB ring, joint palettes) exists once per slot; the CPU only waits when the slot it is about
 // to reuse has not retired yet (--inflight caps how many frames may be queued, 1 = the old
 // fully-synchronous behaviour, for A/B numbers).
@@ -158,13 +160,13 @@ static_assert(sizeof(SceneCB) <= kCbStride, "SceneCB must fit one CB slot");
 struct InstData { SceneCB s; UINT paletteBase; UINT _pad[3]; };
 static_assert(sizeof(InstData) == sizeof(SceneCB) + 16, "InstData must match HLSL Inst layout");
 
-// per-character fur profile (ChaosFox #2097: "luscious/soft/silky" vs "tough/rigid"), picked by look.sex
+// per-character fur profile, picked by look.sex
 struct FurProfile { float length, softness, stiffness, sheen, sway, density; };
 
 
 
 // per-frame block (b1): the lights + camera + fog, shared by every draw of the frame. The three
-// follow-spotlights are real cone lights here (M6) instead of the old per-instance "glow" add.
+// follow-spotlights are real cone lights shared by draws in the frame.
 struct SpotLight { XMFLOAT4 pos; XMFLOAT4 dir; XMFLOAT4 color; };   // pos.w = range, dir.w = cos outer, color.w = cos inner
 struct FrameCB {
     XMFLOAT4   lightDir;   // xyz world-space direction the key light travels, w = intensity
@@ -453,7 +455,7 @@ struct RenderDevice {
     unsigned frameRateLimit = 0; // supplied by the selected external settings
     double measuredFenceWaitMs=0,measuredPacingWaitMs=0,measuredPresentWaitMs=0;
     static double timingNow(){LARGE_INTEGER q,f;QueryPerformanceCounter(&q);QueryPerformanceFrequency(&f);return double(q.QuadPart)/f.QuadPart;}
-    HANDLE framePacingTimer = nullptr;
+    HANDLE framePacingTimer = nullptr; double paceNaturalMs = 0;
     LONGLONG lastFrameStart = 0, pacingFrequency = 0;
     virtual ~RenderDevice() { if (framePacingTimer) CloseHandle(framePacingTimer); if (frameLatencyWaitable) CloseHandle(frameLatencyWaitable); if (fenceEvent) CloseHandle(fenceEvent); }
     // Audit-only offscreen throughput: retain GPU fences and resource barriers,
@@ -463,7 +465,7 @@ struct RenderDevice {
     void setAuditOffscreen(bool enabled) {
         flush();
         if (enabled && !auditOutput) {
-            auto desc = targets[0]->GetDesc();
+            auto desc = starlight_resource_desc(targets[0]);
             desc.Flags = D3D12_RESOURCE_FLAG_NONE;
             D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
             must(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE,
@@ -494,7 +496,17 @@ struct RenderDevice {
             if (!framePacingTimer) throw std::runtime_error("Frame pacing timer unavailable");
         }
         QueryPerformanceCounter(&now);
-        const LONGLONG interval = (pacingFrequency + frameRateLimit - 1) / frameRateLimit;
+        LONGLONG interval = (pacingFrequency + frameRateLimit - 1) / frameRateLimit;
+        // Optional (STARLIGHT_PACE_SMOOTH=1): on a variable-refresh OLED panel, slow drift of the frame time shows as brightness flicker in
+        // dark scenes. Present at the steady rate the machine can sustain (the configured ceiling is untouched) instead of as fast as each
+        // frame happens to finish. The target follows a ~0.5 s average of the natural frame time plus a small margin.
+        static const bool paceSmooth = []{ wchar_t v[8]{}; return GetEnvironmentVariableW(L"STARLIGHT_PACE_SMOOTH", v, 8) && v[0] == L'1'; }();
+        if (paceSmooth && lastFrameStart) {
+            const double natural = double(now.QuadPart - lastFrameStart) / double(pacingFrequency) * 1000.0;
+            if (natural > 0 && natural < 100) paceNaturalMs = paceNaturalMs > 0 ? paceNaturalMs * 0.98 + natural * 0.02 : natural;
+            const LONGLONG smooth = LONGLONG(paceNaturalMs * 1.04 / 1000.0 * double(pacingFrequency));
+            if (smooth > interval) interval = smooth;
+        }
         if (lastFrameStart) {
             const double waitStarted=timingNow();
             const LONGLONG deadline = lastFrameStart + interval;
@@ -502,7 +514,8 @@ struct RenderDevice {
                 // Avoid putting the thread to sleep for the final fraction of
                 // a millisecond, where scheduler wake-up variance exceeds the
                 // requested wait. The bounded spin never changes the cap.
-                const LONGLONG guard=std::max<LONGLONG>(1,std::min(interval/2,pacingFrequency/2000));
+                static const LONGLONG spinUs=[]{wchar_t v[16]{};return GetEnvironmentVariableW(L"STARLIGHT_PACE_SPIN_US",v,16)?LONGLONG(_wtoi(v)):LONGLONG(500);}();
+                const LONGLONG guard=std::max<LONGLONG>(1,std::min(interval/2,pacingFrequency*spinUs/1000000));
                 if(deadline-now.QuadPart<=guard){YieldProcessor();QueryPerformanceCounter(&now);continue;}
                 LARGE_INTEGER due{};
                 due.QuadPart = -((deadline - now.QuadPart - guard) * 10000000 + pacingFrequency - 1) / pacingFrequency;
@@ -530,9 +543,9 @@ struct RenderDevice {
     ComPtr<ID3D12Resource>       targets[kFrameCount];
     ComPtr<ID3D12Resource>       depth;      // render-size D32 (upscaler input)
 
-    // ---- milestone 5: offscreen scene at render size, reconstructed to output size ----
+    // ---- offscreen scene at render size, reconstructed to output size ----
     std::unique_ptr<up::Upscaler> ups;
-    std::string upsRequest = "auto";          // --upscaler
+    std::string upsRequest = UP_DEFAULT_REQUEST;          // --upscaler
     std::string upsReason;                    // why the active path was chosen (title/report)
     std::string modeRequest = "quality";      // --quality
     bool  fgRequest = false;                  // --fg on
@@ -548,6 +561,10 @@ struct RenderDevice {
     bool linearHdrScene=false;
     DXGI_FORMAT sceneFormat()const{return linearHdrScene?DXGI_FORMAT_R16G16B16A16_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM;}
     ComPtr<ID3D12Resource> sceneColor, sceneMvec, exposureTex, upOutput;
+    // Multisampled scene targets. When msaa>1 the scene pass draws into these (the rtv/dsv heap slots point at them) and
+    // resolveScene() resolves into sceneColor/sceneMvec/depth, which every later pass keeps reading unchanged.
+    UINT msaaRequest = 8, msaa = 1;
+    ComPtr<ID3D12Resource> msaaColor, msaaMvec, msaaDepth;
     uint32_t frameIndex = 0;
     bool  resetHistory = true;
     XMMATRIX viewProjNoJit = XMMatrixIdentity(), prevViewProjNoJit = XMMatrixIdentity();
@@ -560,7 +577,11 @@ struct RenderDevice {
     float fpsNow = 0; uint64_t fpsTick = 0; uint32_t fpsFrames = 0;
     // GPU-timestamp perf monitor: true per-frame GPU time, immune to the DWM/present throttle that
     // makes headless (non-foreground) windows read a fake ~20fps. 2 timestamps per in-flight slot.
-    ComPtr<ID3D12QueryHeap> tsHeap; ComPtr<ID3D12Resource> tsReadback; UINT64 tsFreq = 0;
+    ComPtr<ID3D12QueryHeap> tsHeap;
+    // Per-pass GPU timing (diagnostic): marks 0 frame start, 1 after shadow maps, 2 after the scene pass, 3 after fog/post, 4 frame end.
+    ComPtr<ID3D12QueryHeap> passHeap; ComPtr<ID3D12Resource> passReadback; float lastPassMs[4]{};
+    void gpuMark(UINT mark) { if (passHeap && mark < 8) cmd->EndQuery(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 8 * slot + mark); }
+    ComPtr<ID3D12Resource> tsReadback; UINT64 tsFreq = 0;
     std::vector<float> benchGpuMs; float lastGpuMs = 0; float gpuMsNow = 0;
     UINT benchInstMax = 0;   // peak instance slots used in a bench frame (drop-diagnosis: pins at kMaxInstances when the buffer is the limit)
     std::vector<float> benchCpuRecMs; float lastCpuRecMs = 0;   // CPU wall-time spent RECORDING the frame's draws on this one thread (throttle-immune; the single-thread cost the multicore refactor targets)
@@ -600,7 +621,7 @@ struct RenderDevice {
     bool   instancingOn = true;                             // hotkey I: batched instanced draws (on) vs one draw per character (off) — live A/B
     bool   perfHud = true;                                  // hotkey T: live perf HUD in the title bar vs the full client title
 
-    // ---- M6: skinned characters + bakes-v1 textures ----
+    // ---- skinned characters + bakes-v1 textures ----
     struct TexSet { ComPtr<ID3D12Resource> basecolor, normal, roughness, ao, furflow, sparkle; UINT table = 0; bool ok = false; bool fur = false; };
     struct CharModel {
         model::SkinnedModel data;
@@ -677,6 +698,7 @@ struct RenderDevice {
     ComPtr<ID3D12PipelineState>  pso;       // opaque, depth write
     ComPtr<ID3D12PipelineState>  psoAdd;    // additive blend, depth test only (spotlight beams / pools)
     ComPtr<ID3D12PipelineState>  psoBg;     // fullscreen background fill (fog colour + zero mvec), no depth
+    ComPtr<ID3D12PipelineState>  psoDepthOnly, psoDepthEqual; // opaque depth pre-pass (no colour) and the colour pass that shades only the surviving samples
     ComPtr<ID3D12Resource>       cb;
     uint8_t*                     cbBase = nullptr;   // persistently-mapped instance CB (kMaxInstances*256)
     struct UploadStorage { ComPtr<ID3D12Resource> resource; void* mapped = nullptr; };
@@ -686,34 +708,35 @@ struct RenderDevice {
     std::vector<UploadStorage> uploadPool;
     UINT64 uploadPoolBytes = 0;
     UINT64 uploadCreated = 0, uploadReused = 0;
-    struct IdleBuffer { ComPtr<ID3D12Resource> resource; bool accelerationStructure=false; };
+    struct IdleBuffer { ComPtr<ID3D12Resource> resource; bool accelerationStructure=false; UINT64 width=0,bytes=0; D3D12_RESOURCE_FLAGS flags=D3D12_RESOURCE_FLAG_NONE; };   // width/bytes/flags are cached so pool searches never call GetDesc
     std::vector<IdleBuffer> bufferPool;
-    UINT64 bufferPoolBytes=0,bufferCreated=0,bufferReused=0;
-    static constexpr UINT64 bufferPoolLimit=16ull*1024*1024;
+    UINT64 bufferPoolBytes=0,bufferCreated=0,bufferReused=0,bufferEvicted=0;
+    static constexpr UINT64 bufferPoolLimit=16ull*1024*1024; static constexpr size_t bufferPoolCount=640;   // many small buffers (rock fragments) are kept for the next break instead of being destroyed one by one
     // Only fence-completed buffers enter this pool. No mesh identities or scene
     // references survive retirement. AS resources must retain their fixed state.
     void recycleBuffer(ComPtr<ID3D12Resource>& resource,bool accelerationStructure=false) {
         if(!resource)return;
         for(const auto& idle:bufferPool)if(idle.resource.Get()==resource.Get()){resource.Reset();return;}
-        const auto bytes=uploadStorageBytes(resource.Get());
+        const auto desc=starlight_resource_desc(resource);const auto bytes=uploadStorageBytes(resource.Get());
         if(bytes>bufferPoolLimit){resource.Reset();return;}
-        while(bufferPool.size()>=64 || bytes>bufferPoolLimit-bufferPoolBytes){
-            auto smallest=std::min_element(bufferPool.begin(),bufferPool.end(),[](const auto& a,const auto& b){return a.resource->GetDesc().Width<b.resource->GetDesc().Width;});
-            bufferPoolBytes-=uploadStorageBytes(smallest->resource.Get());bufferPool.erase(smallest);
+        while(bufferPool.size()>=bufferPoolCount || bytes>bufferPoolLimit-bufferPoolBytes){
+            // Evict the largest idle buffer first: one huge, rarely reusable buffer must not push out dozens of small, reusable ones.
+            auto smallest=std::max_element(bufferPool.begin(),bufferPool.end(),[](const auto& a,const auto& b){return a.width<b.width;});
+            bufferPoolBytes-=smallest->bytes;bufferPool.erase(smallest);++bufferEvicted;
         }
-        bufferPoolBytes+=bytes;bufferPool.push_back({std::move(resource),accelerationStructure});
+        bufferPoolBytes+=bytes;bufferPool.push_back({std::move(resource),accelerationStructure,desc.Width,bytes,desc.Flags});
     }
     ComPtr<ID3D12Resource> acquireBuffer(UINT64 bytes,D3D12_RESOURCE_STATES state,bool uav=false) {
         const bool accelerationStructure=state==D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
         const auto flags=uav?D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS:D3D12_RESOURCE_FLAG_NONE;
         size_t best=bufferPool.size();
-        for(size_t i=0;i<bufferPool.size();++i){auto desc=bufferPool[i].resource->GetDesc();
-            if(bufferPool[i].accelerationStructure==accelerationStructure && desc.Flags==flags && desc.Width>=bytes &&
-               (best==bufferPool.size() || desc.Width<bufferPool[best].resource->GetDesc().Width))best=i;
+        for(size_t i=0;i<bufferPool.size();++i){const auto& idle=bufferPool[i];
+            if(idle.accelerationStructure==accelerationStructure && idle.flags==flags && idle.width>=bytes &&
+               (best==bufferPool.size() || idle.width<bufferPool[best].width))best=i;
         }
         ComPtr<ID3D12Resource> result;
         if(best<bufferPool.size()){
-            bufferPoolBytes-=uploadStorageBytes(bufferPool[best].resource.Get());result=std::move(bufferPool[best].resource);bufferPool.erase(bufferPool.begin()+best);++bufferReused;
+            bufferPoolBytes-=bufferPool[best].bytes;result=std::move(bufferPool[best].resource);bufferPool.erase(bufferPool.begin()+best);++bufferReused;
         }else{
             D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
             D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=std::max<UINT64>(256,bytes);desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;desc.Flags=flags;
@@ -725,7 +748,7 @@ struct RenderDevice {
     }
     static constexpr UINT64 uploadPoolLimit = 16ull * 1024 * 1024;
     static UINT64 uploadStorageBytes(ID3D12Resource* resource) {
-        const auto width = resource->GetDesc().Width;
+        const auto width = starlight_resource_desc(resource).Width;
         return (width + D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1) &
                ~(UINT64(D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT) - 1);
     }
@@ -736,7 +759,7 @@ struct RenderDevice {
             if (bytes <= uploadPoolLimit) {
                 while (uploadPool.size() >= 16 || bytes > uploadPoolLimit - uploadPoolBytes) {
                     auto smallest = std::min_element(uploadPool.begin(), uploadPool.end(),
-                        [](const auto& a, const auto& b) { return a.resource->GetDesc().Width < b.resource->GetDesc().Width; });
+                        [](const auto& a, const auto& b) { return starlight_resource_desc(a.resource).Width < starlight_resource_desc(b.resource).Width; });
                     uploadPoolBytes -= uploadStorageBytes(smallest->resource.Get());
                     uploadPool.erase(smallest);
                 }
@@ -769,7 +792,7 @@ struct RenderDevice {
 
     void must(HRESULT hr, const char* what) { if (FAILED(hr)) { drainDebug(); throw std::runtime_error(what); } }   // debug-layer reason lands in the log first
 
-    // full GPU idle: init / mode change / screenshot / teardown only (never per frame, M6)
+    // full GPU idle: init / mode change / screenshot / teardown only (never per frame)
     void flush() {
         const UINT64 v = ++fenceVal;
         must(queue->Signal(fence.Get(), v), "signal GPU completion");
@@ -854,8 +877,8 @@ struct RenderDevice {
         UploadStorage up;
         size_t best = uploadPool.size();
         for (size_t i = 0; i < uploadPool.size(); ++i) {
-            const auto width = uploadPool[i].resource->GetDesc().Width;
-            if (width >= bytes && (best == uploadPool.size() || width < uploadPool[best].resource->GetDesc().Width)) best = i;
+            const auto width = starlight_resource_desc(uploadPool[i].resource).Width;
+            if (width >= bytes && (best == uploadPool.size() || width < starlight_resource_desc(uploadPool[best].resource).Width)) best = i;
         }
         if (best != uploadPool.size()) {
             uploadPoolBytes -= uploadStorageBytes(uploadPool[best].resource.Get());
@@ -897,23 +920,40 @@ struct RenderDevice {
                 dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
                 logLine("DRED breadcrumbs and page faults enabled");
             }
-            ComPtr<ID3D12Debug> dbg; if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg)))) { dbg->EnableDebugLayer(); flags |= DXGI_CREATE_FACTORY_DEBUG; logLine("d3d12 debug layer ON"); }
+            ComPtr<ID3D12Debug> dbg;
+            const HRESULT debugResult = D3D12GetDebugInterface(IID_PPV_ARGS(&dbg));
+            if (SUCCEEDED(debugResult)) { dbg->EnableDebugLayer(); flags |= DXGI_CREATE_FACTORY_DEBUG; logLine("d3d12 debug layer ON"); }
+            else { char code[32]{}; snprintf(code,sizeof(code),"0x%08lx",static_cast<unsigned long>(debugResult)); logLine(std::string("d3d12 debug layer unavailable HRESULT ")+code); }
+            for(const auto* moduleName:{L"D3D12Core.dll",L"d3d12SDKLayers.dll"}) {
+                wchar_t loadedPath[32768]{};
+                const auto module=GetModuleHandleW(moduleName);
+                if(module && GetModuleFileNameW(module,loadedPath,32768)) {
+                    const int bytes=WideCharToMultiByte(CP_UTF8,0,loadedPath,-1,nullptr,0,nullptr,nullptr);
+                    std::string path(bytes,'\0');WideCharToMultiByte(CP_UTF8,0,loadedPath,-1,path.data(),bytes,nullptr,nullptr);
+                    if(!path.empty())path.pop_back();logLine("graphics runtime module: "+path);
+                }
+            }
             if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiq)))) { dxgiq->SetMuteDebugOutput(kDxgiDebugAll, FALSE); logLine("dxgi debug queue ON"); }
         }
-        // ---- M5: pick the adapter first (vendor drives the auto path), then let the chosen backend
+        // ---- pick the adapter first (vendor drives the auto path), then let the chosen backend
         // create factory + device (DLSS proxies them through the Streamline interposer).
         {
             ComPtr<IDXGIFactory6> probe; must(CreateDXGIFactory2(flags, IID_PPV_ARGS(&probe)), "CreateDXGIFactory2 (probe)");
-            for (UINT i = 0; probe->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)) != DXGI_ERROR_NOT_FOUND; ++i) {
-                DXGI_ADAPTER_DESC1 d; adapter->GetDesc1(&d);
+            adapter.Reset();
+            for (UINT i = 0; ; ++i) {
+                ComPtr<IDXGIAdapter1> candidate;
+                const HRESULT found = probe->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&candidate));
+                if (found == DXGI_ERROR_NOT_FOUND) break;
+                must(found, "enumerate graphics adapters");
+                DXGI_ADAPTER_DESC1 d{}; must(candidate->GetDesc1(&d), "read graphics adapter capabilities");
                 if (d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
-                if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_0, __uuidof(ID3D12Device), nullptr))) {
+                if (SUCCEEDED(D3D12CreateDevice(candidate.Get(), D3D_FEATURE_LEVEL_12_0, __uuidof(ID3D12Device), nullptr))) {
+                    adapter = candidate;
                     adapterVendor = d.VendorId; adapterName.clear(); for (wchar_t c : std::wstring(d.Description)) adapterName.push_back(c < 128 ? (char)c : '?');
                     break;
                 }
-                adapter.Reset();
             }
-            must(adapter ? S_OK : E_FAIL, "no D3D12 hardware adapter");
+            must(adapter ? S_OK : E_FAIL, "Starlight requires a hardware graphics adapter supporting Direct3D 12 feature level 12.0. Update the graphics driver or choose a supported GPU.");
             logLine("adapter " + adapterName + " vendor 0x" + [&] { char b[16]; snprintf(b, 16, "%04x", adapterVendor); return std::string(b); }());
         }
         chooseBackend();
@@ -935,6 +975,13 @@ struct RenderDevice {
             must(device->CreateCommittedResource(&rbHeap, D3D12_HEAP_FLAG_NONE, &rbDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&tsReadback)), "ts readback buffer");
             queue->GetTimestampFrequency(&tsFreq);
             logLine("gpu-timer: query heap ready, freq " + std::to_string(tsFreq));
+            {   // per-pass timestamps (8 per slot)
+                D3D12_QUERY_HEAP_DESC ph{}; ph.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; ph.Count = 8 * kFrameCount;
+                if (SUCCEEDED(device->CreateQueryHeap(&ph, IID_PPV_ARGS(&passHeap)))) {
+                    rbDesc.Width = sizeof(UINT64) * 8 * kFrameCount;
+                    if (FAILED(device->CreateCommittedResource(&rbHeap, D3D12_HEAP_FLAG_NONE, &rbDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&passReadback)))) passHeap.Reset();
+                }
+            }
         }
 
         DXGI_SWAP_CHAIN_DESC1 sc{}; sc.BufferCount = kFrameCount; sc.Width = w; sc.Height = h;
@@ -967,7 +1014,7 @@ struct RenderDevice {
         fenceVal = 1;
         fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
-        // ---- M5: backend init (may REPLACE the swapchain with a frame-generation one), then
+        // ---- backend init (may REPLACE the swapchain with a frame-generation one), then
         // backbuffer views, then the mode's render size + offscreen targets.
         {
             up::DeviceCtx ctx; ctx.device = device.Get(); ctx.queue = queue.Get(); ctx.adapter = adapter.Get();
@@ -1011,7 +1058,7 @@ struct RenderDevice {
         charNorm = XMMatrixMultiply(XMMatrixTranslation(-cx, -minY, -cz), XMMatrixScaling(s, s, s));
     }
 
-    // ---- M5: backend selection. --upscaler auto = adapter vendor (NVIDIA dlss, AMD fsr, Intel
+    // ---- backend selection. --upscaler auto = adapter vendor (NVIDIA dlss, AMD fsr, Intel
     // xess, else fsr), then the portable candidates; an explicit request tries that path, then off.
     // A backend that is not built or whose SDK/driver refuses is logged with the reason and skipped.
     void chooseBackend() {
@@ -1053,7 +1100,7 @@ struct RenderDevice {
     }
 
     void createBackbufferViews() {
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
         for (UINT i = 0; i < kFrameCount; ++i) {
             targets[i].Reset();
             must(swap->GetBuffer(i, IID_PPV_ARGS(&targets[i])), "GetBuffer");
@@ -1067,14 +1114,63 @@ struct RenderDevice {
         }
     }
 
-    ComPtr<ID3D12Resource> createTex(UINT tw, UINT th, DXGI_FORMAT fmt, D3D12_RESOURCE_FLAGS fl, D3D12_RESOURCE_STATES st, const D3D12_CLEAR_VALUE* cv, const char* what) {
+    ComPtr<ID3D12Resource> createTex(UINT tw, UINT th, DXGI_FORMAT fmt, D3D12_RESOURCE_FLAGS fl, D3D12_RESOURCE_STATES st, const D3D12_CLEAR_VALUE* cv, const char* what, UINT samples = 1) {
         D3D12_HEAP_PROPERTIES hp{}; hp.Type = D3D12_HEAP_TYPE_DEFAULT;
         D3D12_RESOURCE_DESC dd{};
         dd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; dd.Width = tw; dd.Height = th;
-        dd.DepthOrArraySize = 1; dd.MipLevels = 1; dd.Format = fmt; dd.SampleDesc.Count = 1; dd.Flags = fl;
+        dd.DepthOrArraySize = 1; dd.MipLevels = 1; dd.Format = fmt; dd.SampleDesc.Count = samples; dd.Flags = fl;
         ComPtr<ID3D12Resource> r;
         must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, st, cv, IID_PPV_ARGS(&r)), what);
         return r;
+    }
+
+    // Anisotropic filtering level for the texture samplers (STARLIGHT_AF = 1, 2, 4, 8 or 16; default 16).
+    static UINT anisotropySetting() {
+        wchar_t value[8]{};
+        UINT level = 16;
+        if (GetEnvironmentVariableW(L"STARLIGHT_AF", value, 8)) level = (UINT)_wtoi(value);
+        return (level == 1 || level == 2 || level == 4 || level == 8 || level == 16) ? level : 16;
+    }
+
+    // Sample count for the scene pass: STARLIGHT_MSAA (1, 2, 4 or 8) or msaaRequest, reduced to what the adapter supports.
+    void chooseMsaa() {
+        UINT want = msaaRequest;
+        wchar_t value[8]{};
+        if (GetEnvironmentVariableW(L"STARLIGHT_MSAA", value, 8)) want = (UINT)_wtoi(value);
+        if (want != 2 && want != 4 && want != 8) want = 1;
+        const DXGI_FORMAT formats[3] = { sceneFormat(), DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_D32_FLOAT };
+        while (want > 1) {
+            bool ok = true;
+            for (auto format : formats) {
+                D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS q{}; q.Format = format; q.SampleCount = want;
+                if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &q, sizeof(q))) || q.NumQualityLevels == 0) ok = false;
+            }
+            if (ok) break;
+            want /= 2;
+        }
+        const UINT requested = msaaRequest; msaa = want;
+        { wchar_t value[8]{}; UINT envValue = 0; if (GetEnvironmentVariableW(L"STARLIGHT_MSAA", value, 8)) envValue = (UINT)_wtoi(value); starlight_diag::evlog("cfg.msaa", envValue ? envValue : requested, msaa, anisotropySetting()); logLine("effective settings: msaa " + std::to_string(msaa) + "x (requested " + std::to_string(envValue ? envValue : requested) + "x), anisotropy " + std::to_string(anisotropySetting()) + "x, scene " + std::to_string(rw) + "x" + std::to_string(rh)); }
+    }
+
+    // Resolve the multisampled scene into the single-sample targets that the post passes read. Leaves every resource in
+    // its resting state (multisampled: render target / depth write; single sample: non-pixel shader resource).
+    void resolveScene() {
+        ComPtr<ID3D12GraphicsCommandList1> list1; must(cmd.As(&list1), "command list 1");
+        barrier(msaaColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        barrier(msaaMvec.Get(),  D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        barrier(msaaDepth.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+        barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+        barrier(depth.Get(),      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RESOLVE_DEST);
+        cmd->ResolveSubresource(sceneColor.Get(), 0, msaaColor.Get(), 0, sceneFormat());
+        cmd->ResolveSubresource(sceneMvec.Get(),  0, msaaMvec.Get(),  0, DXGI_FORMAT_R16G16_FLOAT);
+        list1->ResolveSubresourceRegion(depth.Get(), 0, 0, 0, msaaDepth.Get(), 0, nullptr, DXGI_FORMAT_R32_FLOAT, D3D12_RESOLVE_MODE_MIN);
+        barrier(msaaColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        barrier(msaaMvec.Get(),  D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        barrier(msaaDepth.Get(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        barrier(depth.Get(),      D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
     // (re)create the render-size scene targets + the output-size reconstruction target.
@@ -1091,11 +1187,18 @@ struct RenderDevice {
         sceneMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT,   D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &mc, "create scene mvec");
         depth      = createTex(rw, rh, DXGI_FORMAT_R32_TYPELESS,   D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &dc, "create depth");
         upOutput   = createTex(w, h,   DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, "create upscale output");
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
-        rtv.ptr += (SIZE_T)kFrameCount * rtvSize; device->CreateRenderTargetView(sceneColor.Get(), nullptr, rtv);
-        rtv.ptr += rtvSize;                        device->CreateRenderTargetView(sceneMvec.Get(), nullptr, rtv);
-        D3D12_DEPTH_STENCIL_VIEW_DESC dv{}; dv.Format = DXGI_FORMAT_D32_FLOAT; dv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(depth.Get(), &dv, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
+        chooseMsaa(); msaaColor.Reset(); msaaMvec.Reset(); msaaDepth.Reset();
+        if (msaa > 1) {
+            D3D12_CLEAR_VALUE dm{}; dm.Format = DXGI_FORMAT_D32_FLOAT; dm.DepthStencil.Depth = 1.0f;
+            msaaColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, "create msaa scene color", msaa);
+            msaaMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, "create msaa scene mvec", msaa);
+            msaaDepth = createTex(rw, rh, DXGI_FORMAT_D32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dm, "create msaa depth", msaa);
+        }
+        rtv.ptr += (SIZE_T)kFrameCount * rtvSize; device->CreateRenderTargetView(msaa > 1 ? msaaColor.Get() : sceneColor.Get(), nullptr, rtv);
+        rtv.ptr += rtvSize;                        device->CreateRenderTargetView(msaa > 1 ? msaaMvec.Get() : sceneMvec.Get(), nullptr, rtv);
+        D3D12_DEPTH_STENCIL_VIEW_DESC dv{}; dv.Format = DXGI_FORMAT_D32_FLOAT; dv.ViewDimension = msaa > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D;
+        device->CreateDepthStencilView(msaa > 1 ? msaaDepth.Get() : depth.Get(), &dv, starlight_cpu_heap_start(dsvHeap));
         resetHistory = true;
         readback.Reset();
     }
@@ -1135,7 +1238,7 @@ struct RenderDevice {
         rp[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; rp[3].DescriptorTable.NumDescriptorRanges = 1; rp[3].DescriptorTable.pDescriptorRanges = &texRange; rp[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;   // the fur VS samples the furflow map
         rp[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV; rp[4].Descriptor.ShaderRegister = 7; rp[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;                                   // t7: per-instance StructuredBuffer<Inst> (cross-character instancing)
         rp[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS; rp[5].Constants.ShaderRegister = 2; rp[5].Constants.Num32BitValues = 1; rp[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;   // b2: groupBase (added to SV_InstanceID)
-        D3D12_STATIC_SAMPLER_DESC ss{}; ss.Filter = D3D12_FILTER_ANISOTROPIC; ss.MaxAnisotropy = 8;
+        D3D12_STATIC_SAMPLER_DESC ss{}; ss.Filter = D3D12_FILTER_ANISOTROPIC; ss.MaxAnisotropy = anisotropySetting();
         ss.AddressU = ss.AddressV = ss.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP; ss.MaxLOD = D3D12_FLOAT32_MAX;
         ss.ShaderRegister = 0; ss.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         D3D12_ROOT_SIGNATURE_DESC rsd{}; rsd.NumParameters = 6; rsd.pParameters = rp; rsd.NumStaticSamplers = 1; rsd.pStaticSamplers = &ss;
@@ -1144,7 +1247,7 @@ struct RenderDevice {
         must(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &sigErr), "SerializeRootSignature");
         must(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&rootSig)), "CreateRootSignature");
 
-        // M6 shading: one GGX/Cook-Torrance model for everything. CB colours are sRGB (the room's
+        // Shading: one GGX/Cook-Torrance model for everything. CB colours are sRGB (the room's
         // tuned palette) -> linear in, lit by the key light + hemisphere ambient + three cone
         // spotlights, fogged, then encoded back to sRGB into the UNORM target. Skinned characters
         // add the bakes-v1 maps (basecolor sRGB, tangent-space normal, roughness, AO).
@@ -1313,7 +1416,7 @@ struct RenderDevice {
             "  po.color = float4(finish(i.wp, c), 1.0);\n"
             "  return po;\n"
             "}\n"
-            // ---- shell fur (ChaosFox #2090/#2097 phase a). The 'fur' submesh is drawn again N times
+            // ---- shell fur. The 'fur' submesh is drawn again N times
             // (SV_InstanceID = shell); every shell is the skinned body pushed out along the normal by
             // h*length and bent in the tangent plane by the furflow map (grooming direction),
             // gravity and a wind sway (softness scales the bend, stiffness resists gravity/wind).
@@ -1413,15 +1516,26 @@ struct RenderDevice {
         pd.NumRenderTargets = 2; pd.RTVFormats[0] = sceneFormat(); pd.RTVFormats[1] = DXGI_FORMAT_R16G16_FLOAT;
         pd.BlendState.IndependentBlendEnable = TRUE;
         pd.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-        pd.SampleDesc.Count = 1; pd.SampleMask = UINT_MAX;
+        pd.SampleDesc.Count = msaa; pd.SampleMask = UINT_MAX;
         pd.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         pd.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
         pd.RasterizerState.DepthClipEnable = TRUE;
         for (int i = 0; i < 8; ++i) pd.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        { wchar_t mv[8]{}; if (GetEnvironmentVariableW(L"STARLIGHT_DIAG_NO_MVEC", mv, 8) && mv[0] == L'1') pd.BlendState.RenderTarget[1].RenderTargetWriteMask = 0; }   // diagnostic: attribute the GPU cost of the motion-vector target
         pd.DepthStencilState.DepthEnable = TRUE;
         pd.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
         pd.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
         must(device->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso)), "CreateGraphicsPipelineState");
+        {   // depth pre-pass variants of the main pipeline (same vertex shader, so positions match exactly)
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC dd = pd;
+            dd.PS = { nullptr, 0 };
+            for (int i = 0; i < 8; ++i) dd.BlendState.RenderTarget[i].RenderTargetWriteMask = 0;
+            must(device->CreateGraphicsPipelineState(&dd, IID_PPV_ARGS(&psoDepthOnly)), "CreateGraphicsPipelineState (depth pre-pass)");
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC ee = pd;
+            ee.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            ee.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+            must(device->CreateGraphicsPipelineState(&ee, IID_PPV_ARGS(&psoDepthEqual)), "CreateGraphicsPipelineState (depth equal)");
+        }
 
         // skinned characters: palette skinning in the VS, textured PBR in the PS. Back faces are
         // culled (closed bodies; the sheer skirt is double-sided by geometry in the GLB).
@@ -1501,7 +1615,7 @@ struct RenderDevice {
             D3D12_FEATURE_DATA_D3D12_OPTIONS16 uploadSupport{};
             const bool gpuUploadSupported = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &uploadSupport, sizeof(uploadSupport))) && uploadSupport.GPUUploadHeapSupported;
             if (gpuUploadRequested && gpuUploadSupported) {
-                D3D12_HEAP_PROPERTIES gpuHeap = hp; gpuHeap.Type = D3D12_HEAP_TYPE_GPU_UPLOAD;
+                D3D12_HEAP_PROPERTIES gpuHeap = hp; gpuHeap.Type = starlightGpuUploadHeap;
                 HRESULT made = device->CreateCommittedResource(&gpuHeap, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&instData));
                 if (SUCCEEDED(made)) made = instData->Map(0, &none, reinterpret_cast<void**>(&instBase));
                 instanceGpuUpload = SUCCEEDED(made);
@@ -1525,8 +1639,8 @@ struct RenderDevice {
     uint8_t* cbSlotBase() { return cbBase + (size_t)slot * cbSlotBytes(); }
     D3D12_GPU_VIRTUAL_ADDRESS cbSlotGpu() { return cb->GetGPUVirtualAddress() + (UINT64)slot * cbSlotBytes(); }
 
-    // ---- M6: load the charfactory GLBs + their bakes-v1 texture sets. Missing files degrade
-    // to the M5 primitives per model (never a crash); everything is reported in the log/report.
+    // ---- load the charfactory GLBs + their bakes-v1 texture sets. Missing files degrade
+    // to the fallback primitives per model (never a crash); everything is reported in the log/report.
     GpuMesh uploadMesh(const void* verts, size_t vbytes, UINT stride, const std::vector<uint32_t>& indices) {
         std::vector<uint8_t> alignedVertices;
         if(stride==68) {
@@ -1595,6 +1709,21 @@ struct RenderDevice {
         cmd->SetGraphicsRootConstantBufferView(1, cbSlotGpu() + (UINT64)kMaxInstances * kCbStride);
     }
 
+    // Two-step drawing for the depth pre-pass: stage the per-draw constants once, then issue the same draw in both passes.
+    UINT stageMesh(const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
+        if (instCursor >= kMaxInstances) return UINT_MAX;
+        UINT inst = instCursor++;
+        writeInstance(inst, model, color, emissive, rough, metal, false);
+        return inst;
+    }
+    void issueMesh(UINT inst, const GpuMesh& m) {
+        if (inst == UINT_MAX) return;
+        cmd->SetGraphicsRootConstantBufferView(0, cbSlotGpu() + (UINT64)inst * kCbStride);
+        cmd->IASetVertexBuffers(0, 1, &m.vbv);
+        cmd->IASetIndexBuffer(&m.ibv);
+        cmd->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
+    }
+
     void drawMesh(const GpuMesh& m, const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
         if (instCursor >= kMaxInstances) return;
         UINT inst = instCursor++;
@@ -1605,7 +1734,7 @@ struct RenderDevice {
         cmd->DrawIndexedInstanced(m.indexCount, 1, 0, 0, 0);
     }
 
-    // ---- M6: one skinned character. Evaluates the pose into this frame's palette slot, then
+    // ---- one skinned character. Evaluates the pose into this frame's palette slot, then
     // draws the submeshes the look allows (gear:* only when that slot is shown, tattoo only when
     // on) with the model's texture set. Returns false when the palette ring is full.
     // Drain the per-(model,variant,submesh) buckets: pack each into the t7 ring and issue ONE instanced draw
@@ -1641,7 +1770,7 @@ struct RenderDevice {
             else if (isLod) { if (!cm.hasLod) continue; mesh = &cm.lodGpu; idxCount = (UINT)cm.lodData.indices.size(); firstIdx = 0; lodDrawn += total; }
             else { if (sub >= cm.data.subs.size()) continue; mesh = &cm.gpu; idxCount = cm.data.subs[sub].indexCount; firstIdx = cm.data.subs[sub].firstIndex; }
             const TexSet& ts = cm.variants[variant];
-            if (ts.ok) { D3D12_GPU_DESCRIPTOR_HANDLE gh = srvHeap->GetGPUDescriptorHandleForHeapStart(); gh.ptr += (UINT64)ts.table * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
+            if (ts.ok) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)ts.table * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
             cmd->IASetVertexBuffers(0, 1, &mesh->vbv); cmd->IASetIndexBuffer(&mesh->ibv);
             if (instancingOn) {
                 cmd->SetGraphicsRoot32BitConstant(5, baseIdx, 0);
@@ -1684,7 +1813,7 @@ struct RenderDevice {
     // visual floor height at (x,z): the dancefloor slab is raised kStageH (server has no stage
     // height — every entity is y=0 there — so anyone standing on the slab is lifted cosmetically).
     void captureBackbuffer(ID3D12Resource* target) {
-        D3D12_RESOURCE_DESC td = target->GetDesc();
+        D3D12_RESOURCE_DESC td = starlight_resource_desc(target);
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp{}; UINT64 total = 0;
         device->GetCopyableFootprints(&td, 0, 1, 0, &fp, nullptr, nullptr, &total);
         if (!readback) {
@@ -1701,7 +1830,7 @@ struct RenderDevice {
         // Use the CAPTURED resource's own descriptor (upOutput — what captureBackbuffer copied and sized the
         // readback from), not targets[frame]. Same format/size today, but this removes a latent footprint-mismatch
         // read (a proxy swapchain / format change on targets[frame] could otherwise over-read the readback buffer).
-        D3D12_RESOURCE_DESC td = upOutput->GetDesc();
+        D3D12_RESOURCE_DESC td = starlight_resource_desc(upOutput);
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp{};
         UINT64 capturedBytes = 0;
         device->GetCopyableFootprints(&td, 0, 1, 0, &fp, nullptr, nullptr, &capturedBytes);
@@ -1769,7 +1898,7 @@ struct RenderDevice {
 
     // MULTICORE PROOF: the engine's real per-character animation math (evalPose) is pure compute with
     // thread_local scratch => embarrassingly parallel. Run N poses on 1 thread, then on 2/4/8/16/hw
-    // threads, report the speedup. This is the measured "spread it across all cores" demonstration.
+    // threads, report the speedup.
     void mtProof(int topN) {
         if (models.empty() || models[0].data.joints.empty() || models[0].data.clips.empty()) {
             logLine("MT-PROOF: no skinned model+clip loaded, cannot run"); return;
@@ -1840,7 +1969,7 @@ struct RenderDevice {
         std::string ver = ups->versionString(), fg = ups->fgStatus(), extra = ups->extraStatus();
         uint64_t presentedN = ups->hasPresentedCounter() ? benchPresented : (uint64_t)benchFrames.size();
         auto esc = [](std::string s) { std::string o; for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); } return o; };
-        // M6 block: what was actually loaded + drawn, and how the pacing behaved
+        // Report block: what was actually loaded + drawn, and how the pacing behaved
         std::string modelsJson = "[";
         size_t joints = 0, clips = 0;
         for (size_t i = 0; i < models.size(); ++i) {
@@ -1891,14 +2020,18 @@ struct RenderDevice {
     float editorCameraDistance = 0;
     XMFLOAT3 editorEye{0,9.36f,13},editorTarget{0,0,0};
     XMFLOAT3 editorUp{0,1,0};
+    bool hostCamera=false;XMFLOAT3 hostEye{0,3,8},hostTarget{0,0,0};float hostFovDegrees=50.0f,hostNear=0.1f,hostFar=400.0f;
+    double stageMarks[10]{};double inflightWaitMs=0,signalMs=0;uint32_t passFrameId[3]{};   // diagnostic: stage timestamps, tail timers, and the frame each GPU pass slot was submitted for   // diagnostic: timingNow() at the main stages of the last frame
     void renderEmpty(HWND hwnd) {
-        (void)hwnd;
-        if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}
-        paceFrame();
+        (void)hwnd;stageMarks[0]=timingNow();
+        struct FrameTail{RenderDevice* d;uint32_t id;~FrameTail(){d->stageMarks[9]=timingNow();if(starlight_diag::events_enabled()){starlight_diag::evlog("rf.end",id,1000*(d->stageMarks[9]-d->stageMarks[0]),1000*(d->stageMarks[9]-d->stageMarks[7]));starlight_diag::evlog("rf.tail",d->signalMs,d->inflightWaitMs,1000*(d->stageMarks[9]-d->stageMarks[8]));}}} frameTail{this,frameIndex};
+        starlight_diag::evlog("rf.begin",frameIndex,slot);
+        if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}stageMarks[1]=timingNow();
+        paceFrame();stageMarks[2]=timingNow();
         uint64_t now = GetTickCount64();
         float dt = lastTick ? (now-lastTick)*0.001f : 0.016f; lastTick=now;
-        const float nearZ=0.1f, farZ=400.0f, fovY=XMConvertToRadians(50.0f);
-        XMVECTOR eye=editorCameraDistance>0?XMLoadFloat3(&editorEye):XMVectorSet(0,3,8,0), ctr=editorCameraDistance>0?XMLoadFloat3(&editorTarget):XMVectorZero();
+        const float nearZ=hostCamera?hostNear:0.1f, farZ=hostCamera?hostFar:400.0f, fovY=XMConvertToRadians(hostCamera?hostFovDegrees:50.0f);
+        XMVECTOR eye=editorCameraDistance>0?XMLoadFloat3(&editorEye):(hostCamera?XMLoadFloat3(&hostEye):XMVectorSet(0,3,8,0)), ctr=editorCameraDistance>0?XMLoadFloat3(&editorTarget):(hostCamera?XMLoadFloat3(&hostTarget):XMVectorZero());
         XMMATRIX view=editorCameraDistance>0?XMMatrixLookAtRH(eye, ctr, XMLoadFloat3(&editorUp)):XMMatrixLookAtLH(eye, ctr, XMVectorSet(0,1,0,0));
         float cameraFov=editorCameraDistance>0?2*atanf(tanf(XMConvertToRadians(48.0f)*.5f)*(float)rh/rw):fovY;
         XMMATRIX proj=editorCameraDistance>0?XMMatrixPerspectiveFovRH(cameraFov,(float)rw/rh,nearZ,farZ):XMMatrixPerspectiveFovLH(cameraFov,(float)rw/rh,nearZ,farZ);
@@ -1907,9 +2040,9 @@ struct RenderDevice {
         if(curModel.size()!=kMaxInstances){curModel.resize(kMaxInstances);prevModel.resize(kMaxInstances);}
         ups->beginFrame(frameIndex);
         const float clear[4]={0.025f,0.03f,0.045f,1};
-        // ---- M6: acquire this frame's slot. The CPU only waits when the slot's previous
+        // ---- acquire this frame's slot. The CPU only waits when the slot's previous
         // submission (kFrameCount frames ago) has not retired — with --inflight 3 that is the
-        // GPU-bound case, never the sync-every-frame flush of M1..M5.
+        // GPU-bound case, without flushing every frame.
         ups->renderSubmitStart();
         slot = frameIndex % kFrameCount;
         if (fence->GetCompletedValue() < slotFence[slot]) {
@@ -1930,21 +2063,31 @@ struct RenderDevice {
                 }
             }
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot);   // GPU-work start
+            if (passHeap && tsFreq) {
+                void* q = nullptr; D3D12_RANGE pr{ (SIZE_T)(sizeof(UINT64) * 8 * slot), (SIZE_T)(sizeof(UINT64) * (8 * slot + 8)) };
+                if (SUCCEEDED(passReadback->Map(0, &pr, &q)) && q) {
+                    const UINT64* pt = reinterpret_cast<const UINT64*>(static_cast<const char*>(q) + sizeof(UINT64) * 8 * slot);
+                    for (int i = 0; i < 4; ++i) if (pt[i + 1] >= pt[i] && pt[i] != 0) lastPassMs[i] = (float)((double)(pt[i + 1] - pt[i]) * 1000.0 / (double)tsFreq);
+                    starlight_diag::evlog("gpu",passFrameId[slot],lastPassMs[0],lastPassMs[1]);starlight_diag::evlog("gpu2",passFrameId[slot],lastPassMs[2],lastPassMs[3]);if(pt[5]>=pt[0]&&pt[6]>=pt[5]&&pt[1]>=pt[6]&&pt[5]&&pt[6])starlight_diag::evlog("gpu3",double(pt[5]-pt[0])*1000.0/double(tsFreq),double(pt[6]-pt[5])*1000.0/double(tsFreq),double(pt[1]-pt[6])*1000.0/double(tsFreq));{static UINT64 previousStart=0;static UINT64 previousEnd=0;if(starlight_diag::events_enabled()&&pt[0]&&pt[4]>=pt[0]){starlight_diag::evlog("gpuT",previousStart?double(pt[0]-previousStart)*1000.0/double(tsFreq):0,double(pt[4]-pt[0])*1000.0/double(tsFreq),previousEnd&&pt[0]>=previousEnd?double(pt[0]-previousEnd)*1000.0/double(tsFreq):-1);previousStart=pt[0];previousEnd=pt[4];}}
+                    D3D12_RANGE wr{ 0, 0 }; passReadback->Unmap(0, &wr);
+                }
+                passFrameId[slot]=frameIndex;gpuMark(0);
+            }
         }
-        auto _recT0 = std::chrono::steady_clock::now();   // CPU record-timer start (single-thread draw submission cost)
+        stageMarks[3]=timingNow();auto _recT0 = std::chrono::steady_clock::now();   // CPU record-timer start (single-thread draw submission cost)
         poseAccumMs = 0;                                  // per-frame evalPose accumulator (parallelizable portion)
         instEntryCursor = 0; drawCallCount = 0; culled = 0; lodDrawn = 0; curModelByKey.clear(); items.clear();   // instancing: reset per-frame collect state
         instCursor = 0; skinCursor = (UINT)(models.size() * kFarPoses); skinnedDrawn = 0; furShellsDrawn = 0;   // reserve [0..F) palette slots for the shared far-pose pool
         if (srvHeap) { ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() }; cmd->SetDescriptorHeaps(1, heaps); }
 
         // scene pass -> render-size color + mvec + depth (resting state = shader resource)
-        barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        barrier(depth.Get(),      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        if (msaa <= 1) barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        if (msaa <= 1) barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        if (msaa <= 1) barrier(depth.Get(),      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         D3D12_CPU_DESCRIPTOR_HANDLE rtvs[2];
-        rtvs[0] = rtvHeap->GetCPUDescriptorHandleForHeapStart(); rtvs[0].ptr += (SIZE_T)kFrameCount * rtvSize;
+        rtvs[0] = starlight_cpu_heap_start(rtvHeap); rtvs[0].ptr += (SIZE_T)kFrameCount * rtvSize;
         rtvs[1] = rtvs[0]; rtvs[1].ptr += rtvSize;
-        D3D12_CPU_DESCRIPTOR_HANDLE dsv = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv = starlight_cpu_heap_start(dsvHeap);
         cmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
         cmd->OMSetRenderTargets(2, rtvs, FALSE, &dsv);
 
@@ -1965,11 +2108,12 @@ struct RenderDevice {
             cmd->SetPipelineState(pso.Get());
         }
 
-        if(editorDraw)editorDraw();
-        // ---- M5: reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
-        barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        barrier(depth.Get(),      D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if(editorDraw)editorDraw();stageMarks[4]=timingNow();gpuMark(2);
+        // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
+        if (msaa > 1) resolveScene();
+        if (msaa <= 1) barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if (msaa <= 1) barrier(sceneMvec.Get(),  D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if (msaa <= 1) barrier(depth.Get(),      D3D12_RESOURCE_STATE_DEPTH_WRITE,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         up::FrameIn fi;
         fi.cmd = cmd.Get(); fi.color = sceneColor.Get(); fi.depth = depth.Get(); fi.mvec = sceneMvec.Get();
         auto outputTarget = auditOffscreen ? auditOutput.Get() : targets[frame].Get();
@@ -1984,7 +2128,7 @@ struct RenderDevice {
           XMStoreFloat3(&f3, XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), XMVectorSubtract(ctr, eye)))); fi.camRight = f3;
           XMStoreFloat3(&f3, XMVector3Cross(XMLoadFloat3(&fi.camFwd), XMLoadFloat3(&fi.camRight))); fi.camUp = f3; }
         fi.nearZ = nearZ; fi.farZ = farZ; fi.fovY = fovY; fi.aspect = (float)w / (float)h;
-        if(!linearHdrScene)ups->evaluate(fi);
+        if(!linearHdrScene)ups->evaluate(fi);stageMarks[5]=timingNow();gpuMark(3);
 
         barrier(upOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
         barrier(outputTarget, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -1998,6 +2142,7 @@ struct RenderDevice {
         if (!auditOffscreen) ups->beforePresent(fi);
         if (tsHeap) {   // GPU-work end + resolve this slot's pair to the readback buffer
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot + 1);
+            if (passHeap) { gpuMark(4); cmd->ResolveQueryData(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 8 * slot, 8, passReadback.Get(), sizeof(UINT64) * 8 * slot); }
             cmd->ResolveQueryData(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot, 2, tsReadback.Get(), sizeof(UINT64) * 2 * slot);
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
@@ -2005,16 +2150,17 @@ struct RenderDevice {
         cmd->Close();
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
-        antilag.markEndOfFrameRendering();
+        antilag.markEndOfFrameRendering();stageMarks[6]=timingNow();
         antilag.setFrameGenFrameType(false);
         if (!auditOffscreen) ups->present(swap.Get(), vsync ? 1 : 0, (!vsync && tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0);
-        if (!auditOffscreen) ups->afterPresent();
-        // ---- M6: retire by slot instead of flushing. The fence value signalled here is what the
+        if (!auditOffscreen) ups->afterPresent();stageMarks[7]=timingNow();
+        // ---- retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
         slotFence[slot] = ++fenceVal;
-        queue->Signal(fence.Get(), fenceVal);
-        if (inflight < (int)kFrameCount) waitFence(fenceVal - (UINT64)(inflight - 1));
+        {const double s0=timingNow();queue->Signal(fence.Get(), fenceVal);signalMs=(timingNow()-s0)*1000;}
+        {const double w0=timingNow();if (inflight < (int)kFrameCount) waitFence(fenceVal - (UINT64)(inflight - 1));inflightWaitMs=(timingNow()-w0)*1000;}
         if (shotNow) { flush(); writeShotBmp(); shotDone = true; }
+        stageMarks[8]=timingNow();
         if (d3dDebug) drainDebug();
         skinnedDrawnLast = skinnedDrawn; furShellsLast = furShellsDrawn;
         frame = swap->GetCurrentBackBufferIndex();

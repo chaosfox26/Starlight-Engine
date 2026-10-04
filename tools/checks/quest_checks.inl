@@ -4,7 +4,7 @@
     GameplayRule enter;enter.Name="Enter the control room";enter.Event="enter-area";enter.X=8;enter.Y=1.7;enter.Radius=1;enter.Conditions={{"objective-complete","cells"}};enter.Actions={{"complete-objective","room"}};
     GameplayRule talk;talk.Name="Return to the engineer";talk.Event="interact";talk.Subject="engineer";talk.Conditions={{"objective-complete","room"}};talk.Actions={{"complete-objective","return"}};
     level.Rules={collect,enter,talk};QuestDefinition q;q.Title="Restore the outpost";q.Description="Recover three power cells, restore the control room, then report to the engineer.";q.RuleIds={collect.Id,enter.Id,talk.Id};level.Quests={q};
-    auto saved=level.encode();auto loaded=SceneData::decode(saved);require(loaded.SchemaVersion==10 && loaded.Quests[0].Id==q.Id && loaded.Quests[0].Description==q.Description && loaded.Rules[0].Description==collect.Description,"Quest text and stable objective links survive scene save/reload");
+    auto saved=level.encode();auto loaded=SceneData::decode(saved);require(loaded.SchemaVersion==16 && loaded.Quests[0].Id==q.Id && loaded.Quests[0].Description==q.Description && loaded.Rules[0].Description==collect.Description,"Quest text and stable objective links survive scene save/reload");
     GameplayRulesRuntime runtime;runtime.reset(loaded.Rules);auto views=quest_views(loaded,runtime);
     require(views.size()==1 && views[0].objectives[0].current==0 && views[0].objectives[0].required==3 && views[0].objectives[1].locked,"Quest tracker starts at0/3 and locks dependent objectives");
     runtime.collect("red",loaded);runtime.collect("red",loaded);views=quest_views(loaded,runtime);
@@ -23,7 +23,7 @@
     SceneData level;level.Game.emplace();QuestDefinition q;q.Title="Five objectives, any order";q.StepSizes={5,1};
     for(int i=0;i<6;++i){GameplayRule rule;rule.Name="Objective "+std::to_string(i+1);rule.Event="interact";rule.Subject="block-"+std::to_string(i);rule.Actions={{"complete-objective",rule.Subject}};q.RuleIds.push_back(rule.Id);level.Rules.push_back(rule);}
     level.Quests={q};auto saved=level.encode();auto loaded=SceneData::decode(saved);
-    require(loaded.SchemaVersion==11 && loaded.Quests[0].StepSizes==q.StepSizes,"Grouped quest steps round-trip through schema11");
+    require(loaded.SchemaVersion==16 && loaded.Quests[0].StepSizes==q.StepSizes,"Grouped quest steps round-trip through schema11");
     std::vector<int> order={0,1,2,3,4};bool allOrders=true;int permutations=0;
     do{
         GameplayRulesRuntime runtime;runtime.reset(level.Rules);auto play=level;

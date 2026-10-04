@@ -1,4 +1,4 @@
-// Starlight DX12 client — skinned character models (M6).
+// Starlight DX12 client — skinned character models.
 // Loads a charfactory GLB (CONTRACT-3D v1.1: 29-joint rig, 27 clips, named mesh nodes
 // body/hair/tattoo/gear:*), optionally remaps TEXCOORD_0 to the bakes-v1 atlas layout
 // (<m>_atlas_uv.bin), generates tangents, and evaluates clip poses into a joint palette on the
@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "load_error.h"
 
 namespace model {
 
@@ -70,6 +71,10 @@ struct SkinnedModel {
 // Vertex order matches bake_job.py's walk (scene roots depth-first, triangle primitives with
 // POSITION + TEXCOORD_0) so the atlas UV stream lines up 1:1; a count mismatch is reported.
 bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, SkinnedModel& out, std::string& err);
+
+// glb: complete GLB bytes. atlasUv: nullptr = keep the GLB UVs; otherwise raw little-endian float32 [vertices][2], validated against the vertex count. The translation unit that owns cgltf must define CGLTF_IMPLEMENTATION exactly once per module.
+LoadError loadSkinnedFromMemory(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out);
+LoadError applyAtlasUv(SkinnedModel& model, ByteView atlasUv, const std::string& label);
 
 // Evaluate clip a at time ta blended toward clip b at tb (blend 0 = a only, 1 = b only).
 // palette[j] = ibm[j] * global[j] (the skinning matrix), global[j] = model-space joint matrix

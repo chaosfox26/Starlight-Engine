@@ -38,7 +38,7 @@ inline void darkWindow(HWND h) {
     SetWindowTheme(h, L"DarkMode_Explorer", nullptr);
 }
 inline constexpr COLORREF ink = RGB(239, 242, 250), muted = RGB(154, 170, 201), field = RGB(12, 16, 26),
-                          panel = RGB(26, 31, 49);
+                          panel = RGB(16, 23, 39);
 inline HBRUSH fieldBrush() {
     static HBRUSH b = CreateSolidBrush(field);
     return b;
@@ -48,9 +48,9 @@ inline HBRUSH panelBrush() {
     return b;
 }
 inline void panelStops(Gdiplus::LinearGradientBrush& brush) {
-    Gdiplus::Color colors[] = {Gdiplus::Color(255, 37, 44, 69),
-                              Gdiplus::Color(255, 19, 25, 42),
-                              Gdiplus::Color(255, 28, 24, 48)};
+    Gdiplus::Color colors[] = {Gdiplus::Color(255, 31, 44, 66),
+                              Gdiplus::Color(255, 10, 18, 33),
+                              Gdiplus::Color(255, 31, 20, 46)};
     Gdiplus::REAL stops[] = {0.f, .48f, 1.f};
     brush.SetInterpolationColors(colors, stops, 3);
 }
@@ -233,15 +233,15 @@ inline void button(DRAWITEMSTRUCT &d, HFONT font) {
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         auto edge = selected ? Gdiplus::Color(255, 231, 118, 233)
                     : hover  ? Gdiplus::Color(255, 118, 201, 255)
-                             : Gdiplus::Color(255, 63, 72, 101);
+                             : Gdiplus::Color(255, 67, 91, 126);
         if (!check)
             round(g, {1.f, 1.f, float(r.right - 2), float(r.bottom - 2)}, 7,
-                  accent     ? Gdiplus::Color(255, 121, 70, 173)
-                  : selected ? Gdiplus::Color(255, 81, 44, 83)
+                  accent     ? Gdiplus::Color(255, 205, 25, 188)
+                  : selected ? Gdiplus::Color(255, 72, 36, 99)
                              : Gdiplus::Color(255, 37, 43, 67),
-                  accent     ? Gdiplus::Color(255, 96, 52, 144)
-                  : selected ? Gdiplus::Color(255, 81, 44, 83)
-                             : Gdiplus::Color(255, 37, 43, 67),
+                  accent     ? Gdiplus::Color(255, 95, 15, 135)
+                  : selected ? Gdiplus::Color(255, 36, 20, 63)
+                             : Gdiplus::Color(255, 15, 23, 39),
                   edge);
         if (auto icon = GetPropW(h, L"sl.icon"))
             drawDockIcon(g, int(reinterpret_cast<INT_PTR>(icon)) - 1, float(r.right), float(r.bottom));
@@ -312,7 +312,7 @@ inline LRESULT CALLBACK buttonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
                     const bool focus = GetFocus() == h;
                     round(g, {1.f, 1.f, float(width - 2), float(height - 2)}, 7.f,
                         Gdiplus::Color(255, 37, 43, 67), Gdiplus::Color(255, 37, 43, 67),
-                        focus || hover ? Gdiplus::Color(255, 118, 201, 255) : Gdiplus::Color(255, 63, 72, 101));
+                        focus || hover ? Gdiplus::Color(255, 118, 201, 255) : Gdiplus::Color(255, 67, 91, 126));
                     if (auto icon = GetPropW(h, L"sl.icon"))
                         drawDockIcon(g, int(reinterpret_cast<INT_PTR>(icon)) - 1, float(width), float(height));
                     else {

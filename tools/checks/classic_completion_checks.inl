@@ -82,6 +82,9 @@ close_project();
 check("modal restores previously disabled test owner without enabling it",
       !IsWindowVisible(projectWindow) && !IsWindowEnabled(window));
 auto root = engine_path().parent_path().parent_path().parent_path().parent_path();
+wchar_t resourceRoot[32768]{};
+auto resourceLength=GetEnvironmentVariableW(L"STARLIGHT_RESOURCE_ROOT",resourceRoot,32768);
+if(resourceLength && resourceLength<32768 && fs::path(resourceRoot).is_absolute())root=resourceRoot;
 project = ProjectData::load(root / L"deep/projects/Empty/Empty.star");
 preset = resolve_preset(engine_path(), *project, root / L"deep/settings/native-1440p.startest");
 open_project();

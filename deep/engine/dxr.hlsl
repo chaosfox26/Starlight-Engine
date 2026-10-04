@@ -1,3 +1,8 @@
+#define SL_SURFACE_ALBEDO t30
+#define SL_SURFACE_NORMAL t31
+#define SL_SURFACE_ORM t32
+#include "surface_material.hlsl"
+#include "surface_lighting.hlsl"
 // DXR 1.1 inline queries, native pixel grid. No upscaler or frame generation.
 struct Vertex { float3 p; float3 n; float4 surface; float4 history; };
 struct Instance { row_major float4x4 world; row_major float4x4 normal; row_major float4x4 previousWorld; float4 color; uint4 meta; };
@@ -16,6 +21,7 @@ cbuffer Constants : register(b0) {
  float4 frame; // width, height, fog density, smoke count
  uint4 sequence; // RNG, reset, reactive lighting, reserved
  row_major float4x4 previousVP, viewMatrix, previousView, currentVP;
+ float4 weather,weatherLow[64],weatherHigh[64];
 };
 static const float PI=3.141592654;
 static uint rng;
@@ -23,11 +29,16 @@ float random(){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return (rng+.5)/4294967296.
 float hash31(float3 p){p=frac(p*.1031);p+=dot(p,p.yzx+33.33);return frac((p.x+p.y)*p.z);}
 float noise3(float3 p){float3 a=floor(p),f=frac(p);f=f*f*(3-2*f);return lerp(lerp(lerp(hash31(a),hash31(a+float3(1,0,0)),f.x),lerp(hash31(a+float3(0,1,0)),hash31(a+float3(1,1,0)),f.x),f.y),lerp(lerp(hash31(a+float3(0,0,1)),hash31(a+float3(1,0,1)),f.x),lerp(hash31(a+float3(0,1,1)),hash31(a+float3(1,1,1)),f.x),f.y),f.z);}
 float3 hemisphere(float3 n){float a=2*PI*random(),r=sqrt(random());float3 t=normalize(cross(abs(n.y)<.99?float3(0,1,0):float3(1,0,0),n));return t*(r*cos(a))+cross(n,t)*(r*sin(a))+n*sqrt(max(0,1-r*r));}
-float3 sky(float3 d){return ambient.rgb*lerp(.25,1.7,saturate(d.y*.5+.5));}
-struct Hit {float3 p,n,albedo,emission;float rough,kind,distance; float3 previousPosition,currentPosition; uint objectId;};
-bool trace(float3 origin,float3 direction,float limit,out Hit h){
+float3 sky(float3 d){return slSkyRadiance(d,ambient.rgb,sun,1/max(frame.y,1),weather.y);}
+struct Hit {float3 p,n,albedo,emission;float rough,kind,distance,ao,waterFoam,waterThickness; float3 previousPosition,currentPosition; uint objectId; bool grassBlade;};
+bool trace(float3 origin,float3 direction,float limit,out Hit h,bool skipWater=false){
  h=(Hit)0;RayDesc ray;ray.Origin=origin;ray.Direction=direction;ray.TMin=.002;ray.TMax=limit;
- RayQuery<RAY_FLAG_FORCE_OPAQUE> q;q.TraceRayInline(scene,0,255,ray);while(q.Proceed()){}
+ RayQuery<RAY_FLAG_NONE> q;q.TraceRayInline(scene,skipWater?RAY_FLAG_FORCE_NON_OPAQUE:RAY_FLAG_FORCE_OPAQUE,255,ray);
+ while(q.Proceed())if(q.CandidateType()==CANDIDATE_NON_OPAQUE_TRIANGLE){
+  Instance object=instances[q.CandidateInstanceID()];uint candidateTriangle=object.meta.y+q.CandidatePrimitiveIndex()*3;
+  float candidateKind=vertices[object.meta.x+indices[candidateTriangle]].surface.w;
+  if(!skipWater||candidateKind<6.8||candidateKind>7.5)q.CommitNonOpaqueTriangleHit();
+ }
  if(q.CommittedStatus()!=COMMITTED_TRIANGLE_HIT)return false;
  Instance obj=instances[q.CommittedInstanceID()];uint tri=obj.meta.y+q.CommittedPrimitiveIndex()*3;
  Vertex a=vertices[obj.meta.x+indices[tri]],b=vertices[obj.meta.x+indices[tri+1]],c=vertices[obj.meta.x+indices[tri+2]];
@@ -36,42 +47,74 @@ bool trace(float3 origin,float3 direction,float limit,out Hit h){
  h.objectId=q.CommittedInstanceID();float3 pa=sequence.w>0&&a.history.w>0?a.history.xyz:a.p,pb=sequence.w>0&&b.history.w>0?b.history.xyz:b.p,pc=sequence.w>0&&c.history.w>0?c.history.xyz:c.p;h.previousPosition=mul(float4(pa*w.x+pb*w.y+pc*w.z,1),obj.previousWorld).xyz;h.currentPosition=mul(float4(a.p*w.x+b.p*w.y+c.p*w.z,1),obj.world).xyz;
  h.distance=q.CommittedRayT();h.p=origin+direction*h.distance;
  h.n=normalize(mul(float4(a.n*w.x+b.n*w.y+c.n*w.z,0),obj.normal).xyz);if(dot(h.n,direction)>0)h.n=-h.n;
- h.kind=surface.w;h.rough=.78;float3 color=obj.color.rgb*surface.rgb;h.albedo=pow(max(color,0),2.2);h.emission=h.albedo*obj.color.w;
- if(h.kind>.5&&h.kind<6.8){float grain=noise3(h.p*5)*.58+noise3(h.p*18)*.28+noise3(h.p*65)*.14;h.albedo*=pow(.68+.55*grain+.18*noise3(h.p*1.3),2.2);}
- if(h.kind>6.8&&h.kind<7.5){h.albedo=float3(.006,.06,.12);h.rough=.055;h.n=normalize(h.n+float3(cos(h.p.x*4+eyeTime.w*1.2)*.22,0,cos(h.p.z*5-eyeTime.w*.9)*.18));}
- if(h.kind>7.5&&h.kind<8.5){float3 p=h.p*3+float3(eyeTime.w*.035,0,-eyeTime.w*.05);float cracks=1-smoothstep(.028,.085,abs(noise3(p)+.24*noise3(p*2.7)-.61));h.albedo=float3(.038,.013,.009);h.emission=lerp(float3(2.8,.15,.006),float3(4,1.25,.035),noise3(p*2))*cracks*(.85+.15*sin(eyeTime.w*1.2+h.p.x+h.p.z));}
- if(h.kind>8.5&&h.kind<9.5){float edge=abs(surface.x*2-1);h.albedo=0;h.emission=(lerp(float3(1,.025,.28),float3(.22,.055,1),noise3(h.p*2+eyeTime.w))*(2+5*(1-edge))+pow(saturate(1-edge),6)*float3(18,16,20))*(.72+.28*sin(eyeTime.w*37+floor(eyeTime.w*19)*3.1));}
- if(h.kind>9.5){float vein=1-smoothstep(.025,.07,abs(noise3(h.p*3.6)+.3*noise3(h.p*10.8)-.62));float pulse=.8+.2*sin(eyeTime.w*2+h.p.y*3);h.albedo=h.kind>10.5?float3(.11,.07,.18):float3(.018,.015,.022);h.rough=.92;h.emission=float3(2.6,.045,4.8)*vein*pulse;if(h.kind>10.5)h.emission+=float3(.25,.07,.55)*pulse;}
- if(obj.color.w>.5)h.albedo=0;
+ float3 geometryNormal=h.n;
+ h.kind=slSurfaceKind(surface.w);h.grassBlade=slGrassBlade(surface.w);h.rough=.78;h.ao=1;float3 color=obj.color.rgb*surface.rgb;h.albedo=pow(max(color,0),2.2);h.emission=h.albedo*obj.color.w;
+ if(h.grassBlade){SlSurfaceMaterial material=slGrassBladeMaterial(surface.rgb,h.n,max(.0001,h.distance/max(frame.y,1)*.9));h.albedo=pow(max(obj.color.rgb,0),2.2)*material.tint;h.n=material.normal;h.rough=material.roughness;h.ao=material.ao;}
+ else if(h.kind>.5&&h.kind<6.8){float footprint=max(.0001,h.distance/max(frame.y,1)*.9);SlSurfaceMaterial material=slSurfaceMaterial(h.p,h.n,h.kind,footprint);h.albedo*=material.tint;h.n=material.normal;h.rough=material.roughness;h.ao=material.ao;}
+ if(h.kind>6.8&&h.kind<7.5){SlWaterMaterial water;if(slWaterDroplet(h.kind)){water=slWaterDropMaterial(h.n);h.waterThickness=max(.001,surface.y);}else water=slWaterMaterial(h.p,h.n,eyeTime.w,surface.x*2,max(.0001,h.distance/max(frame.y,1)*.9/max(.12,abs(dot(h.n,direction)))));h.albedo=water.color;h.rough=water.roughness;h.n=water.normal;h.waterFoam=water.foam;}
+ if(h.kind>7.5&&h.kind<8.5){SlLavaMaterial lava=slLavaMaterial(h.p,h.n,eyeTime.w,max(.0001,h.distance/max(frame.y,1)*.9),h.kind,surface.rgb);h.albedo=lava.color;h.emission=lava.emission;h.rough=lava.roughness;h.n=lava.normal;}
+ if(h.kind>8.5&&h.kind<9.5){if(h.kind<9.3)surface.y=noise3(h.p*2+eyeTime.w);h.albedo=0;h.emission=slLightningEmission(h.kind,surface.rgb,h.n,-direction,eyeTime.w);}
+ if(h.kind>9.5){SlMagicStoneMaterial magic=slMagicStoneMaterial(h.p,h.n,h.kind,h.albedo,eyeTime.w,max(.0001,h.distance/max(frame.y,1)*.9));h.albedo=magic.color;h.n=magic.normal;h.rough=magic.roughness;h.ao=magic.ao;h.emission=magic.emission;}
+ if(h.kind<6.8){float wet=slWeatherExposure(h.p,geometryNormal,weather,weatherLow,weatherHigh);slWetSurface(h.p,geometryNormal,h.kind,wet,eyeTime.w,max(.0001,h.distance/max(frame.y,1)*.9),h.albedo,h.n,h.rough);}
+ if(obj.color.w>.5&&!(h.kind>7.5&&h.kind<8.5))h.albedo=0;
  return true;
 }
-float visibility(float3 p,float3 n,float3 l,float limit){
+float3 visibility(float3 p,float3 n,float3 l,float limit,bool lightEndpoint=false){
  RayDesc ray;ray.Origin=p+n*.003;ray.Direction=l;ray.TMin=.002;ray.TMax=max(.003,limit-.006);
- RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH|RAY_FLAG_FORCE_OPAQUE> q;q.TraceRayInline(scene,0,255,ray);while(q.Proceed()){}return q.CommittedStatus()==COMMITTED_NOTHING;
+ // A luminous channel enclosing its own point-light sample must not shadow
+ // that sample. Other emitters and all non-emissive surfaces still occlude.
+ RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH|RAY_FLAG_FORCE_NON_OPAQUE> q;q.TraceRayInline(scene,0,255,ray);
+ float waterDistance=0,surfaceDistance=0,nearestSurface=ray.TMax+1;bool startsUnderwater=false;
+ while(q.Proceed())if(q.CandidateType()==CANDIDATE_NON_OPAQUE_TRIANGLE){
+  Instance object=instances[q.CandidateInstanceID()];uint tri=object.meta.y+q.CandidatePrimitiveIndex()*3;
+  Vertex a=vertices[object.meta.x+indices[tri]];float kind=a.surface.w;
+  if(kind>6.8&&kind<7.5){
+   if(slWaterDroplet(kind)){
+    // Closed droplets have two boundaries. Their stored thickness gives a
+    // bounded thin-volume approximation, independent of traversal order.
+    Vertex b=vertices[object.meta.x+indices[tri+1]],c=vertices[object.meta.x+indices[tri+2]];
+    float2 uv=q.CandidateTriangleBarycentrics();
+    waterDistance+=max(.001,a.surface.y*(1-uv.x-uv.y)+b.surface.y*uv.x+c.surface.y*uv.y)*.5;
+   }else{
+    // Upward-facing open lake mesh: an exit ends the submerged light path;
+    // an entry starts it. Signed distances also handle entry/exit pairs.
+    float t=q.CandidateTriangleRayT();bool entering=q.CandidateTriangleFrontFace();
+    surfaceDistance+=entering?ray.TMax-t:t-ray.TMax;
+    if(t<nearestSurface){nearestSurface=t;startsUnderwater=!entering;}
+   }
+   continue;
+  }
+  bool ownEmitter=lightEndpoint&&object.color.w>.5&&q.CandidateTriangleRayT()>limit-.12;
+  if(!ownEmitter)q.CommitNonOpaqueTriangleHit();
+ }
+ waterDistance+=max(0,surfaceDistance+(startsUnderwater?ray.TMax:0));
+ return q.CommittedStatus()==COMMITTED_NOTHING?slWaterTransmission(waterDistance):0;
 }
 float density(float3 p){float v=frame.z*exp(-max(p.y,0)*.35)*(.35+noise3(p*.22+float3(eyeTime.w*.035,0,0)));for(uint i=0;i<(uint)frame.w;i++)v+=.65*pow(saturate(1-length(p-smoke[i].xyz)/max(.1,smoke[i].w)),2);return v;}
 float transmission(float3 p,float3 l,float distance){float sum=0;float stepSize=min(distance,24)/8;for(uint i=0;i<8;i++)sum+=density(p+l*((i+.5)*stepSize))*stepSize;return exp(-sum);}
-float3 brdf(Hit h,float3 v,float3 l){float nl=saturate(dot(h.n,l)),nv=max(.001,dot(h.n,v));float3 halfway=normalize(v+l);float nh=saturate(dot(h.n,halfway)),vh=saturate(dot(v,halfway));float a=max(.025,h.rough*h.rough),a2=a*a;float D=a2/(PI*pow(nh*nh*(a2-1)+1,2));float k=pow(h.rough+1,2)/8;float G=nl/(nl*(1-k)+k)*nv/(nv*(1-k)+k);float3 F=.04+.96*pow(1-vh,5);return ((1-F)*h.albedo/PI+D*G*F/max(.001,4*nl*nv))*nl;}
-float3 diffuseBrdf(Hit h,float3 v,float3 l){float vh=saturate(dot(v,normalize(v+l)));float3 F=.04+.96*pow(1-vh,5);return (1-F)*h.albedo/PI*saturate(dot(h.n,l));}
+float3 brdf(Hit h,float3 v,float3 l){SlDirectLighting response=slDirectLighting(h.n,v,l,h.albedo,h.rough,0);return response.diffuse+response.specular;}
+float3 diffuseBrdf(Hit h,float3 v,float3 l){return slDirectLighting(h.n,v,l,h.albedo,h.rough,0).diffuse;}
 float3 oneLight(Hit h,float3 v,uint index,out float3 diffuse){
  diffuse=0;
  float3 l,radiance;float limit;
- if(index==0){l=normalize(-sun.xyz+hemisphere(normalize(-sun.xyz))*.00465);radiance=sun.www;limit=400;}
- else {uint i=index-1;float3 delta=lightPos[i].xyz-h.p;limit=length(delta);l=delta/max(.001,limit);float range=lightPos[i].w;float atten=pow(saturate(1-limit/range),2)/(1+limit*limit);float cone=lightDir[i].w<-1?1:smoothstep(lightDir[i].w,lightColor[i].w,dot(-l,normalize(lightDir[i].xyz)));radiance=lightColor[i].rgb*atten*cone;}
- if(dot(h.n,l)<=0||max(radiance.x,max(radiance.y,radiance.z))<.00001)return 0;
- float visible=visibility(h.p,h.n,l,limit);if(settings.x>=3)visible*=transmission(h.p,l,limit);
- diffuse=diffuseBrdf(h,v,l)*radiance*visible;return brdf(h,v,l)*radiance*visible;
+ if(index==0){l=normalize(-sun.xyz+hemisphere(normalize(-sun.xyz))*.00465);radiance=slSolarRadiance(sun);limit=400;}
+ else {uint i=index-1;float3 delta=lightPos[i].xyz-h.p;limit=length(delta);l=delta/max(.001,limit);float range=lightPos[i].w;float atten=slPointAttenuation(limit,range);float cone=slSpotCone(lightDir[i].xyz,l,lightDir[i].w,lightColor[i].w);radiance=lightColor[i].rgb*atten*cone;}
+ if((dot(h.n,l)<=0&&!h.grassBlade)||max(radiance.x,max(radiance.y,radiance.z))<.00001)return 0;
+ float3 offsetNormal=dot(h.n,l)>=0?h.n:-h.n;
+ float3 visible=visibility(h.p,offsetNormal,l,limit,index>0);if(settings.x>=3)visible*=transmission(h.p,l,limit);
+ float3 leaf=h.grassBlade?slGrassThinLight(h.albedo,h.n,v,l):0;
+ diffuse=(diffuseBrdf(h,v,l)+leaf)*radiance*visible;return (brdf(h,v,l)+leaf)*radiance*visible;
 }
 float3 directSplit(Hit h,float3 v,bool allLights,out float3 diffuse){
  diffuse=0;
  uint count=settings.w+1;if(allLights){float3 sum=0;for(uint i=0;i<count;i++){float3 d;sum+=oneLight(h,v,i,d);diffuse+=d;}return sum;}
  // Importance-weighted reservoir: exactly one visibility ray for a sampled direct light.
  float total=0,chosenWeight=1;uint chosen=0;
- for(uint j=0;j<count;j++){float weight;if(j==0)weight=sun.w*max(.001,dot(h.n,-normalize(sun.xyz)));else{float3 delta=lightPos[j-1].xyz-h.p;float d=length(delta);weight=dot(lightColor[j-1].rgb,float3(.2126,.7152,.0722))*pow(saturate(1-d/lightPos[j-1].w),2)/(1+d*d)*max(.001,dot(h.n,delta/max(.001,d)));}weight=max(.00001,weight);total+=weight;if(random()*total<weight){chosen=j;chosenWeight=weight;}}
+ for(uint j=0;j<count;j++){float weight;if(j==0)weight=dot(slSolarRadiance(sun),float3(.2126,.7152,.0722))*max(.001,dot(h.n,-normalize(sun.xyz)));else{float3 delta=lightPos[j-1].xyz-h.p;float d=length(delta);weight=dot(lightColor[j-1].rgb,float3(.2126,.7152,.0722))*slPointAttenuation(d,lightPos[j-1].w)*max(.001,dot(h.n,delta/max(.001,d)));}weight=max(.00001,weight);total+=weight;if(random()*total<weight){chosen=j;chosenWeight=weight;}}
  float3 d;float3 value=oneLight(h,v,chosen,d)*total/chosenWeight;diffuse=d*total/chosenWeight;return value;
 }
 float3 direct(Hit h,float3 v,bool allLights){float3 d;return directSplit(h,v,allLights,d);}
-float3 secondaryDistance(float3 p,float3 n,float3 dir,out float distance){Hit h;distance=0;if(!trace(p+n*.004,dir,400,h))return sky(dir);distance=h.distance;return h.emission+direct(h,-dir,settings.x>=3)+h.albedo*ambient.rgb*.16;}
+float3 secondaryDistance(float3 p,float3 n,float3 dir,out float distance){Hit h;distance=0;if(!trace(p+n*.004,dir,400,h))return sky(dir);distance=h.distance;return h.emission+direct(h,-dir,settings.x>=3)+slEnvironmentDiffuse(h.albedo,h.n,ambient.rgb,h.ao);}
 
 float3 secondary(float3 p,float3 n,float3 dir){float distance;return secondaryDistance(p,n,dir,distance);}
 [numthreads(8,8,1)] void Trace(uint3 id:SV_DispatchThreadID){
@@ -90,8 +133,24 @@ float3 secondary(float3 p,float3 n,float3 dir){float distance;return secondaryDi
  targets[2][px]=float4(albedo,1);targets[3][px]=float4(specAlbedo,1);targets[4][px]=float4(depth,0,0,0);
  targets[5][px]=float4(velocity,oldDepth,previous.w>0?f16tof32(0x3c00+(found?h.objectId:8192)):0);targets[25][px]=float4(velocity,0,0);targets[6][px]=float4(emission,1);
  if(found){
-  if(settings.x<4){float3 d;float3 total=directSplit(h,-dir,settings.x>=3,d);diffuse=d;specular=max(0,total-d);
-   float ao=settings.x>=2?visibility(h.p,h.n,hemisphere(h.n),1.5):1;diffuse+=h.albedo*ambient.rgb*.22*ao;
+  if(h.kind>6.8&&h.kind<7.5){
+   bool droplet=slWaterDroplet(h.kind);
+   float fresnel=.0204+.9796*pow(1-saturate(dot(-dir,h.n)),5);
+   float3 reflected=reflect(dir,h.n),refracted=refract(dir,h.n,1/1.333);
+   if(!droplet&&reflected.y<.01)reflected=normalize(float3(reflected.x,.01,reflected.z));
+   Hit bottom;float3 under=float3(.015,.055,.065),attenuation=0;
+   float3 offset=droplet?h.n*.003:float3(0,.015,0);
+   if(trace(h.p-offset,refracted,80,bottom,true)){
+    attenuation=slWaterTransmission(droplet?h.waterThickness:bottom.distance);
+    under=(bottom.emission+direct(bottom,-refracted,settings.x>=3)+slEnvironmentDiffuse(bottom.albedo,bottom.n,ambient.rgb,bottom.ao))*attenuation+float3(.008,.04,.065)*(1-attenuation);
+   }else if(droplet)under=sky(refracted)*slWaterTransmission(h.waterThickness);
+   float3 reflection=secondaryDistance(h.p+offset,droplet?h.n:float3(0,1,0),reflected,specDistance);
+   float3 d;float3 foamLight=directSplit(h,-dir,settings.x>=3,d)+ambient.rgb*.3;
+   diffuse=under*(1-fresnel)*(1-h.waterFoam)+foamLight*h.waterFoam;
+   specular=reflection*fresnel*(1-h.waterFoam);emission=0;
+  }else if(settings.x<4){float3 d;float3 total=directSplit(h,-dir,settings.x>=3,d);diffuse=d;specular=max(0,total-d);
+   float ao=settings.x>=2?dot(visibility(h.p,h.n,hemisphere(h.n),1.5),float3(.2126,.7152,.0722)):1;diffuse+=slEnvironmentDiffuse(h.albedo,h.n,ambient.rgb,ao*h.ao);
+   if(settings.x<2)specular+=slEnvironmentSpecular(h.n,-dir,ambient.rgb,h.rough,.04.xxx,h.ao,sun,weather.y);
    if(settings.x>=2)specular+=secondaryDistance(h.p,h.n,reflect(dir,h.n),specDistance)*specAlbedo*(1-h.rough*.7);
    if(settings.x>=3)diffuse+=h.albedo*secondary(h.p,h.n,hemisphere(h.n))*.65;
   }else{

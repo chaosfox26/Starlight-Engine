@@ -10,6 +10,7 @@ import sys
 import time
 import shutil
 import ctypes
+import tempfile
 import feature_evidence
 from deep_analysis import write_progress
 
@@ -126,17 +127,33 @@ def collect_findings(directory):
     return findings
 
 
+def native_record_operation(root, mode, payload):
+    program=root/'out/audit-engine/Release/Starlight.NativeAuditRecords.exe'
+    if not program.is_file(): program=root/'out/classic/Release/Starlight.NativeAuditRecords.exe'
+    with tempfile.TemporaryDirectory(prefix='starlight-audit-records-') as temp:
+        base=Path(temp);write(base/'input.json',payload)
+        result=subprocess.run([str(program),mode,str(base/'input.json'),str(base/'result.json')],capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode: raise RuntimeError('Native audit evidence failed: '+result.stderr.strip())
+        return json.loads((base/'result.json').read_text(encoding='utf-8'))
+
+
+def native_capture_record(executable,root,sources,features,outcome,workload):
+    return native_record_operation(root,'capture',dict(root=str(root),executable=str(executable),sources=sources,features=features,outcome=outcome,workload=workload))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--audit-mode', choices=['features', 'errors', 'both'], default='features')
     parser.add_argument('--reuse-runtime', type=Path, help='Reference saved runtime evidence without rerunning it; freshness remains explicit')
+    parser.add_argument('--keep-artifacts', action='store_true', help='Keep raw captures and temporary packages for deeper debugging; default keeps compact reports')
     args = parser.parse_args()
     root, out = args.root.resolve(), args.output.resolve()
     from deep_analysis import validate_output
     validate_output(root, out)
     out.mkdir(parents=True, exist_ok=True)
+    preexisting = {str(p.relative_to(out)) for p in out.rglob('*') if p.is_file()}
     if (out/'audit-summary.json').exists():
         raise SystemExit('Existing audit output cannot be overwritten')
     def progress(percent, message):
@@ -184,7 +201,7 @@ def main():
     write(out/'execution-source-hashes.json', initial_hashes)
     if args.audit_mode != 'features':
         progress(1, 'Building isolated audit binaries; the normal editor build is preserved.')
-        result = execute([sys.executable, str(root/'Build-Native.py'), '--build-dir', str(build)], root,
+        result = execute([sys.executable, str(root/'Build-Native.py'), '--build-dir', str(build), '--compact'], root,
                          out/'build.log', 1200, lambda age: progress(2, f'Building audit binaries — {age}s; details in build.log'))
         result['name'] = 'build'; records.append(result)
         if source_hashes(root, sources) != initial_hashes:
@@ -209,7 +226,7 @@ def main():
                 executable = Path(test.get('command', [''])[0])
                 if name == 'native-adventure-export':
                     executable = Path(command[command.index('--runtime')+1])/'Starlight.NativePlayer.exe'
-                before = feature_evidence.capture_record(executable, root, sources, FEATURE_BINDINGS.get(name, ['diagnostics-and-existing-audits']),
+                before = native_capture_record(executable, root, sources, FEATURE_BINDINGS.get(name, ['diagnostics-and-existing-audits']),
                     'unknown', name) if executable.is_file() else None
                 result = execute(command, root, log, 270,
                     lambda age, n=name, pos=i: progress(5+int(45*pos/max(1,len(tests))), f'Error check: {n} — {age}s (deadline 270s)'))
@@ -218,7 +235,7 @@ def main():
                     result['coverageWarning'] = 'New test discovered; feature binding and artifact redirection require review'
                 write(out/'stages.partial.json', records)
                 if before:
-                    after = feature_evidence.capture_record(executable, root, sources, before['features'], 'unknown', name)
+                    after = native_capture_record(executable, root, sources, before['features'], 'unknown', name)
                     before['outcome'] = result['outcome'] if before['sourceHashes']==after['sourceHashes'] and before['build']==after['build'] else 'invalid: inputs changed'
                     result['outcome'] = before['outcome']
                     before['sourceBuildRelationship'] = 'Built before checks; full transitive/reproducible provenance not established'
@@ -226,7 +243,7 @@ def main():
                     write(out/f'test-{i}.feature-evidence.json', before)
             native = build/'Release/audit/starlight_audit_tool.exe'
             runtime = out/'native-diagnostics'
-            native_record = feature_evidence.capture_record(native, root, sources,
+            native_record = native_capture_record(native, root, sources,
                 ['native-rendering-contract','render-ownership-and-updates','diagnostics-and-existing-audits'],
                 'unknown', 'Gate 0 bounded lifecycle, debug tiers, measurements and visible stages')
             result = execute([str(native), str(root), str(runtime), '--gate0', '--batch'], root,
@@ -245,7 +262,7 @@ def main():
                     if record.get('outcome')=='delegated': record['outcome']='not-run'
             write(out/'stages.partial.json',records)
             native_record['outcome'] = result['outcome']
-            native_after = feature_evidence.capture_record(native, root, sources, native_record['features'], 'unknown', native_record['workload'])
+            native_after = native_capture_record(native, root, sources, native_record['features'], 'unknown', native_record['workload'])
             if native_after['sourceHashes'] != native_record['sourceHashes'] or native_after['build'] != native_record['build']:
                 native_record['outcome'] = 'invalid: inputs changed during execution'
                 result['outcome'] = native_record['outcome']
@@ -269,14 +286,17 @@ def main():
                     continue
                 packet_hash = hashlib.sha256(packet.read_bytes()).hexdigest()
                 binary = build/'Release/Starlight.Viewport.dll'
-                linked = feature_evidence.capture_record(binary, root, sources,
+                linked = native_capture_record(binary, root, sources,
                     ['native-rendering-contract'], 'unknown', name)
-                stage_result = execute([sys.executable, str(root/'tools/render'/script),
+                checker = ([str(build/'Release/Starlight.NativeFallbackChecks.exe')]
+                           if name == 'renderer-fallbacks' else
+                           [str(build/'Release/Starlight.NativeDenoiseChecks.exe')])
+                stage_result = execute(checker + [
                     '--build-dir', str(build), '--packet', str(packet), '--output', str(destination)],
                     root, out/(name+'.log'), deadline,
                     lambda age, n=name: progress(60, f'{n} — {age}s; diagnostic workload, not a performance comparison'))
                 stage_result.update(name=name, packet=str(packet), packetSha256=packet_hash)
-                after = feature_evidence.capture_record(binary, root, sources, linked['features'], 'unknown', name)
+                after = native_capture_record(binary, root, sources, linked['features'], 'unknown', name)
                 if linked['build'] != after['build'] or linked['sourceHashes'] != after['sourceHashes'] or hashlib.sha256(packet.read_bytes()).hexdigest() != packet_hash:
                     stage_result['outcome'] = 'invalid: inputs changed'
                 linked.update(outcome=stage_result['outcome'], workload={'name':name,'packet':str(packet),'sha256':packet_hash})
@@ -292,11 +312,14 @@ def main():
                'limits': 'Bounded checks only. Not all features, visual states, hardware or long-soak conditions are tested. Gate 0 certification remains separate.'}
     write(out/'audit-summary.json', summary)
     write(out/'runtime-evidence.json', evidence)
-    findings = collect_findings(args.reuse_runtime.resolve() if args.reuse_runtime else out)
+    findings = native_record_operation(root,'findings',{'root':str(args.reuse_runtime.resolve() if args.reuse_runtime else out),'includeRetained':bool(args.reuse_runtime)})
     write(out/'audit-findings.json', findings)
     if args.audit_mode != 'errors':
         progress(65, 'Generating source and feature report with this run’s runtime evidence.')
-        command = [sys.executable, str(Path(__file__).with_name('deep_analysis.py')), '--root', str(root), '--output', str(out),
+        analysis_program = build/'Release/Starlight.NativeAnalysis.exe'
+        if not analysis_program.is_file():
+            analysis_program = root/'out/classic/Release/Starlight.NativeAnalysis.exe'
+        command = [str(analysis_program), '--root', str(root), '--output', str(out),
                    '--extra-evidence', str(out/'runtime-evidence.json')]
         result = subprocess.run(command, cwd=root)
         if result.returncode:
@@ -330,7 +353,33 @@ def main():
     # Preserve the analyzer seal and separately seal the final combined deliverables.
     write(out/'audit-deliverable-hashes.json', {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in out.iterdir() if p.is_file() and p.name in ('AUDIT-SHAREABLE-REPORT.md','audit-summary.json','runtime-evidence.json')})
-    progress(100, 'Completed — report saved. Review failed, unavailable and untested areas; completion is not certification.')
+    from artifact_cleanup import native_final_status, native_compact_report
+    cleanup_program = build/'Release/Starlight.NativeCleanup.exe'
+    if not cleanup_program.is_file():
+        cleanup_program = root/'out/classic/Release/Starlight.NativeCleanup.exe'
+    status = native_final_status(cleanup_program, summary, findings)
+    (out/'final-status.txt').write_text(status, encoding='utf-8')
+    with (out/'AUDIT-SHAREABLE-REPORT.md').open('a', encoding='utf-8') as report:
+        report.write('\n\n## Final result\n\n'+status+'\n\nDefault retention keeps written summaries and structured results. Raw captures and temporary packages may be removed; old evidence links describe their original locations. Use --keep-artifacts for a future detailed diagnostic run.\n')
+    write(out/'audit-deliverable-hashes.json', {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in out.iterdir() if p.is_file() and p.name in ('AUDIT-SHAREABLE-REPORT.md','audit-summary.json','runtime-evidence.json')})
+    if args.audit_mode != 'features':
+        try:
+            from artifact_cleanup import native_retain_captures
+            native_retain_captures(cleanup_program, root, out)
+        except (OSError, ValueError) as error:
+            write(out/'capture-retention-warning.json', {'error': str(error)})
+    if not args.keep_artifacts and root/'analysis' in out.parents:
+        progress(99, 'Reports saved. Removing temporary captures and test packages...')
+        try:
+            cleanup = native_compact_report(cleanup_program, root, out, preexisting)
+            if any(row["status"] != "removed" for row in cleanup):
+                raise OSError("Some generated files remain locked or could not be removed")
+        except (OSError, ValueError) as error:
+            write(out/'summary-retention-warning.json', {'error': str(error)})
+            status += '\nSome temporary files could not be cleaned up; see the report folder.'
+            (out/'final-status.txt').write_text(status, encoding='utf-8')
+    progress(100, status)
     return 0 if not records or summary['allRequestedStagesPassed'] else 4
 
 

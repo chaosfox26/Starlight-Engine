@@ -1,5 +1,6 @@
 #include "commands.hpp"
 #include "assets.hpp"
+#include "engine_assets.hpp"
 #include "features.hpp"
 #include "object_template.hpp"
 #include <set>
@@ -25,10 +26,22 @@ Character &find(SceneData &scene, const json &op) {
         throw std::runtime_error("Object ID not found");
     return *found;
 }
+std::string model_for_command(const std::string &named, const fs::path &baseFolder) {
+    if (EngineAssets::valid_id(AssetKind::Model, named)) {
+        (void)EngineAssets::get(AssetKind::Model, named);
+        return named;
+    }
+    auto source = fs::path(wide(named));
+    if (source.is_relative()) source = baseFolder / source;
+    return import_model(fs::absolute(source).lexically_normal());
+}
 void snap(SceneData &scene, Character &c) {
     if (!c.KeepAboveFloor)
         return;
-    auto parts = c.Shape || c.Sculpt ? shape_geometry(c) : load_glb(wide(c.Asset));
+    std::shared_ptr<const std::vector<MeshPart>> model;
+    std::vector<MeshPart> built;
+    if (c.Shape || c.Sculpt) built = shape_geometry(c); else model = load_model(c.Asset);
+    const auto &parts = model ? *model : built;
     auto transform = c;
     transform.Y = 0;
     double minimum = INFINITY;
@@ -48,11 +61,18 @@ json describe_commands() {
             {"features", json::parse(feature_catalog)},
             {"featureCommand", "--feature <id> --result <report.json>"},
             {"operations",
-             {"add", "move", "route", "rename", "remove", "configure", "shape", "transform", "terrain-brush",
-              "terrain-water", "terrain-stamp", "insert-object", "insert-group", "duplicate", "replace-model", "merge-scene"}},
+             {"add", "move", "route", "rename", "remove", "configure", "shape", "transform", "follow", "set-block", "terrain-brush",
+              "terrain-water", "terrain-stamp", "terrain-volume", "insert-object", "insert-group", "duplicate", "replace-model", "merge-scene"}},
+            {"sceneBlocks", {"Lighting", "Moods", "ActiveMood", "View", "Zones", "Crowd", "Cast"}},
             {"readOperations", {"describe", "inspect"}},
             {"portableExport", "--export-portable <scene.starscene> <new-folder>"},
             {"portableVerification", "--verify-portable <folder>"},
+            {"modelImport", "--import-model <file.glb>"},
+            {"textureImport", "--import-texture <file.png|file.jpg>"},
+            {"blobImport", "--import-blob <type> <file>"},
+            {"assetReadiness", "--asset-ready <asset-id>"},
+            {"atlasValidation", "--validate-atlas <blob-id> <model-id>"},
+            {"assetRoots", "--asset-root-list | --asset-root-add <folder> [--writable] [--label <text>] | --asset-root-init <folder> [--writable] [--label <text>] | --asset-root-remove <folder>"},
             {"starterAdventure", "--new-adventure <new-scene.starscene>"},
             {"playableExport", "--export-game <scene.starscene> <new-folder> <runtime-folder>"},
             {"limitations",
@@ -66,23 +86,36 @@ json inspect_scene(const fs::path &input) {
     size_t missing = 0;
     for (const auto &object : scene.Characters) {
         if (object.Shape || object.Sculpt || object.Asset.empty()) continue;
-        auto found = std::find_if(assets.begin(), assets.end(), [&](const json &entry) { return entry.at("path") == object.Asset; });
+        auto found = std::find_if(assets.begin(), assets.end(), [&](const json &entry) { return entry.at("asset") == object.Asset; });
         if (found != assets.end()) { (*found)["objectIds"].push_back(object.Id); continue; }
-        fs::path asset(wide(object.Asset));
-        std::error_code error;
-        bool available = fs::is_regular_file(asset, error);
-        json entry{{"path",object.Asset},{"objectIds",json::array({object.Id})},{"available",available},
+        json entry{{"asset",object.Asset},{"objectIds",json::array({object.Id})},{"available",false},
             {"geometryValidated",false}};
-        if (!available) { ++missing; entry["problem"] = error ? error.message() : "Model file is missing or is not a regular file"; }
-        else {
-            auto size = fs::file_size(asset, error);
+        try {
+            EngineAssets::verify_on_disk(object.Asset);
+            entry["available"] = true;
+            std::error_code error;
+            auto size = fs::file_size(EngineAssets::locate(object.Asset), error);
             if (!error) entry["bytes"] = size;
-            else entry["problem"] = error.message();
+        } catch (const AssetMissing &problem) {
+            ++missing;
+            entry["problem"] = problem.what();
         }
         assets.push_back(std::move(entry));
     }
-    return {{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", hash_file(p)}, {"scene", scene},
-        {"assets",assets},{"missingAssetCount",missing},{"assetCheckScope","File presence only; geometry and runtime correctness are not certified"}};
+    json result{{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", hash_file(p)}, {"scene", scene},
+        {"assets",assets},{"missingAssetCount",missing},{"assetCheckScope","Library presence and file integrity only; geometry and runtime correctness are not certified"}};
+    if (!scene.Cast.Models.empty()) {
+        json castAssets = json::array();
+        size_t castMissing = 0;
+        for (const auto &id : cast_asset_ids(scene)) {
+            const bool available = !EngineAssets::locate(id).empty();
+            if (!available) ++castMissing;
+            castAssets.push_back({{"asset", id}, {"available", available}});
+        }
+        result["castAssets"] = castAssets;
+        result["missingCastAssetCount"] = castMissing;
+    }
+    return result;
 }
 json apply_commands(const fs::path &file) {
     auto request = json::parse(read_file(file));
@@ -109,15 +142,13 @@ json apply_commands(const fs::path &file) {
             auto bytes = read_file(source);
             if (_stricmp(hash_bytes(bytes).c_str(), op.at("expectedSha256").get<std::string>().c_str()))
                 throw std::runtime_error("Source scene changed; inspect it again before merging");
+            EngineAssets::discover_near(source.parent_path());
             auto objects = SceneData::decode(bytes).Characters;
             if (objects.empty()) throw std::runtime_error("Source scene contains no objects");
             std::unordered_map<std::string,std::string> mergedIds;
             for (auto &object : objects) {
                 auto oldId=object.Id;object.Id = new_id();mergedIds[oldId]=object.Id;
-                if (!object.Asset.empty()) {
-                    auto asset = fs::path(wide(object.Asset));
-                    if (asset.is_relative()) object.Asset = utf8((source.parent_path() / asset).lexically_normal().wstring());
-                }
+                if (!object.Shape && !object.Sculpt && !object.Asset.empty()) (void)EngineAssets::get(AssetKind::Model, object.Asset);
             }
             for(auto& object:objects)if(auto target=mergedIds.find(object.JointTargetId);target!=mergedIds.end())object.JointTargetId=target->second;
             for(auto& object:objects)if(auto target=mergedIds.find(object.LightningTargetId);target!=mergedIds.end())object.LightningTargetId=target->second;
@@ -135,6 +166,7 @@ json apply_commands(const fs::path &file) {
             // Hash the same bytes that are decoded, avoiding a check/read race.
             if (_stricmp(hash_bytes(bytes).c_str(), op.at("expectedSha256").get<std::string>().c_str()))
                 throw std::runtime_error("Saved object changed; inspect it again before inserting");
+            EngineAssets::discover_near(fs::absolute(source).parent_path());
             if (kind == "insert-group") {
                 auto objects = decode_object_group(bytes);
                 place_object_group(objects, scene, op.value("x", objects.front().X), op.value("z", objects.front().Z));
@@ -177,6 +209,12 @@ json apply_commands(const fs::path &file) {
             scene.Terrain->brush(x, z, radius, strength, tool, paint, target, seconds);
             continue;
         }
+        if(kind=="terrain-volume"){
+            keys(op,{"op","x","y","z","radius","subtract"});
+            auto terrain=scene.Terrain.value_or(TerrainData{});
+            terrain.Volumes.push_back({op.at("x").get<double>(),op.at("y").get<double>(),op.at("z").get<double>(),op.value("radius",1.),op.value("subtract",true)});
+            terrain.validate();scene.Terrain=std::move(terrain);continue;
+        }
         if (kind == "terrain-water") {
             keys(op, {"op", "enabled", "level", "lava"});
             if (!scene.Terrain)
@@ -195,14 +233,64 @@ json apply_commands(const fs::path &file) {
             stamp_shape(*scene.Terrain, c);
             continue;
         }
+        if (kind == "set-block") {
+            keys(op, {"op", "block", "value", "verifyAssets"});
+            const auto block = op.at("block").get<std::string>();
+            const auto &value = op.at("value");
+            const bool clear = value.is_null();
+            if (block == "Lighting") {
+                if (clear) scene.Lighting.reset(); else scene.Lighting = value.get<SceneLighting>();
+            } else if (block == "Moods") {
+                scene.Moods.clear();
+                if (!clear) {
+                    if (!value.is_array()) throw std::runtime_error("Moods: must be a list");
+                    value.get_to(scene.Moods);
+                }
+            } else if (block == "ActiveMood") {
+                if (!clear && !value.is_string()) throw std::runtime_error("ActiveMood: must be text or null");
+                scene.ActiveMood = clear ? std::string{} : value.get<std::string>();
+            } else if (block == "View") {
+                if (clear) scene.View.reset(); else scene.View = value.get<SceneView>();
+            } else if (block == "Zones") {
+                scene.Zones.clear();
+                if (!clear) {
+                    if (!value.is_array()) throw std::runtime_error("Zones: must be a list");
+                    value.get_to(scene.Zones);
+                }
+            } else if (block == "Crowd") {
+                if (clear) scene.Crowd.reset(); else scene.Crowd = value.get<SceneCrowd>();
+            } else if (block == "Cast") {
+                scene.Cast = clear ? SceneCast{} : value.get<SceneCast>();
+                scene.Cast.validate();
+                if (op.value("verifyAssets", true)) {
+                    EngineAssets::discover_near(path.parent_path());
+                    const auto missing = cast_missing_assets(scene);
+                    if (!missing.empty()) {
+                        std::string list;
+                        for (const auto &id : missing) list += (list.empty() ? "" : ", ") + id;
+                        throw std::runtime_error("The cast names assets the library does not hold: " + list);
+                    }
+                }
+            } else
+                throw std::runtime_error("Unknown scene block: " + block + " (Lighting, Moods, ActiveMood, View, Zones, Crowd, Cast)");
+            continue;
+        }
         if (kind == "shape") {
-            keys(op, {"op", "shape", "name", "x", "y", "z"});
+            keys(op, {"op", "shape", "name", "x", "y", "z", "width", "height", "depth", "color", "glow", "group", "ringInner", "lightInner"});
             Character c;
             c.Shape = op.at("shape").get<std::string>();
             c.Name = op.value("name", std::string("Shape"));
             c.X = op.value("x", 0.);
             c.Y = op.value("y", 0.);
             c.Z = op.value("z", 0.);
+            c.Width = op.value("width", c.Width);
+            c.Height = op.value("height", c.Height);
+            c.Depth = op.value("depth", c.Depth);
+            c.Color = op.value("color", c.Color);
+            c.Glow = op.value("glow", c.Glow);
+            c.Group = op.value("group", c.Group);
+            c.RingInner = op.value("ringInner", c.RingInner);
+            c.LightInner = op.value("lightInner", c.LightInner);
             c.validate();
             c.Y = std::max(0., c.Y);
             scene.Characters.push_back(std::move(c));
@@ -210,10 +298,8 @@ json apply_commands(const fs::path &file) {
         }
         if (kind == "add") {
             keys(op, {"op", "name", "asset", "x", "z"});
-            auto asset = fs::absolute(wide(op.at("asset").get<std::string>())).lexically_normal();
-            load_glb(asset);
             Character c;
-            c.Asset = utf8(asset.wstring());
+            c.Asset = model_for_command(op.at("asset").get<std::string>(), fs::current_path());
             c.Name = op.at("name").get<std::string>();
             c.X = op.at("x").get<double>();
             c.Z = op.at("z").get<double>();
@@ -224,14 +310,10 @@ json apply_commands(const fs::path &file) {
         if (kind == "replace-model") {
             keys(op, {"op", "id", "asset"});
             if (c.Shape || c.Sculpt) throw std::runtime_error("Model replacement requires an imported object, not a shape or sculpt");
-            auto asset = fs::path(wide(op.at("asset").get<std::string>()));
-            if (asset.is_relative()) asset = fs::absolute(file).parent_path() / asset;
-            asset = fs::absolute(asset).lexically_normal();
-            load_glb(asset);
-            c.Asset = utf8(asset.wstring());
+            c.Asset = model_for_command(op.at("asset").get<std::string>(), fs::absolute(file).parent_path());
         } else if (kind == "transform") {
             keys(op, {"op", "id", "y", "width", "height", "depth", "rotationX", "rotationY", "rotationZ",
-                      "keepAboveFloor", "color", "lightIntensity", "lightRange"});
+                      "keepAboveFloor", "color", "lightIntensity", "lightRange", "glow", "group", "ringInner", "lightInner"});
             c.Y = op.value("y", c.Y);
             c.Width = op.value("width", c.Width);
             c.Height = op.value("height", c.Height);
@@ -243,8 +325,27 @@ json apply_commands(const fs::path &file) {
             c.Color = op.value("color", c.Color);
             c.LightIntensity = op.value("lightIntensity", c.LightIntensity);
             c.LightRange = op.value("lightRange", c.LightRange);
+            c.Glow = op.value("glow", c.Glow);
+            c.Group = op.value("group", c.Group);
+            c.RingInner = op.value("ringInner", c.RingInner);
+            c.LightInner = op.value("lightInner", c.LightInner);
             c.validate();
             snap(scene, c);
+        } else if (kind == "follow") {
+            keys(op, {"op", "id", "clear", "target", "offsetX", "offsetZ", "lag", "wobble", "poolRadius", "housing", "beam"});
+            if (op.value("clear", false)) {
+                c.Follow.reset();
+            } else {
+                json current = c.Follow ? json(*c.Follow) : json(LightFollow{});
+                json patch = json::object();
+                for (const auto &[from, to] : std::initializer_list<std::pair<const char *, const char *>>{
+                         {"target", "Target"}, {"offsetX", "OffsetX"}, {"offsetZ", "OffsetZ"}, {"lag", "Lag"}, {"wobble", "Wobble"},
+                         {"poolRadius", "PoolRadius"}, {"housing", "Housing"}, {"beam", "Beam"}})
+                    if (op.contains(from)) patch[to] = op.at(from);
+                current.merge_patch(patch);
+                c.Follow = current.get<LightFollow>();
+            }
+            c.validate();
         } else if (kind == "configure") {
             keys(op, {"op", "id", "x", "z", "speed", "size"});
             configure(c, op.at("x").get<double>(), op.at("z").get<double>(), op.at("speed").get<double>(),

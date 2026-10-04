@@ -42,7 +42,7 @@ Supported operations:
 | rename | id, name | Change its display name |
 | remove | id | Remove it from the scene; the asset file is preserved |
 
-Coordinates are metres on the floor: X and Z. The preview floor spans -12 to +12 on each axis. Character assets remain referenced by absolute path; this is not a portable asset-package exporter.
+Coordinates are metres on the floor: X and Z. The preview floor spans -12 to +12 on each axis. Character assets remain referenced by absolute path; this is not a portable asset-package exporter. [Superseded 2026-10-04: a model is referenced by a library id, not a path. `add` and `replace-model` import the GLB you name into the library (or accept an existing model id), `merge-scene` no longer rebases model paths, and portable export bundles the referenced assets.]
 
 The whole batch validates before any scene write. A stale fingerprint rejects the batch. A file lock serializes participating editor writers, with another fingerprint check before saving. Existing scene contents are backed up on every replacement. A repeated request carrying the old fingerprint is rejected; inspect again before another edit. This is trusted local tooling, not a security sandbox against processes that already have filesystem access.
 

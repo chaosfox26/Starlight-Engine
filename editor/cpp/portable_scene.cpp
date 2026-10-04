@@ -1,19 +1,8 @@
 #include "platform.hpp"
 #include "assets.hpp"
+#include "engine_assets.hpp"
 #include <cstring>
 namespace starlight::editor {
-namespace {
-void embedded_uris(const json &value) {
-    if (value.is_object()) {
-        for (auto it = value.begin(); it != value.end(); ++it) {
-            if (it.key() == "uri" && (!it.value().is_string() ||
-                !it.value().get<std::string>().starts_with("data:")))
-                throw std::runtime_error("Portable export requires embedded GLB resources; external URI found");
-            embedded_uris(it.value());
-        }
-    } else if (value.is_array()) for (const auto &item : value) embedded_uris(item);
-}
-}
 json export_portable_scene(const SceneData &source, const fs::path &destination) {
     source.validate();
     auto target = fs::absolute(destination).lexically_normal();
@@ -24,36 +13,19 @@ json export_portable_scene(const SceneData &source, const fs::path &destination)
     try {
         auto scene = source;
         json assets = json::array();
-        for (auto &object : scene.Characters) {
-            if (object.Shape || object.Sculpt) { object.Asset.clear(); continue; }
-            if (object.Asset.empty()) continue;
-            fs::path asset(wide(object.Asset));
-            if (!asset.is_absolute()) throw std::runtime_error("Open the scene before exporting relative asset paths");
-            if (fs::file_size(asset) > 256ull * 1024 * 1024) throw std::runtime_error("Export GLB exceeds 256 MiB");
-            auto bytes = read_file(asset);
-            auto hash = hash_bytes(bytes);
-            auto relative = fs::path(L"assets") / (wide(hash) + L".glb");
-            auto copied = stage / relative;
-            if (!fs::exists(copied)) {
-                atomic_write(copied, bytes);
-                load_glb(copied); // Validate the exact exported bytes, not the mutable source file.
-                for (size_t offset = 12; offset + 8 <= bytes.size();) {
-                    uint32_t count, kind;
-                    std::memcpy(&count, bytes.data() + offset, 4);
-                    std::memcpy(&kind, bytes.data() + offset + 4, 4);
-                    offset += 8;
-                    if (count > bytes.size() - offset) throw std::runtime_error("Truncated GLB chunk");
-                    if (kind == 0x4e4f534a) embedded_uris(json::parse(bytes.substr(offset, count)));
-                    offset += count;
-                }
-                assets.push_back({{"path", utf8(relative.generic_wstring())}, {"sha256", hash}, {"bytes", bytes.size()}});
-            }
-            object.Asset = utf8(relative.generic_wstring());
+        for (auto &object : scene.Characters)
+            if (object.Shape || object.Sculpt) object.Asset.clear();
+        // The key card goes out with exactly the engine assets it references (its dependency closure), in the bundle's own asset folder.
+        for (const auto &id : scene_asset_ids(scene)) {
+            auto bytes = EngineAssets::verified_file_bytes(id);
+            auto relative = fs::path(L"assets") / wide(id + ".slasset");
+            atomic_write(stage / relative, bytes);
+            assets.push_back({{"path", utf8(relative.generic_wstring())}, {"sha256", hash_bytes(bytes)}, {"bytes", bytes.size()}});
         }
         atomic_write(stage / L"scene.starscene", scene.encode());
         json manifest{{"format","starlight-portable-scene"},{"version",1},{"scene","scene.starscene"},
             {"sceneSha256",hash_file(stage / L"scene.starscene")},{"assets",assets},
-            {"scope","Editor scene and embedded GLB assets; not an executable game"}};
+            {"scope","Editor scene and its engine assets (sculpts, terrain, models); not an executable game"}};
         atomic_write(stage / L"manifest.json", manifest.dump(2));
         fs::rename(stage, target);
         return {{"success",true},{"folder",utf8(target.wstring())},{"assetCount",assets.size()}};
@@ -86,17 +58,19 @@ json verify_portable_scene(const fs::path &folder) {
     for (const auto &asset : assets) {
         auto path = contained(asset.at("path").get<std::string>());
         if (hash_file(path) != asset.at("sha256").get<std::string>() || fs::file_size(path) != asset.at("bytes").get<uint64_t>())
-            throw std::runtime_error("Portable model changed since export");
+            throw std::runtime_error("Portable asset changed since export");
         verified.push_back(path);
     }
-    auto scene = SceneData::decode(read_file(scenePath));
-    for (const auto &object : scene.Characters) {
-        if (object.Asset.empty()) continue;
-        auto path = contained(object.Asset);
+    EngineAssets::ScopedRoot bundleLibrary(root / L"assets");
+    auto sceneText = read_file(scenePath);
+    for (const auto &id : EngineAssets::referenced_ids(json::parse(sceneText))) {
+        auto path = contained("assets/" + id + ".slasset");
         if (std::find(verified.begin(), verified.end(), path) == verified.end())
-            throw std::runtime_error("Scene references a model missing from its manifest");
+            throw std::runtime_error("Scene references an engine asset missing from its manifest");
+        EngineAssets::verify_on_disk(id);
     }
-    return {{"success",true},{"assetCount",assets.size()},{"note","Exported scene and model hashes match; this is integrity verification, not runtime certification."}};
+    (void)SceneData::decode(sceneText);
+    return {{"success",true},{"assetCount",assets.size()},{"note","Exported scene and engine asset hashes match; this is integrity verification, not runtime certification."}};
 }
 json export_scene_selection(const SceneData &scene, const std::vector<std::string>& ids, const fs::path &destination) {
     if (ids.empty()) throw std::runtime_error("Select objects to export first");
@@ -112,23 +86,21 @@ json export_scene_selection(const SceneData &scene, const std::vector<std::strin
     return export_portable_scene(selected, destination);
 }
 std::optional<size_t> repair_scene_models(SceneData &scene,
-    const std::function<std::optional<fs::path>(const fs::path&)>& choose) {
+    const std::function<std::optional<fs::path>(const std::string&, const std::string&)>& choose) {
     auto repaired = scene;
     std::vector<std::pair<std::string,std::string>> replacements;
+    std::set<std::string> intact;
     for (auto &object : repaired.Characters) {
         if (object.Shape || object.Sculpt || object.Asset.empty()) continue;
-        fs::path original(wide(object.Asset));
-        std::error_code error;
-        if (fs::is_regular_file(original, error)) continue;
+        if (intact.contains(object.Asset)) continue;
         auto existing = std::find_if(replacements.begin(), replacements.end(), [&](const auto &entry) { return entry.first == object.Asset; });
         if (existing != replacements.end()) { object.Asset = existing->second; continue; }
-        auto replacement = choose(original);
+        if (model_available(object.Asset)) { intact.insert(object.Asset); continue; }
+        auto replacement = choose(object.Asset, object.Name);
         if (!replacement) return std::nullopt;
-        auto path = fs::absolute(*replacement).lexically_normal();
-        load_glb(path);
-        auto name = utf8(path.wstring());
-        replacements.emplace_back(object.Asset, name);
-        object.Asset = std::move(name);
+        auto id = import_model(fs::absolute(*replacement).lexically_normal());
+        replacements.emplace_back(object.Asset, id);
+        object.Asset = std::move(id);
     }
     repaired.validate();
     scene = std::move(repaired);

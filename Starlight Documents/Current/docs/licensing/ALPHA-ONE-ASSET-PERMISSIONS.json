@@ -1,0 +1,22 @@
+{
+  "recorded": "2026-09-30",
+  "publisher": "ChaosFox",
+  "evidence": "User confirmation in this task; not an independent provider-account or ownership audit.",
+  "assets": [
+    {
+      "path": "library/model-6892a6a3d79a778262ef3b6dceb6fc887e277e19aa45fda1478b64f3b7693478.slasset",
+      "sha256": "225bfe94762872400c1a95accb81063cf1814fa27985de00da42ec7f470b02a3",
+      "originalFile": "fox-lead.glb",
+      "originalSha256": "1128346b5489e2eff42547e1694557cda1dd0b18cbbe282a247c143296c5b65f",
+      "authorization": "include-in-alpha-one-preview",
+      "basis": "Owner authorizes inclusion of the current starter model in the shareable Alpha One preview; prior record identifies it as owner-owned."
+    },
+    {
+      "path": "design/branding/starlight-alpha-one-audio.wav",
+      "sha256": "7acf889c02274e2208104ec7a7eea62087a5aea331c9e29933e2c8dbcf277591",
+      "authorization": "include-in-alpha-one-preview",
+      "basis": "Owner authorizes use of the supplied Suno track and reports a paid Suno tier with commercial rights."
+    }
+  ],
+  "scope": "Current listed assets only. Future downloaded models require their own license review; free download alone does not establish redistribution permission."
+}

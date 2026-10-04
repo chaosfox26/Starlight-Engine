@@ -1,4 +1,5 @@
 #include "platform.hpp"
+#include "engine_assets.hpp"
 #include <atomic>
 #include <bcrypt.h>
 #include <fstream>
@@ -11,6 +12,7 @@ namespace starlight::editor {
 using Microsoft::WRL::ComPtr;
 namespace {
 fs::path native_file_path(const fs::path& path) {
+    if(path.wstring().rfind(L"\\\\?\\",0)==0)return path;
     auto native=fs::absolute(path).lexically_normal().make_preferred().wstring();
     if(native.rfind(L"\\\\?\\",0)==0)return fs::path(native);
     return fs::path(native.rfind(L"\\\\",0)==0 ? L"\\\\?\\UNC\\"+native.substr(2) : L"\\\\?\\"+native);
@@ -68,9 +70,17 @@ std::string hash_file(const fs::path &p) {
 }
 std::string hash_bytes(std::string_view data) {
     unsigned char hash[32];
-    if (data.size() > ULONG_MAX ||
-        BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, reinterpret_cast<PUCHAR>(const_cast<char*>(data.data())),
-                   ULONG(data.size()), hash, 32) < 0)
+    if(data.size()>ULONG_MAX)throw std::runtime_error("SHA256 input too large");
+    BCRYPT_ALG_HANDLE algorithm=nullptr;
+    if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)
+        throw std::runtime_error("Cannot open SHA256 provider");
+    BCRYPT_HASH_HANDLE operation=nullptr;
+    auto status=BCryptCreateHash(algorithm,&operation,nullptr,0,nullptr,0,0);
+    if(status>=0)status=BCryptHashData(operation,reinterpret_cast<PUCHAR>(const_cast<char*>(data.data())),ULONG(data.size()),0);
+    if(status>=0)status=BCryptFinishHash(operation,hash,32,0);
+    if(operation)BCryptDestroyHash(operation);
+    BCryptCloseAlgorithmProvider(algorithm,0);
+    if (status < 0)
         throw std::runtime_error("SHA256 failed");
     std::ostringstream out;
     out << std::hex << std::uppercase << std::setfill('0');
@@ -85,8 +95,8 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
     // path form for our Win32 file calls without depending on machine policy.
     auto p = native_file_path(path);
     fs::create_directories(p.parent_path());
-    Handle lock(CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
+    Handle lock(CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
+                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr));
     if (!lock)
         throw std::runtime_error("File is busy");
     if (expected && (!fs::exists(p) || _stricmp(hash_file(p).c_str(), expected->c_str())))
@@ -108,12 +118,24 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
             if (!FlushFileBuffers(f.value))
                 throw std::runtime_error("File flush failed");
         }
+        // Progress viewers can briefly hold the old report without delete
+        // sharing. Retry only that transient conflict, keeping the old file.
+        auto commit = [&](auto operation) {
+            DWORD error=ERROR_SUCCESS;
+            for(unsigned attempt=0;attempt<51;++attempt) {
+                if(operation())return;
+                error=GetLastError();
+                // Rename may report ACCESS_DENIED for a reader lacking delete
+                // sharing too. A real permission denial still fails at the cap.
+                if((error!=ERROR_SHARING_VIOLATION && error!=ERROR_LOCK_VIOLATION && error!=ERROR_ACCESS_DENIED) || attempt==50)break;
+                Sleep(20);
+            }
+            throw std::runtime_error("Cannot commit file (Windows error "+std::to_string(error)+"); original preserved");
+        };
         if (fs::exists(p) && backup) {
             auto previous = p.wstring() + L"." + wide(new_id()) + L".bak";
-            if (!ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr))
-                throw std::runtime_error("Cannot replace file; original preserved");
-        } else if (!MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            throw std::runtime_error("Cannot commit file");
+            commit([&]{return ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr);});
+        } else commit([&]{return MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);});
     } catch (...) {
         std::error_code ec;
         fs::remove(temp, ec);
@@ -121,6 +143,13 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
     }
 }
 fs::path application_data() {
+    wchar_t portable[32768];
+    auto length = GetEnvironmentVariableW(L"STARLIGHT_DATA_ROOT", portable, 32768);
+    if (length && length < 32768) {
+        fs::path p(portable);
+        if (!p.is_absolute()) throw std::runtime_error("Starlight data directory must be absolute");
+        return p;
+    }
     PWSTR text = nullptr;
     check(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &text));
     fs::path p(text);
@@ -136,27 +165,18 @@ void diagnostic(std::string_view operation, std::string_view message) noexcept {
     }
 }
 void save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected) {
-    auto saved = scene;
-    const auto base = fs::absolute(path).parent_path().lexically_normal();
-    for (auto &object : saved.Characters) {
-        auto asset = fs::path(wide(object.Asset));
-        if (asset.is_absolute()) {
-            auto relative = asset.lexically_normal().lexically_relative(base);
-            if (!relative.empty() && *relative.begin() != L"..")
-                object.Asset = utf8(relative.generic_wstring());
-        }
-    }
-    atomic_write(path, saved.encode(), true, expected);
+    const auto encoded = scene.encode();
+    for (const auto &object : scene.Characters)
+        if (!object.Shape && !object.Sculpt && !object.Asset.empty())
+            EngineAssets::keep(object.Asset);
+    for (const auto &id : cast_asset_ids(scene))
+        EngineAssets::keep(id);
+    atomic_write(path, encoded, true, expected);
 }
 SceneData load_scene(const fs::path &path) {
-    auto scene = SceneData::decode(read_file(path));
-    for (auto &object : scene.Characters) {
-        if (object.Asset.empty()) continue;
-        auto asset = fs::path(wide(object.Asset));
-        if (asset.is_relative())
-            object.Asset = utf8((fs::absolute(path).parent_path() / asset).lexically_normal().wstring());
-    }
-    return scene;
+    // A portable bundle (exported scene or game) carries its engine assets in an "assets" folder beside the scene; the library reads from there too.
+    EngineAssets::discover_near(fs::absolute(path).parent_path());
+    return SceneData::decode(read_file(path));
 }
 namespace {
 fs::path shell_path(IShellItem *item) {

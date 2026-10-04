@@ -71,3 +71,10 @@ The analyzer discovers JSON evidence recursively under audit-runs, including pre
 The editor parity runner now writes a `.feature-evidence.json` sidecar with pre/post execution input checks and process exit status. It records the observed executable, not proof that this executable was built from the observed source. Source matching does not establish transitive build-input coverage. Existing historical results are never retroactively given current hashes. Other test producers can call `capture_record` during their own execution and adopt this same schema; they have not all been migrated.
 
 Curated implementation descriptions and product requirements still require maintenance when semantics change. Automatic discovery and connected evidence reduce duplicated reporting work; they do not perform arbitrary semantic inference or replace visual acceptance. Changed product files, unmapped files and unsupported evidence remain explicit coverage warnings.
+
+
+## Compact completion reports
+
+The final window shows passed, failed and unavailable stage counts with short explanations. Feature-only reports state that no new runtime tests ran. Counts refer to stages, not individual assertions.
+
+Outputs inside analysis retain summaries and structured results by default; raw captures and temporary exports are removed after reporting, including failed runs. Existing files are protected. Use --keep-artifacts for raw diagnostic evidence. External output directories are not automatically compacted. Cleanup warnings appear in final status.

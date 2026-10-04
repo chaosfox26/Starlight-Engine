@@ -13,7 +13,8 @@ inline void apply(HWND window) {
     using Theme=HRESULT(WINAPI*)(HWND,LPCWSTR,LPCWSTR);
     static auto theme=reinterpret_cast<Theme>(GetProcAddress(LoadLibraryW(L"uxtheme.dll"),"SetWindowTheme"));
     wchar_t name[64]{}; GetClassNameW(window,name,64);
-    if(std::wcscmp(name,L"Button")==0)
+    auto buttonType=GetWindowLongPtrW(window,GWL_STYLE)&BS_TYPEMASK;
+    if(std::wcscmp(name,L"Button")==0 && (buttonType==BS_PUSHBUTTON || buttonType==BS_DEFPUSHBUTTON))
         SetWindowLongPtrW(window,GWL_STYLE,(GetWindowLongPtrW(window,GWL_STYLE)&~BS_TYPEMASK)|BS_OWNERDRAW);
     if(std::wcscmp(name,PROGRESS_CLASSW)==0) {
         if(theme) theme(window,L"",L"");

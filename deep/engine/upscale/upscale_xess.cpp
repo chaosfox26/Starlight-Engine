@@ -1,4 +1,4 @@
-// Starlight DX12 client — milestone 5 XeSS backend (Intel XeSS SDK: XeSS-SR super resolution, XeSS-FG
+// Starlight DX12 client — XeSS backend (Intel XeSS SDK: XeSS-SR super resolution, XeSS-FG
 // frame generation through its proxy swapchain, XeLL latency reduction which XeSS-FG requires).
 // Compiled only when build/flags.json enables backends.xess (buildctl adds UP_HAVE_XESS + the SDK
 // include dir and copies libxess.dll / libxess_fg.dll / libxell.dll next to the exe). Nothing is
@@ -10,6 +10,7 @@
 // inverted; colour is 8-bit display-referred (LDR flag, exposure 1).
 #ifdef UP_HAVE_XESS
 #include "upscale.h"
+#include "upscale_paths.h"
 #include <atomic>
 #include <cstring>
 #include <xess/xess_d3d12.h>
@@ -106,16 +107,13 @@ struct XessUpscaler : Upscaler {
         return fn != nullptr;
     }
     static HMODULE loadNextToExe(const wchar_t* dll) {
-        wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-        std::wstring dir(exe); size_t k = dir.find_last_of(L"\\/"); dir = (k == std::wstring::npos) ? L"." : dir.substr(0, k);
-        HMODULE m = LoadLibraryW((dir + L"\\" + dll).c_str());
-        return m ? m : LoadLibraryW(dll);
+        return loadVendorModule(dll);
     }
 
     bool preDevice(LogFn l) override {
         log = l;
         modSR = loadNextToExe(L"libxess.dll");
-        if (!modSR) { say("libxess.dll not found next to the exe"); return false; }
+        if (!modSR) { say("libxess.dll not found next to the host module or the exe"); return false; }
 #define SR(n) fetch(modSR, n, #n, "libxess.dll")
         bool ok = SR(xessGetVersion) && SR(xessGetIntelXeFXVersion) && SR(xessD3D12CreateContext) && SR(xessD3D12BuildPipelines)
                && SR(xessD3D12Init) && SR(xessD3D12Execute) && SR(xessGetOptimalInputResolution) && SR(xessDestroyContext)

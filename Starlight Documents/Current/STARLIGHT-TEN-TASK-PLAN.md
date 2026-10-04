@@ -1,3 +1,40 @@
+## Owner update — 30 September 2026: delivery order and hardware targets
+
+### Visual-overhaul scope clarified after the reboot
+
+The owner explicitly requests a full visual overhaul of everything currently present in the engine: higher-quality meshes, textures, materials, lighting and effects. Named requirements include realistic fire, water, lightning, lava and rocks; these examples are not the limit of the scope. The reported problem is a flat, two-dimensional appearance reminiscent of early/mid-2000s games. Higher resolution alone does not establish acceptance: the intended result is visibly better depth, form, motion and scene interaction across existing visual categories. Preserve existing gameplay, atmosphere/physics behavior and asset-editing capabilities. Inventory all current visual categories before declaring the overhaul complete; selected showcase effects cannot stand in for the full request. Maintain scalable quality and the recorded hardware targets. Exact visual references and per-category acceptance still need elaboration as the owner explains; do not invent approval for deleting or replacing existing capabilities.
+
+This update supersedes conflicting older ordering and pause statements below. The current packaging status and exact evidence remain in [Alpha One continuation](docs/packaging/ALPHA-ONE-CONTINUATION.md). Preserve the broader numbered roadmap and its scoped acceptance; do not reopen completed work or mark broad tasks complete from a narrow package test.
+
+1. Finish Alpha One self-contained portable/optional-install packaging and functional verification in Windows Sandbox.
+2. Complete the agreed texture, shader, mesh and environment-quality work. Specific asset changes still need definition; preserve existing atmosphere/physics capabilities.
+3. Optimize and verify performance with that representative content and the low-end hardware targets below.
+4. ARM/Steam Frame feasibility is now urgent: the owner expects a headset on October 1 and wants day-one use. Investigate compatibility now without treating an unverified native port as complete or silently replacing the Windows packaging goal. A full native ARM port and immersive VR remain distinct implementation scopes.
+
+| Area | Owner target | Verification boundary |
+| --- | --- | --- |
+| NVIDIA discrete graphics | RTX 2000-series and newer as the current priority, approximately 4 GB VRAM | Earlier GTX 900-series exploration remains a stretch target; no blanket family guarantee |
+| AMD discrete graphics | Radeon RX 5000-series and newer as the current priority, approximately 4 GB VRAM | Earlier R9 300-series exploration remains a stretch target; exact models need verification |
+| Intel graphics | Include Intel discrete GPUs | Minimum model remains unset; rendering, upscaling and frame generation are separate acceptance items |
+| Integrated graphics | Intel and AMD from approximately 2021 onward | Use shared-memory budgets; do not impose the discrete 4 GB VRAM rule |
+| CPUs | Intel and AMD x64 from around 2015 onward | Verify instruction requirements and workload behavior; age alone is insufficient |
+| System RAM | 4 GB minimum target | Unverified; budget Windows, engine and integrated graphics together |
+| Rendering focus | Prioritize rasterized performance; retain optional advanced features with capability checks | No universal FPS target or cross-hardware certification inferred |
+
+Latest voice steering returns the immediate discrete-GPU priority to RTX 2000/RX 5000 while retaining Intel integration. Hardware names describe development targets, not measured minimum requirements. Windows Sandbox covers clean-machine behavior; it cannot certify all physical GPUs/CPUs. Current upscaler stubs do not establish implemented XeSS or frame-generation support.
+
+Steam Frame requirement clarified by owner: run the editor on a virtual screen with actual native ARM64 integration. FEX/CPU emulation and a translation-layer substitute do not meet acceptance. Immersive VR is not the requested first target. Target native SteamOS/Linux ARM64 with a native graphics backend and editor platform support. The current Starlight CMake explicitly rejects non-Windows builds and the renderer uses D3D12; no OpenXR/Vulkan implementation was found in the inspected renderer/editor/build source. This requires platform/windowing/input, graphics, dependency and toolchain work, not just a compiler architecture switch. Verify native executable/dependency architecture, editor launch, representative scene rendering, input, save/reopen and exported-player behavior on the actual headset. A complete verified port by October 1 is not a credible commitment from the current state. Preserve the full Windows goal and engine capabilities; no reduced demo or compatibility-layer build counts as completion of native editor support.
+
+Valve-confirmed Steam Frame processor: Snapdragon 8 Gen 3 (ARM64), running SteamOS based on Arch Linux. Verified against Valve hardware listing and Steamworks compatibility documentation on September 30, 2026: https://store.steampowered.com/hardware/steamframe and https://partner.steamgames.com/doc/steamhardware/steamframe/compatibility?l=english . Confirm graphics-driver capabilities and native dependency availability during port bring-up; this establishes the target specification, not Starlight compatibility or performance.
+
+Latest owner sequencing clarification: establish the native Linux platform target first, then implement ARM64 architecture support on that foundation. Do not combine Linux platform bring-up and the ARM64 port into one initial milestone. Windows Alpha One remains the immediate release goal; this clarification orders the portability work and does not discard the agreed content/performance roadmap. Linux bring-up must progressively implement the editor, rendering, input, file handling and required dependencies, with actual feature verification; a compiling shell is only an intermediate step. Native ARM64 Steam Frame editor support remains the eventual acceptance target.
+
+References: [Valve standalone compatibility](https://partner.steamgames.com/doc/steamhardware/steamframe/compatibility?l=english), [Valve custom-engine integration](https://partner.steamgames.com/doc/steamhardware/steamframe/engines/custom?l=english).
+
+Keep the whole development folder below 4 GiB where safely achievable without removing required capabilities, source, assets or evidence; measure it honestly, including Git, analysis, publication and outputs. Keep summaries, failure reasons and cleanup manifests instead of accumulating duplicate packages and bulky captures. Latest measured size is recorded in the packaging checkpoint, not assumed to meet the target.
+
+The owner requests rapid continuous implementation with verification between steps, concise factual updates, privacy guards, historical/commentary material in separate documentation, and technical constraints/licenses retained where needed. Claude Code and Starbus remain outside this task.
+
 ## Current owner-defined sequence
 
 The new sequence is: (1) full physics and dynamic behavior; (2) higher-detail meshes, textures and environment quality; (3) return to performance optimization using that realistic workload. See [the detailed task list](docs/PHYSICS-AND-MOTION-TASK-LIST.md). Retain the GPU attack-fill change. The owner subsequently authorized direct implementation and verification. Task 1 is now active. This sequence supersedes conflicting older order notes below.

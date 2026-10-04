@@ -45,7 +45,6 @@ def main():
         fixture = json.loads(scene.read_text(encoding='utf-8'))
         door = next(c for c in fixture['Characters'] if c.get('GameplayRole') == 'door')
         game = fixture['Game']
-        fixture['SchemaVersion'] = 11
         fixture['Rules'] = [{'Id': 'export-rule-check', 'Name': 'Exported rule', 'Event': 'enter-area',
                              'Subject': '', 'X': game['SpawnX'], 'Y': game['SpawnY'], 'Z': game['SpawnZ'],
                              'Radius': 1, 'Once': True, 'Enabled': True, 'Conditions': [],
@@ -60,6 +59,7 @@ def main():
             fixture['Rules'].append(dict(fixture['Rules'][0], Id=rule_id, Name=role + ' objective', Event=event, Subject=obj['Id'], Actions=[{'Type': 'complete-objective', 'Target': rule_id}]))
             object_links.append(rule_id)
         fixture['Quests'].append({'Id': 'preset-quest', 'Title': 'Object interactions', 'Description': 'Use your authored objects.', 'RuleIds': object_links, 'StepSizes': [3], 'Tracked': False})
+        check(fixture.get('SchemaVersion') == 16, 'Starter scene is a current schema 16 key card')
         scene.write_text(json.dumps(fixture, indent=2), encoding='utf-8')
         run([cli, '--export-game', scene, package, runtime])
         check((package/'content/scene.starscene').is_file(), 'Starter scene packaged')
@@ -69,6 +69,18 @@ def main():
         check(json.loads((package/'gameplay-check.json').read_text(encoding='utf-8')).get('findings') == [],
               'Starter export includes a clean basic gameplay setup report')
         player = package/'Starlight.NativePlayer.exe'
+        notice_names = ('Starlight-LICENSE.txt', 'THIRD-PARTY-NOTICES.md', 'Jolt-MIT.txt',
+                        'cgltf-MIT.txt', 'jsmn-MIT.txt', 'nlohmann-json-MIT.txt',
+                        'json-embedded-credits.txt')
+        export_manifest = json.loads((package/'game-manifest.json').read_text(encoding='utf-8'))
+        manifest_files = {entry['path'].replace('\\', '/'): entry['sha256']
+                          for entry in export_manifest['files']}
+        for name in notice_names:
+            exported = package/'licenses'/name
+            check(exported.is_file() and exported.read_bytes() == (runtime/'licenses'/name).read_bytes(),
+                  f'Export preserves {name}')
+            check(manifest_files.get('licenses/' + name, '').lower() == hashlib.sha256(exported.read_bytes()).hexdigest(),
+                  f'Export manifest hashes {name}')
         run([player, '--validate'])
         checks.append('Packaged content validates')
         before = {str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()

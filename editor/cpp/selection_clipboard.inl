@@ -7,13 +7,7 @@ bool selection_clipboard_command(int id) {
         std::vector<Character> copies;
         for (size_t i = 0; i < scene.Characters.size(); ++i)
             if (int(i) == selected || selectionIds.contains(scene.Characters[i].Id)) {
-                auto object = scene.Characters[i];
-                if (!object.Shape && !object.Sculpt && !object.Asset.empty()) {
-                    fs::path path = wide(object.Asset);
-                    if (path.is_relative() && !filename.empty()) path = filename.parent_path() / path;
-                    object.Asset = utf8(fs::absolute(path).lexically_normal().wstring());
-                }
-                copies.push_back(std::move(object));
+                copies.push_back(scene.Characters[i]);
             }
         if (copies.empty()) throw std::runtime_error("Select objects to copy first");
         copiedObjects = std::move(copies);
@@ -24,7 +18,7 @@ bool selection_clipboard_command(int id) {
     auto copies = copiedObjects;
     std::unordered_set<std::string> validated;
     for (auto &object : copies) {
-        if (!object.Shape && !object.Sculpt && validated.insert(object.Asset).second) load_glb(wide(object.Asset));
+        if (!object.Shape && !object.Sculpt && validated.insert(object.Asset).second) (void)load_model(object.Asset);
         object.Id = new_id();
     }
     place_object_group(copies, scene, placement_point().x, placement_point().z, gridSnap, objectSnap, groundSnap,gridStep);
@@ -38,6 +32,6 @@ bool selection_clipboard_command(int id) {
             }
         });
     } catch (...) { selected = previousSelected; selectionIds = previousIds; throw; }
-    SetWindowTextW(status, L"Copied objects pasted. Undo removes this insertion. Imported models still use their original files.");
+    SetWindowTextW(status, L"Copied objects pasted. Undo removes this insertion. Imported models stay in the shared asset library.");
     return true;
 }

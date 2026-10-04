@@ -5,7 +5,7 @@ This performs static analysis, not a renderer benchmark or a correctness proof.
 """
 from __future__ import annotations
 import argparse, collections, concurrent.futures, ctypes, datetime, hashlib, json
-import os, re, struct, subprocess, sys, time, traceback
+import os, re, struct, subprocess, sys, time, traceback, tempfile
 from pathlib import Path
 
 VERSION = '2.1'
@@ -77,7 +77,7 @@ def category(rel):
     if parts[0] == '.git': return 'git metadata'
     if parts[:2] == ['Starlight Documents','Current']: return 'current project documentation'
     if parts[0] == 'Starlight Documents': return 'outdated historical documents (user-designated)'
-    if 'third_party' in parts or rel == 'deep/src/json.hpp': return 'third-party dependency'
+    if 'third_party' in parts or rel == 'deep/src/json.hpp' or rel.lower().startswith('tools/toolchain/'): return 'third-party dependency'
     if any(x in parts for x in ('backups', '_backups', 'results', 'source-snapshot')) or '.before-' in rel or rel.lower().endswith(('.bak','.backup')) or parts[0] == 'deep-incomplete-first': return 'historical snapshot/experiment'
     if parts[0] == 'audit-runs': return 'saved audit evidence'
     if rel.startswith('tools/build/') and Path(rel).suffix.lower() in SOURCE_EXT:
@@ -310,6 +310,18 @@ def contracts(sources):
         except ValueError as e:result['catalog_error']=str(e)
     return result
 
+def native_reports(root,out,payload,program=None):
+    program=program or root/'out/classic/Release/Starlight.NativeReports.exe'
+    with tempfile.TemporaryDirectory(prefix='starlight-reports-') as temp:
+        base=Path(temp)
+        (base/'input.json').write_text(json.dumps(payload,ensure_ascii=False),encoding='utf-8')
+        result=subprocess.run([str(program),str(root),str(base/'input.json'),str(root/'tools/audit/report-templates.json'),str(base/'result')],capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode: raise RuntimeError('Native reports failed: '+result.stderr.strip())
+        expected=['contracts-and-resources.md'] if 'contracts' in payload else ['Starlight-Current-Engine-Summary.md','source-atlas.md']
+        for name in expected:
+            with (out/name).open('xb') as target: target.write((base/'result'/name).read_bytes())
+
+
 def contract_report(root,out,data):
     lines=['# Data, interfaces, resources and operational contracts','',data['limits'],'',
            'The feature catalogue below is product metadata, including future ideas. Its Proof strings describe intended proof, not newly executed verification.','',
@@ -407,8 +419,71 @@ def write_progress(out, percent, message):
             time.sleep(.025)
 
 
+def native_inventory(root, executable, progress):
+    """Bridge while report generation is ported; file verification is native."""
+    if not executable.is_file():
+        raise FileNotFoundError('Native inventory program is missing: '+str(executable))
+    with tempfile.TemporaryDirectory(prefix='starlight-inventory-') as temp:
+        target=Path(temp)/'inventory.json'
+        process=subprocess.Popen([str(executable),str(root),str(target)],stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+        try:
+            for line in process.stdout:
+                match=re.fullmatch(r'(\d+) / (\d+) files\s*',line)
+                if match:
+                    done,total=map(int,match.groups())
+                    progress(5+int(sixty_ratio(done,total)),f'Verifying {done:,}/{total:,} files with the native scanner')
+            code=process.wait()
+        finally:
+            if process.poll() is None:
+                process.terminate(); process.wait()
+            process.stdout.close()
+        if code not in (0,1) or not target.is_file():
+            raise RuntimeError('Native inventory did not produce a completed report; exit '+str(code))
+        result=json.loads(target.read_text(encoding='utf-8'))
+        if result.get('format')!='starlight-native-inventory-v1' or result.get('passed')!=(code==0):
+            raise ValueError('Native inventory result or exit status is inconsistent')
+        return result
+
+
+def native_source_analysis(root, files, out, executable):
+    rules=root/'tools/audit/source-rules.json'
+    with tempfile.TemporaryDirectory(prefix='starlight-source-') as temp:
+        base=Path(temp); manifest=base/'inventory.json'
+        manifest.write_text(json.dumps({'files':files}),encoding='utf-8')
+        result=subprocess.run([str(executable),str(root),str(manifest),str(rules),str(base/'result')],
+                              capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode not in (0,1):
+            raise RuntimeError('Native source analysis failed: '+result.stderr.strip())
+        generated=base/'result'
+        for name in ('source-index.json','source-evidence.jsonl','capabilities.json','contracts-index.json','build-graph.json'):
+            with (out/name).open('xb') as target:
+                target.write((generated/name).read_bytes())
+        read=lambda name:json.loads((generated/name).read_text(encoding='utf-8'))
+        index=read('source-index.json')
+        if result.returncode==1 and not any(s.get('error') or s.get('matches_inventory') is False for s in index):
+            raise ValueError('Native source analysis failure is missing from its report')
+        sources={item['path']:item['text'] for item in read('source-text.json')}
+        return sources,index,read('capabilities.json'),read('contracts-index.json'),read('build-graph.json')
+
+
+def native_evidence_analysis(root, files, out, executable):
+    with tempfile.TemporaryDirectory(prefix='starlight-evidence-') as temp:
+        base=Path(temp); manifest=base/'inventory.json'
+        manifest.write_text(json.dumps({'files':files}),encoding='utf-8')
+        result=subprocess.run([str(executable),str(root),str(manifest),str(base/'result')],
+                              capture_output=True,text=True,encoding='utf-8',errors='replace')
+        if result.returncode:
+            raise RuntimeError('Native evidence analysis failed: '+result.stderr.strip())
+        generated=base/'result'
+        for name in ('binary-index.json','duplicates.json'):
+            with (out/name).open('xb') as target: target.write((generated/name).read_bytes())
+        return (json.loads((generated/'binary-index.json').read_text(encoding='utf-8')),
+                json.loads((generated/'saved-evidence.json').read_text(encoding='utf-8')))
+
+
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--root',required=True,type=Path); parser.add_argument('--output',required=True,type=Path); parser.add_argument('--workers',type=int,default=4); parser.add_argument('--extra-evidence',type=Path); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('--root',required=True,type=Path); parser.add_argument('--output',required=True,type=Path); parser.add_argument('--workers',type=int,default=4); parser.add_argument('--extra-evidence',type=Path); parser.add_argument('--native-inventory',type=Path); args=parser.parse_args()
     root=args.root.resolve(); out=args.output.resolve()
     validate_output(root, out)
     out.mkdir(parents=True,exist_ok=True)
@@ -419,40 +494,33 @@ def main():
     try:
         progress(1,'Recording source identity and enumerating engine files (analysis/publication/quarantine excluded)...')
         state['gitStart']={'head':git(root,'rev-parse','HEAD'),'status':git(root,'status','--porcelain=v1','--untracked-files=all'),'submodules':git(root,'submodule','status'),'diff':git(root,'diff','--stat')}
-        work=enumerate_files(root,state['issues']); total=sum(s for _,s,_ in work); files=[]; read=0; last=0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1,min(args.workers,16))) as pool, (out/'byte-manifest.jsonl').open('w',encoding='utf-8',newline='\n') as manifest:
-            # Executor.map retains deterministic manifest order and bounded I/O workers.
-            for entry in pool.map(lambda item:hash_entry(root,item),work):
-                files.append(entry); read+=entry.get('bytes_read',0); manifest.write(json.dumps(entry,ensure_ascii=False,sort_keys=True)+'\n')
-                if time.monotonic()-last>.3:
-                    progress(5+int( sixty_ratio(read,total)),f'Hashing {len(files):,}/{len(work):,} files — {read/1e9:.2f}/{total/1e9:.2f} GB read'); last=time.monotonic()
+        inventory=native_inventory(root,(args.native_inventory or root/'out/classic/Release/Starlight.NativeInventory.exe').resolve(),progress)
+        state['issues'].extend(inventory['issues']); state['inventoryImplementation']='native-v1'
+        files=inventory['files']; read=inventory['bytes_read']
+        work=[(root/f['path'],f['bytes_at_enumeration'],f['mtime_ns']) for f in files]
+        with (out/'byte-manifest.jsonl').open('w',encoding='utf-8',newline='\n') as manifest:
+            for entry in files:
+                manifest.write(json.dumps(entry,ensure_ascii=False,sort_keys=True)+'\n')
         for f in files:
             if f.get('error') or not f.get('stable') or f.get('stream_error') or not f.get('streams_stable',False) or any(not x['size_matches'] for x in f.get('streams',[])):
                 state['issues'].append({'phase':'hash','path':f['path'],'error':f.get('error') or f.get('stream_error') or 'File or named stream changed during read'})
         progress(67,'Analyzing source, interfaces, build relationships and subsystem evidence...')
-        sources,index=source_analysis(root,files,out); capabilities=capability_analysis(sources); build=build_analysis(root,sources)
-        dump(out/'capabilities.json',capabilities); dump(out/'build-graph.json',build)
-        data=contracts(sources); dump(out/'contracts-index.json',data); contract_report(root,out,data)
+        scanner=(args.native_inventory or root/'out/classic/Release/Starlight.NativeInventory.exe').resolve().with_name('Starlight.NativeSourceAnalysis.exe')
+        sources,index,capabilities,data,build=native_source_analysis(root,files,out,scanner)
+        state['sourceAnalysisImplementation']='native-v1'
+        native_reports(root,out,{"contracts":data},scanner.with_name("Starlight.NativeReports.exe"))
         dump(out/'analysis-rules.json',{'version':VERSION,'lexicalRules':TOKEN_RULES,'capabilities':CAPABILITIES,'currentSourcePrefixes':LIVE_PREFIX,'historicalRule':'Starlight Documents/Current holds current project documentation; other existing documents there remain historical'})
         for s in index:
             if s.get('error') or s.get('matches_inventory') is False: state['issues'].append({'phase':'source','path':s['path'],'error':s.get('error','Source changed since hashing')})
         progress(76,'Inspecting PE binaries without executing them and reading saved test evidence...')
-        binaries=[]
-        for f in files:
-            if Path(f['path']).suffix.lower() in ('.exe','.dll'):
-                b=pe_summary(root/f['path'])
-                if b: b['sha256']=f.get('sha256'); binaries.append(b)
-        dump(out/'binary-index.json',binaries); evidence=saved_evidence(root)
+        binaries,evidence=native_evidence_analysis(root,files,out,scanner.with_name('Starlight.NativeEvidence.exe'))
+        state['evidenceAnalysisImplementation']='native-v1'
         if args.extra_evidence:
             extra=json.loads(args.extra_evidence.read_text(encoding='utf-8'))
             if not isinstance(extra,list):raise ValueError('Extra evidence must be a list')
             evidence.extend(dict(item, reportEvidenceRole='declared runtime input',
                                  reportEvidenceOrigin=str(args.extra_evidence.resolve())) for item in extra)
         dump(out/'saved-evidence.json',evidence)
-        groups=collections.defaultdict(list)
-        for f in files:
-            if f.get('sha256'): groups[f['sha256']].append(f['path'])
-        dump(out/'duplicates.json',[{'sha256':h,'paths':p} for h,p in sorted(groups.items()) if len(p)>1])
         progress(90,'Checking snapshot consistency and generating the engine summary and source atlas...')
         ending=enumerate_files(root,state['issues']); before={str(p):(s,t) for p,s,t in work}; after={str(p):(s,t) for p,s,t in ending}
         state['treeChanges']=[{'path':p,'before':before.get(p),'after':after.get(p)} for p in sorted(before.keys()|after.keys()) if before.get(p)!=after.get(p)]
@@ -460,9 +528,12 @@ def main():
         state['gitEnd']={'head':git(root,'rev-parse','HEAD'),'status':git(root,'status','--porcelain=v1','--untracked-files=all')}
         state['missingCapabilityMarkers']=[c['title'] for c in capabilities if c['missing']]
         state['result']='completed with limitations' if state['issues'] or state['treeChanges'] or state['missingCapabilityMarkers'] else 'completed static analysis (runtime untested)'
-        dump(out/'run-state.json',state); report(root,out,state,files,index,capabilities,build,evidence,binaries)
+        state['reportImplementation']='native-v1'
+        dump(out/'run-state.json',state)
+        native_reports(root,out,dict(version=VERSION,state=state,files=files,index=index,capabilities=capabilities,build=build,evidence=evidence,binaries=binaries),scanner.with_name('Starlight.NativeReports.exe'))
         from knowledge_report import generate
-        generate(root,out,state,index,capabilities,data,evidence,inventory=files)
+        generate(root,out,state,index,capabilities,data,evidence,inventory=files,
+                 native_program=scanner.with_name('Starlight.NativeKnowledge.exe'))
         # Seal generated deliverables independently of the repository manifest.
         seal={p.name:digest_file(p)[0] for p in sorted(out.iterdir()) if p.is_file() and p.name not in ('progress.txt','progress.tmp','worker.log','artifact-hashes.json')}
         dump(out/'artifact-hashes.json',seal)

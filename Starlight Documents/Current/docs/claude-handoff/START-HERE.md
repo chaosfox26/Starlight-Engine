@@ -1,3 +1,7 @@
+# Current starting point
+
+Read [CURRENT-ENGINE-WORKUP.md](CURRENT-ENGINE-WORKUP.md), then [FEATURE-CATALOG.md](FEATURE-CATALOG.md) and [TOOL-CATALOG.md](TOOL-CATALOG.md). These include the later cleanup and latest 10/13 audit result. Older documents below are dated background.
+
 # Choose your document
 
 1. Claude Code: provide CLAUDE-START-PROMPT.md. It contains the complete handoff, priorities, source map, operating rules and verification criteria. Say whether this is orientation only or authorization to resume.

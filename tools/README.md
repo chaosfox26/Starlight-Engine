@@ -1,6 +1,6 @@
 # Starlight Engine tools
 
-Adventure export validation: `tools/checks/check_adventure_export.py` is registered as `native-adventure-export` in CTest and discovered by the audit coordinator. It creates fresh starter-scene/package fixtures, checks refusal safety, and renders 60 frames in a hidden standalone player. It records tested binary hashes; this does not certify visible controls, polish or clean-machine deployment.
+Adventure export validation: the CTest `native-adventure-export` runs the C++ `Starlight.NativeExportChecks` (CMakeLists.txt line 172). `tools/checks/check_adventure_export.py` is a separate standalone script that is not registered in CTest or CMake: given `--runtime <folder with the built NativeCommands, NativePlayer, Viewport and Physics>` and `--output <folder>` it creates a fresh starter scene and package, checks refusal safety, and renders 60 frames in a hidden standalone player (it starts the player, so run it deliberately). It records tested binary hashes; this does not certify visible controls, polish or clean-machine deployment. It was corrected to keep the starter's schema 16 (it used to overwrite it with schema 11) but has not been run since.
 
 This folder belongs exclusively to Starlight Engine. `D:/projects/tools` is a separate shared location and was not changed.
 

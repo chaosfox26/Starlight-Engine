@@ -33,7 +33,12 @@ inline nlohmann::json validate_render(const nlohmann::json &r, int width, int he
     check(r.at("requestedTier") == tier && r.at("activeTier") == tier, "Requested renderer tier not active");
     check(r.at("denoiserRequested") == 0 && r.at("rrActive") == false, "Native wavelet contract mismatch");
     check(r.at("presentationMode") == presentation, "Presentation contract mismatch");
-    check(r.at("debugLayerRequested") == debug && r.at("debugLayerActive") == debug, "Debug instrumentation mismatch");
+    check(r.at("debugLayerRequested") == debug, "Graphics debug validation was not requested as configured");
+    if (debug)
+      check(r.at("debugLayerActive") == true,
+            "Graphics debug validation could not run: the requested Direct3D debug layer is inactive. Rendering alone does not verify this check.");
+    else
+      check(r.at("debugLayerActive") == false, "Graphics debug validation unexpectedly affected the measurement run");
     const auto frames = r.at("frames").get<long long>();
     const auto duration = r.at("durationSeconds").get<double>();
     const auto gpu = r.at("gpuMs").get<double>();

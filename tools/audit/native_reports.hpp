@@ -1,0 +1,44 @@
+#pragma once
+#include "native_knowledge.hpp"
+#include <sstream>
+namespace starlight::audit {
+using Ordered=nlohmann::ordered_json;
+inline std::string report_trim(std::string s,bool left=true){while(!s.empty() && std::isspace((unsigned char)s.back()))s.pop_back();if(left){auto p=s.find_first_not_of(" \t\r\n");s=p==std::string::npos?"":s.substr(p);}return s;}
+inline std::string report_replace(std::string s,const std::string& from,const std::string& to){size_t p=0;while((p=s.find(from,p))!=std::string::npos){s.replace(p,from.size(),to);p+=to.size();}return s;}
+inline std::string report_number(uint64_t n){auto s=std::to_string(n);for(int p=int(s.size())-3;p>0;p-=3)s.insert(p,",");return s;}
+inline std::string report_json(const Ordered& j){auto compact=j.dump(-1,' ',true);std::string s;bool quoted=false,escaped=false;for(char c:compact){s+=c;if(quoted){if(escaped)escaped=false;else if(c=='\\')escaped=true;else if(c=='"')quoted=false;}else if(c=='"')quoted=true;else if(c==','||c==':')s+=' ';}return s;}
+inline std::map<std::string,std::string> reports_native(const fs::path& root,const Ordered& input,const json& templates){
+ if(templates.at("format")!="starlight-report-templates-v1")throw std::runtime_error("Unknown report templates");
+ using Lines=std::vector<std::string>;std::map<std::string,std::string> result,values;
+ auto text=[](const Ordered& v){return python_text(json(v));};auto link=[&](const std::string& file,const Ordered& line=Ordered()){auto suffix=truth(json(line))?":"+text(line):"";return "["+file+suffix+"]("+utf8((root/fs::u8path(file)).generic_wstring())+suffix+")";};
+ auto append=[&](Lines& lines,const std::string& key){for(const auto& row:templates.at("blocks").at(key)){auto s=row.get<std::string>();if(s.starts_with("{{"))s=values.at(s);lines.push_back(s);}};
+ auto finish=[&](const std::string& name,const Lines& lines,bool newline){std::string s;for(size_t i=0;i<lines.size();++i){if(i)s+='\n';s+=lines[i];}if(newline)s+='\n';result[name]=s;};
+ if(input.contains("contracts")){const auto& data=input.at("contracts");values["{{contract_report_lines_0_2}}"] = text(data.at("limits"));values["{{contract_report_lines_0_9}}"] = data.at("feature_catalog").dump(2);Lines lines;append(lines,"contract_report_lines_0");std::map<std::string,std::vector<Ordered>> groups;for(const auto& row:data.at("records"))groups[row.at("kind").get<std::string>()].push_back(row);
+  for(const auto& [kind,records]:groups){std::string title;bool upper=true;for(unsigned char c:kind){if(c=='_'){title+=' ';upper=true;}else{title+=char(upper?std::toupper(c):std::tolower(c));upper=!std::isalnum(c);}}lines.insert(lines.end(),{"## "+title,""});for(const auto& row:records)lines.insert(lines.end(),{link(row.at("file"),row.at("line")),"","```cpp",text(row.at("text")),"```",""});}finish("contracts-and-resources.md",lines,false);
+ }
+ if(!input.contains("state"))return result;
+ const auto& state=input.at("state");const auto& files=input.at("files");const auto& index=input.at("index");const auto& caps=input.at("capabilities");const auto& binaries=input.at("binaries");
+ auto num=[&](const std::string& key){return report_number(state.at(key).get<uint64_t>());};
+ values["{{report_lines_1_2}}"]="Generated "+text(state.at("finishedUtc"))+" by repository analyzer "+text(input.at("version"))+". Repository: `"+utf8(root.wstring())+"`.";
+ values["{{report_lines_1_12}}"]="- Files inventoried: **"+report_number(files.size())+"**; default-stream bytes actually read: **"+num("bytesRead")+"**.";
+ values["{{report_lines_1_13}}"]="- Named NTFS data streams hashed: **"+num("streams")+"**; bytes: **"+num("streamBytes")+"**.";
+ values["{{report_lines_1_14}}"]="- Stable successful file hashes: **"+num("stableFiles")+"**. Coverage issues: **"+report_number(state.at("issues").size())+"**.";
+ values["{{report_lines_1_15}}"]="- Files added/removed/metadata-changed during scan: **"+report_number(state.at("treeChanges").size())+"**.";
+ values["{{report_lines_1_16}}"]="- Git HEAD: `"+report_trim(text(state.at("gitStart").at("head").at("stdout")))+"`.";
+ values["{{report_lines_1_17}}"]="- Manifest SHA-256: `"+text(state.at("manifestSha256"))+"`.";
+ values["{{report_lines_2_6}}"] = report_trim(text(state.at("gitStart").at("status").at("stdout")),false);
+ values["{{report_lines_6_5}}"]="PE images inspected: **"+std::to_string(binaries.size())+"**. External SDK, DLL and original-workspace references are retained in source/build evidence; their content lies outside this repository census.";
+ Lines lines;append(lines,"report_lines_1");std::map<std::string,std::pair<uint64_t,uint64_t>> counts;for(const auto& file:files){auto& count=counts[file.at("category").get<std::string>()];++count.first;count.second+=file.value("bytes_read",uint64_t(0));}for(const auto& [name,count]:counts)lines.push_back("| "+name+" | "+report_number(count.first)+" | "+report_number(count.second)+" |");
+ append(lines,"report_lines_2");for(const auto& d:input.at("build").at("cmake_declarations")){auto command=d.at("command").get<std::string>();if(command!="add_library"&&command!="add_executable"&&command!="add_test"&&command!="add_subdirectory"&&command!="option")continue;std::istringstream stream(d.at("arguments").get<std::string>());std::string word,arg;while(stream>>word){if(!arg.empty())arg+=' ';arg+=word;}lines.push_back("| "+command+" | `"+report_replace(arg,"|","\\|")+"` | "+link(d.at("file"),d.at("line"))+" |");}
+ append(lines,"report_lines_3");for(const auto& c:caps){lines.insert(lines.end(),{"### "+text(c.at("title")),"","**Evidence status:** "+text(c.at("status"))+".","",(c.at("missing").empty()?"":"Expected interpretation (not fully established by this scan): ")+text(c.at("interpretation")),"",text(c.at("limits")),""});for(const auto& e:c.at("evidence"))lines.push_back("- "+link(e.at("file"),e.at("line"))+" — `"+report_replace(text(e.at("matched")),"`","")+"`");for(const auto& m:c.at("missing"))lines.push_back("- Missing required marker: `"+text(m.at("file"))+"` / `"+text(m.at("pattern"))+"`. Review before asserting this capability.");lines.push_back("");}
+ append(lines,"report_lines_4");for(const auto& e:input.at("evidence")){auto path=e.at("path").get<std::string>();auto d=e.value("data",Ordered::object());std::string outcome="Structured snapshot preserved in saved-evidence.json; not rerun.";Ordered selected=Ordered::object();
+  auto select=[&](std::initializer_list<const char*> keys){for(auto key:keys)if(d.contains(key))selected[key]=d.at(key);};
+  if(path.find("/tier-")!=std::string::npos){select({"success","error","exitCode","fps","denoiserRequested","rrActive","headless"});outcome=report_json(selected);}
+  else if(path.find("lifecycle-memory")!=std::string::npos){select({"cycles","swaps","resourcesRetired","baseline","final","initialHandles","finalHandles","initialPrivateBytes","finalPrivateBytes"});outcome=report_json(selected);}
+  else if(path.find("classic-ui")!=std::string::npos){selected["pass"]=d.value("pass",Ordered());selected["checks"]=d.value("checks",Ordered::array()).size();selected["failed"]=Ordered::array();for(const auto& c:d.value("checks",Ordered::array()))if(c.is_object()&&!truth(json(c.value("pass",Ordered()))))selected["failed"].push_back(c.value("name",Ordered()));selected["window_creation_trace"]=d.value("window_creation_trace",Ordered());outcome=report_json(selected);}
+  else if(path.find("session-results")!=std::string::npos){selected["success"]=d.value("success",Ordered());selected["checksReached"]=d.value("checks",Ordered::array()).size();selected["error"]=d.value("error",Ordered());outcome=report_json(selected);}
+  lines.push_back("| "+link(path)+" | "+report_replace(outcome,"|"," ")+" |");}
+ append(lines,"report_lines_5");for(const auto& s:index){if(!s.contains("lexical_counts"))continue;const auto& c=s.at("lexical_counts");lines.push_back("| "+link(s.at("path"))+" | "+text(s.at("lines"))+" | "+text(c.value("allocation",Ordered(0)))+" | "+text(c.value("synchronization",Ordered(0)))+" | "+text(c.value("threads_jobs",Ordered(0)))+" | "+text(c.value("graphics",Ordered(0)))+" |");}append(lines,"report_lines_6");finish("Starlight-Current-Engine-Summary.md",lines,true);
+ Lines atlas;append(atlas,"report_atlas_0");for(const auto& s:index){atlas.insert(atlas.end(),{"## "+text(s.at("path")),"","SHA-256: `"+text(s.value("sha256",Ordered("unavailable")))+"`. Lines: "+text(s.value("lines",Ordered("generated/error")))+".",""});for(const auto& symbol:s.value("symbols",Ordered::array()))atlas.push_back("- "+text(symbol.at("kind"))+": `"+text(symbol.at("name"))+"` — "+link(s.at("path"),symbol.at("line")));std::string includes;for(const auto& item:s.value("includes",Ordered::array())){if(!includes.empty())includes+=", ";includes+="`"+text(item)+"`";}atlas.insert(atlas.end(),{"","Includes: "+includes,""});}finish("source-atlas.md",atlas,false);return result;
+}
+}

@@ -1,4 +1,4 @@
-// Starlight DX12 client — milestone 5 DLSS backend (NVIDIA Streamline 2.12: DLSS super resolution +
+// Starlight DX12 client — DLSS backend (NVIDIA Streamline 2.12: DLSS super resolution +
 // DLSS frame generation + Reflex/PCL markers, all through sl.interposer.dll). Compiled only when
 // build/flags.json enables backends.dlss (buildctl adds UP_HAVE_DLSS + the SDK include dir and copies
 // the Streamline DLLs next to the exe). Nothing is linked statically: sl.interposer.dll is
@@ -10,6 +10,7 @@
 // from slGetFeatureVersion and surfaced in versionString() — never assumed.
 #ifdef UP_HAVE_DLSS
 #include "upscale.h"
+#include "upscale_paths.h"
 #include <atomic>
 #include <vector>
 #include <cmath>
@@ -81,10 +82,9 @@ struct DlssUpscaler : Upscaler {
 
     bool preDevice(LogFn l) override {
         log = l; g_dlssForLog = this;
-        wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-        std::wstring dir(exe); size_t k = dir.find_last_of(L"\\/"); dir = (k == std::wstring::npos) ? L"." : dir.substr(0, k);
-        mod = LoadLibraryW((dir + L"\\sl.interposer.dll").c_str());
-        if (!mod) { say("sl.interposer.dll not found next to the exe"); return false; }
+        std::wstring dir = vendorDir(L"sl.interposer.dll");
+        mod = LoadLibraryExW((dir + L"\\sl.interposer.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!mod) { say("sl.interposer.dll not found next to the host module or the exe"); return false; }
         bool ok = fetch(slInit, "slInit") && fetch(slShutdown, "slShutdown") && fetch(slIsFeatureSupported, "slIsFeatureSupported")
             && fetch(slIsFeatureLoaded, "slIsFeatureLoaded") && fetch(slSetTagForFrame, "slSetTagForFrame") && fetch(slSetConstants, "slSetConstants")
             && fetch(slGetFeatureVersion, "slGetFeatureVersion") && fetch(slGetFeatureRequirements, "slGetFeatureRequirements")
