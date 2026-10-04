@@ -265,7 +265,11 @@ void diff_json(const json& expected, const json& actual, const std::string& path
     if (expected.is_object() && actual.is_object()) {
         for (auto it = expected.begin(); it != expected.end(); ++it) {
             auto found = actual.find(it.key());
-            if (found == actual.end()) note_real(d, "dropped by the engine: " + path + "/" + it.key());
+            if (found == actual.end()) {
+                if (it.key() == "GameplayRole" && it.value().is_string() && it.value().get<std::string>() == "none")
+                    ++d.added[normalize(path + "/" + it.key()) + " (explicit default omitted by the engine)"];
+                else note_real(d, "dropped by the engine: " + path + "/" + it.key());
+            }
             else diff_json(it.value(), *found, path + "/" + it.key(), d);
         }
         for (auto it = actual.begin(); it != actual.end(); ++it)

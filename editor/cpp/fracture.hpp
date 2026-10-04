@@ -194,7 +194,7 @@ inline std::vector<FracturePiece> fracture_concave(Mesh mesh,Vec3 color,bool emi
 // whose nested caps cannot use solid splitting. Preserve their source faces
 // with explicit thickness; spatial grouping bounds the collision body count.
 inline std::vector<FracturePiece> fracture_surface(const Mesh& source,Vec3 color,bool emissive){
-    if(source.indices.empty()||source.indices.size()>24000)return {};source.validate();using Key=std::tuple<int64_t,int64_t,int64_t>;std::map<Key,int> welded;std::vector<int> ids;Vec3 low{INFINITY,INFINITY,INFINITY},high{-INFINITY,-INFINITY,-INFINITY};
+    if(source.indices.empty()||source.indices.size()>240000)return {};source.validate();using Key=std::tuple<int64_t,int64_t,int64_t>;std::map<Key,int> welded;std::vector<int> ids;Vec3 low{INFINITY,INFINITY,INFINITY},high{-INFINITY,-INFINITY,-INFINITY};
     for(const auto& v:source.vertices){auto p=v.position;if(std::max({std::abs(p.x),std::abs(p.y),std::abs(p.z)})>1e9)return {};auto [it,added]=welded.emplace(Key{std::llround(p.x*1e7),std::llround(p.y*1e7),std::llround(p.z*1e7)},int(welded.size()));ids.push_back(it->second);low={std::min(low.x,p.x),std::min(low.y,p.y),std::min(low.z,p.z)};high={std::max(high.x,p.x),std::max(high.y,p.y),std::max(high.z,p.z)};}
     std::map<std::pair<int,int>,int> edges;for(size_t i=0;i<source.indices.size();i+=3)for(int j=0;j<3;++j){int a=ids[source.indices[i+j]],b=ids[source.indices[i+(j+1)%3]];if(a==b)return {};if(a>b)std::swap(a,b);if(++edges[{a,b}]>2)return {};}
     auto extent=high-low;double thickness=std::clamp(std::max({extent.x,extent.y,extent.z})*.005,.005,.02);std::map<int,Mesh> groups;

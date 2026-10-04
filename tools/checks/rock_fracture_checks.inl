@@ -56,4 +56,14 @@ template<class Require> void rock_fracture_checks(Require require,const fs::path
     player->fire_button(true);player->fire_button(false);for(int i=0;i<330;++i)player->move(0,0,1./120.);auto another=player->presentation();bool newBreak=false;for(size_t i=0;i<std::min(initial.size(),another.fragments.size());++i)newBreak|=initial[i].part->mesh.vertices.size()!=another.fragments[i].part->mesh.vertices.size();
     require(another.fragments.size()>=32&&another.fragments.size()<=64&&newBreak&&scene->encode()==authored,"Repeating a real gameplay break after reset uses a new fracture pattern without editing the source");
     atomic_write(folder/"rock-fracture.starscene",scene->encode());atomic_write(folder/"rock-fracture-diagnostics.json",diagnostics.dump(2));
+    {   // The editor's own "turn a shape into a model" step subdivides a boulder to 61,440 indices; such a baked sculpt must still break into pieces.
+        Character boulder;boulder.Shape="boulder";boulder.Size=.9;boulder.Id="baked-statue";boulder.Color="#9AA0B8";
+        auto baked=boulder;baked.Sculpt=prepare_sculpt(object_mesh(boulder));
+        auto parts=object_parts(baked);
+        require(parts.size()==1&&parts[0].mesh.indices.size()>24000,"The baked statue is a detailed sculpt above the old fracture size limit");
+        auto pieces=fracture_mesh(parts[0].mesh,parts[0].color,parts[0].emissive);
+        require(pieces.size()>=32&&pieces.size()<=96,"A baked high-detail sculpt fractures into a normal number of pieces instead of none");
+        auto plain=fracture_mesh(object_parts(boulder)[0].mesh,{.6,.6,.7},false);
+        require(!plain.empty(),"The unbaked boulder still fractures");
+    }
 }
