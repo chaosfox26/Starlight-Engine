@@ -344,6 +344,23 @@ public:
      }else reason+="; reduced hull: "+std::string(made.GetError().c_str());
     }else reason+="; the real hull needs more than 256 vertices and the reduction produced "+std::to_string(subset.size())+" vertices";
    }else reason+="; finer builder said: "+std::string(hullError?hullError:"unknown");
+   // Last stage before the box: ask the builder for a coarser hull whose tolerance stays well inside the accepted bound, rebuild the shape from the vertices it
+   // chose, and use it only when the farthest input point is within the bound of the shape that will really be used.
+   const float bound=ReducedHullBound(out.diagonal);
+   for(const float fraction:{.0005f,.001f,.002f,.003f}){
+    const float tolerance=std::max(fraction*out.diagonal,finerTolerance);if(tolerance>.5f*bound)break;
+    const char* coarseError=nullptr;ConvexHullBuilder coarse(vertices);
+    const auto state=coarse.Initialize(ConvexHullShape::cMaxPointsInHull,tolerance,coarseError);
+    if(state!=ConvexHullBuilder::EResult::Success&&state!=ConvexHullBuilder::EResult::MaxVerticesReached)continue;
+    std::vector<char> used(vertices.size(),0);Array<Vec3> subset;
+    for(const auto* face:coarse.GetFaces()){const auto* edge=face->mFirstEdge;do{if(!used[edge->mStartIdx]){used[edge->mStartIdx]=1;subset.push_back(vertices[edge->mStartIdx]);}edge=edge->mNextEdge;}while(edge!=face->mFirstEdge);}
+    if(subset.size()<4||subset.size()>size_t(ConvexHullShape::cMaxPointsInHull))continue;
+    ConvexHullShapeSettings coarseSettings(subset);coarseSettings.mDensity=density;coarseSettings.mHullTolerance=tolerance;auto coarseBuilt=coarseSettings.Create();
+    if(coarseBuilt.HasError())continue;
+    ShapeRefC shape=coarseBuilt.Get();const auto* convex=static_cast<const ConvexHullShape*>(shape.GetPtr());
+    const float deviation=ShapeDeviation(vertices,*convex);
+    if(deviation<=bound){out.kind=2;out.hullPoints=int(convex->GetNumPoints());out.deviation=deviation;counters.NoteReduced(deviation,out.diagonal,true);return shape;}
+   }
   }
   // A point set the hull builder cannot represent within tolerance must not stop the game: the body falls back to the oriented-free
   // bounding box of the same points (same density), and the event is logged and counted so a recurring cause can be found. Non-finite points

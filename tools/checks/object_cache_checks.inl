@@ -545,7 +545,7 @@ template<class Require> void hull_checks(Require require,const fs::path& folder)
     require(report.requested==report.exact+report.exactAfterFinerRetry+report.reducedToLimit+report.rebuiltFromHullVertices+report.boxFallbacks+report.rejected,"Every hull request ends in exactly one counted outcome");
     require(report.reducedBeyondBound==0,"No reduced fragment hull lies beyond the accepted deviation bound");
     require(nulls==0&&report.unbuildable==0,"Every real fragment gets a hull");
-    require(report.boxFallbacks<=std::max<uint64_t>(1,uint64_t(pieces)/1000)&&boxPieces<=report.boxFallbacks,"At most one real fragment per thousand falls back to a counted bounding box (KNOWN OPEN CASE: one shell shard of a baked boulder statue, 1921 points, where the builder fails and a rebuild would lie 0.036 from the farthest point against a 0.0087 limit); every other builder rejection is rebuilt from the builder's own vertices with a measured deviation");
+    require(report.boxFallbacks==0&&boxPieces==0,"No real fragment falls back to a bounding box: every builder rejection is rebuilt from the builder's own vertices, or from a coarser build, with a measured deviation within the bound");
     require(boxPieces==uint64_t(report.boxFallbacks),"Hull box fallbacks on real fragments are counted");
 }
 // Motionless objects share one cooked shape whatever way they are turned, and the character collides with them the same as before.
