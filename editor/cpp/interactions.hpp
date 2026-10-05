@@ -6,6 +6,7 @@ struct Bounds {
     Vec3 low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
 };
 Bounds object_bounds(const Character &); // the engine's one bounds query: served from the shared per-object cache whenever that is worthwhile
+bool plain_cube_corners(std::array<Vec3,8>& corners); // the eight corners of the unit cube a plain cube is posed from (false when the mesh has no vertex at a corner)
 Bounds object_bounds_raw(const Character &); // always computes from the mesh; used by the cache itself
 void move_group(SceneData &, const Character &, const std::unordered_map<std::string, Character> &);
 double snap_increment(double value,double step);

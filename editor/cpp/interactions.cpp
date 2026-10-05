@@ -25,6 +25,7 @@ static bool cube_corners(std::array<Vec3,8>& corners){
     if(cached[0].x==1e300)return false;
     corners=cached;return true;
 }
+bool plain_cube_corners(std::array<Vec3,8>& corners){return cube_corners(corners);}
 Bounds object_bounds(const Character &c) {
     // Every caller in the engine reaches the shared cache here, so a new feature that asks for an object's bounds is cached without
     // knowing the cache exists. Plain cubes are cheaper to compute than to look up and objects that move on their own cannot be cached.

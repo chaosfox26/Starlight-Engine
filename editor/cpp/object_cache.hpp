@@ -25,7 +25,11 @@
 // answer (this is how an edit path that forgets SculptMesh::touch() would be caught).
 #include "interactions.hpp"
 #include "render_scene.hpp"
+#include "event_log.h"
+#include "hull_points.hpp"
+#include "repair_switches.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -42,6 +46,40 @@
 #include <unordered_set>
 #include <vector>
 namespace starlight::editor {
+// Opt-in profile of the bounds cache (only counted while event logging is on): where the time of a bounds lookup goes.
+struct BoundsProfile {std::atomic<uint64_t> lookupNs{0},measureNs{0},storeNs{0},hullUsed{0},fullWalk{0},lookups{0},misses{0};};
+inline BoundsProfile& bounds_profile(){static BoundsProfile p;return p;}
+inline uint64_t profile_now(){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());}
+// Opt-in lock profile: per call site, how long the lock took to acquire (wait) and how long it was held, and the thread of the last long wait or hold.
+// Sites: 0 lookup (shared), 1 store of an existing entry, 2 store of a new entry, 3 geometry lookup (shared), 4 geometry insert, 5 ray-tree charge.
+struct LockSite {std::atomic<uint64_t> waitNs{0},heldNs{0},count{0},longWaits{0},longHolds{0},lastLongThread{0},maxWaitNs{0},maxHeldNs{0},evictions{0};};
+inline LockSite* lock_sites(){static LockSite sites[6];return sites;}
+struct LockScope {
+    int site=0;bool on=false;uint64_t w0=0,w1=0;
+    explicit LockScope(int s):site(s),on(starlight_diag::events_enabled()),w0(on?profile_now():0){}
+    void acquired(){if(on)w1=profile_now();}
+    void retarget(int s){site=s;}
+    ~LockScope(){
+        if(!on||!w1)return;
+        const uint64_t end=profile_now();LockSite& l=lock_sites()[site];
+        const uint64_t wait=w1-w0,held=end-w1;
+        l.waitNs.fetch_add(wait,std::memory_order_relaxed);l.heldNs.fetch_add(held,std::memory_order_relaxed);l.count.fetch_add(1,std::memory_order_relaxed);
+        if(wait>5000000){l.longWaits.fetch_add(1,std::memory_order_relaxed);l.lastLongThread.store(GetCurrentThreadId(),std::memory_order_relaxed);}
+        if(held>2000000){l.longHolds.fetch_add(1,std::memory_order_relaxed);l.lastLongThread.store(GetCurrentThreadId(),std::memory_order_relaxed);}
+        uint64_t m=l.maxWaitNs.load(std::memory_order_relaxed);while(wait>m&&!l.maxWaitNs.compare_exchange_weak(m,wait,std::memory_order_relaxed)){}
+        m=l.maxHeldNs.load(std::memory_order_relaxed);while(held>m&&!l.maxHeldNs.compare_exchange_weak(m,held,std::memory_order_relaxed)){}
+    }
+};
+// Opt-in geometry cache profile: why geometry_for falls through to the build path, and who asks. Consumers: 0 other, 1 bounds(), 2 bounds_at(), 3 mesh(), 4 raycast(), 5 warm/pin.
+struct GeoProfile {
+    std::atomic<uint64_t> calls{0},misses{0},firstTime{0},seenBefore{0},keyChanged{0},inserted{0},lostRace{0},buildNs{0},evictedGeometries{0},evictedBytes{0},clears{0},builtBytes{0};
+    std::atomic<uint64_t> byConsumer[6]{};
+    std::mutex m;std::unordered_set<uint64_t> seen;std::unordered_map<std::string,uint64_t> lastKey;
+    std::unordered_map<std::string,std::array<double,16>> lastFields;std::atomic<uint64_t> fieldDiff[16]{};
+};
+inline GeoProfile& geo_profile(){static GeoProfile p;return p;}
+inline thread_local int geo_consumer=0;
+struct ConsumerTag{int prev;explicit ConsumerTag(int c):prev(geo_consumer){geo_consumer=c;}~ConsumerTag(){geo_consumer=prev;}};
 namespace cache_detail {
 inline uint64_t mix(uint64_t h,uint64_t v){h^=v;h*=1099511628211ull;return h;}
 inline uint64_t bits(double v){uint64_t b;std::memcpy(&b,&v,8);return b;}
@@ -108,32 +146,72 @@ class ObjectCache {
     using PinOwner=uint64_t;
     // Posed world bounds of an object that does not move on its own (see bounds_cacheable).
     Bounds bounds(const Character& c){
+        ConsumerTag consumerTag(1);
         const uint64_t geometryKey=geometry_key(c),transform=transform_key(c);
         Bounds result;
-        if(lookup(c,geometryKey,transform,result))return result;
+        const bool prof=starlight_diag::events_enabled();const uint64_t pA=prof?profile_now():0;
+        const bool found=lookup(c,geometryKey,transform,result);
+        if(prof){auto& pr=bounds_profile();pr.lookups.fetch_add(1,std::memory_order_relaxed);pr.lookupNs.fetch_add(profile_now()-pA,std::memory_order_relaxed);if(!found)pr.misses.fetch_add(1,std::memory_order_relaxed);}
+        if(found)return result;
+        const uint64_t pM=prof?profile_now():0;
         misses_.fetch_add(1,std::memory_order_relaxed);
         struct Scope{Scope(){in_object_cache()=true;}~Scope(){in_object_cache()=false;}} scope;
         if(c.Shape&&*c.Shape=="cube"&&!c.Sculpt)result=object_bounds_raw(c); // plain cubes have a closed-form fast path
         else{
             const auto geometry=geometry_for(c,geometryKey);
+            const std::vector<Vec3>* hull=hull_points(*geometry);
+            if(hull){
+                for(const Vec3& v:*hull){
+                    auto p=world_point(c,v);
+                    result.low={std::min(result.low.x,p.x),std::min(result.low.y,p.y),std::min(result.low.z,p.z)};
+                    result.high={std::max(result.high.x,p.x),std::max(result.high.y,p.y),std::max(result.high.z,p.z)};
+                }
+            }else
             for(const auto& v:geometry->mesh->vertices){
                 auto p=world_point(c,v.position);
                 result.low={std::min(result.low.x,p.x),std::min(result.low.y,p.y),std::min(result.low.z,p.z)};
                 result.high={std::max(result.high.x,p.x),std::max(result.high.y,p.y),std::max(result.high.z,p.z)};
             }
         }
+        const uint64_t pS=prof?profile_now():0;
         store(c.Id,geometryKey,transform,result);
+        if(prof){auto& pr=bounds_profile();pr.measureNs.fetch_add(pS-pM,std::memory_order_relaxed);pr.storeNs.fetch_add(profile_now()-pS,std::memory_order_relaxed);}
         return result;
     }
     // Bounds of object `c` standing at `pose` (a route position, an actor's current spot, a hypothetical turn). The geometry is the shared one for
     // c's geometry key, so no mesh is rebuilt and no Character is copied; the answer is the same as measuring c with that pose from scratch. With
     // `remember` the answer is kept under c's id like bounds(); a probe of a pose the object does not take (a trial turn) passes false.
     Bounds bounds_at(const Character& c,const ObjectPose& pose,bool remember=true){
+        ConsumerTag consumerTag(2);
+        // A plain cube is its eight corners: pose them directly. No geometry is built or cached and no instance is stored, so a box whose dimensions change
+        // every step (a tumbling piece of debris) costs eight transforms instead of a new mesh, a cache insert and an exclusive lock. Same corners and the same
+        // world_point as the mesh walk (see object_bounds_raw), so the box is identical.
+        if(repair_cubebounds()&&c.Shape&&*c.Shape=="cube"&&!c.Sculpt){
+            std::array<Vec3,8> corners;
+            if(plain_cube_corners(corners)){
+                Bounds fast;
+                for(const auto& corner:corners){
+                    auto p=world_point(pose,corner);
+                    fast.low={std::min(fast.low.x,p.x),std::min(fast.low.y,p.y),std::min(fast.low.z,p.z)};
+                    fast.high={std::max(fast.high.x,p.x),std::max(fast.high.y,p.y),std::max(fast.high.z,p.z)};
+                }
+                return fast;
+            }
+        }
         const uint64_t geometryKey=geometry_key(c),transform=pose_transform_key(pose);
         Bounds result;
         if(remember&&lookup(c,geometryKey,transform,result))return result;
         misses_.fetch_add(1,std::memory_order_relaxed);
         const auto geometry=geometry_for(c,geometryKey);
+        // The box of a transformed mesh is the box of its transformed convex-hull vertices (see hull_points).
+        const std::vector<Vec3>* hull=hull_points(*geometry);
+        if(hull){
+            for(const Vec3& v:*hull){
+                auto p=world_point(pose,v);
+                result.low={std::min(result.low.x,p.x),std::min(result.low.y,p.y),std::min(result.low.z,p.z)};
+                result.high={std::max(result.high.x,p.x),std::max(result.high.y,p.y),std::max(result.high.z,p.z)};
+            }
+        }else
         for(const auto& v:geometry->mesh->vertices){
             auto p=world_point(pose,v.position);
             result.low={std::min(result.low.x,p.x),std::min(result.low.y,p.y),std::min(result.low.z,p.z)};
@@ -145,12 +223,14 @@ class ObjectCache {
     // Collision mesh in the object's own space (object_mesh) for an object that does not move on its own. Shared by every object with
     // the same geometry key.
     std::shared_ptr<const Mesh> mesh(const Character& c){
+        ConsumerTag consumerTag(3);
         return geometry_for(c,geometry_key(c))->mesh;
     }
     // Nearest hit of a ray against the object's actual surface (the object's own pose is `posed`; `c` identifies its geometry). The bounding-volume tree
     // is shared by every object of that shape. It is normally built during preparation (warm_query_geometry); a tree first built while a query is
     // waiting is counted as a late build.
     std::optional<MeshHit> raycast(const Character& c,const ObjectPose& posed,Vec3 origin,Vec3 direction){
+        ConsumerTag consumerTag(4);
         const uint64_t key=geometry_key(c);
         auto geometry=geometry_for(c,key);
         ensure_tree(geometry,key);
@@ -162,6 +242,7 @@ class ObjectCache {
     // Builds (once) the shared collision mesh and ray tree of c's geometry and returns what they cost. Safe on any thread.
     struct Warmed {size_t meshBytes=0,treeBytes=0;bool builtTree=false;};
     Warmed warm_query_geometry(const Character& c){
+        ConsumerTag consumerTag(5);
         const uint64_t key=geometry_key(c);
         auto geometry=geometry_for(c,key);
         Warmed warmed;
@@ -204,14 +285,29 @@ class ObjectCache {
         s.overBudget=geometryBytes_>kMaxGeometryBytes;
         return s;
     }
-    void clear(){std::unique_lock lock(mutex_);instances_.clear();geometries_.clear();geometryBytes_=0;geometryPins_.clear();instancePins_.clear();ownerGeometry_.clear();ownerInstances_.clear();}
+    void clear(){if(starlight_diag::events_enabled())geo_profile().clears.fetch_add(1,std::memory_order_relaxed);std::unique_lock lock(mutex_);instances_.clear();geometries_.clear();geometryBytes_=0;geometryPins_.clear();instancePins_.clear();ownerGeometry_.clear();ownerInstances_.clear();}
   private:
-    struct Geometry {std::shared_ptr<const Mesh> mesh;size_t bytes=0,meshBytes=0;std::atomic<size_t> treeBytes{0};std::atomic<uint64_t> used{0};std::shared_ptr<const MeshAccel> accel;std::once_flag accelFlag;};
+    struct Geometry {std::shared_ptr<const Mesh> mesh;size_t bytes=0,meshBytes=0;std::atomic<size_t> treeBytes{0};std::atomic<uint64_t> used{0};std::shared_ptr<const MeshAccel> accel;std::once_flag accelFlag;mutable std::atomic<uint32_t> boundsUses{0};mutable std::once_flag hullFlag;mutable std::vector<Vec3> hull;};
     struct Instance {uint64_t geometry=0,transform=0;Bounds bounds{};std::atomic<uint64_t> used{0};};
     static constexpr size_t kMaxInstances=65536;
     static constexpr size_t kMaxGeometryBytes=768ull<<20;
+    // Convex-hull vertices of a geometry's mesh, or null when the full vertex list must be used. Built once per geometry, on its fourth measurement (a piece
+    // measured once or twice never pays for it); when the hull cannot be built and verified every vertex is used, as before.
+    const std::vector<Vec3>* hull_points(const Geometry& g){
+        if(!repair_hullbounds()||g.boundsUses.fetch_add(1,std::memory_order_relaxed)<3)return nullptr;
+        std::call_once(g.hullFlag,[&]{
+            std::vector<Vec3> points;points.reserve(g.mesh->vertices.size());
+            for(const auto& v:g.mesh->vertices)points.push_back(v.position);
+            auto found=convex_hull_vertices(points);
+            if(!found.empty()&&found.size()<points.size())g.hull=std::move(found);
+        });
+        if(starlight_diag::events_enabled())(g.hull.empty()?bounds_profile().fullWalk:bounds_profile().hullUsed).fetch_add(1,std::memory_order_relaxed);
+        return g.hull.empty()?nullptr:&g.hull;
+    }
     bool lookup(const Character& c,uint64_t geometryKey,uint64_t transform,Bounds& out){
+        LockScope prof(0);
         std::shared_lock lock(mutex_);
+        prof.acquired();
         auto found=instances_.find(c.Id);
         if(found==instances_.end()||found->second->geometry!=geometryKey||found->second->transform!=transform)return false;
         found->second->used.store(++clock_,std::memory_order_relaxed);
@@ -222,11 +318,13 @@ class ObjectCache {
         return true;
     }
     void store(const std::string& id,uint64_t geometryKey,uint64_t transform,const Bounds& result){
+        LockScope prof(1);
         std::unique_lock lock(mutex_);
+        prof.acquired();
         auto& slot=instances_[id];
-        if(!slot)slot=std::make_unique<Instance>();
+        if(!slot){slot=std::make_unique<Instance>();prof.retarget(2);}
         slot->geometry=geometryKey;slot->transform=transform;slot->bounds=result;slot->used.store(++clock_,std::memory_order_relaxed);
-        if(instances_.size()>kMaxInstances)evict_instances(id);
+        if(instances_.size()>kMaxInstances){evict_instances(id);if(prof.on)lock_sites()[2].evictions.fetch_add(1,std::memory_order_relaxed);}
     }
     // Builds the geometry's ray tree on first need and charges its memory to the geometry budget. Returns true when this call built it.
     bool ensure_tree(const std::shared_ptr<Geometry>& geometry,uint64_t key){
@@ -239,7 +337,9 @@ class ObjectCache {
         if(!built)return false;
         treeBuilds_.fetch_add(1,std::memory_order_relaxed);
         if(prepared_.load(std::memory_order_relaxed))lateTrees_.fetch_add(1,std::memory_order_relaxed);
+        LockScope prof(5);
         std::unique_lock lock(mutex_);
+        prof.acquired();
         if(auto found=geometries_.find(key);found!=geometries_.end()&&found->second.get()==geometry.get()){
             const size_t trees=geometry->treeBytes.load(std::memory_order_relaxed);
             geometry->bytes+=trees;geometryBytes_+=trees;
@@ -248,8 +348,11 @@ class ObjectCache {
         return true;
     }
     std::shared_ptr<Geometry> geometry_for(const Character& c,uint64_t key){
+        const bool gprof=starlight_diag::events_enabled();if(gprof)geo_profile().calls.fetch_add(1,std::memory_order_relaxed);
         {
+            LockScope prof(3);
             std::shared_lock lock(mutex_);
+            prof.acquired();
             auto found=geometries_.find(key);
             if(found!=geometries_.end()){
                 found->second->used.store(++clock_,std::memory_order_relaxed);
@@ -262,13 +365,24 @@ class ObjectCache {
         }
         meshMisses_.fetch_add(1,std::memory_order_relaxed);
         if(prepared_.load(std::memory_order_relaxed))lateGeometry_.fetch_add(1,std::memory_order_relaxed);
+        if(gprof){GeoProfile& gp=geo_profile();gp.misses.fetch_add(1,std::memory_order_relaxed);gp.byConsumer[geo_consumer].fetch_add(1,std::memory_order_relaxed);
+            std::lock_guard<std::mutex> guard(gp.m);(gp.seen.insert(key).second?gp.firstTime:gp.seenBefore).fetch_add(1,std::memory_order_relaxed);
+            auto previous=gp.lastKey.find(c.Id);const bool changedKey=previous!=gp.lastKey.end()&&previous->second!=key;if(changedKey)gp.keyChanged.fetch_add(1,std::memory_order_relaxed);gp.lastKey[c.Id]=key;
+            std::array<double,16> now{c.Size,c.Width,c.Height,c.Depth,c.BranchSpread,c.TargetX,c.TargetY,c.TargetZ,double(c.Surface),c.Glow,c.RingInner,double(std::hash<std::string>{}(c.Shape.value_or(""))&0xffffff),double(std::hash<std::string>{}(c.Asset)&0xffffff),c.Sculpt?double(c.Sculpt->content_revision()&0xffffffffff):-1.,c.Sculpt?double(c.Sculpt->Positions.size()):-1.,c.Sculpt?double(c.Sculpt->Indices.size()):-1.};
+            auto fields=gp.lastFields.find(c.Id);if(changedKey&&fields!=gp.lastFields.end())for(int i=0;i<16;++i)if(std::memcmp(&fields->second[i],&now[i],sizeof(double))!=0)gp.fieldDiff[i].fetch_add(1,std::memory_order_relaxed);
+            gp.lastFields[c.Id]=now;}
         struct Scope{Scope(){in_object_cache()=true;}~Scope(){in_object_cache()=false;}} scope;
         auto built=std::make_shared<Geometry>();
+        const uint64_t buildStart=gprof?profile_now():0;
         built->mesh=std::make_shared<const Mesh>(object_mesh(c));
+        if(gprof)geo_profile().buildNs.fetch_add(profile_now()-buildStart,std::memory_order_relaxed);
         built->meshBytes=built->bytes=built->mesh->vertices.size()*sizeof(built->mesh->vertices[0])+built->mesh->indices.size()*sizeof(int);
+        LockScope prof(4);
         std::unique_lock lock(mutex_);
+        prof.acquired();
         auto [slot,inserted]=geometries_.try_emplace(key,built);
-        if(!inserted)return slot->second; // another thread built the same geometry first
+        if(!inserted){if(gprof)geo_profile().lostRace.fetch_add(1,std::memory_order_relaxed);return slot->second;} // another thread built the same geometry first
+        if(gprof){geo_profile().inserted.fetch_add(1,std::memory_order_relaxed);geo_profile().builtBytes.fetch_add(built->bytes,std::memory_order_relaxed);}
         built->used.store(++clock_,std::memory_order_relaxed);geometryBytes_+=built->bytes;
         if(geometryBytes_>kMaxGeometryBytes)evict_geometries(key);
         return built;
@@ -296,6 +410,7 @@ class ObjectCache {
         for(const auto& [used,key]:order){
             if(geometryBytes_<=target)break;
             auto found=geometries_.find(key);
+            if(starlight_diag::events_enabled()){geo_profile().evictedGeometries.fetch_add(1,std::memory_order_relaxed);geo_profile().evictedBytes.fetch_add(found->second->bytes,std::memory_order_relaxed);}
             geometryBytes_-=found->second->bytes;geometries_.erase(found);
             evictedGeometries_.fetch_add(1,std::memory_order_relaxed);
         }

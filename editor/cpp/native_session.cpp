@@ -524,23 +524,30 @@ void NativeSession::run(std::stop_token stop) {
                     physics->reset(simulation);
                 }
                 if (!physics || physics->ready()) {
-                    seconds += dt;
+                    seconds += dt;const bool secOn=starlight_diag::events_enabled();double secT=secOn?starlight_diag::evnow():0,secObstacles1=0,secFlow=0,secPhysics=0,secObstacles2=0,secEnvironment=0,secLiquid=0,secCopy=0,secStep=0;
                     if(flow && (!collisionObjects.empty()||hadLiquidDebris||std::any_of(simulation.Characters.begin(),simulation.Characters.end(),[](const auto& c){return !c.Route.empty();})||(repair_delta()&&seconds-lastObstacleCheck>=.2))){lastObstacleCheck=seconds;obstacles(collisionObjects);}hadLiquidDebris=!collisionObjects.empty();
+                    if(secOn){const double n=starlight_diag::evnow();secObstacles1=n-secT;secT=n;}
                     if (flow){flow->wind(simulation.WaterWindX+simulation.RainWindX*simulation.RainIntensity,simulation.WaterWindZ+simulation.RainWindZ*simulation.RainIntensity,simulation.WaterWaveStrength);
                         flow->lava_settings(simulation.LavaInitialHeat,simulation.LavaCoolingRate,simulation.LavaCrustDepth,simulation.LavaLightStrength);
                         flow->step(std::max(1e-6, dt));
                     }
-                    if (physics && physics->step(simulation, dt, flow.get()))
-                        obstacles(collisionObjects);
+                    if(secOn){const double n=starlight_diag::evnow();secFlow=n-secT;secT=n;}
+                    bool physicsChanged=false;
+                    if (physics && (physicsChanged=physics->step(simulation, dt, flow.get())))
+                        { if(secOn){const double n=starlight_diag::evnow();secPhysics=n-secT;secT=n;} obstacles(collisionObjects); if(secOn){const double n=starlight_diag::evnow();secObstacles2=n-secT;secT=n;} }
+                    else if(secOn){const double n=starlight_diag::evnow();secPhysics=n-secT;secT=n;}
                     // Publish the current simulation on this rendered frame;
                     // do not hold moving objects behind a 20 Hz visual throttle.
                     if (flow || physics) rebuild = true;
                     if(flow){auto participants=simulation.Characters;participants.insert(participants.end(),collisionObjects.begin(),collisionObjects.end());if(playerBody){Character player;player.Id=lightning_player_id;player.Shape="cube";player.Dynamic=true;auto center=(playerBody->low+playerBody->high)*.5;player.X=center.x;player.Z=center.z;player.Y=playerBody->low.y;player.Width=playerBody->high.x-playerBody->low.x;player.Height=playerBody->high.y-playerBody->low.y;player.Depth=playerBody->high.z-playerBody->low.z;participants.push_back(player);}flow->interact(participants,dt,gameplayTime.value_or(seconds));for(const auto& splash:flow->splashes())environment.splash(splash);}
+                    if(secOn){const double n=starlight_diag::evnow();secLiquid=n-secT;secT=n;}
                     const bool gpuGrass=gpuGrassRequested&&!simulation.RaytracingEnabled;
                     if(environment.active(simulation,gpuGrass)){
-                        auto effectScene=simulation;effectScene.Characters.insert(effectScene.Characters.end(),collisionObjects.begin(),collisionObjects.end());environment.step(effectScene,dt,gameplayTime.value_or(seconds),flow.get(),playerBody,gpuGrass);
+                        auto effectScene=simulation;effectScene.Characters.insert(effectScene.Characters.end(),collisionObjects.begin(),collisionObjects.end());if(secOn){const double n=starlight_diag::evnow();secCopy=n-secT;secT=n;}environment.step(effectScene,dt,gameplayTime.value_or(seconds),flow.get(),playerBody,gpuGrass);
+                        if(secOn){const double n=starlight_diag::evnow();secStep=n-secT;secT=n;}
                         rebuild=true;
                     }
+                    if(secOn){const double n=starlight_diag::evnow();secEnvironment=n-secT;secT=n;starlight_diag::evlog("sim.sec",secObstacles1+secFlow,secPhysics,secObstacles2);starlight_diag::evlog("sim.sec2",secEnvironment,physicsChanged?1.:0.,0);starlight_diag::evlog("sim.sec3",secLiquid,secCopy,secStep);}
                     if(flow&&liquidAsync)flow->geometry_begin_async();
                     auto liquidState=flow?std::make_shared<const LiquidSnapshot>(flow->snapshot()):nullptr;
                     {std::lock_guard lock(mutex_);liquidSnapshot_=std::move(liquidState);status_.environment_epoch=environment.epoch();status_.environment_lightning=environment.lightning_serial();status_.environment_sounds=environment.lightning_sounds();status_.effect_sparks=environment.spark_count();status_.fire_particles=environment.flame_count();status_.liquid_splashes=environment.splash_count();status_.rain_particles=environment.rain().particles().size();status_.rain_impacts=environment.rain().impact_count();status_.liquid_volume=flow?flow->volume():0;status_.liquid_wave_energy=flow?flow->wave_energy():0;}

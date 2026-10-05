@@ -1,4 +1,5 @@
 #pragma once
+#include "event_log.h"
 #include "environment_events.hpp"
 #include "particle_physics.hpp"
 #include "flow.hpp"
@@ -103,6 +104,8 @@ class EnvironmentEffects {
     void step(const SceneData& scene,double dt,double routeTime,TerrainFlow* liquids=nullptr,std::optional<Bounds> player={},bool gpuGrass=false){
         if(!std::isfinite(dt) || dt<0 || dt>.05)throw std::runtime_error("Invalid environmental effects step");
         time_+=dt;routeTime_=routeTime;
+        const bool envTimerOn=starlight_diag::events_enabled();const double envT0=envTimerOn?starlight_diag::evnow():0;
+        const uint64_t profLookup0=envTimerOn?bounds_profile().lookupNs.load():0,profMeasure0=envTimerOn?bounds_profile().measureNs.load():0,profStore0=envTimerOn?bounds_profile().storeNs.load():0,profMiss0=envTimerOn?bounds_profile().misses.load():0,profHull0=envTimerOn?bounds_profile().hullUsed.load():0,profFull0=envTimerOn?bounds_profile().fullWalk.load():0,profLook0=envTimerOn?bounds_profile().lookups.load():0;
         weatherSurface_.step(scene.RainIntensity,dt);
         std::vector<Bounds> obstacles;
         for(const auto& source:scene.Characters)if(solid(source)){
@@ -110,6 +113,10 @@ class EnvironmentEffects {
             obstacles.push_back(bounds_cacheable(source)?ObjectCache::shared().bounds(source):ObjectCache::shared().bounds_at(source,route_pose_of(source,routeTime)));
         }
         if(player)obstacles.push_back(*player);
+        const double envT1=envTimerOn?starlight_diag::evnow():0;
+        if(envTimerOn){GeoProfile& gp=geo_profile();starlight_diag::evlog("geo.a",double(gp.calls.load()),double(gp.misses.load()),double(gp.firstTime.load()));starlight_diag::evlog("geo.b",double(gp.seenBefore.load()),double(gp.keyChanged.load()),double(gp.lostRace.load()));starlight_diag::evlog("geo.c",double(gp.inserted.load()),gp.buildNs.load()/1e6,double(gp.evictedGeometries.load()));starlight_diag::evlog("geo.d",double(gp.byConsumer[1].load()),double(gp.byConsumer[2].load()),double(gp.byConsumer[3].load()+gp.byConsumer[4].load()+gp.byConsumer[5].load()+gp.byConsumer[0].load()));for(int g=0;g<6;++g){static const char* const fieldNames[6]={"geo.f0","geo.f1","geo.f2","geo.f3","geo.f4","geo.f5"};starlight_diag::evlog(fieldNames[g],double(gp.fieldDiff[g*3].load()),double(g*3+1<16?gp.fieldDiff[g*3+1].load():0),double(g*3+2<16?gp.fieldDiff[g*3+2].load():0));}starlight_diag::evlog("geo.e",gp.builtBytes.load()/1048576.,gp.evictedBytes.load()/1048576.,double(gp.clears.load()));const LockSite& l5=lock_sites()[5];starlight_diag::evlog("lock.5",l5.waitNs.load()/1e6,l5.heldNs.load()/1e6,double(l5.count.load()));}
+        if(envTimerOn){static const char* const lockNames[5]={"lock.0","lock.1","lock.2","lock.3","lock.4"};static const char* const lockxNames[5]={"lockx.0","lockx.1","lockx.2","lockx.3","lockx.4"};static const char* const lockmNames[5]={"lockm.0","lockm.1","lockm.2","lockm.3","lockm.4"};for(int site=0;site<5;++site){const LockSite& l=lock_sites()[site];starlight_diag::evlog(lockNames[site],l.waitNs.load()/1e6,l.heldNs.load()/1e6,double(l.count.load()));starlight_diag::evlog(lockxNames[site],double(l.longWaits.load()),double(l.longHolds.load()),double(l.lastLongThread.load()));starlight_diag::evlog(lockmNames[site],l.maxWaitNs.load()/1e6,l.maxHeldNs.load()/1e6,double(l.evictions.load()));}starlight_diag::evlog("env.thread",double(GetCurrentThreadId()),0,0);}
+        if(envTimerOn){auto& pr=bounds_profile();starlight_diag::evlog("env.cache",(pr.lookupNs.load()-profLookup0)/1e6,(pr.measureNs.load()-profMeasure0)/1e6,(pr.storeNs.load()-profStore0)/1e6);starlight_diag::evlog("env.cache2",double(pr.misses.load()-profMiss0),double(pr.hullUsed.load()-profHull0),double(pr.fullWalk.load()-profFull0));starlight_diag::evlog("env.cache3",double(pr.lookups.load()-profLook0),0,0);}
         auto terrain=scene.Terrain?&*scene.Terrain:nullptr;
         rain_.step(scene,dt,obstacles,liquids);
         size_t rainSplashes=0;
@@ -149,6 +156,7 @@ class EnvironmentEffects {
             for(int i=0;i<count&&flames_.size()<1024;++i){PhysicalParticle p;p.motionId=++particleSerial_;p.position=origin+Vec3{random()*.18*c.Size,0,random()*.18*c.Size};p.velocity=inherited+Vec3{random()*.3,1.2+std::abs(random()),random()*.3};p.radius=.025;p.drag=c.ParticleDrag;p.restitution=.05;p.lifetime=c.ParticleLifetime*(.65+std::abs(random())*.5);flames_.push_back({p,rgb(c.Color),.12*c.Size,c.ParticleLift,{c.ParticleWindX,c.ParticleWindY,c.ParticleWindZ}});}
         }
 
+        if(envTimerOn){starlight_diag::evlog("env.step",envT1-envT0,starlight_diag::evnow()-envT1,double(obstacles.size()));starlight_diag::evlog("env.n",double(droplets_.size()),double(sparks_.size()),double(flames_.size()));}
         std::erase_if(strikes_,[&](const auto& item){return std::none_of(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==item.first && c.Shape=="chaos-lightning";});});
         for(const auto& source:scene.Characters)if(source.Shape=="chaos-lightning"){auto c=source;
             c=route_pose(c,routeTime);
