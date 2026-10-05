@@ -22,6 +22,29 @@ template<class Require> void object_cache_checks(Require require,const fs::path&
     b.PhysicsRotation=std::array<double,4>{0,.3826834323650898,0,.9238795325112867};
     require(same_bounds(cache.bounds(b),object_bounds_raw(b)),"A physics rotation is a transform change, not a geometry change");
     require(cache.stats().meshMisses==geometryBefore,"Physics rotation does not rebuild geometry either");
+    // Plain cubes (tumbling debris) are posed from their eight corners: identical to walking a freshly built mesh, and no geometry is built or cached
+    // however their dimensions change from one call to the next.
+    {
+        uint64_t seed=0x9E3779B97F4A7C15ull;
+        auto next=[&](double lo,double hi){seed^=seed<<13;seed^=seed>>7;seed^=seed<<17;return lo+(hi-lo)*double(seed>>11)/double(1ull<<53);};
+        const auto cubeBefore=cache.stats().meshMisses;
+        size_t identical=0,total=0;
+        for(int i=0;i<500;++i){
+            Character cube;cube.Id="cube-"+std::to_string(i);cube.Shape="cube";cube.Dynamic=true;
+            cube.Size=next(.05,3);cube.Width=next(.05,4);cube.Height=next(.05,4);cube.Depth=next(.05,4);
+            cube.X=next(-50,50);cube.Y=next(-5,20);cube.Z=next(-50,50);cube.RotationX=next(-180,180);cube.RotationY=next(-180,180);cube.RotationZ=next(-180,180);
+            if(i%3==0){const double w=next(-1,1),x=next(-1,1),y=next(-1,1),z=next(-1,1),n=std::sqrt(w*w+x*x+y*y+z*z);cube.PhysicsRotation=std::array<double,4>{x/n,y/n,z/n,w/n};}
+            const ObjectPose pose=object_pose(cube);
+            const Bounds fast=cache.bounds_at(cube,pose,false);
+            Bounds slow;
+            for(const auto& v:object_mesh(cube).vertices){const auto q=world_point(pose,v.position);
+                slow.low={std::min(slow.low.x,q.x),std::min(slow.low.y,q.y),std::min(slow.low.z,q.z)};
+                slow.high={std::max(slow.high.x,q.x),std::max(slow.high.y,q.y),std::max(slow.high.z,q.z)};}
+            ++total;if(same_bounds(fast,slow))++identical;
+        }
+        require(identical==total,"Posed plain-cube bounds are bit-identical to the full mesh walk for 500 random sizes, scales, Euler and quaternion poses");
+        require(cache.stats().meshMisses==cubeBefore,"Plain-cube bounds build and cache no geometry, however the dimensions change");
+    }
     // Sculpt edits are noticed without sampling.
     Character sculpted;sculpted.Id="cache-sculpt";sculpted.Shape="boulder";
     sculpted.Sculpt=prepare_sculpt(object_mesh(sculpted));sculpted.Shape.reset();
