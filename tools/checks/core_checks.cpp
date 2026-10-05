@@ -60,13 +60,18 @@ __declspec(noinline) static void character_controller_checks(const auto& require
 }
 static int checks_main(int argc, char **argv) {
     std::vector<std::string> checks;
+    fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
+    fs::create_directories(folder);
+    {std::error_code removed;fs::remove(folder / "result.json", removed);fs::remove(folder / "progress.log", removed);}
+    // One line per passed check, flushed as it passes: a crash or kill leaves a record of exactly which checks had passed.
+    std::ofstream progress(folder / "progress.log", std::ios::binary);
     auto require = [&](bool ok, const char *name) {
         if (!ok)
             throw std::runtime_error(name);
         checks.emplace_back(name);
+        progress << name << "\n";
+        progress.flush();
     };
-    fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
-    fs::create_directories(folder);
     EngineAssets::ScopedRoot checkLibrary(folder / "engine-assets");
     try {
         active_scene_guard_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path());
@@ -1871,12 +1876,12 @@ static int checks_main(int argc, char **argv) {
                      std::string_view(reinterpret_cast<const char *>(packet.data()), packet.size()));
         require(packet.size() > 1000, "Native renderer packet emitted");
         generated_scene_readback_checks(require,folder);
-        atomic_write(folder / "result.json", json{{"success", true}, {"checks", checks}}.dump(2));
+        atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
         std::cout << "PASS " << checks.size() << " native checks\n";
         return 0;
     } catch (const std::exception &e) {
         atomic_write(folder / "result.json",
-                     json{{"success", false}, {"checks", checks}, {"error", e.what()}}.dump(2));
+                     json{{"schema", "starlight-check-result-2"}, {"success", false}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}, {"error", e.what()}}.dump(2));
         std::cerr << e.what() << '\n';
         return 1;
     }

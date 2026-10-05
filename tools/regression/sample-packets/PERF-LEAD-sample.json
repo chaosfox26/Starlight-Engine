@@ -1,0 +1,16 @@
+{
+  "schema": "starlight-failure-packet-1",
+  "failureId": "PERF-bar-frame-tails",
+  "class": "PERF-LEAD",
+  "subsystem": "shared bounds cache",
+  "buildIdentity": {"gitHead": "<40 hex>", "dirtyTrackedFiles": 0, "binaries": {}},
+  "fingerprint": "perf-gate:bar-store-wait|over-baseline|shared bounds cache",
+  "eventId": "perf-gate:bar-store-wait|over-baseline|shared bounds cache|<buildId>|<utc time>",
+  "expected": "Whole-run time spent waiting on the bounds cache lock stays near the stored baseline (about 3 ms in the bar scene).",
+  "observed": "A repeat run measured thousands of milliseconds of lock wait.",
+  "reproduction": {"checkId": "perf-gate:bar-store-wait", "args": []},
+  "evidence": {"paths": [], "evidenceDigest": "<sha256 of the evidence files>"},
+  "reproducedCleanCount": 0,
+  "attempts": [],
+  "note": "PERF-LEAD: never auto-repaired; needs measurement and an owner decision. Included to show the shape; no such gate exists yet."
+}

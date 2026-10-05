@@ -42,8 +42,8 @@ template<class Require> void object_cache_checks(Require require,const fs::path&
                 slow.high={std::max(slow.high.x,q.x),std::max(slow.high.y,q.y),std::max(slow.high.z,q.z)};}
             ++total;if(same_bounds(fast,slow))++identical;
         }
-        require(identical==total,"Posed plain-cube bounds are bit-identical to the full mesh walk for 500 random sizes, scales, Euler and quaternion poses");
-        require(cache.stats().meshMisses==cubeBefore,"Plain-cube bounds build and cache no geometry, however the dimensions change");
+        require(identical==total,"CUBE-BOUNDS: Posed plain-cube bounds are bit-identical to the full mesh walk for 500 random sizes, scales, Euler and quaternion poses");
+        require(cache.stats().meshMisses==cubeBefore,"CUBE-BOUNDS: Plain-cube bounds build and cache no geometry, however the dimensions change");
     }
     // Sculpt edits are noticed without sampling.
     Character sculpted;sculpted.Id="cache-sculpt";sculpted.Shape="boulder";
@@ -568,7 +568,7 @@ template<class Require> void hull_checks(Require require,const fs::path& folder)
     require(report.requested==report.exact+report.exactAfterFinerRetry+report.reducedToLimit+report.rebuiltFromHullVertices+report.boxFallbacks+report.rejected,"Every hull request ends in exactly one counted outcome");
     require(report.reducedBeyondBound==0,"No reduced fragment hull lies beyond the accepted deviation bound");
     require(nulls==0&&report.unbuildable==0,"Every real fragment gets a hull");
-    require(report.boxFallbacks==0&&boxPieces==0,"No real fragment falls back to a bounding box: every builder rejection is rebuilt from the builder's own vertices, or from a coarser build, with a measured deviation within the bound");
+    require(report.boxFallbacks==0&&boxPieces==0,"HULL-NO-BOX: No real fragment falls back to a bounding box: every builder rejection is rebuilt from the builder's own vertices, or from a coarser build, with a measured deviation within the bound");
     require(boxPieces==uint64_t(report.boxFallbacks),"Hull box fallbacks on real fragments are counted");
 }
 // Motionless objects share one cooked shape whatever way they are turned, and the character collides with them the same as before.

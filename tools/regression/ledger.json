@@ -1,0 +1,48 @@
+{
+  "schema": "starlight-fix-ledger-1",
+  "note": "One entry per CONFIRMED fix. Audit leads that are not confirmed do not belong here. States are NOT stored here: the runner writes them per build identity to the results folder.",
+  "entries": [
+    {
+      "id": "CC-01",
+      "title": "Model import must not overflow the stack on deeply nested JSON",
+      "subsystem": "model import (editor/cpp/assets.cpp)",
+      "class": "correctness",
+      "originalFailure": "A 200 KB GLB whose extras nest 100000 levels crashed the importer (exit 0xC00000FD, stack overflow); the JSON parser accepts deep nesting, the recursive URI check did not.",
+      "fixCommits": ["8d1b8da"],
+      "tier": "build",
+      "tests": [
+        {"kind": "core-check-prefix", "executable": "Starlight.NativeCoreChecks.exe", "token": "CC-01:", "minChecks": 4}
+      ],
+      "testStrength": "Mixed: the nested-URI refusals and the ordinary-model validation are real assertions; the 300000-level case can only fail by crashing the suite (a crash leaves later checks NOT-CHECKED).",
+      "investigate": ["editor/cpp/assets.cpp embedded_uris", "agents/hostload-work/glb_depth_test.cpp (standalone reproduction)"]
+    },
+    {
+      "id": "CUBE-BOUNDS",
+      "title": "Plain-cube posed bounds are exact and build/cache no geometry",
+      "subsystem": "shared bounds cache (editor/cpp/object_cache.hpp, interactions.cpp)",
+      "class": "correctness+performance",
+      "originalFailure": "bounds_at built and cached a new mesh for every changing plain-cube box (tumbling debris), causing about 125000 geometry-cache misses, 370 MB of never-reused meshes and long waits on the cache's exclusive lock in rock-break scenes.",
+      "fixCommits": ["651a01a", "81fcdae"],
+      "tier": "build",
+      "tests": [
+        {"kind": "core-check-prefix", "executable": "Starlight.NativeCoreChecks.exe", "token": "CUBE-BOUNDS:", "minChecks": 2}
+      ],
+      "testStrength": "Strong for equivalence (500 random poses bit-identical to the mesh walk) and for no geometry built. The performance effect is measured separately (stress runs) and is not asserted by this check.",
+      "investigate": ["editor/cpp/object_cache.hpp bounds_at", "stress/cache_prof.py, stress/geo_prof.py", "HANDOFF-KEYCARD-20261004.md section RESULT: EXACT PLAIN-CUBE BOUNDS"]
+    },
+    {
+      "id": "HULL-NO-BOX",
+      "title": "Real fracture fragments never fall back to a bounding box",
+      "subsystem": "physics hull builder (deep/Physics/PhysicsWorld.cpp BuildHull)",
+      "class": "correctness",
+      "originalFailure": "One 1921-point shell shard of a baked statue could not be built as a hull and was replaced by a counted bounding box.",
+      "fixCommits": ["b92675e"],
+      "tier": "build",
+      "tests": [
+        {"kind": "core-check-prefix", "executable": "Starlight.NativeCoreChecks.exe", "token": "HULL-NO-BOX:", "minChecks": 1}
+      ],
+      "testStrength": "Strong for the tested statue; says nothing about other geometry. No runtime speed benefit was demonstrated; do not treat this as a performance fix.",
+      "investigate": ["deep/Physics/PhysicsWorld.cpp BuildHull coarser-tolerance stage", "tools/checks/object_cache_checks.inl hull study"]
+    }
+  ]
+}

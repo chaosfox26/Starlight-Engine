@@ -453,15 +453,15 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
   };
   require(glb.size()>40,"The triangle fixture is readable");
   bool plain=true;try{validate_model_bytes(glb);}catch(const std::exception&){plain=false;}
-  require(plain,"An ordinary embedded model validates");
+  require(plain,"CC-01: An ordinary embedded model validates");
   bool deepSurvived=true;
   try{validate_model_bytes(with_extras(std::string(300000,'[')+std::string(300000,']')));}catch(const std::exception&){}
-  require(deepSurvived,"A model with 300000 levels of nested JSON is handled without exhausting the stack");
+  require(deepSurvived,"CC-01: A model with 300000 levels of nested JSON is handled without exhausting the stack");
   bool refused=false;try{validate_model_bytes(with_extras("{\"a\":[{\"uri\":\"http://example.com/x.bin\"}]}"));}catch(const std::runtime_error&){refused=true;}
-  require(refused,"A nested external URI is still refused");
+  require(refused,"CC-01: A nested external URI is still refused");
   bool refusedAfterDepth=false;
   try{validate_model_bytes(with_extras(std::string(300000,'[')+"{\"uri\":\"file.bin\"}"+std::string(300000,']')));}catch(const std::runtime_error&){refusedAfterDepth=true;}
-  require(refusedAfterDepth,"An external URI buried 300000 levels deep is still refused");
+  require(refusedAfterDepth,"CC-01: An external URI buried 300000 levels deep is still refused");
  }
  require(files_in(dataFolder,".tmp")==0,"No temporary files are left in the data folder");
 }

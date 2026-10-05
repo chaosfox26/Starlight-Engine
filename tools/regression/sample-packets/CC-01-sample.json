@@ -1,0 +1,15 @@
+{
+  "schema": "starlight-failure-packet-1",
+  "failureId": "CC-01",
+  "class": "DEFECT-CONFIRMED",
+  "subsystem": "model import",
+  "buildIdentity": {"gitHead": "<40 hex>", "dirtyTrackedFiles": 0, "binaries": {"Starlight.NativeCoreChecks.exe": {"sha256": "<64 hex>"}}},
+  "fingerprint": "core-check:CC-01|crash|model import",
+  "eventId": "core-check:CC-01|crash|model import|<buildId>|<utc time>",
+  "expected": "A model whose JSON nests 300000 levels is accepted or rejected with an error, and nested external URIs are refused.",
+  "observed": "Process exit code 0xC00000FD (stack overflow) after the last passed check: CC-01: An ordinary embedded model validates",
+  "reproduction": {"checkId": "CC-01:", "runner": "tools/regression/run_ledger.py", "args": ["--build-dir", "<registered build folder>"]},
+  "evidence": {"paths": ["regression-results/runs/<run>/progress.log"], "evidenceDigest": "<sha256 of the evidence files>"},
+  "reproducedCleanCount": 2,
+  "attempts": []
+}
