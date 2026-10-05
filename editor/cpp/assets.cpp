@@ -28,16 +28,23 @@ double srgb(double v) {
     v = std::clamp(v, 0., 1.);
     return std::round((v <= .0031308 ? v * 12.92 : 1.055 * std::pow(v, 1 / 2.4) - .055) * 255) / 255;
 }
-void embedded_uris(const json &value) {
-    if (value.is_object()) {
-        for (auto it = value.begin(); it != value.end(); ++it) {
-            if (it.key() == "uri" && (!it.value().is_string() || !it.value().get<std::string>().starts_with("data:")))
-                throw std::runtime_error("Models must embed their resources; external URI found");
-            embedded_uris(it.value());
-        }
-    } else if (value.is_array())
-        for (const auto &item : value)
-            embedded_uris(item);
+// Walks the whole document with an explicit work list instead of recursion: the JSON parser accepts arbitrarily deep nesting without recursing, so a
+// recursive walk would let a small crafted file exhaust the call stack. Every value is still visited, and any "uri" that is not an embedded data URI is refused.
+void embedded_uris(const json &root) {
+    std::vector<const json *> pending{&root};
+    while (!pending.empty()) {
+        const json *value = pending.back();
+        pending.pop_back();
+        if (value->is_object()) {
+            for (auto it = value->begin(); it != value->end(); ++it) {
+                if (it.key() == "uri" && (!it.value().is_string() || !it.value().get<std::string>().starts_with("data:")))
+                    throw std::runtime_error("Models must embed their resources; external URI found");
+                pending.push_back(&it.value());
+            }
+        } else if (value->is_array())
+            for (const auto &item : *value)
+                pending.push_back(&item);
+    }
 }
 struct ModelEntry {
     std::shared_ptr<const std::vector<MeshPart>> parts;

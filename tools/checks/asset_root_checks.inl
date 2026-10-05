@@ -439,5 +439,29 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
   auto removed=run({L"--asset-root-remove",store.wstring()});
   require(removed.at("success")==true&&EngineAssets::registered_roots().empty()&&fs::is_regular_file(store/"library.json")&&run({L"--asset-root-remove",store.wstring()}).at("success")==false,"The command line unregisters a root without touching its files and reports an unknown root");
  }
+ {
+  // A model file may nest JSON arbitrarily deep; the URI check must not recurse, or a small crafted file overflows the stack.
+  std::ifstream fixture(fs::absolute("migration/fixtures/triangle.glb"),std::ios::binary);
+  const std::string glb((std::istreambuf_iterator<char>(fixture)),std::istreambuf_iterator<char>());
+  auto u32=[&](const std::string& text,size_t at){uint32_t value;std::memcpy(&value,text.data()+at,4);return value;};
+  auto put32=[&](std::string& text,size_t at,uint32_t value){std::memcpy(&text[at],&value,4);};
+  auto with_extras=[&](const std::string& extras){
+   const uint32_t jsonLength=u32(glb,12);std::string json=glb.substr(20,jsonLength);json.insert(json.rfind('}'),",\"extras\":"+extras);
+   while(json.size()%4)json.push_back(' ');
+   std::string out=glb.substr(0,12),header(8,'\0');put32(header,0,uint32_t(json.size()));std::memcpy(&header[4],glb.data()+16,4);
+   out+=header+json+glb.substr(20+jsonLength);put32(out,8,uint32_t(out.size()));return out;
+  };
+  require(glb.size()>40,"The triangle fixture is readable");
+  bool plain=true;try{validate_model_bytes(glb);}catch(const std::exception&){plain=false;}
+  require(plain,"An ordinary embedded model validates");
+  bool deepSurvived=true;
+  try{validate_model_bytes(with_extras(std::string(300000,'[')+std::string(300000,']')));}catch(const std::exception&){}
+  require(deepSurvived,"A model with 300000 levels of nested JSON is handled without exhausting the stack");
+  bool refused=false;try{validate_model_bytes(with_extras("{\"a\":[{\"uri\":\"http://example.com/x.bin\"}]}"));}catch(const std::runtime_error&){refused=true;}
+  require(refused,"A nested external URI is still refused");
+  bool refusedAfterDepth=false;
+  try{validate_model_bytes(with_extras(std::string(300000,'[')+"{\"uri\":\"file.bin\"}"+std::string(300000,']')));}catch(const std::runtime_error&){refusedAfterDepth=true;}
+  require(refusedAfterDepth,"An external URI buried 300000 levels deep is still refused");
+ }
  require(files_in(dataFolder,".tmp")==0,"No temporary files are left in the data folder");
 }
