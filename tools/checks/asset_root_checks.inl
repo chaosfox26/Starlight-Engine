@@ -454,9 +454,11 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
   require(glb.size()>40,"The triangle fixture is readable");
   bool plain=true;try{validate_model_bytes(glb);}catch(const std::exception&){plain=false;}
   require(plain,"CC-01: An ordinary embedded model validates");
-  bool deepSurvived=true;
-  try{validate_model_bytes(with_extras(std::string(300000,'[')+std::string(300000,']')));}catch(const std::exception&){}
-  require(deepSurvived,"CC-01: A model with 300000 levels of nested JSON is handled without exhausting the stack");
+  int deepOutcome=0;
+  try{validate_model_bytes(with_extras(std::string(300000,'[')+std::string(300000,']')));deepOutcome=1;}
+  catch(const std::runtime_error&){deepOutcome=2;}
+  catch(...){deepOutcome=3;}
+  require(deepOutcome==1||deepOutcome==2,"CC-01: A model with 300000 levels of nested JSON is handled without exhausting the stack");
   bool refused=false;try{validate_model_bytes(with_extras("{\"a\":[{\"uri\":\"http://example.com/x.bin\"}]}"));}catch(const std::runtime_error&){refused=true;}
   require(refused,"CC-01: A nested external URI is still refused");
   bool refusedAfterDepth=false;
