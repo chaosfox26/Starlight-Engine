@@ -2142,7 +2142,7 @@ struct RenderDevice {
         if (!auditOffscreen) ups->beforePresent(fi);
         if (tsHeap) {   // GPU-work end + resolve this slot's pair to the readback buffer
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot + 1);
-            if (passHeap) { gpuMark(4); cmd->ResolveQueryData(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 16 * slot, 11, passReadback.Get(), sizeof(UINT64) * 16 * slot);   // marks 0..10 are the only ones written; 11..15 are never recorded }
+            if (passHeap) { gpuMark(4); cmd->ResolveQueryData(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 16 * slot, 11, passReadback.Get(), sizeof(UINT64) * 16 * slot); }
             cmd->ResolveQueryData(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot, 2, tsReadback.Get(), sizeof(UINT64) * 2 * slot);
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
