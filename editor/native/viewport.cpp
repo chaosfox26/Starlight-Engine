@@ -243,7 +243,9 @@ struct Viewport {
     std::vector<UINT> staged(solids.size());
     for(size_t i=0;i<solids.size();++i){d.editorMotionKey=solids[i].key;staged[i]=d.stageMesh(solids[i].world,solids[i].color,solids[i].emissive);d.editorMotionKey=0;}
     d.cmd->SetPipelineState(d.psoDepthOnly.Get());for(size_t i=0;i<solids.size();++i)d.issueMesh(staged[i],*solids[i].mesh);
+    d.gpuMark(7);
     d.cmd->SetPipelineState(d.psoDepthEqual.Get());for(size_t i=0;i<solids.size();++i)d.issueMesh(staged[i],*solids[i].mesh);
+    d.gpuMark(8);
     d.cmd->SetPipelineState(d.pso.Get());
    }else for(const auto& solid:solids){d.editorMotionKey=solid.key;d.drawMesh(*solid.mesh,solid.world,solid.color,solid.emissive);d.editorMotionKey=0;}}
   size_t telegraphIndex=0;for(const auto& effect:telegraphs){uint64_t identity=telegraphIndex<telegraphIdentities.size()?telegraphIdentities[telegraphIndex]:0;++telegraphIndex;
@@ -254,8 +256,10 @@ struct Viewport {
    auto transform=XMMatrixScaling(radius,1,radius)*XMMatrixRotationY(yaw)*XMMatrixTranslation(effect.x,effect.y,effect.z);
    d.editorMotionKey=identity;d.drawMesh(found->gpu,transform,{effect.r,effect.g,effect.b},1);d.editorMotionKey=0;
   }
+  d.gpuMark(9);
   if(!liquids.empty()&&!d.editorRaytracing)surfaces.capture(d);
   for(const auto& liquid:liquids){d.editorMotionKey=liquid.key;d.drawMesh(*liquid.mesh,liquid.world,liquid.color,liquid.emissive);d.editorMotionKey=0;}
+  d.gpuMark(10);
   {const auto segT5=DrawClock::now();auto ms=[](DrawClock::time_point a,DrawClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();};drawSegments[0]=ms(segT0,segT1);drawSegments[1]=ms(segT1,segT2);drawSegments[2]=ms(segT2,segT3);drawSegments[3]=ms(segT3,segT4);drawSegments[4]=ms(segT4,segT5);}
   previousVertices.swap(currentVertices);geometryFresh=false;
  }

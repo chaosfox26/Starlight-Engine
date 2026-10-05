@@ -580,7 +580,7 @@ struct RenderDevice {
     ComPtr<ID3D12QueryHeap> tsHeap;
     // Per-pass GPU timing (diagnostic): marks 0 frame start, 1 after shadow maps, 2 after the scene pass, 3 after fog/post, 4 frame end.
     ComPtr<ID3D12QueryHeap> passHeap; ComPtr<ID3D12Resource> passReadback; float lastPassMs[4]{};
-    void gpuMark(UINT mark) { if (passHeap && mark < 8) cmd->EndQuery(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 8 * slot + mark); }
+    void gpuMark(UINT mark) { if (passHeap && mark < 16) cmd->EndQuery(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 16 * slot + mark); }
     ComPtr<ID3D12Resource> tsReadback; UINT64 tsFreq = 0;
     std::vector<float> benchGpuMs; float lastGpuMs = 0; float gpuMsNow = 0;
     UINT benchInstMax = 0;   // peak instance slots used in a bench frame (drop-diagnosis: pins at kMaxInstances when the buffer is the limit)
@@ -976,9 +976,9 @@ struct RenderDevice {
             queue->GetTimestampFrequency(&tsFreq);
             logLine("gpu-timer: query heap ready, freq " + std::to_string(tsFreq));
             {   // per-pass timestamps (8 per slot)
-                D3D12_QUERY_HEAP_DESC ph{}; ph.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; ph.Count = 8 * kFrameCount;
+                D3D12_QUERY_HEAP_DESC ph{}; ph.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; ph.Count = 16 * kFrameCount;
                 if (SUCCEEDED(device->CreateQueryHeap(&ph, IID_PPV_ARGS(&passHeap)))) {
-                    rbDesc.Width = sizeof(UINT64) * 8 * kFrameCount;
+                    rbDesc.Width = sizeof(UINT64) * 16 * kFrameCount;
                     if (FAILED(device->CreateCommittedResource(&rbHeap, D3D12_HEAP_FLAG_NONE, &rbDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&passReadback)))) passHeap.Reset();
                 }
             }
@@ -2064,11 +2064,11 @@ struct RenderDevice {
             }
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot);   // GPU-work start
             if (passHeap && tsFreq) {
-                void* q = nullptr; D3D12_RANGE pr{ (SIZE_T)(sizeof(UINT64) * 8 * slot), (SIZE_T)(sizeof(UINT64) * (8 * slot + 8)) };
+                void* q = nullptr; D3D12_RANGE pr{ (SIZE_T)(sizeof(UINT64) * 16 * slot), (SIZE_T)(sizeof(UINT64) * (16 * slot + 16)) };
                 if (SUCCEEDED(passReadback->Map(0, &pr, &q)) && q) {
-                    const UINT64* pt = reinterpret_cast<const UINT64*>(static_cast<const char*>(q) + sizeof(UINT64) * 8 * slot);
+                    const UINT64* pt = reinterpret_cast<const UINT64*>(static_cast<const char*>(q) + sizeof(UINT64) * 16 * slot);
                     for (int i = 0; i < 4; ++i) if (pt[i + 1] >= pt[i] && pt[i] != 0) lastPassMs[i] = (float)((double)(pt[i + 1] - pt[i]) * 1000.0 / (double)tsFreq);
-                    starlight_diag::evlog("gpu",passFrameId[slot],lastPassMs[0],lastPassMs[1]);starlight_diag::evlog("gpu2",passFrameId[slot],lastPassMs[2],lastPassMs[3]);if(pt[5]>=pt[0]&&pt[6]>=pt[5]&&pt[1]>=pt[6]&&pt[5]&&pt[6])starlight_diag::evlog("gpu3",double(pt[5]-pt[0])*1000.0/double(tsFreq),double(pt[6]-pt[5])*1000.0/double(tsFreq),double(pt[1]-pt[6])*1000.0/double(tsFreq));{static UINT64 previousStart=0;static UINT64 previousEnd=0;if(starlight_diag::events_enabled()&&pt[0]&&pt[4]>=pt[0]){starlight_diag::evlog("gpuT",previousStart?double(pt[0]-previousStart)*1000.0/double(tsFreq):0,double(pt[4]-pt[0])*1000.0/double(tsFreq),previousEnd&&pt[0]>=previousEnd?double(pt[0]-previousEnd)*1000.0/double(tsFreq):-1);previousStart=pt[0];previousEnd=pt[4];}}
+                    if(pt[1]&&pt[7]&&pt[8]&&pt[9]&&pt[10]&&pt[2]&&pt[1]<=pt[7]&&pt[7]<=pt[8]&&pt[8]<=pt[9]&&pt[9]<=pt[10]&&pt[10]<=pt[2]){const double toMs=1000.0/double(tsFreq);starlight_diag::evlog("gpu4",double(pt[7]-pt[1])*toMs,double(pt[8]-pt[7])*toMs,double(pt[9]-pt[8])*toMs);starlight_diag::evlog("gpu5",double(pt[10]-pt[9])*toMs,double(pt[2]-pt[10])*toMs,0);}starlight_diag::evlog("gpu",passFrameId[slot],lastPassMs[0],lastPassMs[1]);starlight_diag::evlog("gpu2",passFrameId[slot],lastPassMs[2],lastPassMs[3]);if(pt[5]>=pt[0]&&pt[6]>=pt[5]&&pt[1]>=pt[6]&&pt[5]&&pt[6])starlight_diag::evlog("gpu3",double(pt[5]-pt[0])*1000.0/double(tsFreq),double(pt[6]-pt[5])*1000.0/double(tsFreq),double(pt[1]-pt[6])*1000.0/double(tsFreq));{static UINT64 previousStart=0;static UINT64 previousEnd=0;if(starlight_diag::events_enabled()&&pt[0]&&pt[4]>=pt[0]){starlight_diag::evlog("gpuT",previousStart?double(pt[0]-previousStart)*1000.0/double(tsFreq):0,double(pt[4]-pt[0])*1000.0/double(tsFreq),previousEnd&&pt[0]>=previousEnd?double(pt[0]-previousEnd)*1000.0/double(tsFreq):-1);previousStart=pt[0];previousEnd=pt[4];}}
                     D3D12_RANGE wr{ 0, 0 }; passReadback->Unmap(0, &wr);
                 }
                 passFrameId[slot]=frameIndex;gpuMark(0);
@@ -2142,7 +2142,7 @@ struct RenderDevice {
         if (!auditOffscreen) ups->beforePresent(fi);
         if (tsHeap) {   // GPU-work end + resolve this slot's pair to the readback buffer
             cmd->EndQuery(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot + 1);
-            if (passHeap) { gpuMark(4); cmd->ResolveQueryData(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 8 * slot, 8, passReadback.Get(), sizeof(UINT64) * 8 * slot); }
+            if (passHeap) { gpuMark(4); cmd->ResolveQueryData(passHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 16 * slot, 16, passReadback.Get(), sizeof(UINT64) * 16 * slot); }
             cmd->ResolveQueryData(tsHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2 * slot, 2, tsReadback.Get(), sizeof(UINT64) * 2 * slot);
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
