@@ -220,6 +220,79 @@
     "editor/native/viewport.cpp sl_destroy steps",
     "tools/checks/device_fault_checks.inl"
    ]
+  },
+  {
+   "id": "CC-10",
+   "title": "The scene-preparation stage always joins its worker, and completion is separate from progress",
+   "subsystem": "scene preparation (editor/cpp/scene_preparation.hpp run_pumped_stage)",
+   "class": "correctness",
+   "originalFailure": "An exception from the message pump, loading screen or observer destroyed a joinable std::thread and ended the process; and the loop stopped pumping as soon as the work first reported full progress, leaving the window unserved while post-work ran.",
+   "fixCommits": [
+    "40065fa"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "CC-10:",
+     "minChecks": 7
+    }
+   ],
+   "testStrength": "Strong for the runner itself: with the old exit rule the keeps-being-served check fails (verified by mutation). The throwing-display case is tested through the runner, not through a full prepare_scene with a real loading screen. Cooperative cancellation of the worker is not added; the post-work duration in a real scene is not measured.",
+   "investigate": [
+    "editor/cpp/adventure.hpp early fraction=1.0 at the end of prepare_geometry",
+    "editor/cpp/scene_preparation.hpp fracture and upload stages"
+   ]
+  },
+  {
+   "id": "CC-04",
+   "title": "A scene that names one object id twice is refused",
+   "subsystem": "scene validation (editor/cpp/scene.cpp SceneData::validate)",
+   "class": "correctness",
+   "originalFailure": "Duplicate Character ids passed validation although caches, runtime maps and commands key by id; only command-time lookup rejected them.",
+   "fixCommits": [
+    "abcb940"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "CC-04:",
+     "minChecks": 5
+    }
+   ],
+   "testStrength": "Moderate: validate, encode and decode all refuse a repeated id and the full suite still accepts every scene it builds; the 4 shipped scenes have no duplicates. The count, route-length and identifier-length caps from the same audit item are NOT done: they need agreed limits that keep all authored scenes valid.",
+   "investigate": [
+    "editor/cpp/scene.cpp object count, Route length and Id length limits",
+    "key card adapter paths"
+   ]
+  },
+  {
+   "id": "S3",
+   "title": "Each object's geometry is pinned before it is warmed so eviction cannot remove it in between",
+   "subsystem": "object cache and scene preparation (editor/cpp/adventure.hpp prepare_geometry, object_cache.hpp)",
+   "class": "correctness",
+   "originalFailure": "Preparation warmed an object's geometry and pinned it afterwards; another preparation thread's insert could evict it in between, so it was rebuilt during play (a late build).",
+   "fixCommits": [
+    "8d65e17",
+    "0283f33"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "S3:",
+     "minChecks": 2
+    }
+   ],
+   "testStrength": "Strong: under a one-byte budget the old order rebuilt 105 of 112 objects, the current order none (verified by reverting the order). Covers the geometry pin race on the real preparation threads; the bounds-entry pin and tree-memory budget are not separately exercised.",
+   "investigate": [
+    "editor/cpp/object_cache.hpp bounds pins under instance eviction",
+    "tree bytes added after pin"
+   ]
   }
  ]
 }
