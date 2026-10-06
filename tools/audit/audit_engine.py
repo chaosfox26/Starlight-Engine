@@ -48,14 +48,22 @@ def execute(command, directory, log, timeout, progress):
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         except OSError as error:
             return {'outcome': 'unavailable', 'error': str(error), 'command': command}
-        while process.poll() is None:
-            progress(round(time.monotonic()-start))
-            if time.monotonic()-start > timeout:
-                # Kill only this coordinator-owned process tree.
+        try:
+            while process.poll() is None:
+                progress(round(time.monotonic()-start))
+                if time.monotonic()-start > timeout:
+                    # Kill only this coordinator-owned process tree.
+                    subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True)
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        return {'outcome': 'timeout', 'command': command, 'timeoutSeconds': timeout, 'error': 'The process did not exit within 15 seconds of being killed'}
+                    return {'outcome': 'timeout', 'command': command, 'timeoutSeconds': timeout}
+                time.sleep(.5)
+        finally:
+            # An exception from progress() must not leave the child running.
+            if process.poll() is None:
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True)
-                process.wait(timeout=15)
-                return {'outcome': 'timeout', 'command': command, 'timeoutSeconds': timeout}
-            time.sleep(.5)
     return {'outcome': 'pass' if process.returncode == 0 else 'fail', 'exitCode': process.returncode,
             'command': command, 'seconds': time.monotonic()-start}
 
@@ -107,7 +115,9 @@ def collect_findings(directory):
         if path.name not in ('result.json','session-results.json','audit-verdict.json','render-matrix.json','native-pe.json'):
             continue
         try:
-            if path.stat().st_size > 2*1024*1024: continue
+            if path.stat().st_size > 2*1024*1024:
+                findings.append({'file':str(path),'detail':'Too large to read (over 2 MiB); its result was not checked'})
+                continue
             data = json.loads(path.read_text(encoding='utf-8'))
             rows = data if isinstance(data,list) else [data]
             for row in rows:
