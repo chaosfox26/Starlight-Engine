@@ -340,6 +340,30 @@
    "investigate": [
     "deep/Physics/PhysicsWorld.cpp accumulator growth when frames stay slower than 200 ms"
    ]
+  },
+  {
+   "id": "ED-10",
+   "title": "The editor's disk-hash bookkeeping after a save no longer depends on re-reading the file",
+   "subsystem": "scene save (editor/cpp/platform.cpp save_scene, editor_main.cpp)",
+   "class": "correctness",
+   "originalFailure": "After saving, the editor re-read the file to compute its hash; a failed re-read (lock, antivirus) left the hash stale so the next save failed with a false 'File changed; reopen before saving'.",
+   "fixCommits": [
+    "b603ff3"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "ED-10:",
+     "minChecks": 2
+    }
+   ],
+   "testStrength": "Moderate: save_scene returns the exact hash, and a whole-file lock shows the old re-read fails; the editor wiring is a one-line use of the returned hash and is not exercised by a test. The load side (hash of a second read after open) is NOT fixed.",
+   "investigate": [
+    "editor/cpp/editor_main.cpp Open and startup --scene hash_file calls",
+    "load_scene returning the hash of the bytes it decoded"
+   ]
   }
  ]
 }
