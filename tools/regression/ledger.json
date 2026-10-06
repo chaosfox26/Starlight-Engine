@@ -155,7 +155,7 @@
    "class": "correctness",
    "originalFailure": "A terrain tile cook that throws on its std::async worker ends the process, because the physics module is compiled with _HAS_EXCEPTIONS=0 (Jolt's setting); the audit expected a permanently not-ready tile. A cook failure was never reported or retried.",
    "fixCommits": [
-    "PENDING"
+    "d87fb6e"
    ],
    "tier": "build",
    "tests": [
