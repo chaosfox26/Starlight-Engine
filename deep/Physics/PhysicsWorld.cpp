@@ -282,6 +282,7 @@ public:
   for(const auto& v:vertices){if(!std::isfinite(v.GetX())||!std::isfinite(v.GetY())||!std::isfinite(v.GetZ())){finite=false;break;}low=Vec3::sMin(low,v);high=Vec3::sMax(high,v);}
   out.diagonal=finite?(high-low).Length():0.f;
   ConvexHullShapeSettings settings(vertices);settings.mDensity=density;auto result=settings.Create();
+  std::string overBound;
   if(!result.HasError()){
    ShapeRefC shape=result.Get();
    out.hullPoints=int(static_cast<const ConvexHullShape*>(shape.GetPtr())->GetNumPoints());
@@ -289,14 +290,14 @@ public:
     // The library stops adding vertices at its limit and still reports success; the hull is then the farthest-point reduction of the real one.
     ConvexHullBuilder probe(vertices);const char* probeError=nullptr;
     if(probe.Initialize(ConvexHullShape::cMaxPointsInHull,settings.mHullTolerance,probeError)==ConvexHullBuilder::EResult::MaxVerticesReached){
-     out.kind=2;out.deviation=HullDeviation(vertices,vertices,probe);counters.NoteReduced(out.deviation,out.diagonal,out.deviation<=ReducedHullBound(out.diagonal));
-     return shape;
+     out.kind=2;out.deviation=HullDeviation(vertices,vertices,probe);const bool within=out.deviation<=ReducedHullBound(out.diagonal);
+     if(within){counters.NoteReduced(out.deviation,out.diagonal,true);return shape;}
+     overBound="the first reduced hull lies "+std::to_string(out.deviation)+" from the farthest point (limit "+std::to_string(ReducedHullBound(out.diagonal))+")";out.kind=0;out.deviation=0;
     }
    }
-   ++counters.exact;
-   return shape;
+   if(overBound.empty()){++counters.exact;return shape;}
   }
-  std::string reason=result.GetError().c_str();
+  std::string reason=result.HasError()?std::string(result.GetError().c_str()):overBound;
   // Preserve successful authored collision hulls. A failed coarse hull can
   // omit an exterior face; retry the entire same point set at finer accuracy.
   // Reject an exhausted vertex budget instead of silently accepting its error.
