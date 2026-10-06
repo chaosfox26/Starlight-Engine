@@ -50,13 +50,15 @@ def problems(d):
         return ['the results file is not a JSON object']
     if d.get('schema') != SCHEMA:
         found.append('schema is %s, expected %s' % (data(d.get('schema'), 60), SCHEMA))
-    for key, kind in (('buildId', str), ('createdUtc', str), ('identity', dict), ('suite', dict), ('entries', list)):
+    for key, kind in (('buildId', str), ('runId', str), ('createdUtc', str), ('identity', dict), ('suite', dict), ('entries', list)):
         if not isinstance(d.get(key), kind):
             found.append('field %s is missing or has the wrong type' % key)
     if found:
         return found
     if not d['buildId'].strip():
         found.append('buildId is empty')
+    if not re.match(r'^[A-Za-z0-9+._-]+$', d['runId']):
+        found.append('runId is empty or has unsafe characters')
     try:
         datetime.datetime.strptime(d['createdUtc'], '%Y-%m-%dT%H:%M:%SZ')
     except ValueError:
@@ -148,16 +150,20 @@ def is_count(value):
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def confined(results_dir, relative, top):
-    """True when relative is a plain relative path that stays inside results_dir/top."""
+def confined(results_dir, relative, top, run_id=None):
+    """The real path of relative when it is a plain relative path that stays inside results_dir/top[/run_id] after resolving links and junctions, else None."""
     if not isinstance(relative, str) or not relative or os.path.isabs(relative) or '\\' in relative or relative.startswith('/'):
         return None
     parts = relative.split('/')
-    if any(part in ('', '.', '..') for part in parts) or parts[0] != top:
+    if any(part in ('', '.', '..') for part in parts) or parts[0] != top or (run_id is not None and (len(parts) < 3 or parts[1] != run_id)):
         return None
-    full = os.path.abspath(os.path.join(results_dir, *parts))
-    root = os.path.abspath(os.path.join(results_dir, top))
-    return full if os.path.commonpath([full, root]) == root else None
+    anchor = os.path.realpath(results_dir)
+    full = os.path.realpath(os.path.join(anchor, *parts))
+    root = os.path.join(anchor, top) if run_id is None else os.path.join(anchor, top, run_id)
+    try:
+        return full if os.path.commonpath([full, root]) == root else None
+    except ValueError:
+        return None
 
 
 def file_sha256(path):
@@ -169,8 +175,27 @@ def file_sha256(path):
     return h.hexdigest()
 
 
-def packet_problems(packet, ref, report, entry_id):
+def expected_kind(entry, suite):
+    """The producer's mapping, recomputed from the recorded state so a packet cannot contradict the report."""
+    state = entry['state']
+    if state == 'SKIPPED':
+        return 'missing-executable', 'ENVIRONMENTAL'
+    if state == 'NOT-CHECKED':
+        return 'not-reached', 'INCOMPLETE'
+    if state == 'COVERAGE-ERROR':
+        return 'coverage', 'INCOMPLETE'
+    if state == 'REGRESSED':
+        if suite.get('completed'):
+            return 'check-failed', 'DEFECT-CONFIRMED'
+        if suite.get('timedOut'):
+            return 'timeout-or-kill', 'INCOMPLETE'
+        return 'crash', 'DEFECT-CONFIRMED'
+    return 'unknown', 'INCOMPLETE'
+
+
+def packet_problems(packet, ref, report, entry):
     found = []
+    entry_id = entry['id']
     if not isinstance(packet, dict):
         return ['not a JSON object']
     if packet.get('schema') != PACKET_SCHEMA:
@@ -184,13 +209,18 @@ def packet_problems(packet, ref, report, entry_id):
         found.append('unknown class')
     if packet.get('buildIdentity') != report.get('identity'):
         found.append('buildIdentity does not equal the full identity of the tested build')
-    if isinstance(packet.get('fingerprint'), str) and packet.get('eventId') != '%s|%s|%s' % (packet['fingerprint'], report.get('buildId'), report.get('createdUtc')):
-        found.append('eventId is not fingerprint|buildId|recorded time of this report')
+    if packet.get('runId') != report.get('runId'):
+        found.append('runId does not match the report run')
+    if isinstance(packet.get('fingerprint'), str) and packet.get('eventId') != '%s|%s|%s|%s' % (packet['fingerprint'], report.get('buildId'), report.get('runId'), report.get('createdUtc')):
+        found.append('eventId is not fingerprint|buildId|runId|recorded time of this report')
     if packet.get('eventId') != ref.get('eventId'):
         found.append('eventId does not match the report reference')
     checks = packet.get('failingChecks')
+    relevant = sorted(t['token'] for t in entry.get('tests', []) if t.get('state') != 'VERIFIED' and t.get('token'))
     if not isinstance(checks, list) or not all(isinstance(c, str) and c for c in checks):
         found.append('failingChecks is not a list of text')
+    elif checks != relevant:
+        found.append('failingChecks do not match the non-verified tests the report recorded for this entry')
     repro = packet.get('reproduction')
     if not isinstance(repro, dict) or not isinstance(repro.get('checkIds'), list) or not all(isinstance(c, str) for c in repro.get('checkIds', [])) \
             or not isinstance(repro.get('runner'), str) or not isinstance(repro.get('args'), list) or not all(isinstance(a, str) for a in repro.get('args', [])) \
@@ -198,6 +228,17 @@ def packet_problems(packet, ref, report, entry_id):
         found.append('reproduction is malformed')
     elif isinstance(checks, list) and repro['checkIds'] != checks:
         found.append('reproduction check ids differ from failingChecks')
+    elif repro['attribution'] != ('known' if relevant else 'unknown'):
+        found.append('reproduction attribution contradicts the report')
+    kind, cls = expected_kind(entry, report.get('suite', {}))
+    if packet.get('failureKind') != kind or packet.get('class') != cls:
+        found.append('class/failureKind contradict the report (expected %s / %s)' % (cls, kind))
+    expected_subsystem = entry.get('subsystem') or entry.get('title', '')
+    if packet.get('subsystem') != expected_subsystem:
+        found.append('subsystem does not match the report entry')
+    family = 'core-check:%s|%s|%s|%s' % (entry_id, ','.join(relevant) or 'attribution-unknown', kind, entry.get('subsystem') or entry.get('class', 'unknown'))
+    if packet.get('fingerprint') != family:
+        found.append('fingerprint is not the failure family derived from the report')
     evidence = packet.get('evidence')
     if not isinstance(evidence, dict) or not isinstance(evidence.get('files'), list) or not (evidence.get('evidenceDigest') is None or isinstance(evidence.get('evidenceDigest'), str)):
         found.append('evidence is malformed')
@@ -217,18 +258,20 @@ def packet_problems(packet, ref, report, entry_id):
     return found
 
 
-def evidence_status(packet, results_dir):
-    """verified, or a short reason. Only reads files confined under runs/."""
+def evidence_status(packet, results_dir, run_id):
+    """verified, or a short reason. Only reads files that resolve inside runs/<this run>/."""
     files = packet['evidence']['files']
     if not files:
         return 'no evidence files recorded'
     import hashlib
     for item in files:
-        full = confined(results_dir, item['path'], 'runs')
+        full = confined(results_dir, item['path'], 'runs', run_id)
         if full is None:
-            return 'evidence path is not confined to the run folders'
+            return 'evidence path is not confined to this run folder'
         if not os.path.isfile(full):
             return 'evidence file missing: %s' % clean(item['path'], 80)
+        if os.path.getsize(full) != item['bytes']:
+            return 'evidence file size differs from the record: %s' % clean(item['path'], 80)
         if file_sha256(full) != item['sha256']:
             return 'evidence file changed: %s' % clean(item['path'], 80)
     digest = hashlib.sha256()
@@ -240,7 +283,7 @@ def evidence_status(packet, results_dir):
 
 def packet_lines(d, results_dir):
     lines = []
-    unverified = [e['id'] for e in d['entries'] if e['state'] != 'VERIFIED']
+    unverified = [e for e in d['entries'] if e['state'] != 'VERIFIED']
     refs = d.get('packets')
     if not unverified and not refs:
         return lines
@@ -250,14 +293,18 @@ def packet_lines(d, results_dir):
         for ref in refs:
             if isinstance(ref, dict) and isinstance(ref.get('failureId'), str):
                 by_entry.setdefault(ref['failureId'], []).append(ref)
-    for entry_id in unverified:
+    for entry in unverified:
+        entry_id = entry['id']
         label = '  %-14s' % clean(entry_id, 40)
         candidates = by_entry.get(entry_id, [])
         if len(candidates) != 1:
             lines.append(label + ' UNCOVERED: %d packet references in the report (expected exactly 1)' % len(candidates))
             continue
         ref = candidates[0]
-        full = confined(results_dir, ref.get('path'), 'packets')
+        if ref.get('path') != 'packets/%s/%s.json' % (d['runId'], entry_id):
+            lines.append(label + ' PACKET INVALID: the reference path is not packets/<this run>/<failure>.json')
+            continue
+        full = confined(results_dir, ref.get('path'), 'packets', d['runId'])
         if full is None or not isinstance(ref.get('sha256'), str) or not isinstance(ref.get('eventId'), str):
             lines.append(label + ' PACKET INVALID: the report reference is malformed or not confined to packets/')
             continue
@@ -271,13 +318,13 @@ def packet_lines(d, results_dir):
         if error:
             lines.append(label + ' PACKET INVALID: %s' % error)
             continue
-        found = packet_problems(packet, ref, d, entry_id)
+        found = packet_problems(packet, ref, d, entry)
         if found:
             lines.append(label + ' PACKET INVALID: ' + '; '.join(found[:4]))
             continue
-        status = packet['reproducedCleanCount']
         lines.append(label + ' class %s | kind %s | %s | clean reproductions %d of %d | repair eligible: %s | evidence: %s' % (
-            clean(packet['class'], 20), clean(packet['failureKind'], 24), clean(packet['reproductionStatus'], 60), status, CLEAN_NEEDED, packet['repairEligible'], evidence_status(packet, results_dir)))
+            clean(packet['class'], 20), clean(packet['failureKind'], 24), clean(packet['reproductionStatus'], 60), packet['reproducedCleanCount'], CLEAN_NEEDED,
+            packet['repairEligible'], evidence_status(packet, results_dir, d['runId'])))
         lines.append('      failing checks: %s | %s' % (data(', '.join(packet['failingChecks']) or 'attribution unknown', 160), data(packet['observed'], 200)))
     return lines
 

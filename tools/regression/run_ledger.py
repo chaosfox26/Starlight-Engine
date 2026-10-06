@@ -9,7 +9,7 @@ checks than the entry requires), SKIPPED (the runner could not start the suite).
 Exit code: 0 all VERIFIED, 1 any REGRESSED or COVERAGE-ERROR, 2 anything else not verified.
 Usage: run_ledger.py --build-dir <folder with Starlight.NativeCoreChecks.exe>        |        run_ledger.py --self-test
 """
-import argparse, hashlib, json, os, subprocess, sys, time
+import argparse, hashlib, json, os, subprocess, sys, time, uuid
 
 def sha256(path):
     h = hashlib.sha256()
@@ -140,8 +140,8 @@ def make_packets(entries, report, run_folder, results_dir, evidence_names=('resu
             'subsystem': e.get('subsystem') or e.get('title', ''),
             'buildIdentity': report['identity'],
             'fingerprint': family,
-            'eventId': '%s|%s|%s' % (family, report['buildId'], report['createdUtc']),
-            'runId': os.path.basename(run_folder),
+            'eventId': '%s|%s|%s|%s' % (family, report['buildId'], report['runId'], report['createdUtc']),
+            'runId': report['runId'],
             'failingChecks': failing,
             'expected': 'Every check carrying the failing token(s) passes, and the entry has all the checks it requires.',
             'observed': '%s: %s' % (e['state'], reasons),
@@ -158,7 +158,7 @@ def make_packets(entries, report, run_folder, results_dir, evidence_names=('resu
 def write_packets(packets, report, run_folder, results_dir):
     """Immutable per-run files; returns the references that go into the report."""
     refs = []
-    folder = os.path.join(results_dir, 'packets', os.path.basename(run_folder))
+    folder = os.path.join(results_dir, 'packets', report['runId'])
     os.makedirs(folder, exist_ok=True)
     for packet in packets:
         path = os.path.join(folder, packet['failureId'] + '.json')
@@ -195,7 +195,7 @@ def self_test():
     notes = transitions_for([{'id': 'X', 'state': 'REGRESSED', 'tests': [{'reason': 'r'}]}], {'X': 'VERIFIED'})
     print('  %s new regression notice: %s' % ('ok ' if notes and notes[0].startswith('NEW REGRESSION') else 'BAD', notes))
     bad += not (notes and notes[0].startswith('NEW REGRESSION'))
-    fake_report = {'suite': {}, 'identity': {'gitHead': 'a' * 40, 'dirtyTrackedFiles': 0, 'binaries': {}}, 'buildId': 'b-1', 'createdUtc': '2026-01-01T00:00:00Z'}
+    fake_report = {'suite': {}, 'identity': {'gitHead': 'a' * 40, 'dirtyTrackedFiles': 0, 'binaries': {}}, 'buildId': 'b-1', 'runId': 'b-1-x', 'createdUtc': '2026-01-01T00:00:00Z'}
     fake_entries = [{'id': 'V', 'title': 't', 'class': 'correctness', 'state': 'VERIFIED', 'tests': [{'token': 'V:', 'reason': 'r'}]},
                     {'id': 'R', 'title': 't', 'class': 'correctness', 'state': 'REGRESSED', 'tests': [{'token': 'R:', 'reason': 'boom'}]},
                     {'id': 'N', 'title': 't', 'class': 'correctness', 'state': 'NOT-CHECKED', 'tests': [{'token': 'N:', 'reason': 'x'}]},
@@ -232,6 +232,12 @@ def self_test():
         ok = len(refs) == 3 and again_blocked and all(x['path'].startswith('packets/b-1-x/') for x in refs)
         print('  %s packet files are immutable and referenced by path: %s' % ('ok ' if ok else 'BAD', again_blocked))
         bad += not ok
+        other = dict(fake_report, runId='b-1-y')
+        e1 = [p for p in make_packets(fake_entries, fake_report, run, results) if p['failureId'] == 'R'][0]['eventId']
+        e2 = [p for p in make_packets(fake_entries, other, run, results) if p['failureId'] == 'R'][0]['eventId']
+        ok = e1 != e2
+        print('  %s runs with the same build and time still get distinct event ids' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -265,8 +271,9 @@ def main():
             identity['binaries'][name] = {'sha256': sha256(p), 'bytes': os.path.getsize(p)}
     build_id = (identity['gitHead'][:12] or 'nogit') + ('+dirty' if identity['dirtyTrackedFiles'] else '') + '-' + identity['binaries'].get('Starlight.NativeCoreChecks.exe', {}).get('sha256', 'nobinary')[:10]
 
-    run_folder = os.path.join(args.results, 'runs', build_id + '-' + time.strftime('%Y%m%d-%H%M%S'))
-    os.makedirs(run_folder, exist_ok=True)
+    run_id = build_id + '-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:12]
+    run_folder = os.path.join(args.results, 'runs', run_id)
+    os.makedirs(run_folder, exist_ok=False)
     result_json = os.path.join(run_folder, 'result.json')
     progress_path = os.path.join(run_folder, 'progress.log')
     suite = {'started': False, 'exitCode': None, 'timedOut': False, 'completed': False, 'success': None, 'error': None, 'checks': []}
@@ -304,7 +311,7 @@ def main():
         entries.append({'id': entry['id'], 'title': entry['title'], 'class': entry['class'], 'subsystem': entry.get('subsystem'), 'state': state, 'tests': states,
                         'testStrength': entry.get('testStrength'), 'investigate': entry.get('investigate', [])})
 
-    report = {'schema': 'starlight-ledger-results-1', 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'buildId': build_id,
+    report = {'schema': 'starlight-ledger-results-1', 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'buildId': build_id, 'runId': run_id,
               'identity': identity, 'suite': {k: v for k, v in suite.items() if k != 'checks'}, 'suiteCheckCount': len(suite['checks']), 'entries': entries}
 
     latest_path = os.path.join(args.results, 'latest.json')

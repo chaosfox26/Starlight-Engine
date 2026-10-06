@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 READER = os.path.join(HERE, 'scripts', 'read_results.py')
 CORE = 'Starlight.NativeCoreChecks.exe'
 GOOD = {
-    'schema': 'starlight-ledger-results-1', 'createdUtc': '2026-01-01T00:00:00Z', 'buildId': 'abc+dirty-def',
+    'schema': 'starlight-ledger-results-1', 'createdUtc': '2026-01-01T00:00:00Z', 'buildId': 'abc+dirty-def', 'runId': 'abc-dirty-def-r1',
     'identity': {'gitHead': 'a' * 40, 'dirtyTrackedFiles': 0, 'binaries': {CORE: {'sha256': 'b' * 64, 'bytes': 100}}},
     'suite': {'started': True, 'exitCode': 0, 'timedOut': False, 'completed': True, 'success': True, 'error': None}, 'suiteCheckCount': 3,
     'entries': [{'id': 'E1', 'state': 'VERIFIED', 'tests': [{'token': 'E1:', 'state': 'VERIFIED', 'reason': 'ok', 'matched': 1}], 'testStrength': 'WEAK: example'}],
@@ -65,6 +65,8 @@ cases = [
     ('identity empty object', variant(lambda d: d.update(identity={})), 2, 'INVALID'),
     ('suite ran without core binary identity', variant(lambda d: d['identity'].update(binaries={})), 2, 'INVALID'),
     ('binary without valid sha256', variant(lambda d: d['identity']['binaries'][CORE].update(sha256='nope')), 2, 'INVALID'),
+    ('runId missing', variant(lambda d: d.pop('runId')), 2, 'INVALID'),
+    ('runId with unsafe characters', variant(lambda d: d.update(runId='../x')), 2, 'INVALID'),
     ('empty buildId', variant(lambda d: d.update(buildId=' ')), 2, 'INVALID'),
     ('bad date', variant(lambda d: d.update(createdUtc='yesterday')), 2, 'INVALID'),
     ('VERIFIED with tests=[]', variant(lambda d: d['entries'][0].update(tests=[])), 2, 'no check evidence'),
