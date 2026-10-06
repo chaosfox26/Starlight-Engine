@@ -35,6 +35,7 @@ using namespace starlight::editor;
 #include "scene_validation_checks.inl"
 #include "rain_checks.inl"
 #include "object_cache_checks.inl"
+#include "cache_pin_checks.inl"
 #include "key_card_checks.inl"
 #include "graphics_runtime_checks.inl"
 #include "club_schema_checks.inl"
@@ -84,6 +85,7 @@ static int checks_main(int argc, char **argv) {
         device_fault_checks(require);
         scene_preparation_checks(require);
         scene_validation_checks(require);
+        cache_pin_checks(require);
         rain_checks(require,folder);
         object_cache_checks(require,folder);
         key_card_checks(require,folder);

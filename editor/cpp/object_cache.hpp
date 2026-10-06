@@ -254,6 +254,8 @@ class ObjectCache {
     // Pins keep a scene's prepared geometry (mesh, ray tree, bounds entries) out of eviction until the owner releases them, so memory pressure from
     // another scene can never push a prepared resource out and force a rebuild during play.
     PinOwner new_pin_owner(){return ++pinOwners_;}
+    // Test hook: a tiny geometry budget forces eviction on every insert so pin/warm interleavings can be exercised. 0 restores the default budget.
+    void set_geometry_limit_for_test(size_t bytes){geometryLimit_.store(bytes?bytes:kMaxGeometryBytes);}
     void pin(PinOwner owner,const Character& c,bool withBounds){
         const uint64_t key=geometry_key(c);
         std::unique_lock lock(mutex_);
@@ -282,7 +284,7 @@ class ObjectCache {
         s.rayTreeBuilds=treeBuilds_.load();s.lateGeometryBuilds=lateGeometry_.load();s.lateRayTreeBuilds=lateTrees_.load();
         for(const auto& [key,geometry]:geometries_){const size_t trees=geometry->treeBytes.load();if(trees){++s.rayTrees;s.rayTreeBytes+=trees;}}
         for(const auto& [key,count]:geometryPins_)if(auto found=geometries_.find(key);found!=geometries_.end()){++s.pinnedGeometries;s.pinnedBytes+=found->second->bytes;}
-        s.overBudget=geometryBytes_>kMaxGeometryBytes;
+        s.overBudget=geometryBytes_>geometryLimit_.load();
         return s;
     }
     void clear(){if(starlight_diag::events_enabled())geo_profile().clears.fetch_add(1,std::memory_order_relaxed);std::unique_lock lock(mutex_);instances_.clear();geometries_.clear();geometryBytes_=0;geometryPins_.clear();instancePins_.clear();ownerGeometry_.clear();ownerInstances_.clear();}
@@ -291,6 +293,7 @@ class ObjectCache {
     struct Instance {uint64_t geometry=0,transform=0;Bounds bounds{};std::atomic<uint64_t> used{0};};
     static constexpr size_t kMaxInstances=65536;
     static constexpr size_t kMaxGeometryBytes=768ull<<20;
+    std::atomic<size_t> geometryLimit_{kMaxGeometryBytes};
     // Convex-hull vertices of a geometry's mesh, or null when the full vertex list must be used. Built once per geometry, on its fourth measurement (a piece
     // measured once or twice never pays for it); when the hull cannot be built and verified every vertex is used, as before.
     const std::vector<Vec3>* hull_points(const Geometry& g){
@@ -343,7 +346,7 @@ class ObjectCache {
         if(auto found=geometries_.find(key);found!=geometries_.end()&&found->second.get()==geometry.get()){
             const size_t trees=geometry->treeBytes.load(std::memory_order_relaxed);
             geometry->bytes+=trees;geometryBytes_+=trees;
-            if(geometryBytes_>kMaxGeometryBytes)evict_geometries(key);
+            if(geometryBytes_>geometryLimit_.load())evict_geometries(key);
         }
         return true;
     }
@@ -384,7 +387,7 @@ class ObjectCache {
         if(!inserted){if(gprof)geo_profile().lostRace.fetch_add(1,std::memory_order_relaxed);return slot->second;} // another thread built the same geometry first
         if(gprof){geo_profile().inserted.fetch_add(1,std::memory_order_relaxed);geo_profile().builtBytes.fetch_add(built->bytes,std::memory_order_relaxed);}
         built->used.store(++clock_,std::memory_order_relaxed);geometryBytes_+=built->bytes;
-        if(geometryBytes_>kMaxGeometryBytes)evict_geometries(key);
+        if(geometryBytes_>geometryLimit_.load())evict_geometries(key);
         return built;
     }
     // Drop the least recently used eighth of the instances (never the one just stored, never a pinned one).
@@ -406,7 +409,7 @@ class ObjectCache {
         for(const auto& [key,geometry]:geometries_)if(key!=keep&&!geometryPins_.contains(key))order.emplace_back(geometry->used.load(std::memory_order_relaxed),key);
         if(order.empty())return;
         std::sort(order.begin(),order.end());
-        const size_t target=kMaxGeometryBytes/4*3;
+        const size_t target=geometryLimit_.load()/4*3;
         for(const auto& [used,key]:order){
             if(geometryBytes_<=target)break;
             auto found=geometries_.find(key);
