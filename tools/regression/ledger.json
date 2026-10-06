@@ -317,6 +317,29 @@
     "editor/cpp/editor_main.cpp diskHash handling (ED-10)",
     "hash_file still loads the whole file"
    ]
+  },
+  {
+   "id": "EL-05",
+   "title": "A failed physics update does not leave its time in the fixed-step accumulator",
+   "subsystem": "physics step (deep/Physics/PhysicsWorld.cpp Step)",
+   "class": "correctness",
+   "originalFailure": "A Jolt update error was thrown before the tick was subtracted from the accumulator, so the failed time stayed and the next call replayed it; a lasting capacity failure made the backlog grow on every call.",
+   "fixCommits": [
+    "5cb6e89"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "EL-05:",
+     "minChecks": 4
+    }
+   ],
+   "testStrength": "Strong for the error path: with an injected update failure the next step advances exactly one tick identical to a control world; with the reset removed that check fails (verified). The real Jolt capacity error was not produced. NOT covered: the accumulator limit for ordinary slow frames (owner decision) and the CharacterStep double advance (EL-13).",
+   "investigate": [
+    "deep/Physics/PhysicsWorld.cpp accumulator growth when frames stay slower than 200 ms"
+   ]
   }
  ]
 }

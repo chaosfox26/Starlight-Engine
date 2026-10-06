@@ -28,6 +28,7 @@
     {"checkId": "CC-10:", "command": "core-suite", "token": "CC-10:", "ledgerEntries": ["CC-10"]},
     {"checkId": "CC-04:", "command": "core-suite", "token": "CC-04:", "ledgerEntries": ["CC-04"]},
     {"checkId": "S3:", "command": "core-suite", "token": "S3:", "ledgerEntries": ["S3"]},
-    {"checkId": "ED-09:", "command": "core-suite", "token": "ED-09:", "ledgerEntries": ["ED-09"]}
+    {"checkId": "ED-09:", "command": "core-suite", "token": "ED-09:", "ledgerEntries": ["ED-09"]},
+    {"checkId": "EL-05:", "command": "core-suite", "token": "EL-05:", "ledgerEntries": ["EL-05"]}
   ]
 }
