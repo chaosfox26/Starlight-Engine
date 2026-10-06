@@ -787,6 +787,7 @@ struct RenderDevice {
     UINT   rtvSize = 0, w = 0, h = 0;
     UINT   frame = 0;
     UINT   instCursor = 0;
+    uint64_t instDropped = 0;   // draws refused because the per-frame constant buffer was full (cumulative; must stay 0)
     UINT64 fenceVal = 0;
     HANDLE fenceEvent = nullptr;
 
@@ -1711,7 +1712,7 @@ struct RenderDevice {
 
     // Two-step drawing for the depth pre-pass: stage the per-draw constants once, then issue the same draw in both passes.
     UINT stageMesh(const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) return UINT_MAX;
+        if (instCursor >= kMaxInstances) { ++instDropped; return UINT_MAX; }
         UINT inst = instCursor++;
         writeInstance(inst, model, color, emissive, rough, metal, false);
         return inst;
@@ -1725,7 +1726,7 @@ struct RenderDevice {
     }
 
     void drawMesh(const GpuMesh& m, const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) return;
+        if (instCursor >= kMaxInstances) { ++instDropped; return; }
         UINT inst = instCursor++;
         writeInstance(inst, model, color, emissive, rough, metal, false);
         cmd->SetGraphicsRootConstantBufferView(0, cbSlotGpu() + (UINT64)inst * kCbStride);
@@ -1987,11 +1988,11 @@ struct RenderDevice {
         snprintf(m6, sizeof(m6),
             "\"inflight\":%d,\"stalls\":%u,\"stallMs\":%.2f,\"models\":%s,\"joints\":%zu,\"clips\":%zu,\"textures\":%d,\"textureMB\":%.1f,"
             "\"texturesFromCache\":%d,\"texRes\":%u,\"modelLoadMs\":%.1f,\"textureLoadMs\":%.1f,\"skinned\":%u,\"charsWhy\":\"%s\","
-            "\"fur\":%s,\"furShells\":%u,\"furShellsNear\":%d,\"furShellsMid\":%d,\"instMax\":%u,\"instCap\":%u,\"skinCap\":%u,\"crowdParsed\":%d,\"draws\":%u,\"instEntries\":%u,\"culled\":%u,\"lod\":%u,\"instancingOn\":%s",
+            "\"fur\":%s,\"furShells\":%u,\"furShellsNear\":%d,\"furShellsMid\":%d,\"instMax\":%u,\"instDropped\":%llu,\"instCap\":%u,\"skinCap\":%u,\"crowdParsed\":%d,\"draws\":%u,\"instEntries\":%u,\"culled\":%u,\"lod\":%u,\"instancingOn\":%s",
             inflight, stallCount, stallMs, modelsJson.c_str(), joints, clips, texturesLoaded, (double)textureBytes / (1024.0 * 1024.0),
             texturesFromCache, texRes, modelLoadMs, textureLoadMs, skinnedDrawnLast, esc(charsWhy).c_str(),
             noFur ? "false" : "true", furShellsLast, STARLIGHT_FUR_SHELLSNEAR, STARLIGHT_FUR_SHELLSMID,
-            benchInstMax, kMaxInstances, kMaxSkinned, lastCrowd, drawCallLast, instEntriesLast, culledLast, lodDrawnLast, instancingOn ? "true" : "false");
+            benchInstMax, (unsigned long long)instDropped, kMaxInstances, kMaxSkinned, lastCrowd, drawCallLast, instEntriesLast, culledLast, lodDrawnLast, instancingOn ? "true" : "false");
         char buf[4608];
         snprintf(buf, sizeof(buf),
             "{\"instanceMemory\":\"%s\",\"upscaler\":\"%s\",\"requested\":\"%s\",\"reason\":\"%s\",\"version\":\"%s\",\"extra\":\"%s\","
