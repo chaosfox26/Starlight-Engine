@@ -195,7 +195,7 @@ Mesh object_mesh(const Character &c) {
 }
 // deltaOnly: write just the draws that change between updates (see render_scene_delta). The static scene
 // stays in cache->packet and is neither rebuilt nor copied into the outgoing bytes.
-static std::unordered_map<std::string,uint32_t>* partCountSink=nullptr; // set while the resident base is built
+static thread_local std::unordered_map<std::string,uint32_t>* partCountSink=nullptr; // set while the resident base is built
 static thread_local const SceneData* headerScene=nullptr;
 static thread_local const TerrainFlow* headerFlow=nullptr;
 static std::vector<uint8_t> render_scene_impl(bool deltaOnly, bool &deltaUsable, const SceneData &scene, const TerrainFlow *flow,
