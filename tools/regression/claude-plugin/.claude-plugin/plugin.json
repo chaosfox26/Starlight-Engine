@@ -1,0 +1,5 @@
+{
+  "name": "starlight-regression",
+  "version": "0.1.0",
+  "description": "Read-only view of the Starlight fix ledger: current states, recent transitions and failure packets. Stage 1: no hooks, no watcher, no repair, never runs the engine."
+}
