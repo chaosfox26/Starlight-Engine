@@ -123,6 +123,30 @@
     "deep/Physics/PhysicsWorld.cpp CheckPose, Add, slp_body_velocity, slp_character_remove, slp_character_platform, slp_character_actor",
     "tools/checks/physics_abi_checks.inl"
    ]
+  },
+  {
+   "id": "EL-08",
+   "title": "A rope that fails part-way leaves no half-built links",
+   "subsystem": "physics rope build (deep/Physics/rope_physics.inl AddCable)",
+   "class": "correctness",
+   "originalFailure": "AddCable pushed the cable before its links and constraints existed, so a later failure such as body capacity left unconstrained links in the world and the cable list, ticked every step.",
+   "fixCommits": [
+    "PENDING"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "EL-08:",
+     "minChecks": 4
+    }
+   ],
+   "testStrength": "Strong for body-capacity failure: with the old code the suite fails at the last EL-08 check (slots not given back); with the fix all four pass. Covers only the capacity failure path, not other throws inside the build.",
+   "investigate": [
+    "deep/Physics/rope_physics.inl AddCable try/catch rollback",
+    "tools/checks/physics_abi_checks.inl EL-08 block"
+   ]
   }
  ]
 }

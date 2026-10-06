@@ -9,6 +9,7 @@ __declspec(dllimport) void slp_character_remove(void *, uint32_t);
 __declspec(dllimport) void slp_character_platform(void *, uint32_t, float, float, float, float);
 __declspec(dllimport) void slp_character_actor(void *, uint32_t, float, float, float, float, float, float);
 __declspec(dllimport) int slp_terrain(void *, const float *);
+__declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, int, float);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -47,5 +48,16 @@ static void physics_abi_checks(const auto& require){
     slp_character_remove(world,after);
     require(std::string(slp_error()).find("no longer exists")!=std::string::npos,"EL-07: Removing the same body twice is refused the second time instead of reaching Jolt");
     require(add(true,1,5,0,1)!=refused,"EL-07: The world still accepts a valid body after a double remove");
+    // EL-08: a rope that fails part-way must not leave half-built links in the world.
+    std::vector<uint32_t> fillers;
+    for(int i=0;i<9000;++i){uint32_t id=slp_add(world,cube,8,faces,36,0,1,float(i)*.01f,-5,0,0,0,0,1);if(id==refused)break;fillers.push_back(id);}
+    require(fillers.size()>1000&&fillers.size()<9000,"EL-08: The test world is filled to its body capacity");
+    for(int i=0;i<4;++i){slp_character_remove(world,fillers.back());fillers.pop_back();}
+    uint32_t anchor=add(true,1,0,0,1);
+    require(anchor!=refused,"EL-08: One slot is left for the rope's source body");
+    const float settings[10]={0,1,0, 2,1,0, 0,0,0, 3};
+    require(slp_rope(world,anchor,UINT32_MAX,settings,8,.05f)==0&&std::string(slp_error()).find("capacity")!=std::string::npos,"EL-08: A rope that runs out of body slots part-way is refused with a capacity error");
+    int regained=0;for(int i=0;i<3;++i)if(slp_add(world,cube,8,faces,36,0,1,float(i)*.01f,-6,0,0,0,0,1)!=refused)++regained;
+    require(regained==3,"EL-08: The slots used by the failed rope's links are given back");
     slp_destroy(world);
 }

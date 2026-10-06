@@ -20,6 +20,7 @@
     {"checkId": "CUBE-BOUNDS:", "command": "core-suite", "token": "CUBE-BOUNDS:", "ledgerEntries": ["CUBE-BOUNDS"]},
     {"checkId": "HULL-NO-BOX:", "command": "core-suite", "token": "HULL-NO-BOX:", "ledgerEntries": ["HULL-NO-BOX"]},
     {"checkId": "HULL-BOUND:", "command": "core-suite", "token": "HULL-BOUND:", "ledgerEntries": ["HULL-BOUND"]},
-    {"checkId": "EL-07:", "command": "core-suite", "token": "EL-07:", "ledgerEntries": ["EL-07"]}
+    {"checkId": "EL-07:", "command": "core-suite", "token": "EL-07:", "ledgerEntries": ["EL-07"]},
+    {"checkId": "EL-08:", "command": "core-suite", "token": "EL-08:", "ledgerEntries": ["EL-08"]}
   ]
 }
