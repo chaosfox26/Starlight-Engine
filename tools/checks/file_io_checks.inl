@@ -25,4 +25,14 @@ static void file_io_checks(const auto& require,const fs::path& folder){
     require(refused&&why.find("Read failed")!=std::string::npos,"ED-09: A read that fails part-way is reported instead of returning the truncated prefix as the whole file");
     if(holder!=INVALID_HANDLE_VALUE){UnlockFile(holder,150000,0,1000,0);CloseHandle(holder);}
     require(read_file(locked)==bytes,"ED-09: The same file reads completely once the range is unlocked");
+    // ED-10: the editor used to re-read the file after saving to learn its hash, which fails while another process holds a lock on it.
+    SceneData scene;Character cube;cube.Id="hash-check";cube.Name="hash-check";cube.Shape="cube";scene.Characters={cube};
+    const auto savedPath=dir/"saved.starscene";
+    const auto savedHash=save_scene(scene,savedPath);
+    require(savedHash.size()==64&&savedHash==hash_bytes(scene.encode())&&savedHash==hash_file(savedPath),"ED-10: save_scene returns the SHA-256 of exactly the bytes it wrote");
+    HANDLE saver=CreateFileW(savedPath.c_str(),GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    const bool lockedWhole=saver!=INVALID_HANDLE_VALUE&&LockFile(saver,0,0,0xFFFFFFFFu,0)!=0;
+    bool rereadFails=false;try{(void)hash_file(savedPath);}catch(const std::exception&){rereadFails=true;}
+    if(saver!=INVALID_HANDLE_VALUE){UnlockFile(saver,0,0,0xFFFFFFFFu,0);CloseHandle(saver);}
+    require(lockedWhole&&rereadFails,"ED-10: While another handle locks the saved file, re-reading it to hash it fails, which is why the hash is now returned by the save itself");
 }

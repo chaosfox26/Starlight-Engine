@@ -1970,8 +1970,8 @@ struct Editor {
             if (files.empty()) return false;
             target = files[0];
         }
-        save_scene(scene, target, target == filename ? diskHash : std::nullopt);
-        filename = target; diskHash = hash_file(target); dirty = false; refresh();
+        const auto savedHash = save_scene(scene, target, target == filename ? diskHash : std::nullopt);
+        filename = target; diskHash = savedHash; dirty = false; refresh();
         return true;
     }
     void apply() {

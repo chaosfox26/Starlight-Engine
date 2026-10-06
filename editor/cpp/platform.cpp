@@ -179,7 +179,7 @@ void diagnostic(std::string_view operation, std::string_view message) noexcept {
     } catch (...) {
     }
 }
-void save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected) {
+std::string save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected) {
     const auto encoded = scene.encode();
     for (const auto &object : scene.Characters)
         if (!object.Shape && !object.Sculpt && !object.Asset.empty())
@@ -187,6 +187,7 @@ void save_scene(const SceneData &scene, const fs::path &path, const std::optiona
     for (const auto &id : cast_asset_ids(scene))
         EngineAssets::keep(id);
     atomic_write(path, encoded, true, expected);
+    return hash_bytes(encoded);
 }
 SceneData load_scene(const fs::path &path) {
     // A portable bundle (exported scene or game) carries its engine assets in an "assets" folder beside the scene; the library reads from there too.
