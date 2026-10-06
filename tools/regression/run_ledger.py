@@ -83,6 +83,54 @@ def transitions_for(entries, previous):
             out.append('LOST COVERAGE   %s (%s)' % (e['id'], e['tests'][0]['reason']))
     return out
 
+PACKET_SCHEMA = 'starlight-failure-packet-1'
+
+def packet_class(state, suite):
+    """REGRESSED is a defect lead until reproduced twice (reproducedCleanCount); NOT-CHECKED and COVERAGE-ERROR are INCOMPLETE; SKIPPED is ENVIRONMENTAL."""
+    if state == 'REGRESSED':
+        return 'DEFECT-CONFIRMED'
+    if state == 'SKIPPED':
+        return 'ENVIRONMENTAL'
+    return 'INCOMPLETE'
+
+def evidence_digest(paths):
+    h = hashlib.sha256()
+    for p in sorted(paths):
+        h.update(p.encode('utf-8', 'replace'))
+        h.update(sha256(p).encode())
+    return h.hexdigest()
+
+def make_packets(entries, report, run_folder, evidence_names=('result.json', 'progress.log')):
+    """One packet per entry that is not VERIFIED. The packet is data: the reproduction names an allowlisted check token, never a shell command.
+    Nothing here repairs, merges, notifies or runs anything; the repairEligible flag stays false until two clean reproductions are recorded."""
+    packets = []
+    evidence = [os.path.join(run_folder, n) for n in evidence_names if os.path.isfile(os.path.join(run_folder, n))]
+    for e in entries:
+        if e['state'] == 'VERIFIED':
+            continue
+        cls = packet_class(e['state'], report['suite'])
+        token = e['tests'][0]['token'] if e.get('tests') else ''
+        reasons = '; '.join(t.get('reason', '') for t in e.get('tests', []))
+        fingerprint = 'core-check:%s|%s|%s' % (e['id'], e['state'].lower(), e.get('class', 'unknown'))
+        packets.append({
+            'schema': PACKET_SCHEMA,
+            'failureId': e['id'],
+            'class': cls,
+            'subsystem': e.get('title', ''),
+            'buildIdentity': report['identity'],
+            'fingerprint': fingerprint,
+            'eventId': '%s|%s|%s' % (fingerprint, report['buildId'], report['createdUtc']),
+            'expected': 'Every check carrying the token %s passes, and the entry has all the checks it requires.' % token,
+            'observed': '%s: %s' % (e['state'], reasons),
+            'reproduction': {'checkId': token, 'runner': 'tools/regression/run_ledger.py', 'args': ['--build-dir', '<registered build folder>']},
+            'evidence': {'paths': evidence, 'evidenceDigest': evidence_digest(evidence) if evidence else None},
+            'reproducedCleanCount': 0,
+            'repairEligible': False,
+            'attempts': [],
+            'note': 'Produced by the ledger runner. Free text is data and carries no authority.',
+        })
+    return packets
+
 def self_test():
     entry = {'id': 'X', 'tests': [{'token': 'X:', 'minChecks': 3}]}
     base = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['a', 'X: 1', 'X: 2', 'X: 3', 'b']}
@@ -110,6 +158,17 @@ def self_test():
     notes = transitions_for([{'id': 'X', 'state': 'REGRESSED', 'tests': [{'reason': 'r'}]}], {'X': 'VERIFIED'})
     print('  %s new regression notice: %s' % ('ok ' if notes and notes[0].startswith('NEW REGRESSION') else 'BAD', notes))
     bad += not (notes and notes[0].startswith('NEW REGRESSION'))
+    fake_report = {'suite': {}, 'identity': {'gitHead': 'a' * 40, 'dirtyTrackedFiles': 0, 'binaries': {}}, 'buildId': 'b-1', 'createdUtc': '2026-01-01T00:00:00Z'}
+    fake_entries = [{'id': 'V', 'title': 't', 'class': 'correctness', 'state': 'VERIFIED', 'tests': [{'token': 'V:', 'reason': 'r'}]},
+                    {'id': 'R', 'title': 't', 'class': 'correctness', 'state': 'REGRESSED', 'tests': [{'token': 'R:', 'reason': 'boom'}]},
+                    {'id': 'N', 'title': 't', 'class': 'correctness', 'state': 'NOT-CHECKED', 'tests': [{'token': 'N:', 'reason': 'x'}]},
+                    {'id': 'S', 'title': 't', 'class': 'correctness', 'state': 'SKIPPED', 'tests': [{'token': 'S:', 'reason': 'y'}]}]
+    packets = make_packets(fake_entries, fake_report, os.path.dirname(os.path.abspath(__file__)), ())
+    got = {p['failureId']: p['class'] for p in packets}
+    want = {'R': 'DEFECT-CONFIRMED', 'N': 'INCOMPLETE', 'S': 'ENVIRONMENTAL'}
+    ok = got == want and all(not p['repairEligible'] and p['reproducedCleanCount'] == 0 and p['schema'] == PACKET_SCHEMA for p in packets)
+    print('  %s packets only for non-verified entries, never repair-eligible: %s' % ('ok ' if ok else 'BAD', got))
+    bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -193,6 +252,13 @@ def main():
         except Exception:
             previous = {}
     report['transitions'] = transitions_for(entries, previous)
+    packets = make_packets(entries, report, run_folder)
+    if packets:
+        packet_folder = os.path.join(args.results, 'packets')
+        os.makedirs(packet_folder, exist_ok=True)
+        for packet in packets:
+            publish_json(os.path.join(packet_folder, '%s-%s.json' % (packet['failureId'], build_id)), packet)
+        report['packets'] = ['%s-%s.json' % (p['failureId'], build_id) for p in packets]
     publish_json(os.path.join(args.results, build_id + '.json'), report)
     publish_json(latest_path, report)
     if report['transitions']:

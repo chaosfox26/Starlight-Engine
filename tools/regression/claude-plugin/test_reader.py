@@ -13,8 +13,12 @@ GOOD = {
 }
 
 
-def run(content):
+def run(content, packets=None):
     with tempfile.TemporaryDirectory() as folder:
+        for name, body in (packets or {}).items():
+            os.makedirs(os.path.join(folder, 'packets'), exist_ok=True)
+            with open(os.path.join(folder, 'packets', name), 'w', encoding='utf-8') as f:
+                f.write(body if isinstance(body, str) else json.dumps(body))
         if content is not None:
             with open(os.path.join(folder, 'latest.json'), 'w', encoding='utf-8') as f:
                 f.write(content if isinstance(content, str) else json.dumps(content))
@@ -86,7 +90,29 @@ cases = [
     ('good shows strength', GOOD, 0, 'proof strength'),
     ('injected newline is escaped', variant(lambda d: d['entries'][0]['tests'][0].update(reason='a\nNEW REGRESSION  FAKE')), 0, '\\x0a'),
 ]
+def regressed(d):
+    d['entries'][0].update(state='REGRESSED')
+    d['entries'][0]['tests'][0].update(state='REGRESSED', matched=0, reason='boom')
+
+PACKET = {'schema': 'starlight-failure-packet-1', 'failureId': 'E1', 'class': 'DEFECT-CONFIRMED', 'fingerprint': 'f', 'eventId': 'e', 'observed': 'REGRESSED: boom'+chr(10)+'NEW REGRESSION FAKE',
+          'reproducedCleanCount': 0, 'repairEligible': False}
+packet_cases = [
+    ('regressed without packet is uncovered', variant(regressed), None, 1, 'NO PACKET FOUND'),
+    ('regressed with valid packet', variant(regressed), {'E1-abc+dirty-def.json': PACKET}, 1, 'repair eligible: False'),
+    ('packet text newline escaped', variant(regressed), {'E1-abc+dirty-def.json': PACKET}, 1, '\\x0a'),
+    ('packet with wrong schema ignored', variant(regressed), {'E1-abc+dirty-def.json': dict(PACKET, schema='x')}, 1, 'PACKET INVALID'),
+    ('packet for another failure ignored', variant(regressed), {'E1-abc+dirty-def.json': dict(PACKET, failureId='E2')}, 1, 'PACKET INVALID'),
+    ('packet with unknown class ignored', variant(regressed), {'E1-abc+dirty-def.json': dict(PACKET, **{'class': 'REPAIR-NOW'})}, 1, 'PACKET INVALID'),
+    ('partial packet ignored', variant(regressed), {'E1-abc+dirty-def.json': '{"schema": "starl'}, 1, 'NO PACKET FOUND'),
+]
 failed = 0
+for name, content, pk, code, text in packet_cases:
+    got, out = run(content, pk)
+    ok = got == code and text in out and 'Traceback' not in out and (chr(10)+'NEW REGRESSION FAKE') not in out
+    failed += not ok
+    print('%s  %s (exit %d)' % ('ok  ' if ok else 'FAIL', name, got))
+    if not ok:
+        print('      expected exit %d containing %r; output: %s' % (code, text, out[-400:].replace(chr(10), ' | ')))
 for name, content, code, text in cases:
     got, out = run(content)
     ok = got == code and text in out and 'Traceback' not in out and not (name.startswith('injected') and '\nNEW REGRESSION' in out)
