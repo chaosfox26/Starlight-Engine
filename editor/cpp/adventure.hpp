@@ -1048,6 +1048,7 @@ class AdventurePlayer {
         std::exception_ptr failure;std::mutex failureLock;
         const unsigned threads=std::max(1u,std::min<unsigned>(8,std::thread::hardware_concurrency()?std::thread::hardware_concurrency()/2:2));
         std::vector<std::thread> pool;
+        struct JoinAll{std::vector<std::thread>& threads;std::atomic<size_t>& next;size_t end;~JoinAll(){next=end;for(auto& worker:threads)if(worker.joinable())worker.join();}} joinAll{pool,next,work.size()};
         for(unsigned k=0;k<threads;++k)pool.emplace_back([&]{
             try{
                 for(size_t i;(i=next.fetch_add(1))<work.size();){
