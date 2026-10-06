@@ -499,8 +499,10 @@ void SceneData::validate() const {
                     q.Volume <= 20,
                 "Invalid liquid source");
     int lights = 0;
+    std::set<std::string> objectIds;
     for (const auto &c : Characters) {
         c.validate();
+        require(objectIds.insert(c.Id).second, "Duplicate object id: " + c.Id);
         if (c.Shape && (*c.Shape == "fire" || *c.Shape == "light" || *c.Shape == "chaos-lightning" ||
                         *c.Shape == "chaos-rock" || *c.Shape == "light-shard"))
             lights++;
