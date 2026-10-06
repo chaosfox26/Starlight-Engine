@@ -7,6 +7,7 @@ struct ArcPoint { float x,y,z; };
 struct ArcVertex { float x,y,z,edge; };
 inline std::vector<ArcVertex> Lightning(ArcPoint target,float spread,uint32_t seed=8241) {
  std::vector<ArcVertex> out;
+ if(!seed)seed=8241;   // xorshift stays at 0 forever, which made every bolt with seed 0 the same straight, unjittered line
  auto random=[&](){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return (float)(seed&65535)/32767.5f-1;};
  auto emit=[&](ArcPoint a,ArcPoint b,float width){
   float dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,len=sqrtf(dx*dx+dy*dy+dz*dz);if(len<1e-6f)return;

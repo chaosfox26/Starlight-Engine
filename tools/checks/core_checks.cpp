@@ -39,6 +39,7 @@ using namespace starlight::editor;
 #include "asset_scan_checks.inl"
 #include "error_throttle_checks.inl"
 #include "terrain_brush_checks.inl"
+#include "lightning_seed_checks.inl"
 #include "rain_checks.inl"
 #include "object_cache_checks.inl"
 #include "cache_pin_checks.inl"
@@ -96,6 +97,7 @@ static int checks_main(int argc, char **argv) {
         asset_scan_checks(require,folder);
         error_throttle_checks(require);
         terrain_brush_checks(require);
+        lightning_seed_checks(require);
         cache_pin_checks(require);
         rain_checks(require,folder);
         object_cache_checks(require,folder);
