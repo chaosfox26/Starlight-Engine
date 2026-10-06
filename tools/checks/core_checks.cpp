@@ -31,6 +31,7 @@
 using namespace starlight::editor;
 #include "physics_boundary_checks.inl"
 #include "physics_abi_checks.inl"
+#include "physics_step_checks.inl"
 #include "device_fault_checks.inl"
 #include "scene_preparation_checks.inl"
 #include "scene_validation_checks.inl"
@@ -86,6 +87,7 @@ static int checks_main(int argc, char **argv) {
         active_scene_guard_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path());
         physics_boundary_checks(require);
         physics_abi_checks(require);
+        physics_step_checks(require);
         device_fault_checks(require);
         scene_preparation_checks(require);
         scene_validation_checks(require);

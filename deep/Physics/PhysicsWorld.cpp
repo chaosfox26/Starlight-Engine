@@ -195,6 +195,8 @@ public:
  }
  static void SetInjectedCookFailures(int n){InjectedCookFailures().store(n);}
  static std::atomic<int>& InjectedCookFailures(){static std::atomic<int> remaining{0};return remaining;}
+ static void SetInjectedUpdateFailures(int n){InjectedUpdateFailures().store(n);}
+ static std::atomic<int>& InjectedUpdateFailures(){static std::atomic<int> remaining{0};return remaining;}
  static ShapeRefC Cook(const std::array<float,289>& h,int tx,int tz){
   {auto& remaining=InjectedCookFailures();int n=remaining.load();while(n>0&&!remaining.compare_exchange_weak(n,n-1)){}if(n>0)throw std::runtime_error("injected terrain cook failure");}
   TriangleList triangles;triangles.reserve(512);
@@ -443,7 +445,9 @@ public:
    // Damping above remains a separate, small aerodynamic/numerical loss.
    for(auto raw:contacts.touching){BodyID id(raw);float torque=0;Vec3 omega=api.GetAngularVelocity(id);float speed=omega.Length();if(speed<.001f)continue;{BodyLockRead lock(world.GetBodyLockInterface(),id);if(lock.Succeeded()){auto& b=lock.GetBody();float inv=b.GetMotionProperties()->GetInverseMass();float radius=b.GetShape()->GetLocalBounds().GetExtent().Length();if(inv>0)torque=.012f/inv*9.81f*radius*std::min(1.f,speed);}}if(torque>0)api.AddTorque(id,-omega/speed*torque);}
    contacts.touching.clear();
-   auto error=world.Update(1.f/60,1,&temp,&jobs);if(error!=EPhysicsUpdateError::None)throw std::runtime_error("Jolt capacity exceeded during step");accumulator-=1.0/60;ticks++;
+   const bool injected=InjectedUpdateFailures().load()>0&&InjectedUpdateFailures().fetch_sub(1)>0;auto error=injected?EPhysicsUpdateError::ManifoldCacheFull:world.Update(1.f/60,1,&temp,&jobs);
+   // A failed update must not leave its time behind: the backlog would be replayed on the next call (and grow while the failure lasts) instead of the step simply failing again or recovering.
+   if(error!=EPhysicsUpdateError::None){accumulator=0;throw std::runtime_error("Jolt capacity exceeded during step");}accumulator-=1.0/60;ticks++;
   }
   int n=0;for(auto id:bodies){if(n>=capacity)break;RVec3 p;Quat q;api.GetPositionAndRotation(id,p,q);output[n++]={id.GetIndexAndSequenceNumber(),(float)p.GetX(),(float)p.GetY(),(float)p.GetZ(),q.GetX(),q.GetY(),q.GetZ(),q.GetW()};}return n;
  }
@@ -456,6 +460,7 @@ API const char* slp_error(){return error.c_str();}
 API void* slp_create(){try{EnsureJoltInitialized();return new starlight::PhysicsWorld();}catch(const std::exception& e){error=e.what();return nullptr;}}
 // Test hook: the next n terrain tile cooks fail. Used by the physics ABI checks to prove a failed cook is recovered (audit EL-09).
 API void slp_debug_fail_cooks(int n){starlight::PhysicsWorld::SetInjectedCookFailures(n<0?0:n);}
+API void slp_debug_fail_updates(int n){starlight::PhysicsWorld::SetInjectedUpdateFailures(n<0?0:n);}
 API void slp_destroy(void* p){delete static_cast<starlight::PhysicsWorld*>(p);}
 API void slp_clear(void* p){static_cast<starlight::PhysicsWorld*>(p)->ClearProps();}
 API int slp_terrain_mesh(void* p,const float* points,int count,const uint32_t* indices,int indexCount){try{static_cast<starlight::PhysicsWorld*>(p)->TerrainMesh(points,count,indices,indexCount);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
