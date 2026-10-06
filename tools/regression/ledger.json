@@ -171,6 +171,55 @@
     "deep/Physics/PhysicsWorld.cpp CookGuarded and Poll",
     "tools/checks/physics_abi_checks.inl EL-09 block"
    ]
+  },
+  {
+   "id": "CC-07",
+   "title": "Failed D3D12 map, reset, close and signal results on the startup and per-frame paths are reported instead of being ignored",
+   "subsystem": "render device (deep/engine/render_device.h)",
+   "class": "correctness",
+   "originalFailure": "Map, command allocator Reset, command list Reset and Close and the per-frame fence Signal results were discarded; after a failure the frame kept recording into a closed or unreset list, wrote through null mapped pointers, or waited on a fence that was never signalled.",
+   "fixCommits": [
+    "7c36a47"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "CC-07:",
+     "minChecks": 8
+    }
+   ],
+   "testStrength": "Strong for the sites that now go through the checked call: each reachable checked result is failed in turn (27 on the reference machine) and must surface as a create or frame error or a cleanup error, with a fresh viewport working afterwards. The hook exists only on the fixed sites, so it cannot show that no other unchecked D3D12 call remains; the unbounded fence wait is unchanged and device-loss behaviour with a real removed device is not tested.",
+   "investigate": [
+    "deep/engine/render_device.h remaining unchecked D3D12 calls and waitFence INFINITE",
+    "tools/checks/device_fault_checks.inl"
+   ]
+  },
+  {
+   "id": "CC-02",
+   "title": "A device failure during viewport destruction is recorded and cannot terminate the process",
+   "subsystem": "viewport lifecycle (editor/native/viewport.cpp sl_destroy)",
+   "class": "correctness",
+   "originalFailure": "sl_destroy let flush(), drainRetired or teardown throw out of a noexcept unique_ptr deleter, ending the process instead of reporting the session error.",
+   "fixCommits": [
+    "4de1539",
+    "7c36a47"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "CC-02:",
+     "minChecks": 1
+    }
+   ],
+   "testStrength": "Moderate: a failed fence signal during the destruction flush is injected and must be recorded as a Viewport cleanup error without terminating the process. Only the flush step is injected; failures in the other guarded steps are covered by the guard code but not by a test.",
+   "investigate": [
+    "editor/native/viewport.cpp sl_destroy steps",
+    "tools/checks/device_fault_checks.inl"
+   ]
   }
  ]
 }
