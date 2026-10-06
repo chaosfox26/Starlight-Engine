@@ -265,16 +265,17 @@ def main():
     if mismatch:
         print('REFUSING TO RUN: the ledger and the committed check registry disagree: ' + '; '.join(mismatch))
         return 2
+    registered = registry.command_for_ledger(ledger, registry.load())
     identity = {
         'gitHead': git(args.repo, 'rev-parse', 'HEAD'),
         'dirtyTrackedFiles': len([l for l in git(args.repo, 'status', '--porcelain', '--untracked-files=no').splitlines() if l.strip()]),
         'binaries': {},
     }
-    for name in ('Starlight.NativeCoreChecks.exe', 'Starlight.Viewport.dll', 'Starlight.Physics.dll'):
+    for name in registered['binaries']:
         p = os.path.join(args.build_dir, name)
         if os.path.exists(p):
             identity['binaries'][name] = {'sha256': sha256(p), 'bytes': os.path.getsize(p)}
-    build_id = (identity['gitHead'][:12] or 'nogit') + ('+dirty' if identity['dirtyTrackedFiles'] else '') + '-' + identity['binaries'].get('Starlight.NativeCoreChecks.exe', {}).get('sha256', 'nobinary')[:10]
+    build_id = (identity['gitHead'][:12] or 'nogit') + ('+dirty' if identity['dirtyTrackedFiles'] else '') + '-' + identity['binaries'].get(registered['executable'], {}).get('sha256', 'nobinary')[:10]
 
     run_id = build_id + '-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:12]
     run_folder = os.path.join(args.results, 'runs', run_id)
@@ -329,7 +330,7 @@ def main():
         except Exception:
             previous = {}
     report['transitions'] = transitions_for(entries, previous)
-    packets = make_packets(entries, report, run_folder, args.results)
+    packets = make_packets(entries, report, run_folder, args.results, tuple(registered['evidenceFiles']))
     report['packets'] = write_packets(packets, report, run_folder, args.results) if packets else []
     publish_json(os.path.join(args.results, build_id + '.json'), report)
     publish_json(latest_path, report)

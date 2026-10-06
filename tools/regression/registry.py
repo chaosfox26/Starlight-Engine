@@ -3,15 +3,18 @@
 
 resolve(check_id, repo, build_dir, run_folder) returns {'argv', 'cwd', 'env', 'timeoutSeconds', 'evidenceRoot', 'evidenceFiles', 'binaries', 'token', 'command'}
 or raises RegistryError. It is the single source of the command the ledger runner executes, so the template cannot drift from what really runs.
-Free text from a packet (runner, args, paths) is never an input. Unknown ids, unknown placeholders, executables with path parts, and build roots that do
-not resolve inside the build directory all fail closed.
+Free text from a packet (runner, args, paths) is never an input. Unknown ids, unknown or malformed placeholders, executables with path parts, build roots
+that do not resolve inside the build directory, and an evidence root or working directory that leaves its scope all fail closed.
+Supported at this stage: exactly one command for every ledger test, and the fixed result format RESULT_FILES. Anything else is refused before anything runs.
 Usage: registry.py --self-test | registry.py --check-ledger"""
 import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(HERE, 'check_registry.json')
 SCHEMA = 'starlight-check-registry-1'
-PLACEHOLDER = re.compile(r'\{([A-Za-z]+)\}')
+IMPLEMENTED_PLACEHOLDERS = ('repo', 'buildDir', 'runFolder')
+RESULT_FILES = ['result.json', 'progress.log']
+BRACE = re.compile(r'\{([A-Za-z]+)\}')
 ID = re.compile(r'^[A-Za-z0-9._:+-]{1,80}$')
 
 
@@ -20,21 +23,28 @@ class RegistryError(Exception):
 
 
 def load(path=REGISTRY_PATH):
-    with open(path, encoding='utf-8') as f:
-        registry = json.load(f)
+    try:
+        with open(path, encoding='utf-8') as f:
+            registry = json.load(f)
+    except (OSError, ValueError) as error:
+        raise RegistryError('registry could not be read: %s' % error)
     problems = validate(registry)
     if problems:
         raise RegistryError('registry is invalid: ' + '; '.join(problems))
     return registry
 
 
+def bare_name(value):
+    return isinstance(value, str) and bool(value) and value not in ('.', '..') and not any(ch in value for ch in '/\\:{}') and value == value.strip()
+
+
 def validate(registry):
     found = []
     if not isinstance(registry, dict) or registry.get('schema') != SCHEMA:
         return ['wrong or missing schema']
-    allowed = registry.get('placeholders')
-    if not isinstance(allowed, list) or not all(isinstance(p, str) for p in allowed):
-        return ['placeholders must be a list of names']
+    declared = registry.get('placeholders')
+    if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared) or not set(declared) <= set(IMPLEMENTED_PLACEHOLDERS):
+        return ['placeholders must be a list drawn only from the implemented names %s' % (IMPLEMENTED_PLACEHOLDERS,)]
     commands, checks = registry.get('commands'), registry.get('checks')
     if not isinstance(commands, dict) or not commands:
         found.append('commands is missing or empty')
@@ -44,20 +54,22 @@ def validate(registry):
         checks = []
 
     def template_ok(text):
-        return isinstance(text, str) and all(name in allowed for name in PLACEHOLDER.findall(text))
+        if not isinstance(text, str):
+            return False
+        leftover = BRACE.sub('', text)
+        return all(name in declared for name in BRACE.findall(text)) and '{' not in leftover and '}' not in leftover
 
     for name, c in commands.items():
         if not isinstance(c, dict):
             found.append('command %s is malformed' % name)
             continue
-        exe = c.get('executable')
-        if not isinstance(exe, str) or not exe or any(ch in exe for ch in '/\\:') or exe in ('.', '..'):
+        if not bare_name(c.get('executable')):
             found.append('command %s: executable must be a bare file name' % name)
         if not isinstance(c.get('argsTemplate'), list) or not all(template_ok(a) for a in c['argsTemplate']):
-            found.append('command %s: argsTemplate uses an unknown placeholder or is not text' % name)
+            found.append('command %s: argsTemplate has an unknown, malformed or non-text placeholder' % name)
         for key in ('cwd', 'buildRoot', 'evidenceRoot'):
             if not template_ok(c.get(key)):
-                found.append('command %s: %s is missing or uses an unknown placeholder' % (name, key))
+                found.append('command %s: %s is missing or has an unknown or malformed placeholder' % (name, key))
         env = c.get('environment', {})
         if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
             found.append('command %s: environment must be text pairs' % name)
@@ -65,8 +77,10 @@ def validate(registry):
         if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 7200:
             found.append('command %s: timeoutSeconds must be 1..7200' % name)
         for key in ('evidenceFiles', 'binaries'):
-            if not isinstance(c.get(key), list) or not all(isinstance(x, str) and x and not any(ch in x for ch in '/\\:') for x in c[key]):
-                found.append('command %s: %s must be bare file names' % (name, key))
+            if not isinstance(c.get(key), list) or not c[key] or not all(bare_name(x) for x in c[key]):
+                found.append('command %s: %s must be a non-empty list of bare file names' % (name, key))
+        if bare_name(c.get('executable')) and isinstance(c.get('binaries'), list) and c['executable'] not in c['binaries']:
+            found.append('command %s: the executable itself must be in binaries so its identity is always recorded' % name)
     seen = set()
     for check in checks:
         if not isinstance(check, dict) or not isinstance(check.get('checkId'), str) or not ID.match(check['checkId']):
@@ -75,21 +89,31 @@ def validate(registry):
         if check['checkId'] in seen:
             found.append('duplicate check id %s' % check['checkId'])
         seen.add(check['checkId'])
-        if check.get('command') not in commands:
+        if not isinstance(check.get('command'), str) or check['command'] not in commands:
             found.append('check %s names an unknown command' % check['checkId'])
         if not isinstance(check.get('token'), str) or not check['token']:
             found.append('check %s has no token' % check['checkId'])
-        if not isinstance(check.get('ledgerEntries'), list) or not check['ledgerEntries']:
+        if not isinstance(check.get('ledgerEntries'), list) or not check['ledgerEntries'] or not all(isinstance(x, str) for x in check['ledgerEntries']):
             found.append('check %s lists no ledger entries' % check['checkId'])
     return found
 
 
 def fill(text, values):
-    return PLACEHOLDER.sub(lambda m: values[m.group(1)], text)
+    return BRACE.sub(lambda m: values[m.group(1)], text)
+
+
+def within(path, root):
+    try:
+        return os.path.commonpath([path, root]) == root
+    except ValueError:
+        return False
 
 
 def resolve(check_id, repo, build_dir, run_folder, registry=None):
-    registry = registry or load()
+    registry = registry if registry is not None else load()
+    problems = validate(registry)
+    if problems:
+        raise RegistryError('registry is invalid: ' + '; '.join(problems))
     if not isinstance(check_id, str):
         raise RegistryError('check id must be text')
     check = next((c for c in registry['checks'] if c['checkId'] == check_id), None)
@@ -97,43 +121,75 @@ def resolve(check_id, repo, build_dir, run_folder, registry=None):
         raise RegistryError('unknown check id (failing closed): %r' % check_id[:80])
     command = registry['commands'][check['command']]
     values = {'repo': os.path.abspath(repo), 'buildDir': os.path.abspath(build_dir), 'runFolder': os.path.abspath(run_folder)}
-    given_build = os.path.realpath(values['buildDir'])
-    build_root = os.path.realpath(fill(command['buildRoot'], values))
-    exe = os.path.realpath(os.path.join(build_root, command['executable']))
     try:
-        inside = os.path.commonpath([exe, build_root]) == build_root and os.path.commonpath([build_root, given_build]) == given_build
-    except ValueError:
-        inside = False
-    if not inside:
+        given_build = os.path.realpath(values['buildDir'])
+        build_root = os.path.realpath(fill(command['buildRoot'], values))
+        exe = os.path.realpath(os.path.join(build_root, command['executable']))
+        evidence_root = os.path.realpath(fill(command['evidenceRoot'], values))
+        cwd = os.path.realpath(fill(command['cwd'], values))
+        isolated = os.path.realpath(values['runFolder'])
+        repo_root = os.path.realpath(values['repo'])
+        argv = [exe] + [fill(a, values) for a in command['argsTemplate']]
+    except KeyError as error:
+        raise RegistryError('unresolved placeholder %s' % error)
+    if not (within(exe, build_root) and within(build_root, given_build)):
         raise RegistryError('the executable does not resolve inside the registered build root within the given build directory')
+    if not within(evidence_root, isolated):
+        raise RegistryError('the evidence root leaves the isolated run folder')
+    if not (within(cwd, repo_root) or within(cwd, isolated)):
+        raise RegistryError('the working directory leaves the repository and the run folder')
     return {
-        'checkId': check_id, 'token': check['token'], 'command': check['command'],
-        'argv': [exe] + [fill(a, values) for a in command['argsTemplate']],
-        'cwd': fill(command['cwd'], values), 'env': dict(command.get('environment', {})), 'timeoutSeconds': command['timeoutSeconds'],
-        'evidenceRoot': fill(command['evidenceRoot'], values), 'evidenceFiles': list(command['evidenceFiles']), 'binaries': list(command['binaries']),
+        'checkId': check_id, 'token': check['token'], 'command': check['command'], 'argv': argv, 'cwd': cwd, 'env': dict(command.get('environment', {})),
+        'timeoutSeconds': command['timeoutSeconds'], 'evidenceRoot': evidence_root, 'evidenceFiles': list(command['evidenceFiles']), 'binaries': list(command['binaries']),
     }
 
 
 def check_ledger(ledger_path=None, registry=None):
-    """Every ledger test token must be a registered check for that ledger entry, and every registered check must serve a ledger entry."""
-    registry = registry or load()
+    """Ledger and registry must agree exactly, and exactly one command may serve every ledger test (the runner supports no scheduler)."""
+    registry = registry if registry is not None else load()
+    problems = validate(registry)
+    if problems:
+        return ['registry is invalid: ' + '; '.join(problems)]
     ledger = json.load(open(ledger_path or os.path.join(HERE, 'ledger.json'), encoding='utf-8'))
-    problems, used = [], set()
+    found, used, commands_used = [], set(), set()
     by_id = {c['checkId']: c for c in registry['checks']}
+    entry_ids = {e['id'] for e in ledger['entries']}
+    tests_by_entry = {e['id']: {t['token'] for t in e['tests']} for e in ledger['entries']}
     for entry in ledger['entries']:
         for test in entry['tests']:
             check = by_id.get(test['token'])
             if check is None:
-                problems.append('ledger entry %s uses unregistered check %s' % (entry['id'], test['token']))
-            elif entry['id'] not in check['ledgerEntries'] or check['token'] != test['token']:
-                problems.append('registry check %s does not serve ledger entry %s' % (test['token'], entry['id']))
-            elif check['command'] and registry['commands'][check['command']]['executable'] != test.get('executable'):
-                problems.append('ledger entry %s names a different executable than the registry' % entry['id'])
+                found.append('ledger entry %s uses unregistered check %s' % (entry['id'], test['token']))
+                continue
+            if entry['id'] not in check['ledgerEntries'] or check['token'] != test['token']:
+                found.append('registry check %s does not serve ledger entry %s' % (test['token'], entry['id']))
+            elif registry['commands'][check['command']]['executable'] != test.get('executable'):
+                found.append('ledger entry %s names a different executable than the registry' % entry['id'])
             used.add(test['token'])
+            commands_used.add(check['command'])
     for check in registry['checks']:
         if check['checkId'] not in used:
-            problems.append('registered check %s is used by no ledger entry' % check['checkId'])
-    return problems
+            found.append('registered check %s is used by no ledger entry' % check['checkId'])
+        for member in check['ledgerEntries']:
+            if member not in entry_ids:
+                found.append('registry check %s lists ledger entry %s, which does not exist' % (check['checkId'], member))
+            elif check['checkId'] not in tests_by_entry[member]:
+                found.append('registry check %s lists ledger entry %s, which does not use it' % (check['checkId'], member))
+    if len(commands_used) > 1:
+        found.append('unsupported: the ledger uses %d different commands (%s); the runner supports exactly one' % (len(commands_used), ', '.join(sorted(commands_used))))
+    for name in commands_used:
+        if registry['commands'][name]['evidenceFiles'] != RESULT_FILES:
+            found.append('command %s: only the fixed result format %s is supported' % (name, RESULT_FILES))
+    return found
+
+
+def command_for_ledger(ledger, registry):
+    """The one registered command that serves every ledger test. check_ledger must already have passed."""
+    by_id = {c['checkId']: c for c in registry['checks']}
+    names = {by_id[t['token']]['command'] for e in ledger['entries'] for t in e['tests']}
+    if len(names) != 1:
+        raise RegistryError('exactly one command must serve every ledger test')
+    return registry['commands'][names.pop()]
 
 
 def self_test():
@@ -145,42 +201,54 @@ def self_test():
         print('  %s %s' % ('ok ' if condition else 'BAD', name))
         bad += not condition
 
+    def refused(registry, check_id='CC-01:', build=None, run=None):
+        try:
+            resolve(check_id, HERE, build, run, registry)
+            return False
+        except RegistryError:
+            return True
+        except Exception:
+            return False
+
     registry = load()
+    ledger = json.load(open(os.path.join(HERE, 'ledger.json'), encoding='utf-8'))
     with tempfile.TemporaryDirectory() as build, tempfile.TemporaryDirectory() as run:
         got = resolve('CC-01:', HERE, build, run, registry)
         expect('a registered id resolves to a fixed command', got['argv'][0].endswith('Starlight.NativeCoreChecks.exe') and got['argv'][1] == os.path.abspath(run) and got['timeoutSeconds'] == 1800)
         expect('resolution did not create or run anything', not os.listdir(build) and not os.listdir(run))
-        for bad_id in ('NOPE:', '', 'CC-01:; calc', '../x', None, 5):
-            try:
-                resolve(bad_id, HERE, build, run, registry)
-                expect('unknown id fails closed: %r' % (bad_id,), False)
-            except RegistryError:
-                expect('unknown id fails closed: %r' % (bad_id,), True)
-        broken = copy.deepcopy(registry)
-        broken['commands']['core-suite']['executable'] = '..\\evil.exe'
-        expect('executable with path parts is rejected', bool(validate(broken)))
-        broken = copy.deepcopy(registry)
-        broken['commands']['core-suite']['argsTemplate'].append('{packetArgs}')
-        expect('unknown placeholder is rejected', bool(validate(broken)))
-        broken = copy.deepcopy(registry)
-        broken['checks'].append(copy.deepcopy(broken['checks'][0]))
-        expect('duplicate check id is rejected', bool(validate(broken)))
-        broken = copy.deepcopy(registry)
-        broken['commands']['core-suite']['timeoutSeconds'] = 0
-        expect('bad timeout is rejected', bool(validate(broken)))
-        broken = copy.deepcopy(registry)
-        broken['commands']['core-suite']['environment'] = {'A': 1}
-        expect('non-text environment is rejected', bool(validate(broken)))
-        broken = copy.deepcopy(registry)
-        broken['commands']['core-suite']['buildRoot'] = '{buildDir}/../..'
-        try:
-            resolve('CC-01:', HERE, build, run, broken)
-            expect('a build root that escapes the build directory is rejected', False)
-        except RegistryError:
-            expect('a build root that escapes the build directory is rejected', True)
+        for bad_id in ('NOPE:', '', 'CC-01:; calc', '../x', None, 5, ['CC-01:']):
+            expect('unknown id fails closed: %r' % (bad_id,), refused(registry, bad_id, build, run))
+
+        def mutate(label, change):
+            broken = copy.deepcopy(registry)
+            change(broken)
+            expect('%s is refused by validate' % label, bool(validate(broken)))
+            expect('%s is refused by resolve (controlled error)' % label, refused(broken, 'CC-01:', build, run))
+
+        cmd = lambda r: r['commands']['core-suite']
+        mutate('executable with path parts', lambda r: cmd(r).__setitem__('executable', '..\\evil.exe'))
+        mutate('executable named dot-dot', lambda r: cmd(r).__setitem__('executable', '..'))
+        mutate('unknown placeholder declared and used', lambda r: (r['placeholders'].append('packetArgs'), cmd(r)['argsTemplate'].append('{packetArgs}')))
+        mutate('malformed placeholder {packetArgs1}', lambda r: cmd(r)['argsTemplate'].append('{packetArgs1}'))
+        mutate('stray brace in a template', lambda r: cmd(r)['argsTemplate'].append('{repo'))
+        mutate('placeholder name not declared', lambda r: r.__setitem__('placeholders', ['repo']))
+        mutate('duplicate check id', lambda r: r['checks'].append(copy.deepcopy(r['checks'][0])))
+        mutate('bad timeout', lambda r: cmd(r).__setitem__('timeoutSeconds', 0))
+        mutate('non-text environment', lambda r: cmd(r).__setitem__('environment', {'A': 1}))
+        mutate('command given as a list', lambda r: r['checks'][0].__setitem__('command', []))
+        mutate('command given as an object', lambda r: r['checks'][0].__setitem__('command', {}))
+        mutate('dot-dot evidence file name', lambda r: cmd(r)['evidenceFiles'].append('..'))
+        mutate('dot binary name', lambda r: cmd(r)['binaries'].append('.'))
+        mutate('executable missing from binaries', lambda r: cmd(r).__setitem__('binaries', ['Starlight.Physics.dll']))
+        mutate('empty binaries', lambda r: cmd(r).__setitem__('binaries', []))
+        for label, change in (('a build root that escapes the build directory', lambda r: cmd(r).__setitem__('buildRoot', '{buildDir}/../..')),
+                              ('an evidence root outside the run folder', lambda r: cmd(r).__setitem__('evidenceRoot', '{runFolder}/..')),
+                              ('a working directory outside the repository and run folder', lambda r: cmd(r).__setitem__('cwd', '{buildDir}'))):
+            broken = copy.deepcopy(registry)
+            change(broken)
+            expect('%s is refused' % label, refused(broken, 'CC-01:', build, run))
     problems = check_ledger(registry=registry)
     expect('registry and ledger agree: %s' % (problems or 'no differences'), not problems)
-    ledger = json.load(open(os.path.join(HERE, 'ledger.json'), encoding='utf-8'))
     fake = copy.deepcopy(ledger)
     fake['entries'][0]['tests'][0]['token'] = 'UNREGISTERED:'
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
@@ -190,6 +258,21 @@ def self_test():
         expect('a ledger test with an unregistered token is caught', bool(check_ledger(path, registry)))
     finally:
         os.remove(path)
+    two = copy.deepcopy(registry)
+    two['commands']['other-suite'] = copy.deepcopy(two['commands']['core-suite'])
+    two['commands']['other-suite']['argsTemplate'] = ['{runFolder}', '--other']
+    two['checks'][1]['command'] = 'other-suite'
+    problems = check_ledger(registry=two)
+    expect('a second command serving ledger tests is refused as unsupported', any('unsupported' in p for p in problems))
+    ghost = copy.deepcopy(registry)
+    ghost['checks'][0]['ledgerEntries'].append('NO-SUCH-ENTRY')
+    expect('a listed ledger entry that does not exist is caught', any('does not exist' in p for p in check_ledger(registry=ghost)))
+    wrong = copy.deepcopy(registry)
+    wrong['checks'][0]['ledgerEntries'].append('CUBE-BOUNDS')
+    expect('a listed ledger entry that does not use the check is caught', any('does not use it' in p for p in check_ledger(registry=wrong)))
+    fmt = copy.deepcopy(registry)
+    fmt['commands']['core-suite']['evidenceFiles'] = ['result.json']
+    expect('an unsupported result format is refused', any('fixed result format' in p for p in check_ledger(registry=fmt)))
     print('REGISTRY SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -198,7 +281,7 @@ if __name__ == '__main__':
     if '--self-test' in sys.argv:
         sys.exit(self_test())
     if '--check-ledger' in sys.argv:
-        found = check_ledger()
-        print('\n'.join(found) if found else 'registry and ledger agree')
-        sys.exit(1 if found else 0)
+        problems = check_ledger()
+        print('\n'.join(problems) if problems else 'registry and ledger agree')
+        sys.exit(1 if problems else 0)
     print(__doc__)
