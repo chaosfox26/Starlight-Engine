@@ -364,6 +364,54 @@
     "editor/cpp/editor_main.cpp Open and startup --scene hash_file calls",
     "load_scene returning the hash of the bytes it decoded"
    ]
+  },
+  {
+   "id": "ED-12",
+   "title": "The asset browser scan can be cancelled so closing the editor does not wait for it",
+   "subsystem": "editor asset browser (editor/cpp/asset_library.cpp, asset_browser.inl)",
+   "class": "correctness",
+   "originalFailure": "A std::future from std::async waits for its task in its destructor, so an asset-folder scan on a slow share held up closing the editor for as long as the scan ran.",
+   "fixCommits": [
+    "ca0bbc3"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "ED-12:",
+     "minChecks": 3
+    }
+   ],
+   "testStrength": "Moderate: the scan honours a cancel flag (already-set flag stops it at once, unset flag changes nothing). The editor's destructor wiring and the shutdown delay on a real slow share are NOT tested, and a single blocking filesystem call cannot be interrupted. The preset-check task (presetTask) is not changed.",
+   "investigate": [
+    "editor/cpp/editor_main.cpp presetTask and projects.cpp child process wait",
+    "real shutdown delay on a slow network folder"
+   ]
+  },
+  {
+   "id": "CC-23",
+   "title": "A Characters entry that is not an object is refused with the intended message (one sub-item of the audit item)",
+   "subsystem": "scene JSON (editor/cpp/scene_json.cpp from_json Character)",
+   "class": "correctness",
+   "originalFailure": "from_json called j.value() before checking the entry was an object, so a non-object raised a JSON type error instead of 'Expected Character object'.",
+   "fixCommits": [
+    "a7e9ca6"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "CC-23:",
+     "minChecks": 4
+    }
+   ],
+   "testStrength": "Weak-to-moderate: asserts the exact message for four non-object forms, but the old behaviour was not run for comparison. The other CC-23 sub-items (tutorial progress reset, STARLIGHT_ASSET_LIBRARY length, stoi in the graphics runtime, CoInitializeEx) are NOT done.",
+   "investigate": [
+    "tutorial_progress.hpp catch(...) legacy fallback",
+    "engine_assets.cpp STARLIGHT_ASSET_LIBRARY length"
+   ]
   }
  ]
 }
