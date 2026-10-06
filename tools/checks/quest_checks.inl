@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 {
     SceneData level;level.Game.emplace();
     GameplayRule collect;collect.Name="Collect power cells";collect.Description="Find the three cells near the outpost entrance.";collect.Conditions={{"has-key","red"},{"has-key","blue"},{"has-key","green"}};collect.Actions={{"complete-objective","cells"}};
@@ -14,8 +15,8 @@
     runtime.emit("interact","engineer",loaded);require(!quest_views(loaded,runtime)[0].complete,"Return stage cannot complete before prerequisite");
     runtime.areas({8,1.7,0},loaded);runtime.emit("interact","engineer",loaded);require(quest_views(loaded,runtime)[0].complete,"Area then authored return stage completes quest");
     runtime.reset(loaded.Rules);require(!quest_views(loaded,runtime)[0].complete && level.encode()==saved,"Play reset clears quest progress without changing authored definition");
-    auto broken=level;broken.Quests[0].RuleIds={"missing"};bool rejected=false;try{broken.validate();}catch(...){rejected=true;}require(rejected,"Missing quest objective links rejected");
-    broken=level;broken.Quests.push_back(q);rejected=false;try{broken.validate();}catch(...){rejected=true;}require(rejected,"Duplicate quest identity rejected");
+    auto broken=level;broken.Quests[0].RuleIds={"missing"};bool rejected=false;try{broken.validate();}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Missing quest objective links rejected");
+    broken=level;broken.Quests.push_back(q);rejected=false;try{broken.validate();}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Duplicate quest identity rejected");
     loaded.Quests.clear();require(quest_views(loaded,runtime).size()==3,"Legacy rules expose objectives without requiring scene conversion");
 }
 
@@ -75,7 +76,7 @@
     SceneData scene;scene.Game.emplace();Character block;block.Shape="cube";block.Height=2;scene.Characters={block};
     assign_object_behavior(scene,block.Id,"door");add_object_quest(scene,block.Id);auto ruleId=scene.Rules[0].Id;
     assign_object_behavior(scene,block.Id,"breakable");require(scene.Rules[0].Id==ruleId && scene.Rules[0].Event=="object-broken" && scene.Quests[0].RuleIds[0]==ruleId,"Changing preset updates its objective without losing stable links");
-    bool rejected=false;try{assign_object_behavior(scene,block.Id,"none");}catch(...){rejected=true;}require(rejected,"Clearing behavior cannot silently strand its objective");
+    bool rejected=false;try{assign_object_behavior(scene,block.Id,"none");}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Clearing behavior cannot silently strand its objective");
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
     SceneData landing;landing.Game.emplace();landing.Terrain.emplace();block.Height=.4;landing.Characters={block};add_object_quest(landing,block.Id,true);
     AdventurePlayer player;player.start(landing);player.position={0,2.5,0};for(int i=0;i<100;++i)player.move(0,0,1./120);

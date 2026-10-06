@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 #include "engine_assets.hpp"
 #include "solid_fixture.hpp"
 #include "commands.hpp"
@@ -116,7 +117,7 @@ static int checks_main(int argc, char **argv) {
             auto baseline=json::parse(saved.encode());baseline.erase("ShadowQuality");
             require(SceneData::decode(baseline.dump()).ShadowQuality==2,"Legacy scenes retain default Medium shadow quality");
             for(int quality=0;quality<4;++quality){saved.ShadowQuality=quality;require(SceneData::decode(saved.encode()).ShadowQuality==quality,"Saved shadow preset round trips without changing its value");}
-            for(const auto& invalid:std::array<json,4>{json(-1),json(4),json(1.5),json("High")}){auto data=baseline;data["ShadowQuality"]=invalid;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}require(rejected,"Invalid shadow quality is rejected instead of silently truncating");}
+            for(const auto& invalid:std::array<json,4>{json(-1),json(4),json(1.5),json("High")}){auto data=baseline;data["ShadowQuality"]=invalid;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Invalid shadow quality is rejected instead of silently truncating");}
         }
         {
             auto volume=[](const Mesh& mesh){double result=0;for(size_t i=0;i<mesh.indices.size();i+=3){auto a=mesh.vertices[mesh.indices[i]].position,b=mesh.vertices[mesh.indices[i+1]].position,c=mesh.vertices[mesh.indices[i+2]].position;result+=a.dot(b.cross(c))/6.;}return result;};
@@ -881,9 +882,7 @@ static int checks_main(int argc, char **argv) {
             bool rejected = false;
             try {
                 SceneData::decode(text);
-            } catch (...) {
-                rejected = true;
-            }
+            } catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
             require(rejected, "Malformed scene rejected");
         }
         auto file = folder / L"roundtrip.starscene";
@@ -895,9 +894,7 @@ static int checks_main(int argc, char **argv) {
         bool stale = false;
         try {
             save_scene(s, file, old);
-        } catch (...) {
-            stale = true;
-        }
+        } catch(...){stale=true;note_rejection(__FILE__,__LINE__);}
         require(stale, "Stale edit rejected");
         configure(c, 2, -1, 2.25, .75);
         require(c.Route[0].X == 5 && c.Route[0].Z == -1, "Character configure moves route");
@@ -970,15 +967,15 @@ static int checks_main(int argc, char **argv) {
                 target.Characters.front().Id == first.Id, "Reusable object insertion supports Undo and Redo");
             auto invalid = json::parse(read_file(saved)); invalid["Version"] = 3;
             bool refused = false;
-            try { decode_object_template(invalid.dump()); } catch (...) { refused = true; }
+            try { decode_object_template(invalid.dump()); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
             require(refused, "Unknown reusable object version is rejected");
             invalid["Version"] = 2; invalid["Object"]["Asset"] = "outside.glb";
             refused = false;
-            try { decode_object_template(invalid.dump()); } catch (...) { refused = true; }
+            try { decode_object_template(invalid.dump()); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
             require(refused, "Reusable objects reject hidden external asset dependencies");
             Character imported; imported.Asset = "missing.glb";
             refused = false;
-            try { encode_object_template(imported); } catch (...) { refused = true; }
+            try { encode_object_template(imported); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
             require(refused, "A reusable object that names its model by file path is refused");
             auto secondObject = object; secondObject.Id = new_id(); secondObject.X += 3;
             secondObject.Y = 2; secondObject.Route = {{7,4}};
@@ -996,7 +993,7 @@ static int checks_main(int argc, char **argv) {
             require(groupHistory.undo(placement) && placement.Characters.empty() && groupHistory.redo(placement) && placement.Characters.size() == 2,
                 "Whole group insertion is a single Undo and Redo transaction");
             auto badGroup = json::parse(read_file(groupFile)); badGroup["Objects"] = json::array(); refused = false;
-            try { decode_object_group(badGroup.dump()); } catch (...) { refused = true; }
+            try { decode_object_group(badGroup.dump()); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
             require(refused, "Empty reusable group is rejected");
         }
         for (const auto &kind : shapes) {
@@ -1147,9 +1144,7 @@ static int checks_main(int argc, char **argv) {
         bool invalid = false;
         try {
             apply_commands(request);
-        } catch (...) {
-            invalid = true;
-        }
+        } catch(...){invalid=true;note_rejection(__FILE__,__LINE__);}
         require(invalid && hash_file(file) == hash, "Failed command batch preserves original bytes");
         {
             auto source = folder / "stone.starobject";
@@ -1171,7 +1166,7 @@ static int checks_main(int argc, char **argv) {
             ops["expectedSha256"] = unchanged;
             ops["operations"].push_back(json{{"op","insert-object"},{"file","stone.starobject"},{"expectedSha256","stale"}});
             atomic_write(request, ops.dump()); bool rejected = false;
-            try { apply_commands(request); } catch (...) { rejected = true; }
+            try { apply_commands(request); } catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
             require(rejected && hash_file(file) == unchanged,
                 "Stale object file rolls back entire command batch including earlier duplication");
             SceneData from; from.Hour = 1;
@@ -1297,8 +1292,8 @@ static int checks_main(int argc, char **argv) {
                 auto intact = hash_file(brokenFile);
                 atomic_write(replacement, "invalid GLB"); repair["expectedSha256"] = intact;
                 atomic_write(request, repair.dump()); bool rejected = false;
-                try { apply_commands(request); } catch (...) { rejected = true; }
-                require(rejected && hash_file(brokenFile) == intact, "Invalid replacement model leaves scene bytes unchanged");
+                try { apply_commands(request); } catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
+                require((rejected && hash_file(brokenFile) == intact) && last_rejection().find("Invalid GLB") != std::string::npos, "Invalid replacement model leaves scene bytes unchanged");
             }
             {
                 SceneData portable;
@@ -1327,7 +1322,7 @@ static int checks_main(int argc, char **argv) {
                     "Portable imported-model composition resolves the model assets bundled with the source scene");
                 bool missingSelection = false;
                 auto absentSelection = folder / ("missing-selection-" + new_id());
-                try { export_scene_selection(portable, {"missing"}, absentSelection); } catch (...) { missingSelection = true; }
+                try { export_scene_selection(portable, {"missing"}, absentSelection); } catch(...){missingSelection=true;note_rejection(__FILE__,__LINE__);}
                 require(missingSelection && !fs::exists(absentSelection), "Unknown selected object cannot produce an incomplete export");
                 auto relocated = folder / ("relocated-" + new_id());
                 fs::rename(destination, relocated);
@@ -1350,12 +1345,12 @@ static int checks_main(int argc, char **argv) {
                 require(onDisk.Characters[0].Asset == fixtureModel, "Saving a reopened portable scene keeps the model id");
                 bool refused = false;
                 auto before = hash_file(sceneFile);
-                try { export_portable_scene(portable, relocated); } catch (...) { refused = true; }
-                require(refused && hash_file(sceneFile) == before, "Portable export refuses to overwrite existing folders");
+                try { export_portable_scene(portable, relocated); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
+                require((refused && hash_file(sceneFile) == before) && last_rejection().find("Choose a new folder") != std::string::npos, "Portable export refuses to overwrite existing folders");
                 portable.Characters[0].Asset = "model-" + std::string(64, 'c');
                 auto failed = folder / ("failed-export-" + new_id()); refused = false;
-                try { export_portable_scene(portable, failed); } catch (...) { refused = true; }
-                require(refused && !fs::exists(failed), "Missing model does not publish a partial portable scene");
+                try { export_portable_scene(portable, failed); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
+                require((refused && !fs::exists(failed)) && last_rejection().find("missing from the asset library") != std::string::npos, "Missing model does not publish a partial portable scene");
                 auto manifestFile = relocated / "manifest.json";
                 auto manifest = json::parse(read_file(manifestFile));
                 manifest["sceneSha256"] = hash_file(sceneFile);
@@ -1363,13 +1358,13 @@ static int checks_main(int argc, char **argv) {
                 require(verify_portable_scene(relocated).at("success").get<bool>(), "Intact exported assets pass before corruption test");
                 auto escaped = manifest; escaped["assets"][0]["path"] = utf8(fs::absolute(fixture).wstring());
                 atomic_write(manifestFile, escaped.dump()); refused = false;
-                try { verify_portable_scene(relocated); } catch (...) { refused = true; }
-                require(refused, "Portable verification rejects absolute asset paths");
+                try { verify_portable_scene(relocated); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
+                require((refused) && last_rejection().find("Invalid portable scene path") != std::string::npos, "Portable verification rejects absolute asset paths");
                 atomic_write(manifestFile, manifest.dump());
                 auto assetPath = relocated / "assets" / starlight::editor::wide(reopened.Characters[0].Asset + ".slasset");
                 atomic_write(assetPath, "damaged"); refused = false;
-                try { verify_portable_scene(relocated); } catch (...) { refused = true; }
-                require(refused, "Portable verification rejects damaged asset bytes");
+                try { verify_portable_scene(relocated); } catch(...){refused=true;note_rejection(__FILE__,__LINE__);}
+                require((refused) && last_rejection().find("changed since export") != std::string::npos, "Portable verification rejects damaged asset bytes");
             }
             auto bytes = read_file(fixture);
             uint32_t jsonSize;
@@ -1412,7 +1407,7 @@ static int checks_main(int argc, char **argv) {
             require(!SceneData::decode("{\"SchemaVersion\":16}").Game,"Legacy scenes do not acquire gameplay implicitly");
             for(auto field:{"MoveSpeed","LookSensitivity","PlayerRadius"}){
                 auto invalid=json(adventure);invalid["Game"][field]=-1;
-                bool rejected=false;try{SceneData::decode(invalid.dump());}catch(...){rejected=true;}
+                bool rejected=false;try{SceneData::decode(invalid.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
                 require(rejected,"Invalid gameplay tuning rejected");
             }
         }
@@ -1469,7 +1464,7 @@ static int checks_main(int argc, char **argv) {
             require(group[0].X==1.25 && std::abs(group[1].X-group[0].X-.17)<1e-9,
                 "Custom grid preserves grouped object spacing");
             require(snap_increment(23,15)==30 && snap_increment(-23,15)==-30,"Rotation snap supports both directions");
-            bool rejected=false;try{snap_increment(1,0);}catch(...){rejected=true;}
+            bool rejected=false;try{snap_increment(1,0);}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
             require(rejected,"Invalid snap spacing rejected");
         }
         SceneData render;
@@ -1620,7 +1615,7 @@ static int checks_main(int argc, char **argv) {
             auto saved=SceneData::decode(storm.encode());require(saved.Characters[0].LightningTargetId==block.Id,"Lightning target references persist through scene serialization");
             auto grouped=decode_object_group(encode_object_group(storm.Characters));require(grouped[0].LightningTargetId==grouped[1].Id&&grouped[1].Id!=block.Id,"Reusable lightning groups reconnect to their copied targets");
             auto offset=grouped[0].TargetX;SceneData placement;place_object_group(grouped,placement,4,3,false,false,false);require(grouped[0].TargetX==offset,"Moving a lightning group preserves target-local offsets");
-            bool missingTargetRejected=false;try{encode_object_template(storm.Characters[0]);}catch(...){missingTargetRejected=true;}require(missingTargetRejected,"Reusable emitters cannot silently lose required target references");
+            bool missingTargetRejected=false;try{encode_object_template(storm.Characters[0]);}catch(...){missingTargetRejected=true;note_rejection(__FILE__,__LINE__);}require(missingTargetRejected,"Reusable emitters cannot silently lose required target references");
             storm.Characters.pop_back();effects.step(storm,.03,.17);require(!effects.contact(bolt.Id),"Removing a lightning target stops the stale discharge");
 
         }
@@ -1639,7 +1634,7 @@ static int checks_main(int argc, char **argv) {
             require(restored.Characters[0].Friction==.2&&restored.Characters[0].Restitution==.8,"Physical materials survive scene save and load");
             auto old=json::parse(material.encode());old["Characters"][0].erase("Friction");old["Characters"][0].erase("Restitution");auto defaults=SceneData::decode(old.dump());
             require(defaults.Characters[0].Friction==.72&&defaults.Characters[0].Restitution==.03,"Older scenes retain existing physical material defaults");
-            bool rejected=false;try{c.Restitution=1.1;c.validate();}catch(...){rejected=true;}require(rejected,"Invalid bounce coefficients cannot enter a scene");
+            bool rejected=false;try{c.Restitution=1.1;c.validate();}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Invalid bounce coefficients cannot enter a scene");
         }
         {
             TerrainData sloped;sloped.WaterEnabled=true;sloped.WaterLevel=2;
@@ -1698,7 +1693,7 @@ static int checks_main(int argc, char **argv) {
             controller.sync_dynamic(level);double held=level.Characters[0].Y;
             for(int i=0;i<120;++i)eye=controller.step(eye,{},1./120.,false,1+i/120.,{target.Id});controller.sync_dynamic(level);
             require(held>3.9&&level.Characters[0].Y<2,"Removing a joint target detaches the body without a stale constraint");
-            bool invalid=false;try{auto c=body;c.JointTargetId=c.Id;c.validate();}catch(...){invalid=true;}require(invalid,"Self-referencing joints are rejected");
+            bool invalid=false;try{auto c=body;c.JointTargetId=c.Id;c.validate();}catch(...){invalid=true;note_rejection(__FILE__,__LINE__);}require(invalid,"Self-referencing joints are rejected");
         }
         {
             TerrainData currentTerrain;auto movingWater=std::make_unique<TerrainFlow>(currentTerrain,std::vector<LiquidSource>{});movingWater->water.fill(1);for(int z=0;z<48;++z)for(int x=0;x<24;++x)movingWater->water[z*48+x]=2;double waterVolume=movingWater->volume();movingWater->step(.025);auto current=movingWater->velocity_at(-.25,.25);auto currentSnapshot=std::make_shared<LiquidSnapshot>(movingWater->snapshot());require(current.x>0&&std::abs(current.z)<1e-8&&std::abs(movingWater->volume()-waterVolume)<1e-8,"Liquid transport publishes conservative currents from high water toward low water");require((currentSnapshot->velocity_at(-.25,.25)-current).length()<1e-8&&currentSnapshot->velocity_at(13,0).length()==0,"Immutable liquid snapshots preserve current samples and reject dry world boundaries");

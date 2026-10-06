@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 // Keep large gameplay instances off the Windows stack.
 __declspec(noinline) static void object_destruction_checks(const auto& require,const fs::path& folder){
     auto level=std::make_unique<SceneData>();level->Game.emplace();level->Game->SpawnZ=0;
@@ -10,11 +11,11 @@ __declspec(noinline) static void object_destruction_checks(const auto& require,c
     auto legacy=json(*level);legacy["Characters"][0].erase("Breakable");legacy["Characters"][0].erase("DestructionHealth");
     auto migrated=SceneData::decode(legacy.dump());require(migrated.Characters[0].Breakable&&migrated.Characters[0].DestructionHealth==10,"Legacy placed objects gain default breakability rather than being silently excluded");
     for(auto value:std::array<json,5>{json(0),json(-1),json(1e12),json("strong"),json(nullptr)}){
-        auto data=json(*level);data["Characters"][0]["DestructionHealth"]=value;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}
+        auto data=json(*level);data["Characters"][0]["DestructionHealth"]=value;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
         require(rejected,"Invalid scenery durability is rejected before gameplay");
     }
     for(auto value:std::array<json,3>{json(1),json("true"),json(nullptr)}){
-        auto data=json(*level);data["Characters"][0]["Breakable"]=value;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}
+        auto data=json(*level);data["Characters"][0]["Breakable"]=value;bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
         require(rejected,"Breakability requires an actual saved boolean");
     }
     auto templateObject=decode_object_template(encode_object_template(wall));auto group=decode_object_group(encode_object_group({wall}));

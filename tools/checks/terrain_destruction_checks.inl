@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 #include "physics.hpp"
 // Runtime solid carving must preserve authoring, bodies, fluids and reset.
 __declspec(noinline) static void terrain_destruction_checks(const auto& require,const fs::path& folder){
@@ -8,7 +9,7 @@ __declspec(noinline) static void terrain_destruction_checks(const auto& require,
     auto legacy=json(*level);for(const char* field:{"Breakable","DestructionHealth","DestructionRadius"})legacy["Terrain"].erase(field);
     auto old=SceneData::decode(legacy.dump());require(old.SchemaVersion==16&&old.Terrain->Breakable&&old.Terrain->DestructionHealth==10&&old.Terrain->DestructionRadius==.65,"Earlier terrain scenes retain their geometry and gain destruction defaults");
     for(const char* name:{"DestructionHealth","DestructionRadius"})for(json value:{json(0),json(-1),json(1e12),json("strong"),json(nullptr)}){
-        auto bad=json(*level);bad["Terrain"][name]=value;bool rejected=false;try{SceneData::decode(bad.dump());}catch(...){rejected=true;}require(rejected,"Invalid terrain destruction controls are rejected before mutation");
+        auto bad=json(*level);bad["Terrain"][name]=value;bool rejected=false;try{SceneData::decode(bad.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Invalid terrain destruction controls are rejected before mutation");
     }
     auto terrain=*level->Terrain;TerrainDestruction damage;
     require(!damage.damage(terrain,{0,.04,0},{0,1,0},10)&&terrain.Volumes.empty(),"Terrain accumulates partial local damage without carving prematurely");

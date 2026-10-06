@@ -1,9 +1,10 @@
+#include "rejection_note.hpp"
 template<class Require> void water_wave_checks(Require require,const fs::path& folder){
     auto owner=std::make_unique<SceneData>();auto& scene=*owner;
     require(scene.WaterWindX==1.5&&scene.WaterWindZ==.5&&scene.WaterWaveStrength==.35,"Legacy water receives an authorable moderate breeze and wave strength");
     scene.WaterWindX=-3;scene.WaterWindZ=2;scene.WaterWaveStrength=.65;
     {auto saved=std::make_unique<SceneData>(SceneData::decode(scene.encode()));require(saved->WaterWindX==-3&&saved->WaterWindZ==2&&saved->WaterWaveStrength==.65,"Water wind and wave strength round trip through saved scenes");}
-    auto source=json::parse(scene.encode());for(auto [key,value]:std::vector<std::pair<std::string,double>>{{"WaterWindX",21},{"WaterWindZ",-21},{"WaterWaveStrength",1.1},{"WaterWaveStrength",-.1}}){auto invalid=source;invalid[key]=value;bool rejected=false;try{auto saved=std::make_unique<SceneData>(SceneData::decode(invalid.dump()));}catch(...){rejected=true;}require(rejected,"Out-of-range water controls are rejected before simulation");}
+    auto source=json::parse(scene.encode());for(auto [key,value]:std::vector<std::pair<std::string,double>>{{"WaterWindX",21},{"WaterWindZ",-21},{"WaterWaveStrength",1.1},{"WaterWaveStrength",-.1}}){auto invalid=source;invalid[key]=value;bool rejected=false;try{auto saved=std::make_unique<SceneData>(SceneData::decode(invalid.dump()));}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Out-of-range water controls are rejected before simulation");}
     scene.Terrain.emplace();scene.Terrain->WaterEnabled=true;scene.Terrain->WaterLevel=1;
     auto flow=std::make_unique<TerrainFlow>(*scene.Terrain,std::vector<LiquidSource>{});flow->wind(2,.7,.6);double volume=flow->volume();
     for(int i=0;i<480;++i)flow->step(1./120.);

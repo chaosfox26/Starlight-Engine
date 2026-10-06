@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 // Focused limit checks kept in their own frame to avoid growing main's Windows stack.
 static void physics_boundary_checks(const auto& require){
     TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=1;
@@ -23,5 +24,5 @@ static void physics_boundary_checks(const auto& require){
     smoke.Characters.erase(smoke.Characters.begin());sources=smoke_sources(smoke,0,nullptr);require(sources.size()==16&&sources.back()[0]==16,"Removing a fog emitter admits the next source without stale slots");
     EnvironmentEffects effects;for(int i=0;i<50;++i)effects.splash({{0,3,0},{},2,false});require(effects.splash_count()==1024,"Splash emission is bounded at 1024 independent droplets");effects.reset();require(effects.splash_count()==0,"Reset releases a fully populated droplet pool");
     Character rope;rope.Shape="cube";rope.Dynamic=true;rope.JointKind=3;bool valid=true;for(int n:{0,2,64}){rope.JointSegments=n;try{rope.validate();}catch(...){valid=false;}}require(valid,"Rope authoring accepts endpoints and the unsegmented mode");
-    bool invalid=true;for(int n:{-1,1,65}){rope.JointSegments=n;bool threw=false;try{rope.validate();}catch(...){threw=true;}invalid&=threw;}require(invalid,"Rope authoring rejects negative, one-link and over-limit counts");
+    bool invalid=true;for(int n:{-1,1,65}){rope.JointSegments=n;bool threw=false;try{rope.validate();}catch(...){threw=true;note_rejection(__FILE__,__LINE__);}invalid&=threw;}require(invalid,"Rope authoring rejects negative, one-link and over-limit counts");
 }

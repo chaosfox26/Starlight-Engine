@@ -1,3 +1,4 @@
+#include "rejection_note.hpp"
 {
     SceneData level;level.Game.emplace();level.Game->SpawnY=.5;level.Game->SpawnZ=2;
     Character red;red.Shape="cube";red.GameplayRole="key";red.GameplayKey="red";
@@ -45,7 +46,7 @@
         if(bad==4)data["Rules"]=std::vector<GameplayRule>(65,collection);
         if(bad==5)data["Rules"][0]["Conditions"]=std::vector<GameplayCondition>(17,{"has-key","red"});
         if(bad==6)data["Rules"][0]["Actions"]=json::array();
-        bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;}
+        bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
         require(rejected,"Malformed or unbounded gameplay rule rejected before Play");
     }
     auto portable=folder/"rules-portable";export_portable_scene(level,portable);verify_portable_scene(portable);

@@ -1,18 +1,19 @@
+#include "rejection_note.hpp"
 template<class Require> void rain_checks(Require require,const fs::path& folder){
     SceneData legacy=SceneData::decode("{\"SchemaVersion\":16}");
     require(legacy.BloomQuality==2&&legacy.BloomStrength==.12,"Legacy scenes receive the shared moderate glow default without a migration");
     auto glow=legacy;glow.BloomQuality=3;glow.BloomStrength=.23;auto savedGlow=SceneData::decode(glow.encode());
     require(savedGlow.BloomQuality==3&&savedGlow.BloomStrength==.23,"Authored glow quality and intensity persist through scene save and reload");
     bool rejectedQuality=false,rejectedStrength=false;
-    try{auto invalid=glow;invalid.BloomQuality=4;invalid.validate();}catch(...){rejectedQuality=true;}
-    try{auto invalid=glow;invalid.BloomStrength=std::numeric_limits<double>::quiet_NaN();invalid.validate();}catch(...){rejectedStrength=true;}
+    try{auto invalid=glow;invalid.BloomQuality=4;invalid.validate();}catch(...){rejectedQuality=true;note_rejection(__FILE__,__LINE__);}
+    try{auto invalid=glow;invalid.BloomStrength=std::numeric_limits<double>::quiet_NaN();invalid.validate();}catch(...){rejectedStrength=true;note_rejection(__FILE__,__LINE__);}
     require(rejectedQuality&&rejectedStrength,"Glow settings reject unsupported presets and nonfinite intensities before rendering");
     require(legacy.RainIntensity==0&&legacy.RainWindX==0&&legacy.RainWindZ==0,"Older scenes keep weather disabled without new required fields");
     SceneData scene;scene.RainIntensity=.65;scene.RainWindX=2;scene.RainWindZ=-1;scene.FogDensity=.01;scene.Terrain.emplace();
     auto saved=SceneData::decode(scene.encode());
     require(saved.RainIntensity==.65&&saved.RainWindX==2&&saved.RainWindZ==-1,"Rain intensity and wind survive scene save and reload");
-    for(auto value:{-1.,1.1,std::numeric_limits<double>::infinity()}){auto invalid=scene;invalid.RainIntensity=value;bool rejected=false;try{invalid.validate();}catch(...){rejected=true;}require(rejected,"Invalid rain intensity is rejected at the authored scene boundary");}
-    for(auto value:{-21.,21.,std::numeric_limits<double>::quiet_NaN()}){auto invalid=scene;invalid.RainWindX=value;bool rejected=false;try{invalid.validate();}catch(...){rejected=true;}require(rejected,"Invalid rain wind is rejected at the authored scene boundary");}
+    for(auto value:{-1.,1.1,std::numeric_limits<double>::infinity()}){auto invalid=scene;invalid.RainIntensity=value;bool rejected=false;try{invalid.validate();}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Invalid rain intensity is rejected at the authored scene boundary");}
+    for(auto value:{-21.,21.,std::numeric_limits<double>::quiet_NaN()}){auto invalid=scene;invalid.RainWindX=value;bool rejected=false;try{invalid.validate();}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}require(rejected,"Invalid rain wind is rejected at the authored scene boundary");}
     RainWeather weather;weather.step(legacy,.05,{},nullptr);require(weather.particles().empty(),"Default scenes do not spawn rain or change existing visuals");
     WeatherSurface moisture,fineMoisture;for(int i=0;i<200;++i)moisture.step(1,.05);for(int i=0;i<400;++i)fineMoisture.step(1,.025);
     require(moisture.moisture()>.9&&std::abs(moisture.moisture()-fineMoisture.moisture())<1e-12,"Wet surfaces accumulate consistently across simulation frame subdivisions");
