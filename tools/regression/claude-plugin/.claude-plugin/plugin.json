@@ -1,5 +1,5 @@
 {
   "name": "starlight-regression",
-  "version": "0.1.0",
-  "description": "Read-only view of the Starlight fix ledger: current states, recent transitions and failure packets. Stage 1: no hooks, no watcher, no repair, never runs the engine."
+  "version": "0.1.1",
+  "description": "Read-only status of the last recorded Starlight fix-ledger results. Stage 1: no hooks, no watcher, no alerts, no failure-packet reader, no repair, never runs the engine."
 }

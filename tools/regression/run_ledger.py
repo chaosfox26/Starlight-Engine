@@ -18,6 +18,15 @@ def sha256(path):
             h.update(block)
     return h.hexdigest()
 
+def publish_json(path, data):
+    """Write to a temporary file in the same folder, then replace the target, so a reader never sees a half-written result."""
+    temp = path + '.tmp'
+    with open(temp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp, path)
+
 def git(repo, *args):
     try:
         return subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60).stdout.strip()
@@ -184,8 +193,8 @@ def main():
         except Exception:
             previous = {}
     report['transitions'] = transitions_for(entries, previous)
-    json.dump(report, open(os.path.join(args.results, build_id + '.json'), 'w', encoding='utf-8'), indent=1)
-    json.dump(report, open(latest_path, 'w', encoding='utf-8'), indent=1)
+    publish_json(os.path.join(args.results, build_id + '.json'), report)
+    publish_json(latest_path, report)
     if report['transitions']:
         with open(os.path.join(args.results, 'notices.log'), 'a', encoding='utf-8') as f:
             for t in report['transitions']:
