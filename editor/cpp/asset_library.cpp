@@ -8,7 +8,7 @@ std::wstring lower(std::wstring value) {
     return value;
 }
 }
-AssetIndex scan_asset_library(const fs::path& folder) {
+AssetIndex scan_asset_library(const fs::path& folder, const std::atomic<bool>* cancel) {
     auto root = fs::canonical(folder);
     if (!fs::is_directory(root)) throw std::runtime_error("Choose a folder for the asset browser");
     AssetIndex result;
@@ -18,7 +18,7 @@ AssetIndex scan_asset_library(const fs::path& folder) {
     size_t visited = 0;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (current != end) {
-        if (++visited > 50000 || result.entries.size() >= 10000 || std::chrono::steady_clock::now() >= deadline) {
+        if (++visited > 50000 || result.entries.size() >= 10000 || std::chrono::steady_clock::now() >= deadline || (cancel && cancel->load())) {
             result.partial = true; break;
         }
         const auto entry = *current;

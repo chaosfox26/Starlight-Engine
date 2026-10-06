@@ -2,6 +2,7 @@ HWND libraryPanel{}, librarySearch{}, libraryList{}, libraryMessage{};
 fs::path libraryFolder;
 AssetIndex libraryIndex;
 std::vector<size_t> libraryMatches;
+std::atomic<bool> libraryCancel{false};   // set when the editor closes so a running scan stops instead of holding up shutdown (audit ED-12); declared before the task so it outlives it
 std::future<AssetIndex> libraryTask;
 
 void layout_asset_browser() {
@@ -69,7 +70,7 @@ void filter_asset_browser() {
 void scan_asset_browser() {
     if (libraryTask.valid() || libraryFolder.empty()) return;
     const auto folder = libraryFolder;
-    libraryTask = std::async(std::launch::async, [folder] { return scan_asset_library(folder); });
+    libraryTask = std::async(std::launch::async, [folder, this] { return scan_asset_library(folder, &libraryCancel); });
     for (int id : {ChooseAssets, RefreshAssets, InsertAsset}) EnableWindow(GetDlgItem(libraryPanel, id), FALSE);
     SetWindowTextW(libraryMessage, L"Scanning asset folder… You can continue editing.");
 }

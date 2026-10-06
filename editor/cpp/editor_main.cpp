@@ -429,6 +429,8 @@ struct Editor {
     }
 
     ~Editor() {
+        libraryCancel = true;
+        if (libraryTask.valid()) libraryTask.wait();
         gamePreview.reset();
         if(projectWindow && IsWindow(projectWindow)) DestroyWindow(projectWindow);
         renderer.reset();

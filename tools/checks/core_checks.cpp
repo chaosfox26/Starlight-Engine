@@ -36,6 +36,7 @@ using namespace starlight::editor;
 #include "scene_preparation_checks.inl"
 #include "scene_validation_checks.inl"
 #include "file_io_checks.inl"
+#include "asset_scan_checks.inl"
 #include "error_throttle_checks.inl"
 #include "terrain_brush_checks.inl"
 #include "rain_checks.inl"
@@ -92,6 +93,7 @@ static int checks_main(int argc, char **argv) {
         scene_preparation_checks(require);
         scene_validation_checks(require);
         file_io_checks(require,folder);
+        asset_scan_checks(require,folder);
         error_throttle_checks(require);
         terrain_brush_checks(require);
         cache_pin_checks(require);
