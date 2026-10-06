@@ -99,6 +99,30 @@
     "deep/Physics/PhysicsWorld.cpp BuildHull overBound handling",
     "tools/checks/object_cache_checks.inl HULL-BOUND block"
    ]
+  },
+  {
+   "id": "EL-07",
+   "title": "The physics C ABI refuses hostile input instead of passing it to Jolt",
+   "subsystem": "physics C ABI (deep/Physics/PhysicsWorld.cpp)",
+   "class": "correctness",
+   "originalFailure": "Non-finite or zero-quaternion poses, non-positive density, oversized index counts, null arrays, non-finite velocity or platform moves, and removal of a stale body id reached Jolt unchecked.",
+   "fixCommits": [
+    "pending"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "EL-07:",
+     "minChecks": 19
+    }
+   ],
+   "testStrength": "Strong for the refusals it names: with the old code the suite fails at the first EL-07 check, and with the fix all 19 pass and valid calls still succeed. Does not cover EL-07 items it does not list (slp_add_hull poses are covered through AddShape; terrain heights length cannot be checked because the ABI has no length parameter).",
+   "investigate": [
+    "deep/Physics/PhysicsWorld.cpp CheckPose, Add, slp_body_velocity, slp_character_remove, slp_character_platform, slp_character_actor",
+    "tools/checks/physics_abi_checks.inl"
+   ]
   }
  ]
 }
