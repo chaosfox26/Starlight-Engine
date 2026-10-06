@@ -65,6 +65,11 @@ def problems(d):
     for key in ('started', 'completed'):
         if not isinstance(suite.get(key), bool):
             found.append('suite field %s is missing or not true/false' % key)
+    if not isinstance(suite.get('timedOut'), bool):
+        found.append('suite field timedOut is missing or not true/false')
+    exit_code = suite.get('exitCode', 'missing')
+    if exit_code == 'missing' or not (exit_code is None or (isinstance(exit_code, int) and not isinstance(exit_code, bool))):
+        found.append('suite field exitCode is missing or not a whole number or null')
     if not (isinstance(suite.get('success'), bool) or (suite.get('success') is None and suite.get('completed') is False)):
         found.append('suite field success must be true/false once the suite completed (null only when it did not complete)')
     identity = d['identity']
@@ -158,9 +163,11 @@ def main():
     print('Tested build %s | git %s | %s modified tracked files | recorded %s (%s)' % (
         data(d['buildId'], 80), data(str(ident.get('gitHead'))[:12], 20), data(ident.get('dirtyTrackedFiles'), 10), data(d['createdUtc'], 30), age(d['createdUtc'])))
     suite = d['suite']
-    suite_ok = suite['started'] and suite['completed'] and suite['success'] is True
-    print('Whole suite: started=%s completed=%s success=%s checks=%s%s' % (suite['started'], suite['completed'], suite['success'], data(d.get('suiteCheckCount'), 12),
+    suite_ok = suite['started'] and suite['completed'] and suite['success'] is True and suite['exitCode'] == 0 and suite['timedOut'] is False
+    print('Whole suite: started=%s completed=%s success=%s exitCode=%s timedOut=%s checks=%s%s' % (suite['started'], suite['completed'], suite['success'], data(suite['exitCode'], 20), suite['timedOut'], data(d.get('suiteCheckCount'), 12),
           '' if suite_ok else '   <-- the suite itself did not finish cleanly'))
+    if suite['completed'] and suite['success'] is True and not suite_ok:
+        print('Conflict: the suite wrote a passing result but the process %s. The entry states below come from that result; treat the whole run as not clean.' % ('timed out' if suite['timedOut'] else 'exited with code %s' % data(suite['exitCode'], 20)))
     attention = not suite_ok
     for e in d['entries']:
         state = e['state']
