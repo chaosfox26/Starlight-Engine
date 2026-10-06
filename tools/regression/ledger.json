@@ -107,7 +107,7 @@
    "class": "correctness",
    "originalFailure": "Non-finite or zero-quaternion poses, non-positive density, oversized index counts, null arrays, non-finite velocity or platform moves, and removal of a stale body id reached Jolt unchecked.",
    "fixCommits": [
-    "pending"
+    "96c5f56"
    ],
    "tier": "build",
    "tests": [
