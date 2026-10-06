@@ -687,7 +687,7 @@ API uint64_t sl_uploads(void* handle){return static_cast<Viewport*>(handle)->upl
 API int sl_parts(void* handle){return (int)static_cast<Viewport*>(handle)->parts.size();}
 API int sl_captured(void* handle){return static_cast<Viewport*>(handle)->renderer->shotDone?1:0;}
 API void sl_shot(void* handle,const wchar_t* path){auto& d=*static_cast<Viewport*>(handle)->renderer;d.shotPath=path;d.shotAtMs=0;d.shotDone=false;if(!g_logFile){auto log=std::wstring(path)+L".log";_wfopen_s(&g_logFile,log.c_str(),L"w");}}
-API void sl_destroy(void* handle){if(!handle)return;auto v=static_cast<Viewport*>(handle);v->renderer->flush();v->rt.drainRetired(*v->renderer,true);recycle_retired_resident(*v,true);v->rt.shutdown();v->renderer->teardown();delete v;}
+API void sl_destroy(void* handle){if(!handle)return;auto v=static_cast<Viewport*>(handle);std::string first;auto step=[&](auto&& body){try{body();}catch(const std::exception& e){if(first.empty())first=e.what();}catch(...){if(first.empty())first="unknown error during viewport destruction";}};step([&]{v->renderer->flush();});step([&]{v->rt.drainRetired(*v->renderer,true);});step([&]{recycle_retired_resident(*v,true);});step([&]{v->rt.shutdown();});step([&]{v->renderer->teardown();});step([&]{delete v;});if(!first.empty())failure="Viewport cleanup: "+first;}
 
 
 
