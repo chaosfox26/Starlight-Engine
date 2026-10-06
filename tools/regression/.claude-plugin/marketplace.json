@@ -1,0 +1,11 @@
+{
+  "name": "starlight-regression-local",
+  "owner": { "name": "Starlight local tools" },
+  "plugins": [
+    {
+      "name": "starlight-regression",
+      "source": "./claude-plugin",
+      "description": "Read-only status of the last recorded Starlight fix-ledger results (stage 1: no hooks, no watcher, no alerts, no repair)."
+    }
+  ]
+}
