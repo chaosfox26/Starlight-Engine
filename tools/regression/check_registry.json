@@ -32,6 +32,7 @@
     {"checkId": "EL-05:", "command": "core-suite", "token": "EL-05:", "ledgerEntries": ["EL-05"]},
     {"checkId": "ED-10:", "command": "core-suite", "token": "ED-10:", "ledgerEntries": ["ED-10"]},
     {"checkId": "ED-12:", "command": "core-suite", "token": "ED-12:", "ledgerEntries": ["ED-12"]},
-    {"checkId": "CC-23:", "command": "core-suite", "token": "CC-23:", "ledgerEntries": ["CC-23"]}
+    {"checkId": "CC-23:", "command": "core-suite", "token": "CC-23:", "ledgerEntries": ["CC-23"]},
+    {"checkId": "EL-21:", "command": "core-suite", "token": "EL-21:", "ledgerEntries": ["EL-21"]}
   ]
 }

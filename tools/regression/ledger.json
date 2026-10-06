@@ -412,6 +412,30 @@
     "tutorial_progress.hpp catch(...) legacy fallback",
     "engine_assets.cpp STARLIGHT_ASSET_LIBRARY length"
    ]
+  },
+  {
+   "id": "EL-21",
+   "title": "A zero lightning seed gives the default bolt instead of a degenerate straight line (one sub-item)",
+   "subsystem": "lightning generator (deep/engine/chaos_lightning.h)",
+   "class": "correctness",
+   "originalFailure": "Zero is a fixed point of the xorshift generator, so every bolt generated with seed 0 was the same straight unjittered line.",
+   "fixCommits": [
+    "610b28d"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "EL-21:",
+     "minChecks": 2
+    }
+   ],
+   "testStrength": "Weak-to-moderate: seed 0 now equals the default bolt and other seeds still differ; the old behaviour was not run for comparison. Other EL-21 sub-items are NOT done.",
+   "investigate": [
+    "sl_lightning computing the mesh twice for a size query",
+    "upscale_dlss.cpp status label"
+   ]
   }
  ]
 }
