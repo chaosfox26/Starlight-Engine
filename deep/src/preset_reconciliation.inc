@@ -36,9 +36,9 @@ static json preset(const fs::path&path,const json&approved) {
         changes.push_back({{"from",old},{"to",target},{"reason",reason},{"conversion",conversion}});
     }
     fs::path reconciliation=path;reconciliation+=L".reconciliation.json";
-    if(!issues.empty()) {write(reconciliation,{{"status","needs-confirmation"},{"issues",issues},{"verifiedProposals",changes},{"originalPreserved",true}});throw std::runtime_error("Preset needs reconciliation; suggestions saved beside it. Original unchanged.");}
+    if(!issues.empty()) {bool saved=true;try{write(reconciliation,{{"status","needs-confirmation"},{"issues",issues},{"verifiedProposals",changes},{"originalPreserved",true}});}catch(const std::exception&){saved=false;}throw std::runtime_error(saved?"Preset needs reconciliation; suggestions saved beside it. Original unchanged.":"Preset needs reconciliation, but the suggestions could not be saved beside it (is the folder read-only?). Original unchanged.");}
     p["schemaVersion"]=2;
-    try{validate(p);}catch(const std::exception&e){write(reconciliation,{{"status","invalid-value"},{"error",e.what()},{"originalPreserved",true}});throw;}
+    try{validate(p);}catch(const std::exception&e){try{write(reconciliation,{{"status","invalid-value"},{"error",e.what()},{"originalPreserved",true}});}catch(const std::exception&){}throw;}   // a failed report write must not hide the validation error that explains the problem
     if(p!=original) {
         fs::path backup=path;backup+=version==1?L".v1.backup":L".reconcile.backup";
         if(fs::exists(backup)&&read(backup)!=original)backup+=L"."+std::to_wstring(GetTickCount64());
