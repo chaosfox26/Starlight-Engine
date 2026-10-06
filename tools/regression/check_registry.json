@@ -1,0 +1,24 @@
+{
+  "schema": "starlight-check-registry-1",
+  "note": "Trusted, committed map from check ids to fixed command templates. Nothing here launches anything. Packet text, packet runner and packet args are never consulted. Unknown ids fail closed.",
+  "placeholders": ["repo", "buildDir", "runFolder"],
+  "commands": {
+    "core-suite": {
+      "executable": "Starlight.NativeCoreChecks.exe",
+      "argsTemplate": ["{runFolder}", "{repo}/migration/geometry-reference.json"],
+      "cwd": "{repo}",
+      "environment": {"STARLIGHT_SUPPRESS_DIALOGS": "1"},
+      "timeoutSeconds": 1800,
+      "buildRoot": "{buildDir}",
+      "evidenceRoot": "{runFolder}",
+      "evidenceFiles": ["result.json", "progress.log"],
+      "binaries": ["Starlight.NativeCoreChecks.exe", "Starlight.Viewport.dll", "Starlight.Physics.dll"]
+    }
+  },
+  "checks": [
+    {"checkId": "CC-01:", "command": "core-suite", "token": "CC-01:", "ledgerEntries": ["CC-01"]},
+    {"checkId": "CUBE-BOUNDS:", "command": "core-suite", "token": "CUBE-BOUNDS:", "ledgerEntries": ["CUBE-BOUNDS"]},
+    {"checkId": "HULL-NO-BOX:", "command": "core-suite", "token": "HULL-NO-BOX:", "ledgerEntries": ["HULL-NO-BOX"]},
+    {"checkId": "HULL-BOUND:", "command": "core-suite", "token": "HULL-BOUND:", "ledgerEntries": ["HULL-BOUND"]}
+  ]
+}

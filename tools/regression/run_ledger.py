@@ -10,6 +10,8 @@ Exit code: 0 all VERIFIED, 1 any REGRESSED or COVERAGE-ERROR, 2 anything else no
 Usage: run_ledger.py --build-dir <folder with Starlight.NativeCoreChecks.exe>        |        run_ledger.py --self-test
 """
 import argparse, hashlib, json, os, subprocess, sys, time, uuid
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import registry
 
 def sha256(path):
     h = hashlib.sha256()
@@ -259,7 +261,10 @@ def main():
     ledger = json.load(open(ledger_path, encoding='utf-8'))
     os.makedirs(args.results, exist_ok=True)
 
-    exe = os.path.join(args.build_dir, 'Starlight.NativeCoreChecks.exe')
+    mismatch = registry.check_ledger(ledger_path)
+    if mismatch:
+        print('REFUSING TO RUN: the ledger and the committed check registry disagree: ' + '; '.join(mismatch))
+        return 2
     identity = {
         'gitHead': git(args.repo, 'rev-parse', 'HEAD'),
         'dirtyTrackedFiles': len([l for l in git(args.repo, 'status', '--porcelain', '--untracked-files=no').splitlines() if l.strip()]),
@@ -274,6 +279,8 @@ def main():
     run_id = build_id + '-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:12]
     run_folder = os.path.join(args.results, 'runs', run_id)
     os.makedirs(run_folder, exist_ok=False)
+    command = registry.resolve(ledger['entries'][0]['tests'][0]['token'], args.repo, args.build_dir, run_folder)
+    exe = command['argv'][0]
     result_json = os.path.join(run_folder, 'result.json')
     progress_path = os.path.join(run_folder, 'progress.log')
     suite = {'started': False, 'exitCode': None, 'timedOut': False, 'completed': False, 'success': None, 'error': None, 'checks': []}
@@ -282,8 +289,8 @@ def main():
     else:
         suite['started'] = True
         try:
-            proc = subprocess.run([exe, run_folder, os.path.join(args.repo, 'migration', 'geometry-reference.json')], cwd=args.repo,
-                                  capture_output=True, text=True, timeout=args.timeout, env=dict(os.environ, STARLIGHT_SUPPRESS_DIALOGS='1'))
+            proc = subprocess.run(command['argv'], cwd=command['cwd'], capture_output=True, text=True,
+                                  timeout=min(args.timeout, command['timeoutSeconds']), env=dict(os.environ, **command['env']))
             suite['exitCode'] = proc.returncode
             suite['stdoutTail'] = proc.stdout[-400:]
             suite['stderrTail'] = proc.stderr[-400:]
