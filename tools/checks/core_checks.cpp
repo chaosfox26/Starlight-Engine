@@ -34,6 +34,7 @@ using namespace starlight::editor;
 #include "device_fault_checks.inl"
 #include "scene_preparation_checks.inl"
 #include "scene_validation_checks.inl"
+#include "file_io_checks.inl"
 #include "rain_checks.inl"
 #include "object_cache_checks.inl"
 #include "cache_pin_checks.inl"
@@ -86,6 +87,7 @@ static int checks_main(int argc, char **argv) {
         device_fault_checks(require);
         scene_preparation_checks(require);
         scene_validation_checks(require);
+        file_io_checks(require,folder);
         cache_pin_checks(require);
         rain_checks(require,folder);
         object_cache_checks(require,folder);

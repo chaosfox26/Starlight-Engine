@@ -60,9 +60,24 @@ std::string read_file(const fs::path &p) {
     std::ifstream f(native_file_path(p), std::ios::binary);
     if (!f)
         throw std::runtime_error("Cannot open " + utf8(p.wstring()));
-    std::string data((std::istreambuf_iterator<char>(f)), {});
-    if (f.bad())
-        throw std::runtime_error("Read failed");
+    // Read exactly the size the file had when it was opened and refuse a short read: a stream iterator ends quietly when the underlying read fails
+    // part-way (a locked byte range, a disconnected volume), which used to return a truncated file as if it were complete.
+    f.seekg(0, std::ios::end);
+    const std::streamoff size = f.tellg();
+    if (size < 0) {
+        f.clear();
+        f.seekg(0, std::ios::beg);
+        std::string streamed((std::istreambuf_iterator<char>(f)), {});
+        if (f.bad())
+            throw std::runtime_error("Read failed");
+        return streamed;
+    }
+    std::string data(size_t(size), char(0));
+    f.seekg(0, std::ios::beg);
+    if (size > 0)
+        f.read(data.data(), size);
+    if (f.bad() || std::streamoff(f.gcount()) != size)
+        throw std::runtime_error("Read failed: " + utf8(p.wstring()) + " ended after " + std::to_string(f.gcount()) + " of " + std::to_string(size) + " bytes");
     return data;
 }
 std::string hash_file(const fs::path &p) {
