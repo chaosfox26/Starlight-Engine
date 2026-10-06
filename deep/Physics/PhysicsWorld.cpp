@@ -193,15 +193,20 @@ public:
   if(world.Update(dt,1,&temp,&jobs)!=EPhysicsUpdateError::None)throw std::runtime_error("Character world capacity exceeded");
   auto p=character->GetPosition();output[0]=(float)p.GetX();output[1]=(float)p.GetY();output[2]=(float)p.GetZ();output[3]=character->GetGroundState()==CharacterBase::EGroundState::OnGround?1.f:0.f;
  }
+ static void SetInjectedCookFailures(int n){InjectedCookFailures().store(n);}
+ static std::atomic<int>& InjectedCookFailures(){static std::atomic<int> remaining{0};return remaining;}
  static ShapeRefC Cook(const std::array<float,289>& h,int tx,int tz){
+  {auto& remaining=InjectedCookFailures();int n=remaining.load();while(n>0&&!remaining.compare_exchange_weak(n,n-1)){}if(n>0)throw std::runtime_error("injected terrain cook failure");}
   TriangleList triangles;triangles.reserve(512);
   auto point=[&](int x,int z){return Float3(-12+(tx*16+x)*.25f,h[z*17+x],-12+(tz*16+z)*.25f);};
   for(int z=0;z<16;z++)for(int x=0;x<16;x++){auto a=point(x,z),b=point(x+1,z),c=point(x,z+1),d=point(x+1,z+1);triangles.emplace_back(a,c,b);triangles.emplace_back(b,c,d);}
   MeshShapeSettings settings(triangles);auto result=settings.Create();if(result.HasError())throw std::runtime_error(result.GetError().c_str());return result.Get();
  }
+ // Jolt compiles this module with _HAS_EXCEPTIONS=0, so an exception on a std::async worker ends the process. The worker reports a failed cook as a null shape instead.
+ static ShapeRefC CookGuarded(const std::array<float,289>& h,int tx,int tz){try{return Cook(h,tx,tz);}catch(const std::exception& e){std::fprintf(stderr,"terrain cook failed: %s\n",e.what());return ShapeRefC();}}
  void Terrain(const float* heights){
   if(!volumeTerrain.IsInvalid()){auto& api=world.GetBodyInterface();api.RemoveBody(volumeTerrain);api.DestroyBody(volumeTerrain);volumeTerrain=BodyID();}
-  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error("Invalid terrain height");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.pending=std::async(std::launch::async,[data,tx,tz]{return Cook(data,tx,tz);});cooks++;}
+  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error("Invalid terrain height");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.pending=std::async(std::launch::async,[data,tx,tz]{return CookGuarded(data,tx,tz);});cooks++;}
  }
  void TerrainMesh(const float* points,int count,const uint32_t* indices,int indexCount){
   if(!points || !indices || count<4 || count>1000000 || indexCount<3 || indexCount%3 || indexCount>6000000)throw std::runtime_error("Invalid volumetric terrain mesh");
@@ -217,7 +222,7 @@ public:
   // Retain their bodies, velocities and constraints, then let them settle.
   for(auto id:bodies)api.ActivateBody(id);
  }
- bool Poll(){if(!volumeTerrain.IsInvalid())return true;bool ready=true;auto& api=world.GetBodyInterface();for(auto& t:tiles){if(t.pending.valid()){if(t.pending.wait_for(std::chrono::seconds(0))==std::future_status::ready){auto shape=t.pending.get();if(t.body.IsInvalid()){BodyCreationSettings settings(shape,RVec3::sZero(),Quat::sIdentity(),EMotionType::Static,0);settings.mFriction=.72f;t.body=api.CreateAndAddBody(settings,EActivation::DontActivate);if(t.body.IsInvalid())throw std::runtime_error("Terrain body capacity reached");}else api.SetShape(t.body,shape,true,EActivation::Activate);}else ready=false;}if(t.valid&&!t.pending.valid()&&t.requested!=t.heights){t.heights=t.requested;auto data=t.heights;int index=(int)(&t-tiles.data());t.pending=std::async(std::launch::async,[data,index]{return Cook(data,index%6,index/6);});cooks++;ready=false;}if(t.body.IsInvalid())ready=false;}return ready;}
+ bool Poll(){if(!volumeTerrain.IsInvalid())return true;bool ready=true;auto& api=world.GetBodyInterface();for(auto& t:tiles){if(t.pending.valid()){if(t.pending.wait_for(std::chrono::seconds(0))==std::future_status::ready){auto shape=t.pending.get();if(!shape){t.valid=false;t.heights={};throw std::runtime_error("Terrain tile cook failed; the tile is cooked again on the next terrain update");}if(t.body.IsInvalid()){BodyCreationSettings settings(shape,RVec3::sZero(),Quat::sIdentity(),EMotionType::Static,0);settings.mFriction=.72f;t.body=api.CreateAndAddBody(settings,EActivation::DontActivate);if(t.body.IsInvalid())throw std::runtime_error("Terrain body capacity reached");}else api.SetShape(t.body,shape,true,EActivation::Activate);}else ready=false;}if(t.valid&&!t.pending.valid()&&t.requested!=t.heights){t.heights=t.requested;auto data=t.heights;int index=(int)(&t-tiles.data());t.pending=std::async(std::launch::async,[data,index]{return CookGuarded(data,index%6,index/6);});cooks++;ready=false;}if(t.body.IsInvalid())ready=false;}return ready;}
  struct HullInfo {int kind=0,inputPoints=0,hullPoints=0;float deviation=0,diagonal=0;}; // kind: 0 exact, 1 exact after a finer-tolerance retry, 2 reduced to the 256-vertex limit (deviation measured), 3 bounding box, 4 rebuilt from the builder's own hull vertices (deviation measured)
  // Distance from a point to a triangle (closest point on the triangle), in double precision.
  static double PointTriangleDistance(const Vec3& p,const Vec3& a,const Vec3& b,const Vec3& c){
@@ -449,6 +454,8 @@ static void EnsureJoltInitialized(){std::call_once(initialized,[]{RegisterDefaul
 #define API extern "C" __declspec(dllexport)
 API const char* slp_error(){return error.c_str();}
 API void* slp_create(){try{EnsureJoltInitialized();return new starlight::PhysicsWorld();}catch(const std::exception& e){error=e.what();return nullptr;}}
+// Test hook: the next n terrain tile cooks fail. Used by the physics ABI checks to prove a failed cook is recovered (audit EL-09).
+API void slp_debug_fail_cooks(int n){starlight::PhysicsWorld::SetInjectedCookFailures(n<0?0:n);}
 API void slp_destroy(void* p){delete static_cast<starlight::PhysicsWorld*>(p);}
 API void slp_clear(void* p){static_cast<starlight::PhysicsWorld*>(p)->ClearProps();}
 API int slp_terrain_mesh(void* p,const float* points,int count,const uint32_t* indices,int indexCount){try{static_cast<starlight::PhysicsWorld*>(p)->TerrainMesh(points,count,indices,indexCount);return 1;}catch(const std::exception& e){error=e.what();return 0;}}

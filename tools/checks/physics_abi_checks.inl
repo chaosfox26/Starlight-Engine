@@ -9,6 +9,8 @@ __declspec(dllimport) void slp_character_remove(void *, uint32_t);
 __declspec(dllimport) void slp_character_platform(void *, uint32_t, float, float, float, float);
 __declspec(dllimport) void slp_character_actor(void *, uint32_t, float, float, float, float, float, float);
 __declspec(dllimport) int slp_terrain(void *, const float *);
+__declspec(dllimport) int slp_ready(void *);
+__declspec(dllimport) void slp_debug_fail_cooks(int);
 __declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, int, float);
 }
 static void physics_abi_checks(const auto& require){
@@ -59,5 +61,19 @@ static void physics_abi_checks(const auto& require){
     require(slp_rope(world,anchor,UINT32_MAX,settings,8,.05f)==0&&std::string(slp_error()).find("capacity")!=std::string::npos,"EL-08: A rope that runs out of body slots part-way is refused with a capacity error");
     int regained=0;for(int i=0;i<3;++i)if(slp_add(world,cube,8,faces,36,0,1,float(i)*.01f,-6,0,0,0,0,1)!=refused)++regained;
     require(regained==3,"EL-08: The slots used by the failed rope's links are given back");
+    // EL-09: a terrain tile whose cook failed must be cooked again by the next terrain update.
+    void* terrainWorld=slp_create();
+    require(terrainWorld!=nullptr,"EL-09: A fresh physics world is created for the terrain checks");
+    if(!terrainWorld){slp_destroy(world);return;}
+    std::vector<float> heights(97*97,0.f);
+    auto settle=[&](int polls){int state=0;for(int i=0;i<polls&&state==0;++i){state=slp_ready(terrainWorld);if(state==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}return state;};
+    slp_debug_fail_cooks(36);
+    require(slp_terrain(terrainWorld,heights.data())==1,"EL-09: A terrain update is accepted while every tile cook is made to fail");
+    int failures=0;for(int i=0;i<80;++i){int state=settle(200);if(state==-1)++failures;else break;}
+    require(failures>=1&&std::string(slp_error()).find("cook failed")!=std::string::npos,"EL-09: The failed cooks are reported as errors");
+    require(slp_terrain(terrainWorld,heights.data())==1,"EL-09: The same terrain update is accepted again after the failures");
+    int finalState=0;for(int i=0;i<10&&finalState!=1;++i)finalState=settle(2000);
+    require(finalState==1,"EL-09: Every tile is cooked again and the terrain becomes ready after the failed cooks");
+    slp_destroy(terrainWorld);
     slp_destroy(world);
 }

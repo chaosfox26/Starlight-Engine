@@ -131,7 +131,7 @@
    "class": "correctness",
    "originalFailure": "AddCable pushed the cable before its links and constraints existed, so a later failure such as body capacity left unconstrained links in the world and the cable list, ticked every step.",
    "fixCommits": [
-    "PENDING"
+    "b10fb82"
    ],
    "tier": "build",
    "tests": [
@@ -146,6 +146,30 @@
    "investigate": [
     "deep/Physics/rope_physics.inl AddCable try/catch rollback",
     "tools/checks/physics_abi_checks.inl EL-08 block"
+   ]
+  },
+  {
+   "id": "EL-09",
+   "title": "A failed terrain tile cook is reported and recooked instead of ending the process or leaving the tile not ready",
+   "subsystem": "physics terrain tiles (deep/Physics/PhysicsWorld.cpp Cook, Poll)",
+   "class": "correctness",
+   "originalFailure": "A terrain tile cook that throws on its std::async worker ends the process, because the physics module is compiled with _HAS_EXCEPTIONS=0 (Jolt's setting); the audit expected a permanently not-ready tile. A cook failure was never reported or retried.",
+   "fixCommits": [
+    "PENDING"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "EL-09:",
+     "minChecks": 5
+    }
+   ],
+   "testStrength": "Strong for an injected cook failure on all 36 tiles: they are reported as errors, a later terrain update recooks them and the terrain becomes ready. With the hook but without the guard the process terminated at the first failure (0xC0000409). Real Jolt mesh failures have not been produced; failure is injected through slp_debug_fail_cooks.",
+   "investigate": [
+    "deep/Physics/PhysicsWorld.cpp CookGuarded and Poll",
+    "tools/checks/physics_abi_checks.inl EL-09 block"
    ]
   }
  ]
