@@ -1,6 +1,6 @@
 # Fix ledger and failure packets (engine side, version 1)
 
-Design status: report-only, run after builds. No boot hook, no watcher, no automatic repair. Plug-in and bridge delivery belong to the Starlight.AI workstream; this folder defines only what the engine side produces and verifies.
+End goal (owner): audit-based self-healing, where a regression is detected, packaged, diagnosed and repaired against frozen tests, with owner approval before any merge. Stage 1 (this folder, built): report-only, run after builds. No boot hook, no watcher, no automatic repair. Plug-in and bridge delivery belong to the Starlight.AI workstream; this folder defines only what the engine side produces and verifies.
 
 ## Files
 - `ledger.json`: one entry per CONFIRMED fix (committed). Unconfirmed audit leads do not belong here. No states are stored here.
