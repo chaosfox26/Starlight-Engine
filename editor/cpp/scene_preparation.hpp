@@ -154,6 +154,25 @@ inline void pump_loading_messages() {
         if (!any || GetTickCount64() >= stop) return;
     }
 }
+// Runs `work` on a worker thread while `tick` (message pump, loading screen, observer) runs on the calling thread. Completion is a flag the worker sets after
+// `work` returns, separate from the progress fraction, so work that reports 1.0 early keeps being pumped until it has really finished. The worker is joined on
+// every exit path, including an exception thrown by `tick`; `failure` is only read after the join.
+template <class Tick>
+inline void run_pumped_stage(const std::function<void(std::atomic<double>&)>& work, Tick&& tick, std::string& failure) {
+    std::atomic<double> fraction{0};
+    std::atomic<bool> finished{false};
+    std::thread worker([&] {
+        try { work(fraction); } catch (const std::exception& e) { failure = e.what(); } catch (...) { failure = "unknown error"; }
+        finished = true;
+    });
+    struct Join { std::thread& thread; ~Join() { if (thread.joinable()) thread.join(); } } join{worker};
+    for (;;) {
+        tick(std::clamp(fraction.load(), 0.0, 1.0));
+        if (finished.load()) break;
+        MsgWaitForMultipleObjectsEx(0, nullptr, 8, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+    worker.join();
+}
 struct PreparationStages {
     static constexpr double geometry = .15, collision = .22, fracture = .38, upload = .25;
 };
@@ -173,19 +192,17 @@ inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen
     auto stage = [&](const std::string& label, double weight, double& elapsed, const std::function<void(std::atomic<double>&)>& work) {
         if (cancelled()) return;
         const double started = prepare_now_ms();
-        std::atomic<double> fraction{0};
-        std::string failure;
-        std::thread worker([&] { try { work(fraction); } catch (const std::exception& e) { failure = e.what(); } catch (...) { failure = "unknown error"; } fraction = 1.0; });
-        screen.update(base, label);
-        for (;;) {
-            pump_loading_messages();
-            screen.update(base + weight * std::clamp(fraction.load(), 0.0, 1.0), label);
-            if (loading_observer()) loading_observer()(base + weight * std::clamp(fraction.load(), 0.0, 1.0));
-            if (fraction.load() >= 1.0) break;
-            MsgWaitForMultipleObjectsEx(0, nullptr, 8, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-        }
-        worker.join();
-        if (!failure.empty()) report.fail(PreparationReport::State::Failed, label + " failed: " + failure);
+        std::string failure, interface_failure;
+        try {
+            screen.update(base, label);
+            run_pumped_stage(work, [&](double fraction) {
+                pump_loading_messages();
+                screen.update(base + weight * fraction, label);
+                if (loading_observer()) loading_observer()(base + weight * fraction);
+            }, failure);
+        } catch (const std::exception& e) { interface_failure = e.what(); } catch (...) { interface_failure = "unknown error"; }
+        if (!interface_failure.empty()) report.fail(PreparationReport::State::Failed, label + " stopped because the loading display failed: " + interface_failure);
+        else if (!failure.empty()) report.fail(PreparationReport::State::Failed, label + " failed: " + failure);
         else ++report.tasksDone;
         elapsed = prepare_now_ms() - started;
         starlight_diag::evlog("prepare", base, elapsed, weight);

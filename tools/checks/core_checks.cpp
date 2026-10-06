@@ -31,6 +31,7 @@ using namespace starlight::editor;
 #include "physics_boundary_checks.inl"
 #include "physics_abi_checks.inl"
 #include "device_fault_checks.inl"
+#include "scene_preparation_checks.inl"
 #include "rain_checks.inl"
 #include "object_cache_checks.inl"
 #include "key_card_checks.inl"
@@ -80,6 +81,7 @@ static int checks_main(int argc, char **argv) {
         physics_boundary_checks(require);
         physics_abi_checks(require);
         device_fault_checks(require);
+        scene_preparation_checks(require);
         rain_checks(require,folder);
         object_cache_checks(require,folder);
         key_card_checks(require,folder);
