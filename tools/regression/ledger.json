@@ -293,6 +293,30 @@
     "editor/cpp/object_cache.hpp bounds pins under instance eviction",
     "tree bytes added after pin"
    ]
+  },
+  {
+   "id": "ED-09",
+   "title": "A file read that fails part-way is reported instead of returned as a complete (truncated) file",
+   "subsystem": "platform file I/O (editor/cpp/platform.cpp read_file, hash_file)",
+   "class": "correctness",
+   "originalFailure": "read_file built its string through an istreambuf_iterator, which ends quietly when the underlying read fails; a locked byte range or lost volume returned a truncated prefix that atomic_write's expected-hash check, the file watcher, hashing and loading treated as the whole file.",
+   "fixCommits": [
+    "c47a71b"
+   ],
+   "tier": "build",
+   "tests": [
+    {
+     "kind": "core-check-prefix",
+     "executable": "Starlight.NativeCoreChecks.exe",
+     "token": "ED-09:",
+     "minChecks": 5
+    }
+   ],
+   "testStrength": "Strong for the reproduced failure: a locked byte range makes the old read_file return a prefix and the new one throw (verified by running the old code, which fails the truncated-read check). Files up to 1 MB read back identically. Not covered: a disconnected volume, files growing while read, hash_file streaming (not changed here), and the ED-10 hash bookkeeping.",
+   "investigate": [
+    "editor/cpp/editor_main.cpp diskHash handling (ED-10)",
+    "hash_file still loads the whole file"
+   ]
   }
  ]
 }
