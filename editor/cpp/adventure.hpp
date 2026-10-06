@@ -1101,6 +1101,8 @@ class AdventurePlayer {
     }
 
     size_t fragment_count()const{return fragments_.size();}
+    // Pieces ever created; unlike fragment_count it does not stop growing when the resident list is full (256) and the oldest pieces are dropped.
+    uint64_t fragments_created()const{return fragmentSerial_;}
     size_t dust_count()const{return dust_.puffs().size()+dust_.grains().size();}
     int break_count()const{return breakOrdinal_;}
     void apply_attack_hits(const std::vector<std::string>& hit,double damage=10,int sourceTeam=1){

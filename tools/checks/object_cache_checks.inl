@@ -436,9 +436,11 @@ template<class Require> void fracture_state_checks(Require require){
     for(int tick=0;tick<240;++tick)player.move(0,0,1./60);
     runtime_bypass().reset();
     for(const char* id:{"fx-still","fx-dynamic","fx-platform","fx-actor","fx-box"}){
-        const size_t before=player.fragment_count();
+        const size_t before=player.fragment_count();const uint64_t createdBefore=player.fragments_created();
         player.apply_attack_hits({id},1e9);
-        require(player.fragment_count()>before,"A prepared destructible breaks into pieces");
+        std::cout<<"break "<<id<<": resident fragments "<<before<<" -> "<<player.fragment_count()<<", pieces created "<<(player.fragments_created()-createdBefore)<<std::endl;
+        // Pieces created, not the resident count: the resident list holds at most 256, so once earlier breaks have filled it a break adds no net pieces and the count cannot rise (this made the check fail in runs where the earlier rocks happened to produce 256 or more pieces).
+        require(player.fragments_created()>createdBefore,"A prepared destructible breaks into pieces");
     }
     const auto& bypass=runtime_bypass();
     require(bypass.fractureComputedAtBreak==0&&bypass.fractureNoEntry==0&&bypass.fractureStaleSource==0&&bypass.fractureNotStarted==0&&bypass.fractureWaited==0&&bypass.fractureFailedEntry==0,"Breaking prepared destructibles computed nothing at the break");
