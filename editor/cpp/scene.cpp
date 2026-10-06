@@ -156,10 +156,12 @@ void TerrainData::brush(double x, double z, double radius, double strength, std:
                 paint < 5,
             "Invalid terrain brush");
     const auto before = tool == "smooth" ? Heights : std::vector<double>{};
-    for (int j = std::max(0, int((z - radius + Half) / Step));
-         j <= std::min(N - 1, int(std::ceil((z + radius + Half) / Step))); ++j)
-        for (int i = std::max(0, int((x - radius + Half) / Step));
-             i <= std::min(N - 1, int(std::ceil((x + radius + Half) / Step))); ++i) {
+    // A finite but huge position or radius must not overflow the double-to-int conversion (undefined behaviour); out-of-range cell numbers clamp to the grid edge.
+    const auto cell = [](double v) { return std::clamp((v + Half) / Step, -1.0, double(N)); };
+    for (int j = std::max(0, int(cell(z - radius)));
+         j <= std::min(N - 1, int(std::ceil(cell(z + radius)))); ++j)
+        for (int i = std::max(0, int(cell(x - radius)));
+             i <= std::min(N - 1, int(std::ceil(cell(x + radius)))); ++i) {
             double d = std::hypot(i * Step - Half - x, j * Step - Half - z) / radius;
             if (d >= 1)
                 continue;

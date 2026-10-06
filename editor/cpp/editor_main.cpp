@@ -20,6 +20,7 @@
 #include "object_template.hpp"
 #include "asset_library.hpp"
 #include "engine_assets.hpp"
+#include "error_throttle.hpp"
 #include "adventure.hpp"
 #include "scene_preparation.hpp"
 #include "player_presentation.hpp"
@@ -391,6 +392,8 @@ struct Editor {
     std::unique_ptr<NativeSession> renderer;
     fs::path filename;
     std::optional<std::string> diskHash;
+    ErrorThrottle errorThrottle;      // a failure that repeats on every tick is reported once per window (audit ED-06)
+    bool errorDialogOpen = false;     // the modal error box runs its own message loop, which delivers timer ticks that can fail again
     int selected = -1;
     bool dirty = false, playing = false, repeat = false, follow = false, stroke = false, orbit = false;
     POINT last{};
@@ -1312,11 +1315,16 @@ struct Editor {
     }
 
     void error(std::string_view text) {
+        if (!errorThrottle.admit(text, std::chrono::steady_clock::now())) return;
         diagnostic("native editor", text);
         std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
         SetWindowTextW(status, wide(text).c_str());
         static const bool quiet = [] { char v[8]{}; return GetEnvironmentVariableA("STARLIGHT_SUPPRESS_DIALOGS", v, 8) && v[0] == '1'; }(); // automated runs: report, do not block on a modal box
-        if (!quiet) MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+        if (!quiet && !errorDialogOpen) {
+            errorDialogOpen = true;
+            struct Reset { bool &flag; ~Reset() { flag = false; } } reset{errorDialogOpen};
+            MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+        }
     }
 
     struct LoadingGuard {

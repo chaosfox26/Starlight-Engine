@@ -6,6 +6,8 @@
 #endif
 #include <windows.h>
 static void device_fault_checks(const auto& require){
+    // Set while the GPU must stay free (for example during gaming): the device checks are then reported as NOT RUN, which the ledger counts as missing coverage, never as a pass.
+    if(std::getenv("STARLIGHT_SKIP_GPU_CHECKS")){std::cout<<"device failure checks: NOT RUN (STARLIGHT_SKIP_GPU_CHECKS is set)"<<std::endl;return;}
     HMODULE module=LoadLibraryW(L"Starlight.Viewport.dll");
     require(module!=nullptr,"CC-07: The viewport module loads for the device-failure checks");
     if(!module)return;
