@@ -20,4 +20,10 @@ static void scene_validation_checks(const auto& require){
     try{SceneData::decode(json.dump());}catch(const std::exception& e){decoded=false;why=e.what();}
     require(!decoded&&why.find("Duplicate object id")!=std::string::npos,"CC-04: Decoding a scene file that repeats an object id is refused with a clear error");
     require(SceneData::decode(text).Characters.size()==2,"CC-04: The same scene without the repeated id still decodes");
+    // CC-23: a Characters entry that is not an object used to hit a JSON type error from the first j.value() call instead of the intended message.
+    for(const char* bad:{"5","\"text\"","null","[1,2]"}){
+        auto broken=nlohmann::json::parse(text);broken["Characters"]=nlohmann::json::array({nlohmann::json::parse(bad)});
+        std::string reason;try{SceneData::decode(broken.dump());}catch(const std::exception& e){reason=e.what();}
+        require(reason=="Expected Character object","CC-23: A Characters entry that is not an object is refused with the intended message");
+    }
 }
