@@ -343,6 +343,7 @@ API int sl_surface_weather(void* handle,float moisture,float rain,float windX,fl
 API int sl_effect_clock(void* handle,double seconds){if(!handle||!std::isfinite(seconds)||seconds<0||seconds>FLT_MAX)return 0;auto& v=*static_cast<Viewport*>(handle);v.externalEffectClock=true;v.effectClock=float(seconds);return 1;}
 API float sl_effect_time(void* handle){return static_cast<Viewport*>(handle)->previousEffectTime;}
 API const char* sl_error(){return failure.c_str();}
+API int sl_debug_fail_hresult(int n){const int remaining=RenderDevice::hrFaultCountdown;RenderDevice::hrFaultCountdown=n<0?0:n;return remaining;}
 // Optional ABI: old DLLs can be tested without importing unavailable symbols.
 API void sl_surface_texture_stats(void* handle,uint64_t* output){auto& maps=static_cast<Viewport*>(handle)->surfaces;output[0]=maps.resolution;output[1]=maps.levels;output[2]=maps.residentBytes;output[3]=SurfaceTextures::count;}
 API uint64_t sl_water_scene_bytes(void* handle){return static_cast<Viewport*>(handle)->surfaces.waterSceneBytes;}

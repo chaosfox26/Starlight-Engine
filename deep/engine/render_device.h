@@ -792,11 +792,14 @@ struct RenderDevice {
     HANDLE fenceEvent = nullptr;
 
     void must(HRESULT hr, const char* what) { if (FAILED(hr)) { drainDebug(); throw std::runtime_error(what); } }   // debug-layer reason lands in the log first
+    // Test hook (audit CC-07): the n-th checked D3D12 result after setting the countdown is reported as failed, so the failure paths run without a real device fault.
+    inline static int hrFaultCountdown = 0;
+    void mustHr(HRESULT hr, const char* what) { if (hrFaultCountdown > 0 && --hrFaultCountdown == 0) hr = E_FAIL; must(hr, what); }
 
     // full GPU idle: init / mode change / screenshot / teardown only (never per frame)
     void flush() {
         const UINT64 v = ++fenceVal;
-        must(queue->Signal(fence.Get(), v), "signal GPU completion");
+        mustHr(queue->Signal(fence.Get(), v), "signal GPU completion");
         waitFence(v);
     }
     void waitFence(UINT64 v) {
@@ -1212,14 +1215,14 @@ struct RenderDevice {
         bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1; bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         ComPtr<ID3D12Resource> up;
         must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&up)), "exposure upload");
-        float one = 1.0f; void* p = nullptr; D3D12_RANGE none{ 0,0 }; up->Map(0, &none, &p); memcpy(p, &one, 4); up->Unmap(0, nullptr);
-        alloc->Reset(); cmd->Reset(alloc.Get(), nullptr);
+        float one = 1.0f; void* p = nullptr; D3D12_RANGE none{ 0,0 }; mustHr(up->Map(0, &none, &p), "map constant upload"); memcpy(p, &one, 4); up->Unmap(0, nullptr);
+        mustHr(alloc->Reset(), "reset command allocator"); mustHr(cmd->Reset(alloc.Get(), nullptr), "reset command list");
         D3D12_TEXTURE_COPY_LOCATION dst{}; dst.pResource = exposureTex.Get(); dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         D3D12_TEXTURE_COPY_LOCATION src{}; src.pResource = up.Get(); src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.PlacedFootprint.Footprint = { DXGI_FORMAT_R32_FLOAT, 1, 1, 1, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT };
         cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
         barrier(exposureTex.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        cmd->Close(); ID3D12CommandList* l[] = { cmd.Get() }; queue->ExecuteCommandLists(1, l); flush();
+        mustHr(cmd->Close(), "close command list"); ID3D12CommandList* l[] = { cmd.Get() }; queue->ExecuteCommandLists(1, l); flush();
     }
 
     static float halton(uint32_t i, uint32_t b) {
@@ -1586,8 +1589,8 @@ struct RenderDevice {
     }
 
     void uploadGeometry(const Mesh& forge) {
-        alloc->Reset();
-        cmd->Reset(alloc.Get(), nullptr);
+        mustHr(alloc->Reset(), "reset command allocator");
+        mustHr(cmd->Reset(alloc.Get(), nullptr), "reset command list");
 
         charMesh = uploadMesh(forge);
         Mesh cone; BuildCone(cone);  coneMesh = uploadMesh(cone);
@@ -1606,10 +1609,10 @@ struct RenderDevice {
             bd.Width = (UINT64)kFrameCount * cbSlotBytes(); bd.Height = 1;
             bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1; bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
             must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&cb)), "create CB");
-            D3D12_RANGE none{ 0,0 }; cb->Map(0, &none, reinterpret_cast<void**>(&cbBase));
+            D3D12_RANGE none{ 0,0 }; mustHr(cb->Map(0, &none, reinterpret_cast<void**>(&cbBase)), "map constant buffer");
             bd.Width = (UINT64)kFrameCount * kMaxSkinned * kPaletteBytes;
             must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&palettes)), "create palettes");
-            palettes->Map(0, &none, reinterpret_cast<void**>(&paletteBase));
+            mustHr(palettes->Map(0, &none, reinterpret_cast<void**>(&paletteBase)), "map palettes");
             bd.Width = (UINT64)kFrameCount * kMaxInstEntries * sizeof(InstData);   // per-instance ring for cross-character instancing (t7)
             wchar_t gpuUploadSetting[8]{};
             const bool gpuUploadRequested = GetEnvironmentVariableW(L"STARLIGHT_EXPERIMENT_GPU_UPLOAD", gpuUploadSetting, 8) && gpuUploadSetting[0] == L'1';
@@ -1629,7 +1632,7 @@ struct RenderDevice {
             logLine(std::string("instance memory: ") + (instanceGpuUpload ? "gpu-upload" : "system-upload") + (gpuUploadRequested && !instanceGpuUpload ? " (requested GPU upload unavailable; fallback)" : ""));
         }
 
-        cmd->Close();
+        mustHr(cmd->Close(), "close command list");
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
         flush();
@@ -2052,8 +2055,8 @@ struct RenderDevice {
             stallMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - w0).count(); ++stallCount;
         }
         alloc = allocs[slot];
-        alloc->Reset();
-        cmd->Reset(alloc.Get(), pso.Get());
+        mustHr(alloc->Reset(), "reset frame command allocator");
+        mustHr(cmd->Reset(alloc.Get(), pso.Get()), "reset frame command list");
         if (tsHeap) {   // GPU timer: the slot fence was waited above, so this slot's PREVIOUS resolve is ready to read
             if (tsFreq) {
                 void* p = nullptr; D3D12_RANGE rr{ (SIZE_T)(sizeof(UINT64) * 2 * slot), (SIZE_T)(sizeof(UINT64) * (2 * slot + 2)) };
@@ -2148,7 +2151,7 @@ struct RenderDevice {
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
         lastPoseMs = (float)poseAccumMs;
-        cmd->Close();
+        mustHr(cmd->Close(), "close command list");
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
         antilag.markEndOfFrameRendering();stageMarks[6]=timingNow();
@@ -2158,7 +2161,7 @@ struct RenderDevice {
         // ---- retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
         slotFence[slot] = ++fenceVal;
-        {const double s0=timingNow();queue->Signal(fence.Get(), fenceVal);signalMs=(timingNow()-s0)*1000;}
+        {const double s0=timingNow();mustHr(queue->Signal(fence.Get(), fenceVal), "signal frame fence");signalMs=(timingNow()-s0)*1000;}
         {const double w0=timingNow();if (inflight < (int)kFrameCount) waitFence(fenceVal - (UINT64)(inflight - 1));inflightWaitMs=(timingNow()-w0)*1000;}
         if (shotNow) { flush(); writeShotBmp(); shotDone = true; }
         stageMarks[8]=timingNow();
