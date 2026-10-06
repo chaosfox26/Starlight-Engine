@@ -1052,10 +1052,10 @@ class AdventurePlayer {
             try{
                 for(size_t i;(i=next.fetch_add(1))<work.size();){
                     const Character& c=*work[i].object;
+                    cache.pin(pinOwner_,c,work[i].bounds);
                     if(work[i].bounds)(void)cache.bounds(c);
                     const auto warmed=cache.warm_query_geometry(c);
                     if(warmed.builtTree)treeBytes+=warmed.treeBytes;
-                    cache.pin(pinOwner_,c,work[i].bounds);
                     fraction=double(done.fetch_add(1)+1)/double(work.size());
                 }
             }catch(...){std::lock_guard guard(failureLock);if(!failure)failure=std::current_exception();next=work.size();}
