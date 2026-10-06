@@ -546,6 +546,21 @@ template<class Require> void hull_checks(Require require,const fs::path& folder)
         ++reducedCases;worstRelative=std::max(worstRelative,double(detail.deviation/std::max(1e-9f,detail.diagonal)));
     }
     require(reducedCases==cases.size(),"Every over-limit case was reduced and measured");
+    // Adversarial: a dense sphere whose best 256-vertex reduction lies farther from the input than the accepted bound. The first reduced hull used to be
+    // returned whatever its error; it must now be refused, and whatever is used instead must be measured and within the bound.
+    for(int count:{20000,60000}){
+        std::vector<Vec3> dense;dense.reserve(count);
+        for(int i=0;i<count;++i){Vec3 d{random()*2-1,random()*2-1,random()*2-1};while(d.length()>1||d.length()<.1)d={random()*2-1,random()*2-1,random()*2-1};dense.push_back(d.unit()*1.0+Vec3{-1,2,3});}
+        reset_hull_report();
+        const auto hull=hull_of(dense);HullDetail detail;
+        const bool built=hull&&hull_detail(hull,detail);
+        const auto report=hull_report();
+        std::fprintf(stderr,"hull bound study, dense sphere %d points: built %d, kind %d, hull vertices %d, deviation %.6f, diagonal %.3f, relative %.4f%%, beyond bound %llu\n",count,int(built),built?detail.kind:-1,built?detail.hullPoints:0,built?detail.deviation:0.f,built?detail.diagonal:0.f,built?100.*detail.deviation/std::max(1e-9f,detail.diagonal):0.,(unsigned long long)report.reducedBeyondBound);
+        require(built,"HULL-BOUND: A dense point set that cannot be reduced within the bound still gets a hull");
+        if(!built)continue;
+        require(report.reducedBeyondBound==0,"HULL-BOUND: No reduction beyond the accepted deviation bound is returned");
+        require(detail.kind==3||detail.deviation<=0.005*detail.diagonal+1e-9,"HULL-BOUND: Any hull that is not the last-resort box lies within half a percent of the piece's size");
+    }
     // Real fragments from real fractures.
     reset_hull_report();
     size_t pieces=0,nulls=0,reducedPieces=0,boxPieces=0,finerPieces=0;double worstPiece=0;
