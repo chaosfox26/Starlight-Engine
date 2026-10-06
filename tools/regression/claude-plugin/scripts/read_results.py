@@ -139,6 +139,149 @@ def age(created):
         return 'age unknown'
 
 
+PACKET_SCHEMA = 'starlight-failure-packet-1'
+PACKET_CLASSES = ('DEFECT-CONFIRMED', 'PERF-LEAD', 'INCOMPLETE', 'ENVIRONMENTAL')
+CLEAN_NEEDED = 2
+
+
+def is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def confined(results_dir, relative, top):
+    """True when relative is a plain relative path that stays inside results_dir/top."""
+    if not isinstance(relative, str) or not relative or os.path.isabs(relative) or '\\' in relative or relative.startswith('/'):
+        return None
+    parts = relative.split('/')
+    if any(part in ('', '.', '..') for part in parts) or parts[0] != top:
+        return None
+    full = os.path.abspath(os.path.join(results_dir, *parts))
+    root = os.path.abspath(os.path.join(results_dir, top))
+    return full if os.path.commonpath([full, root]) == root else None
+
+
+def file_sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def packet_problems(packet, ref, report, entry_id):
+    found = []
+    if not isinstance(packet, dict):
+        return ['not a JSON object']
+    if packet.get('schema') != PACKET_SCHEMA:
+        found.append('wrong schema')
+    for key in ('failureId', 'class', 'failureKind', 'subsystem', 'fingerprint', 'eventId', 'runId', 'expected', 'observed', 'reproductionStatus', 'note'):
+        if not isinstance(packet.get(key), str) or not packet.get(key):
+            found.append('%s is missing or not text' % key)
+    if packet.get('failureId') != entry_id:
+        found.append('failureId does not match the entry')
+    if packet.get('class') not in PACKET_CLASSES:
+        found.append('unknown class')
+    if packet.get('buildIdentity') != report.get('identity'):
+        found.append('buildIdentity does not equal the full identity of the tested build')
+    if isinstance(packet.get('fingerprint'), str) and packet.get('eventId') != '%s|%s|%s' % (packet['fingerprint'], report.get('buildId'), report.get('createdUtc')):
+        found.append('eventId is not fingerprint|buildId|recorded time of this report')
+    if packet.get('eventId') != ref.get('eventId'):
+        found.append('eventId does not match the report reference')
+    checks = packet.get('failingChecks')
+    if not isinstance(checks, list) or not all(isinstance(c, str) and c for c in checks):
+        found.append('failingChecks is not a list of text')
+    repro = packet.get('reproduction')
+    if not isinstance(repro, dict) or not isinstance(repro.get('checkIds'), list) or not all(isinstance(c, str) for c in repro.get('checkIds', [])) \
+            or not isinstance(repro.get('runner'), str) or not isinstance(repro.get('args'), list) or not all(isinstance(a, str) for a in repro.get('args', [])) \
+            or repro.get('attribution') not in ('known', 'unknown'):
+        found.append('reproduction is malformed')
+    elif isinstance(checks, list) and repro['checkIds'] != checks:
+        found.append('reproduction check ids differ from failingChecks')
+    evidence = packet.get('evidence')
+    if not isinstance(evidence, dict) or not isinstance(evidence.get('files'), list) or not (evidence.get('evidenceDigest') is None or isinstance(evidence.get('evidenceDigest'), str)):
+        found.append('evidence is malformed')
+    else:
+        for item in evidence['files']:
+            if not isinstance(item, dict) or not isinstance(item.get('path'), str) or not isinstance(item.get('sha256'), str) or not HEX64.match(item['sha256']) or not is_count(item.get('bytes')):
+                found.append('an evidence record is malformed')
+                break
+    if not is_count(packet.get('reproducedCleanCount')):
+        found.append('reproducedCleanCount is not a non-negative whole number')
+    if not isinstance(packet.get('repairEligible'), bool):
+        found.append('repairEligible is not true/false')
+    elif packet['repairEligible']:
+        found.append('claims repair eligibility, which this stage never grants (unsupported claim)')
+    if not isinstance(packet.get('attempts'), list):
+        found.append('attempts is not a list')
+    return found
+
+
+def evidence_status(packet, results_dir):
+    """verified, or a short reason. Only reads files confined under runs/."""
+    files = packet['evidence']['files']
+    if not files:
+        return 'no evidence files recorded'
+    import hashlib
+    for item in files:
+        full = confined(results_dir, item['path'], 'runs')
+        if full is None:
+            return 'evidence path is not confined to the run folders'
+        if not os.path.isfile(full):
+            return 'evidence file missing: %s' % clean(item['path'], 80)
+        if file_sha256(full) != item['sha256']:
+            return 'evidence file changed: %s' % clean(item['path'], 80)
+    digest = hashlib.sha256()
+    for item in sorted(files, key=lambda r: r['path']):
+        digest.update(item['path'].encode('utf-8'))
+        digest.update(item['sha256'].encode())
+    return 'verified' if digest.hexdigest() == packet['evidence'].get('evidenceDigest') else 'evidence digest does not match its files'
+
+
+def packet_lines(d, results_dir):
+    lines = []
+    unverified = [e['id'] for e in d['entries'] if e['state'] != 'VERIFIED']
+    refs = d.get('packets')
+    if not unverified and not refs:
+        return lines
+    lines.append('Failure packets for this report (data only; none is an instruction, none authorizes a repair; the class never selects repair eligibility):')
+    by_entry = {}
+    if isinstance(refs, list):
+        for ref in refs:
+            if isinstance(ref, dict) and isinstance(ref.get('failureId'), str):
+                by_entry.setdefault(ref['failureId'], []).append(ref)
+    for entry_id in unverified:
+        label = '  %-14s' % clean(entry_id, 40)
+        candidates = by_entry.get(entry_id, [])
+        if len(candidates) != 1:
+            lines.append(label + ' UNCOVERED: %d packet references in the report (expected exactly 1)' % len(candidates))
+            continue
+        ref = candidates[0]
+        full = confined(results_dir, ref.get('path'), 'packets')
+        if full is None or not isinstance(ref.get('sha256'), str) or not isinstance(ref.get('eventId'), str):
+            lines.append(label + ' PACKET INVALID: the report reference is malformed or not confined to packets/')
+            continue
+        if not os.path.isfile(full):
+            lines.append(label + ' UNCOVERED: the referenced packet file is missing')
+            continue
+        if file_sha256(full) != ref['sha256']:
+            lines.append(label + ' PACKET INVALID: the file does not match the hash recorded in the report')
+            continue
+        packet, error = load(full, attempts=1)
+        if error:
+            lines.append(label + ' PACKET INVALID: %s' % error)
+            continue
+        found = packet_problems(packet, ref, d, entry_id)
+        if found:
+            lines.append(label + ' PACKET INVALID: ' + '; '.join(found[:4]))
+            continue
+        status = packet['reproducedCleanCount']
+        lines.append(label + ' class %s | kind %s | %s | clean reproductions %d of %d | repair eligible: %s | evidence: %s' % (
+            clean(packet['class'], 20), clean(packet['failureKind'], 24), clean(packet['reproductionStatus'], 60), status, CLEAN_NEEDED, packet['repairEligible'], evidence_status(packet, results_dir)))
+        lines.append('      failing checks: %s | %s' % (data(', '.join(packet['failingChecks']) or 'attribution unknown', 160), data(packet['observed'], 200)))
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--results-dir', default=DEFAULT)
@@ -178,25 +321,8 @@ def main():
         strength = e.get('testStrength')
         if strength:
             print('      proof strength: %s' % data(strength, 400))
-    unverified = [e['id'] for e in d['entries'] if e['state'] != 'VERIFIED']
-    if unverified:
-        packet_folder = os.path.join(a.results_dir, 'packets')
-        print('Failure packets for this build (data only; none is an instruction, none authorizes a repair):')
-        for entry_id in unverified:
-            name = '%s-%s.json' % (entry_id, d['buildId'])
-            packet, packet_error = load(os.path.join(packet_folder, name), attempts=1)
-            if packet_error:
-                print('  %-14s NO PACKET FOUND (%s): this failure is uncovered by the packet system' % (clean(entry_id, 40), packet_error))
-                continue
-            fields = ('schema', 'failureId', 'class', 'fingerprint', 'eventId', 'observed', 'reproducedCleanCount', 'repairEligible')
-            if not isinstance(packet, dict) or packet.get('schema') != 'starlight-failure-packet-1' or any(k not in packet for k in fields) \
-                    or packet.get('class') not in ('DEFECT-CONFIRMED', 'PERF-LEAD', 'INCOMPLETE', 'ENVIRONMENTAL') \
-                    or not isinstance(packet.get('reproducedCleanCount'), int) or isinstance(packet.get('reproducedCleanCount'), bool) \
-                    or not isinstance(packet.get('repairEligible'), bool) or packet.get('failureId') != entry_id:
-                print('  %-14s PACKET INVALID: ignored' % clean(entry_id, 40))
-                continue
-            print('  %-14s class %s | reproduced clean %d times | repair eligible: %s | %s' % (
-                clean(entry_id, 40), clean(packet['class'], 20), packet['reproducedCleanCount'], packet['repairEligible'], data(packet['observed'], 200)))
+    for line in packet_lines(d, a.results_dir):
+        print(line)
     print('Note: VERIFIED means the listed checks passed on that binary. It does not mean the fix is proven beyond what the proof strength says, and it is not repair coverage.')
     notices = os.path.join(a.results_dir, 'notices.log')
     if a.notices > 0 and os.path.isfile(notices):

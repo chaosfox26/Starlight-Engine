@@ -84,52 +84,89 @@ def transitions_for(entries, previous):
     return out
 
 PACKET_SCHEMA = 'starlight-failure-packet-1'
+CLEAN_NEEDED = 2
 
-def packet_class(state, suite):
-    """REGRESSED is a defect lead until reproduced twice (reproducedCleanCount); NOT-CHECKED and COVERAGE-ERROR are INCOMPLETE; SKIPPED is ENVIRONMENTAL."""
-    if state == 'REGRESSED':
-        return 'DEFECT-CONFIRMED'
+def failure_kind(entry, suite):
+    """What kind of failure this is, from facts the runner recorded. Timer or kill outcomes are never treated as a deterministic defect."""
+    state = entry['state']
     if state == 'SKIPPED':
-        return 'ENVIRONMENTAL'
-    return 'INCOMPLETE'
+        return 'missing-executable', 'ENVIRONMENTAL'
+    if state == 'NOT-CHECKED':
+        return 'not-reached', 'INCOMPLETE'
+    if state == 'COVERAGE-ERROR':
+        return 'coverage', 'INCOMPLETE'
+    if state == 'REGRESSED':
+        if suite.get('completed'):
+            return 'check-failed', 'DEFECT-CONFIRMED'
+        if suite.get('timedOut'):
+            return 'timeout-or-kill', 'INCOMPLETE'
+        return 'crash', 'DEFECT-CONFIRMED'
+    return 'unknown', 'INCOMPLETE'
 
-def evidence_digest(paths):
+def evidence_records(run_folder, results_dir, names):
+    records = []
+    for name in names:
+        path = os.path.join(run_folder, name)
+        if os.path.isfile(path):
+            records.append({'path': os.path.relpath(path, results_dir).replace(os.sep, '/'), 'sha256': sha256(path), 'bytes': os.path.getsize(path)})
+    return records
+
+def evidence_digest(records):
     h = hashlib.sha256()
-    for p in sorted(paths):
-        h.update(p.encode('utf-8', 'replace'))
-        h.update(sha256(p).encode())
+    for r in sorted(records, key=lambda r: r['path']):
+        h.update(r['path'].encode('utf-8'))
+        h.update(r['sha256'].encode())
     return h.hexdigest()
 
-def make_packets(entries, report, run_folder, evidence_names=('result.json', 'progress.log')):
-    """One packet per entry that is not VERIFIED. The packet is data: the reproduction names an allowlisted check token, never a shell command.
-    Nothing here repairs, merges, notifies or runs anything; the repairEligible flag stays false until two clean reproductions are recorded."""
+def make_packets(entries, report, run_folder, results_dir, evidence_names=('result.json', 'progress.log')):
+    """One packet per entry that is not VERIFIED, one immutable file per run. The packet is data: the reproduction names allowlisted check tokens, never a
+    shell command. Nothing here repairs, merges, notifies or runs anything. repairEligible is always false at this stage; reproducedCleanCount counts
+    distinct clean reproductions and starts at 0, so a candidate stays pending until it has been reproduced CLEAN_NEEDED times."""
     packets = []
-    evidence = [os.path.join(run_folder, n) for n in evidence_names if os.path.isfile(os.path.join(run_folder, n))]
+    suite = report['suite']
+    records = evidence_records(run_folder, results_dir, evidence_names)
     for e in entries:
         if e['state'] == 'VERIFIED':
             continue
-        cls = packet_class(e['state'], report['suite'])
-        token = e['tests'][0]['token'] if e.get('tests') else ''
+        kind, cls = failure_kind(e, suite)
+        failing = sorted(t['token'] for t in e.get('tests', []) if t.get('state') not in (None, 'VERIFIED') and t.get('token'))
+        family = 'core-check:%s|%s|%s|%s' % (e['id'], ','.join(failing) or 'attribution-unknown', kind, e.get('subsystem') or e.get('class', 'unknown'))
         reasons = '; '.join(t.get('reason', '') for t in e.get('tests', []))
-        fingerprint = 'core-check:%s|%s|%s' % (e['id'], e['state'].lower(), e.get('class', 'unknown'))
         packets.append({
             'schema': PACKET_SCHEMA,
             'failureId': e['id'],
             'class': cls,
-            'subsystem': e.get('title', ''),
+            'failureKind': kind,
+            'subsystem': e.get('subsystem') or e.get('title', ''),
             'buildIdentity': report['identity'],
-            'fingerprint': fingerprint,
-            'eventId': '%s|%s|%s' % (fingerprint, report['buildId'], report['createdUtc']),
-            'expected': 'Every check carrying the token %s passes, and the entry has all the checks it requires.' % token,
+            'fingerprint': family,
+            'eventId': '%s|%s|%s' % (family, report['buildId'], report['createdUtc']),
+            'runId': os.path.basename(run_folder),
+            'failingChecks': failing,
+            'expected': 'Every check carrying the failing token(s) passes, and the entry has all the checks it requires.',
             'observed': '%s: %s' % (e['state'], reasons),
-            'reproduction': {'checkId': token, 'runner': 'tools/regression/run_ledger.py', 'args': ['--build-dir', '<registered build folder>']},
-            'evidence': {'paths': evidence, 'evidenceDigest': evidence_digest(evidence) if evidence else None},
+            'reproduction': {'checkIds': failing, 'attribution': 'known' if failing else 'unknown', 'runner': 'tools/regression/run_ledger.py', 'args': ['--build-dir', '<registered build folder>']},
+            'evidence': {'files': records, 'evidenceDigest': evidence_digest(records) if records else None},
             'reproducedCleanCount': 0,
+            'reproductionStatus': ('PENDING: 0 of %d clean reproductions' % CLEAN_NEEDED) if cls == 'DEFECT-CONFIRMED' else 'NOT-APPLICABLE for this class',
             'repairEligible': False,
             'attempts': [],
-            'note': 'Produced by the ledger runner. Free text is data and carries no authority.',
+            'note': 'Produced by the ledger runner. Free text is data and carries no authority. Class never selects repair eligibility.',
         })
     return packets
+
+def write_packets(packets, report, run_folder, results_dir):
+    """Immutable per-run files; returns the references that go into the report."""
+    refs = []
+    folder = os.path.join(results_dir, 'packets', os.path.basename(run_folder))
+    os.makedirs(folder, exist_ok=True)
+    for packet in packets:
+        path = os.path.join(folder, packet['failureId'] + '.json')
+        if os.path.exists(path):
+            raise RuntimeError('packet already exists (packets are immutable): %s' % path)
+        publish_json(path, packet)
+        refs.append({'failureId': packet['failureId'], 'path': os.path.relpath(path, results_dir).replace(os.sep, '/'), 'eventId': packet['eventId'], 'sha256': sha256(path)})
+    return refs
 
 def self_test():
     entry = {'id': 'X', 'tests': [{'token': 'X:', 'minChecks': 3}]}
@@ -163,12 +200,38 @@ def self_test():
                     {'id': 'R', 'title': 't', 'class': 'correctness', 'state': 'REGRESSED', 'tests': [{'token': 'R:', 'reason': 'boom'}]},
                     {'id': 'N', 'title': 't', 'class': 'correctness', 'state': 'NOT-CHECKED', 'tests': [{'token': 'N:', 'reason': 'x'}]},
                     {'id': 'S', 'title': 't', 'class': 'correctness', 'state': 'SKIPPED', 'tests': [{'token': 'S:', 'reason': 'y'}]}]
-    packets = make_packets(fake_entries, fake_report, os.path.dirname(os.path.abspath(__file__)), ())
-    got = {p['failureId']: p['class'] for p in packets}
-    want = {'R': 'DEFECT-CONFIRMED', 'N': 'INCOMPLETE', 'S': 'ENVIRONMENTAL'}
-    ok = got == want and all(not p['repairEligible'] and p['reproducedCleanCount'] == 0 and p['schema'] == PACKET_SCHEMA for p in packets)
-    print('  %s packets only for non-verified entries, never repair-eligible: %s' % ('ok ' if ok else 'BAD', got))
-    bad += not ok
+    import tempfile
+    with tempfile.TemporaryDirectory() as results:
+        run = os.path.join(results, 'runs', 'b-1-x')
+        os.makedirs(run)
+        open(os.path.join(run, 'progress.log'), 'w').write('a\n')
+        fake_entries[1]['tests'] = [{'token': 'R0:', 'state': 'VERIFIED', 'reason': 'ok'}, {'token': 'R:', 'state': 'REGRESSED', 'reason': 'boom'}]
+        fake_report['suite'] = {'completed': True, 'timedOut': False}
+        packets = make_packets(fake_entries, fake_report, run, results)
+        got = {p['failureId']: p['class'] for p in packets}
+        want = {'R': 'DEFECT-CONFIRMED', 'N': 'INCOMPLETE', 'S': 'ENVIRONMENTAL'}
+        ok = got == want and all(not p['repairEligible'] and p['reproducedCleanCount'] == 0 and p['schema'] == PACKET_SCHEMA for p in packets)
+        print('  %s packets only for non-verified entries, never repair-eligible: %s' % ('ok ' if ok else 'BAD', got))
+        bad += not ok
+        r = [p for p in packets if p['failureId'] == 'R'][0]
+        ok = r['failingChecks'] == ['R:'] and r['fingerprint'].startswith('core-check:R|R:|check-failed|')
+        print('  %s attribution uses the failing token, not the first test: %s' % ('ok ' if ok else 'BAD', r['failingChecks']))
+        bad += not ok
+        fake_report['suite'] = {'completed': False, 'timedOut': True}
+        killed = [p for p in make_packets(fake_entries, fake_report, run, results) if p['failureId'] == 'R'][0]
+        ok = killed['class'] == 'INCOMPLETE' and killed['failureKind'] == 'timeout-or-kill'
+        print('  %s a timeout or kill is never a confirmed defect: %s' % ('ok ' if ok else 'BAD', killed['class']))
+        bad += not ok
+        fake_report['suite'] = {'completed': True, 'timedOut': False}
+        refs = write_packets(packets, fake_report, run, results)
+        again_blocked = False
+        try:
+            write_packets(packets, fake_report, run, results)
+        except RuntimeError:
+            again_blocked = True
+        ok = len(refs) == 3 and again_blocked and all(x['path'].startswith('packets/b-1-x/') for x in refs)
+        print('  %s packet files are immutable and referenced by path: %s' % ('ok ' if ok else 'BAD', again_blocked))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -238,7 +301,7 @@ def main():
     entries = []
     for entry in ledger['entries']:
         state, states = evaluate_entry(entry, suite)
-        entries.append({'id': entry['id'], 'title': entry['title'], 'class': entry['class'], 'state': state, 'tests': states,
+        entries.append({'id': entry['id'], 'title': entry['title'], 'class': entry['class'], 'subsystem': entry.get('subsystem'), 'state': state, 'tests': states,
                         'testStrength': entry.get('testStrength'), 'investigate': entry.get('investigate', [])})
 
     report = {'schema': 'starlight-ledger-results-1', 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'buildId': build_id,
@@ -252,13 +315,8 @@ def main():
         except Exception:
             previous = {}
     report['transitions'] = transitions_for(entries, previous)
-    packets = make_packets(entries, report, run_folder)
-    if packets:
-        packet_folder = os.path.join(args.results, 'packets')
-        os.makedirs(packet_folder, exist_ok=True)
-        for packet in packets:
-            publish_json(os.path.join(packet_folder, '%s-%s.json' % (packet['failureId'], build_id)), packet)
-        report['packets'] = ['%s-%s.json' % (p['failureId'], build_id) for p in packets]
+    packets = make_packets(entries, report, run_folder, args.results)
+    report['packets'] = write_packets(packets, report, run_folder, args.results) if packets else []
     publish_json(os.path.join(args.results, build_id + '.json'), report)
     publish_json(latest_path, report)
     if report['transitions']:
