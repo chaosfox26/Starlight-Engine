@@ -37,6 +37,13 @@ def load(path, attempts=3):
     return None, 'unreadable or not valid JSON after %d tries (%s)' % (attempts, clean(last, 120))
 
 
+HEX64 = re.compile(r'^[0-9a-f]{64}$')
+
+
+def is_state(value):
+    return isinstance(value, str) and value in STATES
+
+
 def problems(d):
     found = []
     if not isinstance(d, dict):
@@ -48,19 +55,67 @@ def problems(d):
             found.append('field %s is missing or has the wrong type' % key)
     if found:
         return found
-    if not d['entries']:
-        found.append('there are no ledger entries (an empty ledger proves nothing)')
-    for index, e in enumerate(d['entries']):
-        if not isinstance(e, dict) or not isinstance(e.get('id'), str):
-            found.append('entry %d is malformed' % index)
-        elif e.get('state') not in STATES:
-            found.append('entry %s has an unknown state %s' % (clean(e['id'], 40), data(e.get('state'), 40)))
-        elif not isinstance(e.get('tests', []), list):
-            found.append('entry %s has a malformed tests list' % clean(e['id'], 40))
+    if not d['buildId'].strip():
+        found.append('buildId is empty')
+    try:
+        datetime.datetime.strptime(d['createdUtc'], '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        found.append('createdUtc is not a valid UTC time')
     suite = d['suite']
-    for key in ('started', 'completed', 'success'):
+    for key in ('started', 'completed'):
         if not isinstance(suite.get(key), bool):
             found.append('suite field %s is missing or not true/false' % key)
+    if not (isinstance(suite.get('success'), bool) or (suite.get('success') is None and suite.get('completed') is False)):
+        found.append('suite field success must be true/false once the suite completed (null only when it did not complete)')
+    identity = d['identity']
+    binaries = identity.get('binaries')
+    if not isinstance(binaries, dict):
+        found.append('identity.binaries is missing (no proof of which binaries were tested)')
+    else:
+        for name, info in binaries.items():
+            if not isinstance(info, dict) or not isinstance(info.get('sha256'), str) or not HEX64.match(info['sha256']):
+                found.append('binary %s has no valid sha256' % data(name, 60))
+        if suite.get('started') is True:
+            core = binaries.get('Starlight.NativeCoreChecks.exe')
+            if not isinstance(core, dict) or not isinstance(core.get('bytes'), int) or core['bytes'] <= 0:
+                found.append('the suite ran but identity has no sha256 and size for Starlight.NativeCoreChecks.exe')
+    if 'gitHead' in identity and not isinstance(identity['gitHead'], str):
+        found.append('identity.gitHead has the wrong type')
+    if 'dirtyTrackedFiles' in identity and (not isinstance(identity['dirtyTrackedFiles'], int) or isinstance(identity['dirtyTrackedFiles'], bool)):
+        found.append('identity.dirtyTrackedFiles has the wrong type')
+    if not d['entries']:
+        found.append('there are no ledger entries (an empty ledger proves nothing)')
+    seen = set()
+    for index, e in enumerate(d['entries']):
+        if not isinstance(e, dict) or not isinstance(e.get('id'), str) or not e['id']:
+            found.append('entry %d is malformed' % index)
+            continue
+        name = clean(e['id'], 40)
+        if e['id'] in seen:
+            found.append('entry id %s appears twice' % name)
+        seen.add(e['id'])
+        if not is_state(e.get('state')):
+            found.append('entry %s has an unknown or non-text state %s' % (name, data(e.get('state'), 40)))
+            continue
+        tests = e.get('tests')
+        if not isinstance(tests, list):
+            found.append('entry %s has no tests list' % name)
+            continue
+        if e['state'] == 'VERIFIED' and not tests:
+            found.append('entry %s is VERIFIED with no check evidence' % name)
+        tokens = set()
+        for t in tests:
+            if (not isinstance(t, dict) or not isinstance(t.get('token'), str) or not t['token'] or not is_state(t.get('state'))
+                    or not isinstance(t.get('reason'), str) or not isinstance(t.get('matched'), int) or isinstance(t.get('matched'), bool) or t['matched'] < 0):
+                found.append('entry %s has a malformed test record' % name)
+                continue
+            if t['token'] in tokens:
+                found.append('entry %s repeats test token %s' % (name, data(t['token'], 40)))
+            tokens.add(t['token'])
+            if e['state'] == 'VERIFIED' and t['state'] != 'VERIFIED':
+                found.append('entry %s is VERIFIED but test %s is %s' % (name, data(t['token'], 40), t['state']))
+            if e['state'] == 'VERIFIED' and t['matched'] < 1:
+                found.append('entry %s is VERIFIED but test %s matched no checks' % (name, data(t['token'], 40)))
     return found
 
 
@@ -103,7 +158,7 @@ def main():
     print('Tested build %s | git %s | %s modified tracked files | recorded %s (%s)' % (
         data(d['buildId'], 80), data(str(ident.get('gitHead'))[:12], 20), data(ident.get('dirtyTrackedFiles'), 10), data(d['createdUtc'], 30), age(d['createdUtc'])))
     suite = d['suite']
-    suite_ok = suite['started'] and suite['completed'] and suite['success']
+    suite_ok = suite['started'] and suite['completed'] and suite['success'] is True
     print('Whole suite: started=%s completed=%s success=%s checks=%s%s' % (suite['started'], suite['completed'], suite['success'], data(d.get('suiteCheckCount'), 12),
           '' if suite_ok else '   <-- the suite itself did not finish cleanly'))
     attention = not suite_ok
