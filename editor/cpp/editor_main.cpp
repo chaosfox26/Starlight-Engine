@@ -1972,7 +1972,14 @@ struct Editor {
             if (files.empty()) return false;
             target = files[0];
         }
-        const auto savedHash = save_scene(scene, target, target == filename ? diskHash : std::nullopt);
+        std::string savedHash;
+        try {
+            savedHash = save_scene(scene, target, target == filename ? diskHash : std::nullopt);
+        } catch (const MissingAssetsError &missing) {
+            const auto question = std::string(missing.what()) + ".\nSave anyway? The scene will not open fully until those assets are restored.";
+            if (MessageBoxW(window, wide(question).c_str(), L"Starlight", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return false;
+            savedHash = save_scene(scene, target, target == filename ? diskHash : std::nullopt, true);
+        }
         filename = target; diskHash = savedHash; dirty = false; refresh();
         return true;
     }

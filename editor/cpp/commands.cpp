@@ -132,6 +132,7 @@ json apply_commands(const fs::path &file) {
     const auto &operations = request.at("operations");
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
+    bool allowMissingAssets = false;
     for (const auto &op : operations) {
         auto kind = op.at("op").get<std::string>();
         if (kind == "merge-scene") {
@@ -262,6 +263,7 @@ json apply_commands(const fs::path &file) {
             } else if (block == "Cast") {
                 scene.Cast = clear ? SceneCast{} : value.get<SceneCast>();
                 scene.Cast.validate();
+                if (!op.value("verifyAssets", true)) allowMissingAssets = true;
                 if (op.value("verifyAssets", true)) {
                     EngineAssets::discover_near(path.parent_path());
                     const auto missing = cast_missing_assets(scene);
@@ -379,7 +381,7 @@ json apply_commands(const fs::path &file) {
             throw std::runtime_error("Unsupported editor operation: " + kind);
     }
     scene.validate();
-    save_scene(scene, path, expected);
+    save_scene(scene, path, expected, allowMissingAssets);
     json characters = json::array();
     for (const auto &c : scene.Characters)
         characters.push_back({{"Id", c.Id}, {"Name", c.Name}});

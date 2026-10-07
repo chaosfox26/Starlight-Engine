@@ -179,13 +179,23 @@ void diagnostic(std::string_view operation, std::string_view message) noexcept {
     } catch (...) {
     }
 }
-std::string save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected) {
+std::string save_scene(const SceneData &scene, const fs::path &path, const std::optional<std::string> &expected, bool allowMissingAssets) {
     const auto encoded = scene.encode();
+    std::vector<std::string> missing;
+    auto keep = [&](const std::string &id) {
+        if (!EngineAssets::keep(id) && std::find(missing.begin(), missing.end(), id) == missing.end()) missing.push_back(id);
+    };
     for (const auto &object : scene.Characters)
         if (!object.Shape && !object.Sculpt && !object.Asset.empty())
-            EngineAssets::keep(object.Asset);
+            keep(object.Asset);
     for (const auto &id : cast_asset_ids(scene))
-        EngineAssets::keep(id);
+        keep(id);
+    if (!missing.empty() && !allowMissingAssets) {
+        std::string list;
+        for (size_t i = 0; i < missing.size() && i < 5; ++i) list += (i ? ", " : "") + missing[i];
+        if (missing.size() > 5) list += ", and " + std::to_string(missing.size() - 5) + " more";
+        throw MissingAssetsError("The scene names " + std::to_string(missing.size()) + " asset(s) that are not in the asset library: " + list, missing);
+    }
     atomic_write(path, encoded, true, expected);
     return hash_bytes(encoded);
 }

@@ -38,7 +38,12 @@ std::vector<fs::path> file_dialog(HWND owner, std::string_view purpose,
                                   bool save = false, bool multiple = false, const fs::path &fallback = {},
                                   std::wstring_view title = {}, bool folders = false);
 // Returns the SHA-256 of the exact bytes written, so callers need not read the file back (a lock or a concurrent write between save and re-read left their bookkeeping wrong).
-std::string save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {});
+// Thrown by save_scene when the scene names assets that are not in the asset library; `ids` lists them. Nothing has been written.
+struct MissingAssetsError : std::runtime_error {
+    std::vector<std::string> ids;
+    MissingAssetsError(const std::string &message, std::vector<std::string> missing) : std::runtime_error(message), ids(std::move(missing)) {}
+};
+std::string save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {}, bool allowMissingAssets = false);
 SceneData load_scene(const fs::path &);
 json export_playable_game(const SceneData &, const fs::path &destination, const fs::path &runtime);
 json export_portable_scene(const SceneData &, const fs::path &destination);

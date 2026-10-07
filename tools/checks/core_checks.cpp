@@ -40,6 +40,7 @@ using namespace starlight::editor;
 #include "error_throttle_checks.inl"
 #include "project_module_checks.inl"
 #include "lightning_target_checks.inl"
+#include "missing_asset_save_checks.inl"
 #include "terrain_brush_checks.inl"
 #include "lightning_seed_checks.inl"
 #include "rain_checks.inl"
@@ -110,6 +111,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(error_throttle_checks, error_throttle_checks(require));
         RUN_GROUP(project_module_checks, project_module_checks(require));
         RUN_GROUP(lightning_target_checks, lightning_target_checks(require));
+        RUN_GROUP(missing_asset_save_checks, missing_asset_save_checks(require));
         RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));
         RUN_GROUP(lightning_seed_checks, lightning_seed_checks(require));
         RUN_GROUP(cache_pin_checks, cache_pin_checks(require));
@@ -1288,7 +1290,7 @@ static int checks_main(int argc, char **argv) {
                 imported.Asset = "model-" + std::string(64, 'a'); imported.Name = "Route keeper";
                 imported.Width = 2; imported.X = 3; imported.Route = {{4,5}};
                 broken.Characters.push_back(imported);
-                auto brokenFile = folder / "repair.starscene"; save_scene(broken, brokenFile);
+                auto brokenFile = folder / "repair.starscene"; save_scene(broken, brokenFile, {}, true);
                 auto brokenInspection = inspect_scene(brokenFile);
                 require(brokenInspection.at("missingAssetCount") == 1 && brokenInspection.at("assets").size() == 1,
                     "Scene inspection identifies missing imported models without opening renderer");
