@@ -23,3 +23,10 @@ Fields: `schema`, `failureId` (ledger id or a new id), `class` (DEFECT-CONFIRMED
 Repair rules (summary): tests and expected outcomes are frozen as SOURCE and built against each candidate engine; both identities are recorded; the originally failing check must fail on the pre-fix engine and pass on the post-fix engine; changes to tests, the ledger, the runner, expected hashes or baselines are flagged; verification follows the affected dependencies, and missing required coverage is unverified, never a pass; verified repairs stay on a repair branch until the owner approves a merge.
 
 See `sample-packets/`.
+
+## One command for everything (verify_all.py)
+`python tools/regression/verify_all.py --repo <checkout> --build-dir <built executables folder> --results <folder> [--python] [--gpu]` runs the ledger, then optionally the registered Python tests (`ctest -R py-`) and the GPU denoise and fallback checks, and prints one summary (written to `<results>/verify-<time>.json`, a new file each time).
+- Windowless, idle priority. GPU steps are off unless `--gpu` is given. Without `--gpu` the core suite runs with `STARLIGHT_SKIP_GPU_CHECKS=1`, so the viewport device-failure checks print NOT RUN and the ledger reports CC-07 and CC-02 as LOST COVERAGE (missing coverage is never a pass). Use `--gpu` when the GPU is free.
+- A run overwrites `latest.json` and `<build id>.json` in the results folder for the same build, so a no-GPU run replaces the record of an earlier full run of that build; use a separate `--results` folder if the earlier record matters.
+- Exit 0: every requested step passed and the ledger is all VERIFIED. 1: something failed or is not verified. 2: a requested step could not run.
+- `python tools/regression/verify_all.py --self-test` checks the runner itself without running the engine.
