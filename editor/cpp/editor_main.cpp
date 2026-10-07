@@ -2680,7 +2680,7 @@ struct Editor {
             try {
                 edit([&] {
                     std::erase_if(scene.Characters, [&](const Character &object) { return ids.contains(object.Id); });
-                    for(auto& object:scene.Characters)if(ids.contains(object.JointTargetId)){object.JointKind=0;object.JointTargetId.clear();}
+                    for(auto& object:scene.Characters)if(ids.contains(object.JointTargetId)){object.JointKind=0;object.JointTargetId.clear();}for(auto& object:scene.Characters)if(ids.contains(object.LightningTargetId))object.LightningTargetId.clear();
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
