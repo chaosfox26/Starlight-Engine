@@ -70,6 +70,17 @@ def stale_reason(repo, build_dir):
     return '%d source files are newer than the built checks (for example %s): rebuild first' % (len(newer), newer[0])
 
 
+def suite_failure(results):
+    """The ledger can report every tracked fix VERIFIED while the suite itself failed on another check; that is still a failure."""
+    try:
+        suite = json.load(open(os.path.join(results, 'latest.json'), encoding='utf-8')).get('suite', {})
+    except (OSError, ValueError):
+        return 'the ledger wrote no readable latest.json'
+    if suite.get('success') is True:
+        return None
+    return 'the core suite did not pass: %s' % (suite.get('error') or 'a check failed')[:300]
+
+
 def plan(args, stamp):
     # The core suite also contains the viewport device-failure checks (they use the GPU); without --gpu they are switched off and the ledger reports CC-07/CC-02 as not covered.
     steps = [('ledger', [sys.executable, os.path.join(HERE, 'run_ledger.py'), '--repo', args.repo, '--build-dir', args.build_dir, '--results', args.results], args.repo, 3000,
@@ -169,7 +180,12 @@ def main():
     for name, argv, cwd, timeout, env in ([] if stale else plan(args, stamp)):
         print('running %s ...' % name, flush=True)
         record = run_step(name, argv, cwd, timeout, env)
-        print('  %-9s %s%s' % (name, record['outcome'], '  (%s s)' % record['seconds'] if 'seconds' in record else '  ' + record.get('reason', '')), flush=True)
+        if name == 'ledger' and record['outcome'] == 'PASS':
+            failure = suite_failure(args.results)
+            if failure:
+                record['outcome'] = 'FAIL'
+                record['reason'] = failure
+        print('  %-9s %s%s' % (name, record['outcome'], ('  (%s s)' % record['seconds'] if 'seconds' in record else '') + ('  ' + record['reason'] if record.get('reason') else '')), flush=True)
         records.append(record)
     code = summarize(records)
     summary = {'schema': 'starlight-verify-all-1', 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'repo': args.repo, 'buildDir': args.build_dir,
