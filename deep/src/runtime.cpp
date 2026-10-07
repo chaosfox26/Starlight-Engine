@@ -1,4 +1,5 @@
 #include "render_limits.hpp"
+#include "project_module.hpp"
 #define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
@@ -54,7 +55,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show){
         add(L"--res",std::to_string(s["resolution"][0].get<int>())+"x"+std::to_string(s["resolution"][1].get<int>()));add(L"--display",s["displayMode"]);add(L"--upscaler",s["upscaler"]);add(L"--quality",s["quality"]);add(L"--bench",std::to_string(s["durationMs"].get<int>()));add(L"--nocull",s["culling"].get<bool>()?"0":"1");if(!s["vsync"].get<bool>())args.push_back(L"--novsync");if(s["frameGeneration"].get<bool>())args.push_back(L"--fg");
         // Raw options are limited to output destinations; test settings cannot silently override the preset.
         for(size_t i=0;i<extra.size();++i){if(extra[i]!=L"--report"&&extra[i]!=L"--log"&&extra[i]!=L"--shot"&&extra[i]!=L"--shotat")throw std::runtime_error("Put test options in the preset file");args.push_back(extra[i]);if(++i>=extra.size())throw std::runtime_error("Missing output argument");args.push_back(extra[i]);}
-        fs::path module=(projectPath.parent_path()/wide(j.at("module").get<std::string>())).lexically_normal();
+        fs::path module=project_module_path(projectPath.parent_path(),wide(j.at("module").get<std::string>()));
         if(!planPath.empty()){json a=json::array();for(auto&w:args)a.push_back(u8text(fs::path(w)));write(planPath,{{"project",u8text(projectPath)},{"scene",scene},{"module",u8text(module)},{"preset",u8text(fs::absolute(presetPath))},{"settings",s},{"arguments",a}});return 0;}
         SetEnvironmentVariableW(L"STARLIGHT_FRAME_LIMIT",std::to_wstring(s["frameLimit"].get<int>()).c_str());SetEnvironmentVariableW(L"STARLIGHT_FOREGROUND",s["foreground"].get<bool>()?L"1":L"0");
         std::wstring command;for(auto&a:args)command+=quote(a)+L" ";
