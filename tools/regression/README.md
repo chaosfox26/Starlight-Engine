@@ -27,6 +27,6 @@ See `sample-packets/`.
 ## One command for everything (verify_all.py)
 `python tools/regression/verify_all.py --repo <checkout> --build-dir <built executables folder> --results <folder> [--python] [--gpu]` runs the ledger, then optionally the registered Python tests (`ctest -R py-`) and the GPU denoise and fallback checks, and prints one summary (written to `<results>/verify-<time>.json`, a new file each time).
 - Windowless, idle priority. GPU steps are off unless `--gpu` is given. Without `--gpu` the core suite runs with `STARLIGHT_SKIP_GPU_CHECKS=1`, so the viewport device-failure checks print NOT RUN and the ledger reports CC-07 and CC-02 as LOST COVERAGE (missing coverage is never a pass). Use `--gpu` when the GPU is free.
-- A run overwrites `latest.json` and `<build id>.json` in the results folder for the same build, so a no-GPU run replaces the record of an earlier full run of that build; use a separate `--results` folder if the earlier record matters.
+- A run still replaces `latest.json` and `<build id>.json` for the same build, but every run's full report is also kept in `<results>/history/<runId>.json` and is never replaced, so a weaker run (for example with the GPU checks skipped) cannot erase the record of a fuller one.
 - Exit 0: every requested step passed and the ledger is all VERIFIED. 1: something failed or is not verified. 2: a requested step could not run.
 - `python tools/regression/verify_all.py --self-test` checks the runner itself without running the engine.

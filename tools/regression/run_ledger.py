@@ -29,6 +29,18 @@ def publish_json(path, data):
         os.fsync(f.fileno())
     os.replace(temp, path)
 
+def archive_report(results_dir, report):
+    """Keep every run's report in history/<runId>.json. Never replaces a file: latest.json and <buildId>.json are overwritten by a later run of the same
+    build, so without this a weaker run (for example one with the GPU checks skipped) would erase the record of a fuller one."""
+    folder = os.path.join(results_dir, 'history')
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, report['runId'] + '.json')
+    with open(path, 'x', encoding='utf-8') as f:
+        json.dump(report, f, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    return path
+
 def git(repo, *args):
     try:
         return subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60).stdout.strip()
@@ -240,6 +252,18 @@ def self_test():
         ok = e1 != e2
         print('  %s runs with the same build and time still get distinct event ids' % ('ok ' if ok else 'BAD'))
         bad += not ok
+    with tempfile.TemporaryDirectory() as results:
+        first = {'runId': 'same-build-run1', 'marker': 'full run'}
+        second = {'runId': 'same-build-run2', 'marker': 'weaker run'}
+        one, two = archive_report(results, first), archive_report(results, second)
+        kept = json.load(open(one))['marker'] == 'full run' and json.load(open(two))['marker'] == 'weaker run' and one != two
+        try:
+            archive_report(results, {'runId': 'same-build-run1', 'marker': 'replacement'})
+            refused = False
+        except FileExistsError:
+            refused = True
+        print('  %s history keeps every run and never replaces one' % ('ok ' if kept and refused and json.load(open(one))['marker'] == 'full run' else 'BAD'))
+        bad += not (kept and refused and json.load(open(one))['marker'] == 'full run')
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -332,6 +356,7 @@ def main():
     report['transitions'] = transitions_for(entries, previous)
     packets = make_packets(entries, report, run_folder, args.results, tuple(registered['evidenceFiles']))
     report['packets'] = write_packets(packets, report, run_folder, args.results) if packets else []
+    archive_report(args.results, report)
     publish_json(os.path.join(args.results, build_id + '.json'), report)
     publish_json(latest_path, report)
     if report['transitions']:
