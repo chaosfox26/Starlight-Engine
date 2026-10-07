@@ -55,6 +55,26 @@ def section_ledger(results, repo):
         recorded[:12], same, d.get('suiteCheckCount'), suite.get('success'))]
 
 
+def section_since_ledger(results, repo):
+    """Files changed since the recorded run and the check groups worth running first (guide only; the full run is what verifies)."""
+    try:
+        recorded = (json.load(open(os.path.join(results, 'latest.json'), encoding='utf-8')).get('identity') or {}).get('gitHead', '')
+    except (OSError, ValueError):
+        return []
+    head = git(repo, 'rev-parse', 'HEAD')
+    if not recorded or not head or recorded == head:
+        return []
+    files = [l for l in git(repo, 'diff', '--name-only', recorded + '..HEAD').splitlines() if l.strip()]
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import impact
+        ranked, _ = impact.rank(repo, files, impact.groups_of(os.path.join(repo, 'tools', 'checks', 'core_checks.cpp')))
+    except Exception:
+        ranked = []
+    top = ', '.join(g for g, _ in ranked[:4]) or 'none matched, run everything'
+    return ['Since the recorded run: %d files changed. Run first: %s (a full run is still needed to verify)' % (len(files), top)]
+
+
 def section_tracker(tracker):
     path = os.path.join(tracker, 'AUDIT-TRACKER.json')
     try:
@@ -87,7 +107,7 @@ def main():
     ap.add_argument('--tracker', default=TRACKER)
     ap.add_argument('--notes', default=NOTES)
     a = ap.parse_args()
-    for block in (section_branch(a.repo), section_ledger(a.results, a.repo), section_tracker(a.tracker), section_notes(a.notes)):
+    for block in (section_branch(a.repo), section_ledger(a.results, a.repo), section_since_ledger(a.results, a.repo), section_tracker(a.tracker), section_notes(a.notes)):
         for line in block:
             print(line)
     return 0
