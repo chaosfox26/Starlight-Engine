@@ -33,3 +33,6 @@ See `sample-packets/`.
 
 ## Running only some of the core checks (development)
 `STARLIGHT_CHECK_GROUPS=name1,name2 Starlight.NativeCoreChecks.exe <folder> <geometry-reference.json>` runs only those check groups and exits 3; `STARLIGHT_CHECK_GROUPS=list` prints the group names. Three groups run in under a second, against 5 to 7 minutes for the full suite. The exit code 3 and `"filtered": true` in result.json mean it can never be mistaken for a full pass: ctest fails on it, and the ledger runner (which does not set the variable) would report any missing tokens as COVERAGE-ERROR. The long checks written inline after the groups only run in a full pass.
+
+## Which checks first (impact.py)
+`python tools/regression/impact.py --repo <checkout> [--base <commit>] [--files ...]` ranks the check groups most related to a change (a changed check file selects its own group; other files are matched by distinctive names shared with the check files) and prints the `STARLIGHT_CHECK_GROUPS=...` setting that runs only those. It is a guide for quick feedback: no match prints "run everything", and a filtered run exits 3 and can never mark a fix VERIFIED. `--self-test` checks the ranking.
