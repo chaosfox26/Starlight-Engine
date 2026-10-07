@@ -5,6 +5,8 @@ description: Show the last recorded Starlight fix-ledger results (which confirme
 
 Run `python "${CLAUDE_PLUGIN_ROOT}/scripts/read_results.py"` and explain its output in plain English.
 
+To check whether the recorded results match the build on disk now, add `--repo <engine checkout> --build-dir <folder holding Starlight.NativeCoreChecks.exe>` (for the main checkout: `D:\projects\Starlight-Engine` and `D:\projects\Starlight-Engine\out\classic\Release`). The reader then prints CURRENT BUILD lines: "matches" means the git commit and every tested binary are identical; STALE or a missing binary means the results describe a different build and must not be presented as the state of the build on disk. The git comparison reads the HEAD file only; uncommitted source changes are not detected. Use `--results-dir` to read a different results folder (for example a branch run). Without these options say plainly that no comparison was made.
+
 How to report it:
 - These are the last recorded results for the tested binary identity shown. They are not a check of the build running now. Say so, and give the recorded time and its age.
 - Exit code 2 means results are unavailable or invalid: say nothing is verified. Never report an all-clear in that case.

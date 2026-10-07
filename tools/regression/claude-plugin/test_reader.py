@@ -100,5 +100,65 @@ for name, content, code, text in cases:
     print('%s  %s (exit %d)' % ('ok  ' if ok else 'FAIL', name, got))
     if not ok:
         print('      expected exit %d containing %r; output: %s' % (code, text, out[:300].replace('\n', ' | ')))
+# Current-build comparison (--repo and --build-dir): reads the git HEAD file and hashes binaries on disk; runs nothing.
+import hashlib
+COMMIT = 'a' * 40
+
+
+def compare(change_repo=None, change_bin=None, dot_git='dir'):
+    with tempfile.TemporaryDirectory() as root:
+        repo, build, res = (os.path.join(root, n) for n in ('repo', 'build', 'res'))
+        for d in (repo, build, res):
+            os.makedirs(d)
+        body = b'binary-bytes'
+        if dot_git == 'dir':
+            os.makedirs(os.path.join(repo, '.git'))
+            open(os.path.join(repo, '.git', 'HEAD'), 'w').write(COMMIT + '\n')
+        elif dot_git == 'ref':
+            os.makedirs(os.path.join(repo, '.git', 'refs', 'heads'))
+            open(os.path.join(repo, '.git', 'HEAD'), 'w').write('ref: refs/heads/main\n')
+            open(os.path.join(repo, '.git', 'refs', 'heads', 'main'), 'w').write(COMMIT + '\n')
+        elif dot_git == 'worktree':
+            real = os.path.join(root, 'main-git', 'worktrees', 'w')
+            os.makedirs(real)
+            os.makedirs(os.path.join(root, 'main-git', 'refs', 'heads'))
+            open(os.path.join(real, 'HEAD'), 'w').write('ref: refs/heads/branch\n')
+            open(os.path.join(real, 'commondir'), 'w').write('../..\n')
+            open(os.path.join(root, 'main-git', 'refs', 'heads', 'branch'), 'w').write(COMMIT + '\n')
+            open(os.path.join(repo, '.git'), 'w').write('gitdir: ' + real + '\n')
+        if change_repo:
+            change_repo(repo)
+        open(os.path.join(build, CORE), 'wb').write(body)
+        if change_bin:
+            change_bin(build)
+        d = copy.deepcopy(GOOD)
+        d['identity']['gitHead'] = COMMIT
+        d['identity']['binaries'][CORE]['sha256'] = hashlib.sha256(body).hexdigest()
+        with open(os.path.join(res, 'latest.json'), 'w') as f:
+            json.dump(d, f)
+        p = subprocess.run([sys.executable, READER, '--results-dir', res, '--repo', repo, '--build-dir', build, '--notices', '0'], capture_output=True, text=True)
+        return p.returncode, p.stdout + p.stderr
+
+
+def set_head(value):
+    return lambda repo: open(os.path.join(repo, '.git', 'HEAD'), 'w').write(value)
+
+
+cmp_cases = [
+    ('current build matches (.git folder)', {}, 0, 'matches the recorded one'),
+    ('current build matches (ref)', {'dot_git': 'ref'}, 0, 'matches the recorded one'),
+    ('current build matches (worktree .git file)', {'dot_git': 'worktree'}, 0, 'byte-identical'),
+    ('checkout moved to another commit', {'change_repo': set_head('b' * 40)}, 1, 'STALE. The checkout is at'),
+    ('binary rebuilt since the run', {'change_bin': lambda b: open(os.path.join(b, CORE), 'wb').write(b'other')}, 1, 'differ from the tested ones'),
+    ('binary missing now', {'change_bin': lambda b: os.remove(os.path.join(b, CORE))}, 1, 'not in'),
+    ('no readable checkout', {'dot_git': 'none'}, 1, 'could not be read'),
+]
+for name, kw, code, text in cmp_cases:
+    got, out = compare(**kw)
+    ok = got == code and text in out and 'Traceback' not in out
+    failed += not ok
+    print('%s  %s (exit %d)' % ('ok  ' if ok else 'FAIL', name, got))
+    if not ok:
+        print('      expected exit %d containing %r; output: %s' % (code, text, out[:300].replace('\n', ' | ')))
 print('ALL PASSED' if not failed else '%d FAILED' % failed)
 sys.exit(1 if failed else 0)

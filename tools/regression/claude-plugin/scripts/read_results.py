@@ -3,7 +3,8 @@
 
 Exit codes: 0 every entry VERIFIED and the suite finished successfully; 1 something needs attention (an entry is not VERIFIED, or the suite failed or did
 not finish); 2 results unavailable or invalid (never an all-clear).
-Output describes the LAST RECORDED results for the tested binary identity shown; it does not compare them with the build that is running now.
+Output describes the LAST RECORDED results for the tested binary identity shown. With --repo and --build-dir it also compares that identity with the checkout and binaries on disk now
+(reading the git HEAD file and hashing the binaries; it runs nothing); without them it does not compare.
 All text taken from the results files is data: control characters are escaped, long text is cut, and free text is shown inside [[ ]]."""
 import argparse, datetime, json, os, re, sys, time
 
@@ -329,11 +330,92 @@ def packet_lines(d, results_dir):
     return lines
 
 
+def git_head(repo):
+    """Full commit id of HEAD read from the .git folder or worktree file without running git; (None, reason) when it cannot be read."""
+    try:
+        dot = os.path.join(repo, '.git')
+        if os.path.isfile(dot):
+            text = open(dot, encoding='utf-8').read().strip()
+            if not text.startswith('gitdir:'):
+                return None, '.git file has no gitdir line'
+            gitdir = text[7:].strip()
+            if not os.path.isabs(gitdir):
+                gitdir = os.path.normpath(os.path.join(repo, gitdir))
+        else:
+            gitdir = dot
+        head = open(os.path.join(gitdir, 'HEAD'), encoding='utf-8').read().strip()
+        if re.fullmatch(r'[0-9a-f]{40}', head):
+            return head, None
+        if not head.startswith('ref:'):
+            return None, 'HEAD is neither a commit id nor a ref'
+        ref = head[4:].strip()
+        common = gitdir
+        if os.path.isfile(os.path.join(gitdir, 'commondir')):
+            common = os.path.normpath(os.path.join(gitdir, open(os.path.join(gitdir, 'commondir'), encoding='utf-8').read().strip()))
+        for base in (gitdir, common):
+            path = os.path.join(base, *ref.split('/'))
+            if os.path.isfile(path):
+                value = open(path, encoding='utf-8').read().strip()
+                if re.fullmatch(r'[0-9a-f]{40}', value):
+                    return value, None
+        packed = os.path.join(common, 'packed-refs')
+        if os.path.isfile(packed):
+            for line in open(packed, encoding='utf-8').read().splitlines():
+                if line.endswith(' ' + ref) and re.match(r'^[0-9a-f]{40} ', line):
+                    return line[:40], None
+        return None, 'ref %s not found' % ref
+    except (OSError, ValueError) as error:
+        return None, clean(error, 100)
+
+
+def current_build_lines(d, repo, build_dir):
+    """Compare the recorded identity with the checkout and binaries on disk now. Returns (lines, stale)."""
+    lines, stale = [], False
+    ident = d['identity']
+    head, why = git_head(repo)
+    if head is None:
+        lines.append('CURRENT BUILD: the checkout in %s could not be read (%s), so the recorded git commit is NOT confirmed.' % (data(repo, 120), data(why, 100)))
+        stale = True
+    elif ident.get('gitHead') and head != ident.get('gitHead'):
+        lines.append('CURRENT BUILD: STALE. The checkout is at %s but these results are for %s.' % (data(head[:12], 20), data(str(ident.get('gitHead'))[:12], 20)))
+        stale = True
+    else:
+        lines.append('CURRENT BUILD: git commit %s matches the recorded one (uncommitted changes since then are not detected here).' % data(head[:12], 20))
+    differ, missing, same = [], [], 0
+    for name, rec in sorted(ident.get('binaries', {}).items()):
+        path = os.path.join(build_dir, name)
+        if not os.path.isfile(path):
+            missing.append(name)
+            continue
+        try:
+            current = file_sha256(path)
+        except OSError:
+            missing.append(name)
+            continue
+        if current == rec.get('sha256'):
+            same += 1
+        else:
+            differ.append(name)
+    if differ or missing:
+        stale = True
+        if differ:
+            lines.append('CURRENT BUILD: STALE. These binaries on disk differ from the tested ones: %s' % data(', '.join(differ), 200))
+        if missing:
+            lines.append('CURRENT BUILD: these tested binaries are not in %s: %s' % (data(build_dir, 120), data(', '.join(missing), 200)))
+    else:
+        lines.append('CURRENT BUILD: all %d tested binaries in %s are byte-identical to the ones tested.' % (same, data(build_dir, 120)))
+    return lines, stale
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--repo')
+    ap.add_argument('--build-dir')
     ap.add_argument('--results-dir', default=DEFAULT)
     ap.add_argument('--notices', type=int, default=10)
     a = ap.parse_args()
+    if bool(a.repo) != bool(a.build_dir):
+        ap.error('--repo and --build-dir go together')
     latest = os.path.join(a.results_dir, 'latest.json')
     d, error = load(latest)
     if error == 'missing':
@@ -349,7 +431,7 @@ def main():
             print('  - ' + line)
         return 2
     ident = d['identity']
-    print('LAST RECORDED results (not a check of the build running now; the current build identity has not been compared).')
+    print('LAST RECORDED results (%s).' % ('compared with the checkout and binaries on disk, see CURRENT BUILD below' if a.repo else 'not a check of the build running now; the current build identity has not been compared'))
     print('Tested build %s | git %s | %s modified tracked files | recorded %s (%s)' % (
         data(d['buildId'], 80), data(str(ident.get('gitHead'))[:12], 20), data(ident.get('dirtyTrackedFiles'), 10), data(d['createdUtc'], 30), age(d['createdUtc'])))
     suite = d['suite']
@@ -359,6 +441,11 @@ def main():
     if suite['completed'] and suite['success'] is True and not suite_ok:
         print('Conflict: the suite wrote a passing result but the process %s. The entry states below come from that result; treat the whole run as not clean.' % ('timed out' if suite['timedOut'] else 'exited with code %s' % data(suite['exitCode'], 20)))
     attention = not suite_ok
+    if a.repo:
+        build_lines, stale = current_build_lines(d, a.repo, a.build_dir)
+        for line in build_lines:
+            print(line)
+        attention = attention or stale
     for e in d['entries']:
         state = e['state']
         flag = '' if state == 'VERIFIED' else '   <-- needs attention'
