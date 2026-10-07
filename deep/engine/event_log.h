@@ -25,7 +25,7 @@ struct EventLog {
         events=static_cast<Event*>(VirtualAlloc(nullptr,sizeof(Event)*capacity,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         enabled=events!=nullptr;
     }
-    static double now(){LARGE_INTEGER q,f;QueryPerformanceCounter(&q);QueryPerformanceFrequency(&f);return double(q.QuadPart)*1000./double(f.QuadPart);}
+    static double now(){static const double perMs=[]{LARGE_INTEGER f;QueryPerformanceFrequency(&f);return double(f.QuadPart)/1000.;}();LARGE_INTEGER q;QueryPerformanceCounter(&q);return double(q.QuadPart)/perMs;}
     void add(const char* tag,double a,double b,double c){
         const uint32_t i=count.fetch_add(1,std::memory_order_relaxed);if(i>=capacity)return;
         Event& e=events[i];e.ms=now();e.thread=GetCurrentThreadId();std::strncpy(e.tag,tag,sizeof(e.tag)-1);e.tag[sizeof(e.tag)-1]=0;e.a=a;e.b=b;e.c=c;
