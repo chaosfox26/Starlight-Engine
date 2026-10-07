@@ -26,4 +26,21 @@ static void scene_validation_checks(const auto& require){
         std::string reason;try{SceneData::decode(broken.dump());}catch(const std::exception& e){reason=e.what();}
         require(reason=="Expected Character object","CC-23: A Characters entry that is not an object is refused with the intended message");
     }
+    // CC-04 limits: object count, route points and id length are bounded so a hostile or generated file cannot ask for unbounded work.
+    {
+        Character big;big.Name="limit";big.Shape="cube";
+        SceneData limits;
+        big.Id=std::string(128,'x');limits.Characters={big};
+        require(!refused(limits,why),"CC-04: An object id of 128 characters is accepted");
+        big.Id=std::string(129,'x');limits.Characters={big};
+        require(refused(limits,why)&&why.find("id")!=std::string::npos,"CC-04: An object id longer than 128 characters is refused");
+        big.Id="route-limit";big.Route.assign(4096,{0.,0.});limits.Characters={big};
+        require(!refused(limits,why),"CC-04: A route of 4096 points is accepted");
+        big.Route.assign(4097,{0.,0.});limits.Characters={big};
+        require(refused(limits,why)&&why.find("route")!=std::string::npos,"CC-04: A route of more than 4096 points is refused");
+        limits.Characters.clear();for(int i=0;i<20001;++i){Character item;item.Id="n"+std::to_string(i);item.Name="n";item.Shape="cube";limits.Characters.push_back(std::move(item));}
+        require(refused(limits,why)&&why.find("objects")!=std::string::npos,"CC-04: A scene with more than 20000 objects is refused");
+        limits.Characters.pop_back();
+        require(!refused(limits,why),"CC-04: A scene with exactly 20000 objects is accepted");
+    }
 }

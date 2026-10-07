@@ -259,6 +259,8 @@ void Character::validate() const {
         require((Shape || Sculpt || !Asset.empty()) && (!Shape || (*Shape != "grass" && *Shape != "fire" && *Shape != "light" && *Shape != "lava" && *Shape != "ring" &&
                     *Shape != "chaos-lightning" && *Shape != "light-shard" && *Shape != "craxis-smoke")),
                 "Dynamic body needs a solid shape");
+    require(Route.size() <= 4096, "A route supports at most 4096 points");
+    require(Id.size() <= 128, "An object id supports at most 128 characters");
     for (const auto &p : Route)
         require(finite({p.X, p.Z}), "Invalid route point");
     color(Color);
@@ -502,6 +504,7 @@ void SceneData::validate() const {
                 "Invalid liquid source");
     int lights = 0;
     std::set<std::string> objectIds;
+    require(Characters.size() <= 20000, "A scene supports at most 20000 objects");
     for (const auto &c : Characters) {
         c.validate();
         require(objectIds.insert(c.Id).second, "Duplicate object id: " + c.Id);
