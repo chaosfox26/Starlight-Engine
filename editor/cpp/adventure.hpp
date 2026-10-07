@@ -935,9 +935,11 @@ class AdventurePlayer {
     void advance_lightning(){
         if(!rulesEnabled_)return;
         if(std::none_of(playScene_.Characters.begin(),playScene_.Characters.end(),[](const auto& c){return c.Shape=="chaos-lightning";}))return;
+        int64_t cycle=int64_t(std::floor((seconds_-.025)/.22));if(cycle<0)return;
+        const bool due=std::any_of(playScene_.Characters.begin(),playScene_.Characters.end(),[&](const auto& c){if(c.Shape!="chaos-lightning"||rules_.removed.contains(c.Id))return false;const auto seen=lightningCycles_.find(c.Id);return seen==lightningCycles_.end()||seen->second<cycle;});
+        if(!due)return;
         auto scene=playScene_;std::erase_if(scene.Characters,[&](const auto& c){return rules_.removed.contains(c.Id);});
         auto debris=environment_objects();scene.Characters.insert(scene.Characters.end(),debris.begin(),debris.end());
-        int64_t cycle=int64_t(std::floor((seconds_-.025)/.22));if(cycle<0)return;
         for(const auto& emitter:scene.Characters)if(emitter.Shape=="chaos-lightning"){
             auto [it,fresh]=lightningCycles_.try_emplace(emitter.Id,-1);if(it->second>=cycle)continue;it->second=cycle;
             auto playerBox=body_bounds();
