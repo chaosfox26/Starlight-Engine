@@ -455,6 +455,7 @@ int visible_ui_checks(const fs::path& output) {
                     Sleep(1);
                 }
             });
+            struct StopSamplers{std::atomic<bool>& run;std::thread& first;std::thread& second;~StopSamplers(){run=false;if(first.joinable())first.join();if(second.joinable())second.join();}} stopSamplers{sampling,sampler,profiler};
             starlight_diag::evlog("STRESS.LOAD.BEGIN");
             {static bool shot=false;if(GetEnvironmentVariableW(L"STARLIGHT_STRESS_VISUAL",nullptr,0)>0)loading_observer()=[&](double f){if(!shot&&f>.4){shot=true;capture(output.parent_path()/"loading-screen.bmp");}};}
             if(barScene){plan=build_bar_scene_through_editor();history.clear();dirty=false;refresh();toggle_menu(0);}
