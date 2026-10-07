@@ -90,7 +90,7 @@ public:
  struct Tile {BodyID body;std::array<float,289> heights{},requested{};std::future<ShapeRefC> pending;bool valid=false;};
  BodyID volumeTerrain;
  uint64_t sharedShapeHits=0; // see Add()
- std::array<Tile,36> tiles;std::vector<BodyID> bodies,allProps;double accumulator=0;uint64_t ticks=0,cooks=0;
+ std::array<Tile,36> tiles;std::vector<BodyID> bodies,allProps;double accumulator=0;uint64_t ticks=0,cooks=0,droppedTicks=0;
  std::vector<BodyState> previousBodies;
  std::unordered_map<uint32_t,Vec3> liquidCurrents;
  struct Joint {BodyID source,target;Ref<TwoBodyConstraint> constraint;};
@@ -449,6 +449,8 @@ public:
    // A failed update must not leave its time behind: the backlog would be replayed on the next call (and grow while the failure lasts) instead of the step simply failing again or recovering.
    if(error!=EPhysicsUpdateError::None){accumulator=0;throw std::runtime_error("Jolt capacity exceeded during step");}accumulator-=1.0/60;ticks++;
   }
+  // Time the simulation cannot catch up on is dropped beyond a quarter of a second, and counted, so a slow machine does not replay an ever-growing backlog.
+  if(accumulator>.25){droppedTicks+=uint64_t(std::llround((accumulator-.25)*60));accumulator=.25;}
   int n=0;for(auto id:bodies){if(n>=capacity)break;RVec3 p;Quat q;api.GetPositionAndRotation(id,p,q);output[n++]={id.GetIndexAndSequenceNumber(),(float)p.GetX(),(float)p.GetY(),(float)p.GetZ(),q.GetX(),q.GetY(),q.GetZ(),q.GetW()};}return n;
  }
 };
@@ -495,6 +497,7 @@ API int slp_step(void* p,double dt,const starlight::Liquid* liquid,int count,sta
 API int slp_present(void* p,starlight::BodyState* output,int capacity){try{return static_cast<starlight::PhysicsWorld*>(p)->Present(output,capacity);}catch(const std::exception& e){error=e.what();return -1;}}
 API uint64_t slp_cooks(void* p){return static_cast<starlight::PhysicsWorld*>(p)->cooks;}
 API uint64_t slp_ticks(void* p){return static_cast<starlight::PhysicsWorld*>(p)->ticks;}
+API uint64_t slp_dropped_ticks(void* p){return static_cast<starlight::PhysicsWorld*>(p)->droppedTicks;}
 API int slp_body_drive(void* p,uint32_t raw,float x,float y,float z,int vertical){try{if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z))throw std::runtime_error("Invalid dynamic body drive");auto& w=*static_cast<starlight::PhysicsWorld*>(p);auto& api=w.world.GetBodyInterface();BodyID id(raw);auto velocity=api.GetLinearVelocity(id);api.SetLinearVelocity(id,Vec3(x,vertical?y:velocity.GetY(),z));api.ActivateBody(id);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
 API int slp_body_current(void* p,uint32_t raw,float x,float z){try{if(!std::isfinite(x)||!std::isfinite(z)||std::abs(x)>20||std::abs(z)>20)throw std::runtime_error("Invalid liquid current");auto& w=*static_cast<starlight::PhysicsWorld*>(p);if(x==0&&z==0)w.liquidCurrents.erase(raw);else w.liquidCurrents[raw]=Vec3(x,0,z);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
 API int slp_body_liquid(void* p,uint32_t raw,float height,float ratio,float dt){try{if(!std::isfinite(height)||!std::isfinite(ratio)||!std::isfinite(dt)||ratio<0||dt<=0||dt>.05f)throw std::runtime_error("Invalid liquid impulse");auto& w=*static_cast<starlight::PhysicsWorld*>(p);w.world.GetBodyInterface().ApplyBuoyancyImpulse(BodyID(raw),RVec3(0,height,0),Vec3::sAxisY(),ratio,.9f,.3f,w.liquidCurrents.count(raw)?w.liquidCurrents.at(raw):Vec3::sZero(),w.world.GetGravity(),dt);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
