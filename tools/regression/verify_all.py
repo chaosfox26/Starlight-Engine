@@ -15,6 +15,8 @@ import argparse, json, os, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+SOURCE_SUFFIXES = ('.cpp', '.c', '.cc', '.h', '.hpp', '.inl', '.inc')
+SOURCE_FOLDERS = ('editor/', 'deep/', 'tools/checks/')
 
 
 def run_step(name, argv, cwd, timeout, env=None):
@@ -45,6 +47,29 @@ def run_step(name, argv, cwd, timeout, env=None):
             'seconds': round(time.monotonic() - start, 1), 'tail': out[-400:], 'command': argv}
 
 
+def stale_reason(repo, build_dir):
+    """Why the built checks cannot speak for the current sources, or None. A failed or forgotten build leaves an old executable that still passes."""
+    exe = os.path.join(build_dir, 'Starlight.NativeCoreChecks.exe')
+    if not os.path.exists(exe):
+        return None
+    built = os.path.getmtime(exe)
+    try:
+        listed = subprocess.run(['git', '-C', repo, 'ls-files', '-z'], capture_output=True, timeout=120, creationflags=FLAGS).stdout.decode('utf-8', 'replace').split(chr(0))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    newer = []
+    for name in listed:
+        if name.endswith(SOURCE_SUFFIXES) and name.startswith(SOURCE_FOLDERS):
+            try:
+                if os.path.getmtime(os.path.join(repo, name)) > built + 1:
+                    newer.append(name)
+            except OSError:
+                pass
+    if not newer:
+        return None
+    return '%d source files are newer than the built checks (for example %s): rebuild first' % (len(newer), newer[0])
+
+
 def plan(args, stamp):
     # The core suite also contains the viewport device-failure checks (they use the GPU); without --gpu they are switched off and the ledger reports CC-07/CC-02 as not covered.
     steps = [('ledger', [sys.executable, os.path.join(HERE, 'run_ledger.py'), '--repo', args.repo, '--build-dir', args.build_dir, '--results', args.results], args.repo, 3000,
@@ -73,6 +98,22 @@ def summarize(records):
     return code
 
 
+def stale_reason_for_test():
+    import tempfile
+    with tempfile.TemporaryDirectory() as root:
+        subprocess.run(['git', '-C', root, 'init', '-q'], creationflags=FLAGS)
+        os.makedirs(os.path.join(root, 'editor'))
+        build = os.path.join(root, 'build')
+        os.makedirs(build)
+        exe = os.path.join(build, 'Starlight.NativeCoreChecks.exe')
+        open(exe, 'w').write('x')
+        os.utime(exe, (time.time() - 100, time.time() - 100))
+        source = os.path.join(root, 'editor', 'a.cpp')
+        open(source, 'w').write('int a;')
+        subprocess.run(['git', '-C', root, 'add', '-A'], creationflags=FLAGS)
+        return stale_reason(root, build)
+
+
 def self_test():
     ok = True
 
@@ -89,6 +130,7 @@ def self_test():
     check('all PASS with ledger exit 0 gives 0', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'python', 'outcome': 'PASS'}]) == 0)
     check('a failed step gives 1', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'python', 'outcome': 'FAIL'}]) == 1)
     check('a ledger run that is not all VERIFIED gives 1 even though the process finished', summarize([{'step': 'ledger', 'outcome': 'FAIL', 'exitCode': 2}]) == 1)
+    check('a stale build is reported as NOT RUN and is never PASS', (lambda r: r is not None and 'rebuild' in r)(stale_reason_for_test()))
     check('a step that could not run gives 2', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'denoise', 'outcome': 'NOT RUN'}]) == 2)
 
     class A:
@@ -120,7 +162,11 @@ def main():
     os.makedirs(args.results, exist_ok=True)
     stamp = time.strftime('%Y%m%d-%H%M%S')
     records = []
-    for name, argv, cwd, timeout, env in plan(args, stamp):
+    stale = stale_reason(args.repo, args.build_dir)
+    if stale:
+        print('NOT RUN: ' + stale)
+        records.append({'step': 'build', 'outcome': 'NOT RUN', 'reason': stale})
+    for name, argv, cwd, timeout, env in ([] if stale else plan(args, stamp)):
         print('running %s ...' % name, flush=True)
         record = run_step(name, argv, cwd, timeout, env)
         print('  %-9s %s%s' % (name, record['outcome'], '  (%s s)' % record['seconds'] if 'seconds' in record else '  ' + record.get('reason', '')), flush=True)
