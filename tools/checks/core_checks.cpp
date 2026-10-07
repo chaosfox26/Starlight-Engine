@@ -70,6 +70,16 @@ using namespace starlight::editor;
 __declspec(noinline) static void character_controller_checks(const auto& require,const fs::path& folder){
 #include "character_controller_checks.inl"
 }
+// STARLIGHT_CHECK_GROUPS=name1,name2 runs only those check groups (names as in the calls below; "list" prints them) and then exits 3.
+// Unset, every group runs and nothing changes. The long inline checks after the groups only run in a full pass.
+static bool groups_filtered() { const char *env = std::getenv("STARLIGHT_CHECK_GROUPS"); return env && *env; }
+static bool group_wanted(const char *name) {
+    const char *env = std::getenv("STARLIGHT_CHECK_GROUPS");
+    if (!env || !*env) return true;
+    if (std::string(env) == "list") { std::cout << name << "\n"; return false; }
+    return ("," + std::string(env) + ",").find("," + std::string(name) + ",") != std::string::npos;
+}
+#define RUN_GROUP(name, ...) do { if (group_wanted(#name)) { __VA_ARGS__; } } while (0)
 static int checks_main(int argc, char **argv) {
     std::vector<std::string> checks;
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
@@ -86,44 +96,49 @@ static int checks_main(int argc, char **argv) {
     };
     EngineAssets::ScopedRoot checkLibrary(folder / "engine-assets");
     try {
-        active_scene_guard_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path());
-        physics_boundary_checks(require);
-        physics_abi_checks(require);
-        physics_step_checks(require);
-        device_fault_checks(require);
-        scene_preparation_checks(require);
-        scene_validation_checks(require);
-        file_io_checks(require,folder);
-        asset_scan_checks(require,folder);
-        error_throttle_checks(require);
-        terrain_brush_checks(require);
-        lightning_seed_checks(require);
-        cache_pin_checks(require);
-        rain_checks(require,folder);
-        object_cache_checks(require,folder);
-        key_card_checks(require,folder);
-        graphics_runtime_checks(require,folder);
-        club_schema_checks(require,folder);
-        model_asset_checks(require,folder);
-        asset_root_checks(require,folder);
-        render_split_checks(require);
-        fracture_pose_checks(require);
-        ray_tree_checks(require);
-        lightning_graphics_checks(require,folder);
+        RUN_GROUP(active_scene_guard_checks, active_scene_guard_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path()));
+        RUN_GROUP(physics_boundary_checks, physics_boundary_checks(require));
+        RUN_GROUP(physics_abi_checks, physics_abi_checks(require));
+        RUN_GROUP(physics_step_checks, physics_step_checks(require));
+        RUN_GROUP(device_fault_checks, device_fault_checks(require));
+        RUN_GROUP(scene_preparation_checks, scene_preparation_checks(require));
+        RUN_GROUP(scene_validation_checks, scene_validation_checks(require));
+        RUN_GROUP(file_io_checks, file_io_checks(require,folder));
+        RUN_GROUP(asset_scan_checks, asset_scan_checks(require,folder));
+        RUN_GROUP(error_throttle_checks, error_throttle_checks(require));
+        RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));
+        RUN_GROUP(lightning_seed_checks, lightning_seed_checks(require));
+        RUN_GROUP(cache_pin_checks, cache_pin_checks(require));
+        RUN_GROUP(rain_checks, rain_checks(require,folder));
+        RUN_GROUP(object_cache_checks, object_cache_checks(require,folder));
+        RUN_GROUP(key_card_checks, key_card_checks(require,folder));
+        RUN_GROUP(graphics_runtime_checks, graphics_runtime_checks(require,folder));
+        RUN_GROUP(club_schema_checks, club_schema_checks(require,folder));
+        RUN_GROUP(model_asset_checks, model_asset_checks(require,folder));
+        RUN_GROUP(asset_root_checks, asset_root_checks(require,folder));
+        RUN_GROUP(render_split_checks, render_split_checks(require));
+        RUN_GROUP(fracture_pose_checks, fracture_pose_checks(require));
+        RUN_GROUP(ray_tree_checks, ray_tree_checks(require));
+        RUN_GROUP(lightning_graphics_checks, lightning_graphics_checks(require,folder));
         lighting_fixtures(folder);
-        water_wave_checks(require,folder);
-        liquid_surface_checks(require,folder);
-        liquid_obstacle_surface_checks(require,folder);
-        foliage_material_checks(require,folder);
-        terrain_material_checks(require,folder);
-        lava_surface_checks(require,folder);
-        lava_passage_geometry_checks(require);
+        RUN_GROUP(water_wave_checks, water_wave_checks(require,folder));
+        RUN_GROUP(liquid_surface_checks, liquid_surface_checks(require,folder));
+        RUN_GROUP(liquid_obstacle_surface_checks, liquid_obstacle_surface_checks(require,folder));
+        RUN_GROUP(foliage_material_checks, foliage_material_checks(require,folder));
+        RUN_GROUP(terrain_material_checks, terrain_material_checks(require,folder));
+        RUN_GROUP(lava_surface_checks, lava_surface_checks(require,folder));
+        RUN_GROUP(lava_passage_geometry_checks, lava_passage_geometry_checks(require));
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
-        rock_fracture_checks(require,folder);
-        destruction_dust_checks(require,folder);
-        object_destruction_checks(require,folder);
-        terrain_destruction_checks(require,folder);
+        RUN_GROUP(rock_fracture_checks, rock_fracture_checks(require,folder));
+        RUN_GROUP(destruction_dust_checks, destruction_dust_checks(require,folder));
+        RUN_GROUP(object_destruction_checks, object_destruction_checks(require,folder));
+        RUN_GROUP(terrain_destruction_checks, terrain_destruction_checks(require,folder));
 #endif
+        if (groups_filtered()) {
+            std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";
+            atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", true}, {"filtered", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
+            return 3;
+        }
         {
             auto owner=std::make_unique<SceneData>();auto& saved=*owner;
             auto baseline=json::parse(saved.encode());baseline.erase("ShadowQuality");

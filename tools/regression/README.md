@@ -30,3 +30,6 @@ See `sample-packets/`.
 - A run still replaces `latest.json` and `<build id>.json` for the same build, but every run's full report is also kept in `<results>/history/<runId>.json` and is never replaced, so a weaker run (for example with the GPU checks skipped) cannot erase the record of a fuller one.
 - Exit 0: every requested step passed and the ledger is all VERIFIED. 1: something failed or is not verified. 2: a requested step could not run.
 - `python tools/regression/verify_all.py --self-test` checks the runner itself without running the engine.
+
+## Running only some of the core checks (development)
+`STARLIGHT_CHECK_GROUPS=name1,name2 Starlight.NativeCoreChecks.exe <folder> <geometry-reference.json>` runs only those check groups and exits 3; `STARLIGHT_CHECK_GROUPS=list` prints the group names. Three groups run in under a second, against 5 to 7 minutes for the full suite. The exit code 3 and `"filtered": true` in result.json mean it can never be mistaken for a full pass: ctest fails on it, and the ledger runner (which does not set the variable) would report any missing tokens as COVERAGE-ERROR. The long checks written inline after the groups only run in a full pass.
