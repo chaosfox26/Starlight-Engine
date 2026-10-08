@@ -43,9 +43,9 @@ static void physics_abi_checks(const auto& require){
     slp_character_platform(world,good,0,1,0,0);
     require(std::string(slp_error()).find("interval")!=std::string::npos,"EL-07: A platform move with dt of zero is refused");
     slp_character_platform(world,good,nan,1,0,.016f);
-    require(std::string(slp_error()).find("Nonfinite")!=std::string::npos,"EL-07: A non-finite platform pose is refused");
+    require(std::string(slp_error()).find("Nonfinite platform pose")!=std::string::npos,"EL-07: A non-finite platform pose is refused");
     slp_character_actor(world,good,0,1,0,nan,0,.016f);
-    require(std::string(slp_error()).find("Nonfinite")!=std::string::npos,"EL-07: A non-finite actor yaw is refused");
+    require(std::string(slp_error()).find("Nonfinite actor pose")!=std::string::npos,"EL-07: A non-finite actor yaw is refused");
     slp_character_remove(world,after);
     slp_character_remove(world,after);
     require(std::string(slp_error()).find("no longer exists")!=std::string::npos,"EL-07: Removing the same body twice is refused the second time instead of reaching Jolt");
