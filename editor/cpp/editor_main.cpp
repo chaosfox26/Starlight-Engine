@@ -2710,6 +2710,12 @@ struct Editor {
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
+            if (auto stale = rules_naming_objects(scene, ids); !stale.empty()) {
+                std::string list;
+                for (size_t i = 0; i < stale.size() && i < 3; ++i) list += (i ? ", " : "") + stale[i];
+                if (stale.size() > 3) list += ", and " + std::to_string(stale.size() - 3) + " more";
+                SetWindowTextW(status, wide("Deleted. These gameplay rules still point at a deleted object: " + list + ". Edit or remove them before playing.").c_str());
+            }
         } else if (id == Duplicate && actor()) {
             std::vector<Character> copies;
             for (size_t i = 0; i < scene.Characters.size(); ++i)
