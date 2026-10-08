@@ -103,7 +103,7 @@ class NativeSession {
     bool rubbleDirty_=false;
     std::shared_ptr<const std::vector<std::shared_ptr<const MeshPart>>> rubblePreload_=std::make_shared<const std::vector<std::shared_ptr<const MeshPart>>>();
     bool rubblePreloadDirty_=false,rubblePreloadBulk_=false;uint64_t fenceRequested_=0,preloadGeneration_=0,sceneGeneration_=0;
-    bool preloadPinned_=false;
+    bool preloadPinned_=false,prewarmPlay_=false;
     std::vector<std::shared_ptr<const MeshPart>> preloadPinnedList_;
     bool runtimeObjectsDirty_=false;
     std::vector<std::string> timingEvents_;
@@ -140,6 +140,10 @@ class NativeSession {
     PacingSnapshot pacing_snapshot();
     std::shared_ptr<const LiquidSnapshot> liquid_snapshot();
     void playback(bool, bool reset = false);
+    // While true and playback is stopped, the resident static scene is built and installed exactly as play will use it (runtime effects,
+    // GPU grass) with the clock still stopped, so a loading barrier prepares the scene that is revealed and starting play installs no second base.
+    // playback(true) ends it; callers also clear it when a load fails.
+    void prewarm_play(bool);
     void gameplay_time(std::optional<double>);
     void playback_options(bool repeat, std::string follow);
     void tools(std::string selected, std::string mode);

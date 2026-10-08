@@ -39,6 +39,7 @@ struct Player {
     fs::path scenePath;
     bool loadingActive=false;
     void fail_loading(LoadingScreen& loading,const PreparationReport& report){
+        renderer->prewarm_play(false);
         loading.update(loading.fraction(),"Loading did not finish: "+report.reason);
         if(!report.cancelled)MessageBoxW(window,wide("The scene could not finish loading. "+report.reason).c_str(),L"Starlight",MB_OK|MB_ICONERROR);
         loading.close();loadingActive=false;
@@ -47,7 +48,7 @@ struct Player {
     }
     bool prepare_and_start(LoadingScreen& loading){
         const auto statusBefore=renderer->status();
-        renderer->playback(false);
+        renderer->playback(false);renderer->prewarm_play(true); // the barrier installs the scene play will use; playback(true) below ends the prewarm
         questTracker.reset();gameplay.start(authored);
         lastPreparation=prepare_scene(gameplay,loading);
         if(lastPreparation.stopped()){fail_loading(loading,lastPreparation);return false;}
