@@ -305,6 +305,28 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
     }
     {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
         const auto kp = gr::testing::generate_test_keypair();
         const auto other = gr::testing::generate_test_keypair();
         gr::TrustStore trust;

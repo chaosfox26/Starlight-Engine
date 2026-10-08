@@ -112,10 +112,14 @@ bool safe_relative_path(std::string_view path, std::string& why) {
             }
         }
         std::string stem(seg.substr(0, seg.find('.')));
+        while (!stem.empty() && stem.back() == ' ') stem.pop_back();
         std::transform(stem.begin(), stem.end(), stem.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-        static const char* reserved[] = {"CON", "PRN", "AUX", "NUL"};
+        static const char* reserved[] = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"};
         for (auto r : reserved) if (stem == r) { why = "reserved device name"; return false; }
         if (stem.size() == 4 && (stem.rfind("COM", 0) == 0 || stem.rfind("LPT", 0) == 0) && stem[3] >= '1' && stem[3] <= '9') {
+            why = "reserved device name"; return false;
+        }
+        if (stem.size() == 5 && (stem.rfind("COM", 0) == 0 || stem.rfind("LPT", 0) == 0) && stem[3] == '\xC2' && (stem[4] == '\xB9' || stem[4] == '\xB2' || stem[4] == '\xB3')) {
             why = "reserved device name"; return false;
         }
         if (end == std::string_view::npos) break;
