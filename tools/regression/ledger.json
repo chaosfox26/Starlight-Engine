@@ -263,7 +263,7 @@
      "minChecks": 11
     }
    ],
-   "testStrength": "Moderate: validate, encode and decode all refuse a repeated id and the full suite still accepts every scene it builds; the 4 shipped scenes have no duplicates. The count, route-length and identifier-length caps from the same audit item are NOT done: they need agreed limits that keep all authored scenes valid.",
+   "testStrength": "Moderate: validate, encode and decode all refuse a repeated id and the full suite still accepts every scene it builds; the 4 shipped scenes have no duplicates. The caps from the same audit item (at most 20000 objects, 4096 route points, 128-character ids; commit 8a17545) are also checked at and just beyond each limit.",
    "investigate": [
     "editor/cpp/scene.cpp object count, Route length and Id length limits",
     "key card adapter paths"
