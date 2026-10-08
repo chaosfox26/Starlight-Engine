@@ -71,4 +71,10 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         bool loose=true;try{verify_exported_content(dir/"loose");}catch(const std::exception&){loose=false;}
         require(loose,"A-06-5: A scene that is not part of an export still opens without a manifest");
     }
+    {
+        // A-06-12: a JPEG ending in a run of 0xFF bytes read one byte past its end.
+        const std::string ends{"\xff\xd8\xff\xe0\x00\x02\xff\xff\xff\xff",10};
+        std::string why;try{(void)describe_texture(ends);}catch(const std::exception& e){why=e.what();}
+        require(why.find("truncated")!=std::string::npos,"A-06-12: A JPEG that ends in 0xFF fill bytes is reported as truncated");
+    }
 }
