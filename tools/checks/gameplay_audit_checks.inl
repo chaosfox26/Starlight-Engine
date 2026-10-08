@@ -22,4 +22,13 @@ static void gameplay_audit_checks(const auto& require){
         p.select_target();
         require(p.selected_target()==platform.Id,"08#5: A breakable that has moved along its route into view is selected from its current position");
     }
+    {
+        // 08#4: a chain hop goes to the nearest body that is actually reachable; a body hidden behind a nearer one is only chained to after it.
+        SceneData storm;storm.Game.emplace();
+        Character bolt;bolt.Shape="chaos-lightning";bolt.X=3;bolt.Y=3;bolt.TargetX=0;bolt.TargetY=-3;bolt.TargetZ=0;bolt.LightningChains=2;bolt.BranchSpread=0;bolt.LightningChainRadius=10;
+        Character first;first.Shape="cube";first.X=3;Character second=first;second.Id=new_id();second.X=5;Character third=first;third.Id=new_id();third.X=7;
+        storm.Characters={bolt,third,first,second};
+        auto path=trace_lightning(bolt,storm,0);
+        require(path.size()==3&&path[0].hit==first.Id&&path[1].hit==second.Id&&path[2].hit==third.Id,"08#4: Lightning chains to the nearest reachable body on each hop and reaches the one behind it afterwards");
+    }
 }

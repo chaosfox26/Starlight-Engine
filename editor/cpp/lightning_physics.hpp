@@ -35,7 +35,11 @@ inline std::vector<LightningSegment> trace_lightning(const Character& emitter,co
     };
     std::vector<LightningSegment> result;std::unordered_set<std::string> visited{emitter.Id};result.push_back(pathCast(source,target,visited,false));
     for(int hop=0;hop<emitter.LightningChains&&!result.back().hit.empty();++hop){visited.insert(result.back().hit);auto start=result.back().target;double nearest=emitter.LightningChainRadius;std::optional<Vec3> next;
-        for(const auto& [id,box]:bodies)if(!visited.contains(id)){auto center=(box.low+box.high)*.5;double distance=(center-start).length();if(distance>=nearest)continue;auto candidate=cast(start,center,visited);if(candidate.hit!=id)continue;nearest=distance;next=center;}
+        // Nearest first: the first candidate that can actually be reached is the one the full scan would have kept (ties keep body order), so the rest are never cast.
+        std::vector<std::pair<double,size_t>> order;
+        for(size_t i=0;i<bodies.size();++i)if(!visited.contains(bodies[i].first)){double distance=((bodies[i].second.low+bodies[i].second.high)*.5-start).length();if(distance<nearest)order.push_back({distance,i});}
+        std::stable_sort(order.begin(),order.end(),[](const auto& a,const auto& b){return a.first<b.first;});
+        for(const auto& entry:order){const auto& body=bodies[entry.second];auto center=(body.second.low+body.second.high)*.5;if(cast(start,center,visited).hit!=body.first)continue;next=center;break;}
         if(!next)break;result.push_back(pathCast(start,*next,visited,false));
     }
     if(emitter.BranchSpread>0&&result.front().path.size()>4){auto main=result.front().path;for(int i=1;i<=3;++i){auto root=main[(main.size()-1)*i/4];auto end=root+Vec3{random(),-std::abs(random()),random()}*(emitter.BranchSpread*emitter.Size);result.push_back(pathCast(root,end,{emitter.Id},true));}}
