@@ -140,6 +140,30 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         require(wrong==0,"Fuzz: terrain payloads with a wrong grid size, absurd volume counts, short or long bodies are refused");
     }
 
+    // Identifiers that are not exactly <kind>-<64 lowercase hex digits> must never be turned into a file path.
+    {
+        const auto decoy=work/"decoy.slasset";atomic_write(decoy,pristine);
+        const std::vector<std::string> bad{"","blob-","blob-"+std::string(63,'a'),"blob-"+std::string(65,'a'),"blob-"+std::string(64,'A'),"Blob-"+std::string(64,'a'),
+            "blob-\\..\\..\\decoy","blob-/../../decoy","model-\\..\\..\\decoy","blob-"+std::string(64,'a')+".slasset","blob-"+std::string(64,'a')+":stream","blob-"+std::string(64,'a')+"::$DATA",
+            "blob-"+std::string(64,'a')+"\\x","blob-"+std::string(64,'a')+" ","blob-"+std::string(64,'a')+std::string(1,'\0'),"unknown-"+std::string(64,'a'),"C:\\Windows\\win.ini","\\\\server\\share\\x","texture-/x"};
+        size_t wrong=0;
+        for(const auto& name:bad){
+            for(const auto kind:{AssetKind::Sculpt,AssetKind::Terrain,AssetKind::Model,AssetKind::Texture,AssetKind::Blob}){
+                if(EngineAssets::valid_id(kind,name)||EngineAssets::exists(kind,name))++wrong;
+                if(outcome([&]{(void)EngineAssets::get(kind,name);})!=Result::AssetMissingError)++wrong;
+            }
+            if(!EngineAssets::locate(name).empty())++wrong;
+            if(EngineAssets::keep(name))++wrong;
+            if(outcome([&]{(void)EngineAssets::verified_file_bytes(name);})!=Result::AssetMissingError)++wrong;
+            if(outcome([&]{EngineAssets::verify_on_disk(name);})!=Result::AssetMissingError)++wrong;
+            const auto target=work/"bundle-target";
+            if(outcome([&]{EngineAssets::bundle_into({name},target);})!=Result::AssetMissingError)++wrong;
+            if(fs::exists(target)&&!fs::is_empty(target))++wrong;
+        }
+        require(wrong==0,"Fuzz: malformed asset identifiers (traversal, stream names, wrong case or length) are never resolved to a file");
+        require(read_file(decoy)==pristine,"Fuzz: a file outside the library is never read or changed through an asset identifier");
+    }
+
     // Portable scenes: a manifest or bundle that was edited, forged or damaged must fail verification cleanly, and nothing may be read outside the bundle.
     {
         SceneData scene;scene.Characters={tree};scene.Terrain.emplace();scene.Terrain->brush(0,0,2,1,"raise",0,0,.05);

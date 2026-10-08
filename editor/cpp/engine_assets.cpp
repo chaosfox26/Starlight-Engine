@@ -101,14 +101,22 @@ struct Reader {
         return result;
     }
 };
-std::string file_name(const std::string& id) { return id + ".slasset"; }
+// Scene files can name any text as an asset id, so an id is only ever turned into a file name after it has the exact shape <kind>-<64 lowercase hex digits>.
 AssetKind kind_of(const std::string& id) {
-    if (id.starts_with("sculpt-")) return AssetKind::Sculpt;
-    if (id.starts_with("terrain-")) return AssetKind::Terrain;
-    if (id.starts_with("model-")) return AssetKind::Model;
-    if (id.starts_with("texture-")) return AssetKind::Texture;
-    if (id.starts_with("blob-")) return AssetKind::Blob;
-    throw AssetMissing("Scene references an unknown engine asset id: " + id);
+    const auto kind = [&] {
+        if (id.starts_with("sculpt-")) return AssetKind::Sculpt;
+        if (id.starts_with("terrain-")) return AssetKind::Terrain;
+        if (id.starts_with("model-")) return AssetKind::Model;
+        if (id.starts_with("texture-")) return AssetKind::Texture;
+        if (id.starts_with("blob-")) return AssetKind::Blob;
+        throw AssetMissing("Scene references an unknown engine asset id: " + id);
+    }();
+    if (!EngineAssets::valid_id(kind, id)) throw AssetMissing("Scene references an invalid engine asset id: " + id);
+    return kind;
+}
+std::string file_name(const std::string& id) {
+    (void)kind_of(id);
+    return id + ".slasset";
 }
 std::shared_ptr<const std::string> read_verified(AssetKind kind, const std::string& id, const fs::path& path, std::string* whole = nullptr) {
     auto file = read_file(path);
@@ -653,6 +661,7 @@ struct Candidate {
 };
 std::vector<Candidate> candidate_files(const std::string& id) {
     std::vector<Candidate> candidates;
+    try { (void)kind_of(id); } catch (const AssetMissing&) { return candidates; }
     for (const auto& item : resolve(true).items)
         if (item.usable) candidates.push_back({item.path / wide(file_name(id)), item.durable});
     return candidates;
