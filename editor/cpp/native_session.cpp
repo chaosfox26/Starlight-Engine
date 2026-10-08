@@ -327,10 +327,16 @@ void NativeSession::run(std::stop_token stop) {
                 if(which!=2&&bounds_cacheable(object))layer.add(*ObjectCache::shared().mesh(object),object);else layer.add(object_mesh(object),object);
             };
             auto buildLayer=[&](int which)->std::shared_ptr<const FlowObstacleMask> {
+                const double t0=ob0>0?starlight_diag::evnow():0;
                 auto layer=std::make_shared<FlowObstacleMask>();
-                for(const auto& entry:held)if(entry.layer==which)addTo(*layer,*entry.object,which);
+                size_t objects=0,triangleCount=0;
+                for(const auto& entry:held)if(entry.layer==which&&which!=2&&bounds_cacheable(*entry.object))triangleCount+=ObjectCache::shared().mesh(*entry.object)->indices.size()/3;
+                layer->triangles.reserve(triangleCount); // one allocation instead of repeated regrowth of 128-byte records
+                for(const auto& entry:held)if(entry.layer==which){addTo(*layer,*entry.object,which);++objects;}
                 if(layer->triangles.empty())return nullptr;
+                const double t1=ob0>0?starlight_diag::evnow():0;
                 layer->finish();
+                if(ob0>0)starlight_diag::evlog("obstL",t1-t0,starlight_diag::evnow()-t1,double(which)*1e6+double(objects));
                 return layer;
             };
             if(reuse&&flow->has_obstacles()&&obstacleMarkValid&&heavySig==obstacleHeavySig){
