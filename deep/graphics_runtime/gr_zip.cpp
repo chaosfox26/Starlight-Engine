@@ -163,6 +163,23 @@ std::string lower(std::string s) {
     return s;
 }
 
+bool valid_utf8(std::string_view s) {
+    for (std::size_t i = 0; i < s.size();) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        int extra = c < 0x80 ? 0 : (c >= 0xC2 && c <= 0xDF) ? 1 : (c >= 0xE0 && c <= 0xEF) ? 2 : (c >= 0xF0 && c <= 0xF4) ? 3 : -1;
+        if (extra < 0 || i + extra >= s.size()) return false;
+        std::uint32_t cp = extra == 0 ? c : c & (0x3F >> extra);
+        for (int k = 1; k <= extra; ++k) {
+            unsigned char t = static_cast<unsigned char>(s[i + k]);
+            if ((t & 0xC0) != 0x80) return false;
+            cp = (cp << 6) | (t & 0x3F);
+        }
+        if ((extra == 2 && cp < 0x800) || (extra == 3 && cp < 0x10000) || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return false;
+        i += extra + 1;
+    }
+    return true;
+}
+
 }
 
 bool inflate_raw(std::string_view in, std::string& out, std::uint64_t expected, std::string& error) {
@@ -225,6 +242,7 @@ Result extract_zip_bytes(std::string_view zip, const fs::path& dest, const ZipLi
         if (e.usize == 0xFFFFFFFFu || e.csize == 0xFFFFFFFFu || e.off == 0xFFFFFFFFu) return fail("ZIP64 entries are not supported");
         e.dir = !e.name.empty() && e.name.back() == '/';
         std::string path = e.dir ? e.name.substr(0, e.name.size() - 1) : e.name, why;
+        if (!valid_utf8(path)) return fail("entry name is not valid UTF-8");
         if (!safe_relative_path(path, why)) return fail("unsafe entry name '" + path + "' (" + why + ")");
         if (!seen.insert(lower(path)).second) return fail("duplicate or case-colliding entry " + path);
         if (e.dir) {

@@ -279,6 +279,16 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
     }
 
     {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
         const auto kp = gr::testing::generate_test_keypair();
         const auto other = gr::testing::generate_test_keypair();
         gr::TrustStore trust;
