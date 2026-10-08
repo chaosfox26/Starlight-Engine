@@ -20,7 +20,8 @@ struct EventLog {
     static constexpr size_t capacity=1u<<21;
     Event* events=nullptr;std::atomic<uint32_t> count{0};bool enabled=false;char prefix[400]{};double frequency=0;
     EventLog(){
-        if(!GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix)))return;
+        const DWORD length=GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix));
+        if(!length||length>=sizeof(prefix)){prefix[0]=0;return;}
         LARGE_INTEGER f;QueryPerformanceFrequency(&f);frequency=double(f.QuadPart);
         events=static_cast<Event*>(VirtualAlloc(nullptr,sizeof(Event)*capacity,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         enabled=events!=nullptr;

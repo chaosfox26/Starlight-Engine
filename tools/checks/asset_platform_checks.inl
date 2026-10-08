@@ -77,4 +77,19 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         std::string why;try{(void)describe_texture(ends);}catch(const std::exception& e){why=e.what();}
         require(why.find("truncated")!=std::string::npos,"A-06-12: A JPEG that ends in 0xFF fill bytes is reported as truncated");
     }
+    {
+        // A-10-4 / A-10-5: a too-long log variable must not be used half-read, and the event log must write out what was logged when it is closed.
+        _putenv_s("STARLIGHT_EVENT_LOG",std::string(600,'p').c_str());
+        bool ignored=false;{starlight_diag::EventLog tooLong;ignored=!tooLong.enabled&&tooLong.prefix[0]==0;}
+        require(ignored,"A-10-4: An event-log path longer than the buffer leaves the log off");
+        const auto prefix=dir/"events";_putenv_s("STARLIGHT_EVENT_LOG",prefix.string().c_str());
+        {
+            starlight_diag::EventLog log;
+            require(log.enabled,"A-10-5: The event log switches on for a valid prefix");
+            log.add("first",1,2,3);log.add("second",4,5,6);
+        }
+        _putenv_s("STARLIGHT_EVENT_LOG","");
+        size_t lines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("events.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++lines;}
+        require(lines==2,"A-10-5: Both events are written out when the log is closed");
+    }
 }
