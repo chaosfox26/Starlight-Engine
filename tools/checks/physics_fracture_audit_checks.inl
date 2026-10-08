@@ -1,6 +1,12 @@
 // Regression checks for the physics, fracture and destruction audit findings (audit 03).
 extern "C" __declspec(dllimport) void slp_debug_fail_adds(int);
 extern "C" __declspec(dllimport) int slp_present(void *, void *, int);
+extern "C" __declspec(dllimport) void *slp_hull_create(const float *, int, float);
+extern "C" __declspec(dllimport) void slp_hull_release(void *);
+extern "C" __declspec(dllimport) uint32_t slp_add_hull(void *, void *, float, float, float, float, float, float, float);
+extern "C" __declspec(dllimport) int slp_character_start(void *, float, float, float, float);
+extern "C" __declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
+extern "C" __declspec(dllimport) int slp_body_motion(void *, uint32_t, float, float, float, float *);
 template<class Require> void physics_fracture_audit_checks(Require require){
     {   // 03#1: fracture helpers run below normal priority, but the pool thread they borrowed must go back to normal afterwards.
         std::mutex lock;std::set<DWORD> helperThreads;
@@ -71,5 +77,32 @@ template<class Require> void physics_fracture_audit_checks(Require require){
         require(!threw,"03#2: A break whose rubble cannot get physics bodies does not throw out of the simulation");
         require(player->scene().Characters.empty()&&player->rules().removed.contains(stone.Id)&&player->rules().objectives.contains("full-world-broken"),"03#2: Such a break still removes the object and fires the object-broken event once");
         require(presented.fragments.size()>=32,"03#2: Pieces that got no physics body are still shown and fall as plain particles");
+    }
+    {   // 03#7: a fragment rolling in the adventure world (advanced only by character steps) slows from rolling resistance when STARLIGHT_ROLLING_RESISTANCE=1, and rolls on as before when it is off.
+        std::vector<float> points;
+        for(int ring=1;ring<8;++ring){const double phi=3.14159265358979*ring/8;for(int k=0;k<16;++k){const double theta=6.28318530717959*k/16;points.insert(points.end(),{float(.25*std::sin(phi)*std::cos(theta)),float(.25*std::cos(phi)),float(.25*std::sin(phi)*std::sin(theta))});}}
+        points.insert(points.end(),{0.f,.25f,0.f,0.f,-.25f,0.f});
+        const std::vector<float> flat(97*97,0.f);
+        auto spin_after_rolling=[&](const char* setting)->double{
+            _putenv_s("STARLIGHT_ROLLING_RESISTANCE",setting);
+            double result=-1;void* world=slp_create();int ready=0;
+            if(world&&slp_terrain(world,flat.data())==1)for(int i=0;i<5000&&ready==0;++i){ready=slp_ready(world);if(ready==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+            void* hull=slp_hull_create(points.data(),int(points.size()/3),1.f);
+            if(world&&ready==1&&hull&&slp_character_start(world,.3f,-8,0,-8)==1){
+                const uint32_t ball=slp_add_hull(world,hull,0,.26f,0,0,0,0,1);
+                slp_body_velocity(world,ball,2,0,0,0,0,-8);
+                float output[4]{};bool stepped=true;
+                for(int i=0;i<90&&stepped;++i)stepped=slp_character_step(world,1.f/60,-8,0,-8,0,0,0,output)==1;
+                float motion[6]{};
+                if(stepped&&slp_body_motion(world,ball,0,.26f,0,motion)==1)result=std::sqrt(double(motion[3])*motion[3]+double(motion[4])*motion[4]+double(motion[5])*motion[5]);
+            }
+            if(hull)slp_hull_release(hull);
+            if(world)slp_destroy(world);
+            return result;
+        };
+        const double without=spin_after_rolling("0"),with=spin_after_rolling("1");
+        _putenv_s("STARLIGHT_ROLLING_RESISTANCE","");
+        require(without>0&&with>=0,"03#7: A rolling fragment can be simulated through character steps");
+        require(without>0&&with<without*.9,"03#7: With STARLIGHT_ROLLING_RESISTANCE=1 a fragment rolling in the adventure world slows faster than without it");
     }
 }
