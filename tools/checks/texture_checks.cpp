@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -156,7 +156,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::string json = "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" + std::to_string(declared) + "}],\"bufferViews\":[" + views + "],\"accessors\":[" + accessors + "],"
         "\"materials\":[{\"name\":\"fur\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.5,0.25,0.75,1]}}],"
         "\"meshes\":[{\"primitives\":[" + primitiveList + "]}],"
-        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
+        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixTrs ? "\"matrix\":[0,2,0,0,-3,0,0,0,0,0,4,0,0,1,0,1]" : spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
         "\"skins\":[{\"joints\":[1,2],\"inverseBindMatrices\":6}],"
         "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : spec.step ? "STEP" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
         "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
@@ -992,6 +992,14 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(e.code == LoadCode::Malformed, "R5: a keyframe value that is not finite is Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(matrixSpec)), nullptr, "matrix.glb", scratch).ok() && std::fabs(scratch.joints[1].t.y - 1.f) < 1e-5f && std::fabs(scratch.joints[1].s.x - 1.f) < 1e-5f, "R4: a joint given as a matrix keeps its translation");
+        {   // translation (0,1,0) * rotation 90 degrees about z * scale (2,3,4)
+            GlbSpec trsSpec; trsSpec.matrixTrs = true;
+            const bool loaded = model::loadSkinnedFromMemory(ByteView(makeGlb(trsSpec)), nullptr, "matrix-trs.glb", scratch).ok();
+            const auto& j = scratch.joints[1];
+            require(loaded && std::fabs(j.t.x) < 1e-4f && std::fabs(j.t.y - 1.f) < 1e-4f && std::fabs(j.t.z) < 1e-4f, "R4: a matrix joint keeps its translation next to a rotation and a scale");
+            require(std::fabs(j.s.x - 2.f) < 1e-4f && std::fabs(j.s.y - 3.f) < 1e-4f && std::fabs(j.s.z - 4.f) < 1e-4f, "R4: a matrix joint keeps its scale");
+            require(std::fabs(j.r.x) < 1e-4f && std::fabs(j.r.y) < 1e-4f && std::fabs(j.r.z - 0.70710678f) < 1e-4f && std::fabs(j.r.w - 0.70710678f) < 1e-4f, "R4: a matrix joint keeps its rotation");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
