@@ -1,6 +1,7 @@
 #pragma once
 #include "event_log.h"
 #include "gpu_lifetime.h"
+#include "contact_index.h"
 #include <grass_shader.h>
 #include <algorithm>
 #include <map>
@@ -46,6 +47,7 @@ struct GrassDeformation {
  void commit(RenderDevice& d){if(!staged.items)return;Retired batch=std::move(staged);staged=Retired{};batch.fence=d.fenceVal;retired.push(d,std::move(batch),[](Retired& done){release(done);});}
  void drain(RenderDevice& d,bool all=false){commit(d);retired.drain(d,[](Retired& done){release(done);},all);}
  std::vector<Body> contacts;
+ ContactIndex contactIndex; // the same boxes bucketed by position, so reach() does not test every body for every grass part
  ComPtr<ID3D12RootSignature> root;
  ComPtr<ID3D12PipelineState> deform,normals;
  ComPtr<ID3D12Resource> bodyRing;
@@ -115,6 +117,7 @@ struct GrassDeformation {
  void bodies(RenderDevice& d,const std::vector<Body>& next){
   if(!bodyRing||next.size()>bodyCapacity){if(bodyRing){bodyRing->Unmap(0,nullptr);bodyMapped=nullptr;Retired old;old.add(bodyRing,bodyAllocationBytes);old.fence=d.fenceVal;retired.push(d,std::move(old),[](Retired& done){release(done);});}bodyCapacity=UINT(std::max<size_t>(1,next.size()));bodyRing=buffer(d,UINT64(bodyCapacity)*sizeof(Body)*kFrameCount,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_GENERIC_READ);bodyAllocationBytes=allocation(d,bodyRing);D3D12_RANGE none{0,0};d.must(bodyRing->Map(0,&none,reinterpret_cast<void**>(&bodyMapped)),"map grass contacts");}
   contacts=next;
+  {std::vector<ContactIndex::Box> boxes;boxes.reserve(contacts.size());for(const auto& b:contacts)boxes.push_back({b.low.x,b.low.y,b.low.z,b.high.x,b.high.y,b.high.z});contactIndex.build(std::move(boxes));}
  }
  void begin(RenderDevice& d,float time){
   entryCursor=0;
@@ -188,7 +191,7 @@ struct GrassDeformation {
  float reach(uint64_t key,const XMMATRIX& world){
   const auto& mesh=*entries.at(key).topology;XMFLOAT3 low{1e20f,1e20f,1e20f},high{-1e20f,-1e20f,-1e20f};
   for(UINT k=0;k<8;++k){XMFLOAT3 p;XMStoreFloat3(&p,XMVector3TransformCoord(XMVectorSet(k&1?mesh.high.x:mesh.low.x,k&2?mesh.high.y:mesh.low.y,k&4?mesh.high.z:mesh.low.z,1),world));low.x=std::min(low.x,p.x);low.y=std::min(low.y,p.y);low.z=std::min(low.z,p.z);high.x=std::max(high.x,p.x);high.y=std::max(high.y,p.y);high.z=std::max(high.z,p.z);}
-  UINT count=0;for(const auto& b:contacts)if(low.x<=b.high.x+.2f&&high.x>=b.low.x-.2f&&low.z<=b.high.z+.2f&&high.z>=b.low.z-.2f&&low.y<=b.high.y+.1f&&high.y>=b.low.y-.1f)++count;
+  const UINT count=contactIndex.count(low.x,low.y,low.z,high.x,high.y,high.z);
   // Returning the global count would inflate cascades for irrelevant distant
   // bodies. Keep the conservative bound tied to actual possible contacts.
   auto& entry=entries.at(key);entry.shadowReach=std::max(entry.shadowReach,.16f+.8f*count);return entry.shadowReach;
