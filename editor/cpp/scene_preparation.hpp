@@ -173,6 +173,13 @@ inline void run_pumped_stage(const std::function<void(std::atomic<double>&)>& wo
     }
     worker.join();
 }
+// Reads a STARLIGHT_PREPARE_LIMIT_MS value. Text that is not a finite number of at least 1 keeps the 60 second default instead of becoming a 1 ms limit that fails every scene with breakables.
+inline double prepare_limit_ms(const char* text) {
+    char* end = nullptr;
+    const double value = std::strtod(text, &end);
+    while (end && (*end == ' ' || *end == '\t')) ++end;
+    return end != text && *end == 0 && std::isfinite(value) && value >= 1 ? value : 60000.0;
+}
 struct PreparationStages {
     static constexpr double geometry = .15, collision = .22, fracture = .38, upload = .25;
 };
@@ -190,7 +197,7 @@ inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen
         return true;
     };
     auto stage = [&](const std::string& label, double weight, double& elapsed, const std::function<void(std::atomic<double>&)>& work) {
-        if (cancelled()) return;
+        if (report.stopped() || cancelled()) return;
         const double started = prepare_now_ms();
         std::string failure, interface_failure;
         try {
@@ -211,12 +218,12 @@ inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen
     };
     stage("Preparing scenery shapes", PreparationStages::geometry, report.geometryMs, [&](std::atomic<double>& fraction) { adventure.prepare_geometry(fraction); });
     stage("Preparing collision", PreparationStages::collision, report.collisionMs, [&](std::atomic<double>& fraction) { adventure.prepare_collision(fraction); });
-    if (!cancelled()) {
+    if (!report.stopped() && !cancelled()) {
         const double started = prepare_now_ms();
         const auto initial = adventure.fracture_progress();
         report.breakablesQueued = initial.total;
         report.tasksTotal += initial.total;
-        const double limitMs = [] { char v[16]{}; const unsigned n = GetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS", v, 16); return n && n < 16 ? std::max(1.0, atof(v)) : 60000.0; }();
+        const double limitMs = [] { char v[64]{}; const unsigned n = GetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS", v, 64); return n && n < 64 ? prepare_limit_ms(v) : 60000.0; }();
         for (;;) {
             const auto progress = adventure.fracture_progress();
             report.breakablesPrepared = progress.ready;
