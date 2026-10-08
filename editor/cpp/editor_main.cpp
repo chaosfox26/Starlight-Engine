@@ -2673,6 +2673,7 @@ struct Editor {
                 selected = int(scene.Characters.size()) - 1;
             });
         } else if (id == Undo || id == Redo) {
+            end_stroke();
             bool changed = id == Undo ? history.undo(scene) : history.redo(scene);
             if (changed) {
                 selected = -1;

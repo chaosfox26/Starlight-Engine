@@ -98,8 +98,10 @@ class SceneHistory {
         }
     }
     bool undo(SceneData &s) {
-        if (pending_)
+        if (pending_) {
             cancel(s);
+            return true;
+        }
         if (undo_.empty())
             return false;
         redo_.push_back(std::move(s));
