@@ -119,7 +119,12 @@ std::string file_name(const std::string& id) {
     return id + ".slasset";
 }
 std::shared_ptr<const std::string> read_verified(AssetKind kind, const std::string& id, const fs::path& path, std::string* whole = nullptr) {
-    auto file = read_file(path);
+    std::string file;
+    try {
+        file = read_file(path);
+    } catch (const std::exception& e) {
+        throw AssetMissing("Engine asset " + id + " cannot be read: " + e.what());
+    }
     if (file.size() < kHeaderBytes || std::memcmp(file.data(), kMagic, 4)) throw AssetMissing("Engine asset " + id + " is not a Starlight asset file");
     Reader header{file, 4};
     if (header.value<uint32_t>() != kFileVersion) throw AssetMissing("Engine asset " + id + " has an unsupported file version");

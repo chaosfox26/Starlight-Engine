@@ -62,6 +62,28 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         place(pristine);
     }
 
+    {
+        // A file that cannot be read at all (held open by another program, or too large to load whole) is a damaged asset like any other, not a different kind of failure.
+        place(pristine);
+        EngineAssets::ScopedRoot sameFolder(work/"library");
+        HANDLE holder=CreateFileW(file.c_str(),GENERIC_READ,0,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        const bool held=holder!=INVALID_HANDLE_VALUE;
+        const auto locked=held?outcome([&]{(void)EngineAssets::get(AssetKind::Blob,id);}):Result::AssetMissingError;
+        const auto lockedVerify=held?outcome([&]{EngineAssets::verify_on_disk(id);}):Result::AssetMissingError;
+        const auto lockedKeep=held?outcome([&]{(void)EngineAssets::keep(id);}):Result::Accepted;
+        if(held)CloseHandle(holder);
+        require(held&&locked==Result::AssetMissingError&&lockedVerify==Result::AssetMissingError&&lockedKeep==Result::Accepted,"Fuzz: an asset file that cannot be opened is reported as an unusable asset (AssetMissing), and keep() answers false instead of throwing");
+        const auto big=EngineAssets::file_for("blob-"+std::string(64,'b'));
+        HANDLE sparse=CreateFileW(big.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+        DWORD returned=0;LARGE_INTEGER length;length.QuadPart=(LONGLONG(1)<<30)+1;
+        const bool made=sparse!=INVALID_HANDLE_VALUE&&DeviceIoControl(sparse,FSCTL_SET_SPARSE,nullptr,0,nullptr,0,&returned,nullptr)&&SetFilePointerEx(sparse,length,nullptr,FILE_BEGIN)&&SetEndOfFile(sparse);
+        if(sparse!=INVALID_HANDLE_VALUE)CloseHandle(sparse);
+        if(made)require(outcome([&]{(void)EngineAssets::get(AssetKind::Blob,"blob-"+std::string(64,'b'));})==Result::AssetMissingError,"Fuzz: an asset file larger than the 1 GiB load limit is reported as an unusable asset");
+        else require(true,"Fuzz: a sparse 1 GiB file cannot be created here, so the oversize case was not exercised");
+        std::error_code removed;fs::remove(big,removed);
+        place(pristine);
+    }
+
     // Crafted payloads whose identity is genuine (the id is the hash of the bytes), so only the payload parsers stand in the way.
     auto sculptBytes=[&](uint64_t positions,uint64_t indices,uint64_t coordinates,const std::vector<double>& p,const std::vector<int32_t>& i,const std::vector<double>& c){
         std::string out;out.append(reinterpret_cast<const char*>(&positions),8);out.append(reinterpret_cast<const char*>(&indices),8);out.append(reinterpret_cast<const char*>(&coordinates),8);
