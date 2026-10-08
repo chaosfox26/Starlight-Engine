@@ -72,6 +72,12 @@ json verify_portable_scene(const fs::path &folder) {
     (void)SceneData::decode(sceneText);
     return {{"success",true},{"assetCount",assets.size()},{"note","Exported scene and engine asset hashes match; this is integrity verification, not runtime certification."}};
 }
+void verify_exported_content(const fs::path &folder) {
+    // The manifest is what makes an export verifiable, so a folder that looks like an export but has lost its manifest is refused instead of being run unchecked.
+    if (fs::exists(folder / L"manifest.json")) { (void)verify_portable_scene(folder); return; }
+    if (fs::is_directory(folder / L"assets") || fs::exists(fs::absolute(folder).parent_path() / L"game-manifest.json"))
+        throw std::runtime_error("manifest.json is missing from the exported content, so it cannot be verified; export the game again");
+}
 json export_scene_selection(const SceneData &scene, const std::vector<std::string>& ids, const fs::path &destination) {
     if (ids.empty()) throw std::runtime_error("Select objects to export first");
     auto unique = ids;

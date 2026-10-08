@@ -54,4 +54,21 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
             require(seen&&found.entries.size()==2,"A-06-4: A model that is a symlink appears in the asset browser");
         } else require(true,"A-06-4: Symlinks cannot be created in this session, so the symlink listing was not exercised");
     }
+    {
+        // A-06-5: an exported folder that lost its manifest used to run with no check at all.
+        SceneData scene;Character cube;cube.Id="manifest-check";cube.Name="manifest-check";cube.Shape="cube";scene.Characters={cube};
+        const auto game=dir/"game";fs::create_directories(game);
+        export_portable_scene(scene,game/"content");atomic_write(game/"game-manifest.json","{}");
+        bool intact=true;try{verify_exported_content(game/"content");}catch(const std::exception&){intact=false;}
+        require(intact,"A-06-5: An intact export passes the player's content check");
+        fs::remove(game/"content"/"manifest.json");
+        std::string why;try{verify_exported_content(game/"content");}catch(const std::exception& e){why=e.what();}
+        require(why.find("manifest.json is missing")!=std::string::npos,"A-06-5: An exported game whose manifest was deleted is refused");
+        fs::create_directories(dir/"bundle-like"/"assets");atomic_write(dir/"bundle-like"/"scene.starscene","{}");
+        why.clear();try{verify_exported_content(dir/"bundle-like");}catch(const std::exception& e){why=e.what();}
+        require(why.find("manifest.json is missing")!=std::string::npos,"A-06-5: A scene folder with an assets folder but no manifest is refused");
+        fs::create_directories(dir/"loose");atomic_write(dir/"loose"/"scene.starscene","{}");
+        bool loose=true;try{verify_exported_content(dir/"loose");}catch(const std::exception&){loose=false;}
+        require(loose,"A-06-5: A scene that is not part of an export still opens without a manifest");
+    }
 }
