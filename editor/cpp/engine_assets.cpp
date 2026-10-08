@@ -71,13 +71,21 @@ const char* prefix(AssetKind kind) {
     }
     throw AssetMissing("Unknown engine asset kind");
 }
+// Largest .slasset file read into memory, by kind, checked before anything is allocated for it. Generous on purpose: twice the 256 MiB model and texture import limit
+// (assets.hpp MaxImportBytes), twice the 64 MiB blob limit, far above any terrain grid (97 x 97), and 1 GiB for sculpts (the whole-file ceiling of read_file).
+size_t max_file_bytes(AssetKind kind) {
+    switch (kind) {
+    case AssetKind::Sculpt: return size_t(1) << 30;
+    case AssetKind::Terrain: return size_t(64) << 20;
+    case AssetKind::Model: return size_t(512) << 20;
+    case AssetKind::Texture: return size_t(512) << 20;
+    case AssetKind::Blob: return size_t(128) << 20;
+    }
+    return size_t(1) << 30;
+}
 std::string identity(AssetKind kind, std::string_view payload) {
-    std::string keyed;
-    keyed.reserve(payload.size() + 4);
     const uint32_t k = uint32_t(kind);
-    keyed.append(reinterpret_cast<const char*>(&k), 4);
-    keyed.append(payload);
-    auto hex = hash_bytes(keyed);
+    auto hex = hash_bytes(std::string_view(reinterpret_cast<const char*>(&k), 4), payload);
     std::transform(hex.begin(), hex.end(), hex.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     return prefix(kind) + hex;
 }
@@ -111,17 +119,24 @@ AssetKind kind_of(const std::string& id) {
     throw AssetMissing("Scene references an unknown engine asset id: " + id);
 }
 std::shared_ptr<const std::string> read_verified(AssetKind kind, const std::string& id, const fs::path& path, std::string* whole = nullptr) {
-    auto file = read_file(path);
+    std::error_code sizeError;
+    const auto onDisk = fs::file_size(path, sizeError);
+    if (!sizeError && onDisk > max_file_bytes(kind)) throw AssetMissing("Engine asset " + id + " is larger than the " + std::to_string(max_file_bytes(kind) >> 20) + " MiB limit for its kind");
+    auto file = read_file(path, max_file_bytes(kind));
     if (file.size() < kHeaderBytes || std::memcmp(file.data(), kMagic, 4)) throw AssetMissing("Engine asset " + id + " is not a Starlight asset file");
     Reader header{file, 4};
     if (header.value<uint32_t>() != kFileVersion) throw AssetMissing("Engine asset " + id + " has an unsupported file version");
     if (header.value<uint32_t>() != uint32_t(kind)) throw AssetMissing("Engine asset " + id + " is the wrong kind of asset");
     const auto bytes = header.value<uint64_t>();
     if (bytes != file.size() - kHeaderBytes) throw AssetMissing("Engine asset " + id + " is truncated");
-    auto payload = std::make_shared<const std::string>(file.substr(kHeaderBytes));
-    if (identity(kind, *payload) != id) throw AssetMissing("Engine asset " + id + " is damaged (its contents no longer match its identity)");
-    if (whole) *whole = std::move(file);
-    return payload;
+    if (identity(kind, std::string_view(file).substr(kHeaderBytes)) != id) throw AssetMissing("Engine asset " + id + " is damaged (its contents no longer match its identity)");
+    if (whole) {
+        auto payload = std::make_shared<const std::string>(file.substr(kHeaderBytes));
+        *whole = std::move(file);
+        return payload;
+    }
+    file.erase(0, kHeaderBytes);   // the payload is the file without its header: no second copy
+    return std::make_shared<const std::string>(std::move(file));
 }
 void forget_persisted() {
     std::lock_guard lock(roots().mutex);
@@ -690,28 +705,31 @@ bool EngineAssets::keep(const std::string& id) {
     return false;
 }
 std::string EngineAssets::put(AssetKind kind, std::string_view payload) {
+    if (payload.size() > max_file_bytes(kind) - kHeaderBytes) throw std::runtime_error("The engine asset exceeds the " + std::to_string(max_file_bytes(kind) >> 20) + " MiB limit for its kind");
     auto id = identity(kind, payload);
     {
         std::lock_guard lock(roots().mutex);
         if (roots().persisted.contains(id)) { memory().add(id, std::make_shared<const std::string>(payload)); return id; }
     }
-    bool valid = false;
+    std::shared_ptr<const std::string> verified; // the payload as read back from disk and checked against its id: the same bytes as `payload`, so the cache needs no further copy
     if (auto existing = locate(id); !existing.empty()) {
-        try { read_verified(kind, id, existing); valid = true; } catch (const AssetMissing&) {}
+        try { verified = read_verified(kind, id, existing); } catch (const AssetMissing&) {}
     }
-    if (!valid) {
-        std::string file;
-        file.reserve(kHeaderBytes + payload.size());
-        file.append(kMagic, 4);
-        put_value<uint32_t>(file, kFileVersion);
-        put_value<uint32_t>(file, uint32_t(kind));
-        put_value<uint64_t>(file, payload.size());
-        file.append(payload);
+    if (!verified) {
         const auto home = file_for(id);
-        atomic_write(home, file);
-        read_verified(kind, id, home);
+        {
+            std::string file;
+            file.reserve(kHeaderBytes + payload.size());
+            file.append(kMagic, 4);
+            put_value<uint32_t>(file, kFileVersion);
+            put_value<uint32_t>(file, uint32_t(kind));
+            put_value<uint64_t>(file, payload.size());
+            file.append(payload);
+            atomic_write(home, file);
+        }
+        verified = read_verified(kind, id, home);
     }
-    memory().add(id, std::make_shared<const std::string>(payload));
+    memory().add(id, std::move(verified));
     std::lock_guard lock(roots().mutex);
     roots().persisted.insert(id);
     return id;

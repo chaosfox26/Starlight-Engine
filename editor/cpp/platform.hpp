@@ -27,8 +27,12 @@ struct Handle {
 std::wstring wide(std::string_view);
 std::string utf8(std::wstring_view);
 std::string read_file(const fs::path &);
+// Same, but refuses a file larger than `maxBytes` before allocating anything for it.
+std::string read_file(const fs::path &, std::uintmax_t maxBytes);
 std::string hash_file(const fs::path &);
 std::string hash_bytes(std::string_view);
+// SHA-256 of `head` followed by `data`, without joining them in memory.
+std::string hash_bytes(std::string_view head, std::string_view data);
 void atomic_write(const fs::path &, std::string_view, bool backup = false,
                   const std::optional<std::string> &expected = {});
 fs::path application_data();
@@ -44,6 +48,8 @@ struct MissingAssetsError : std::runtime_error {
     MissingAssetsError(const std::string &message, std::vector<std::string> missing) : std::runtime_error(message), ids(std::move(missing)) {}
 };
 std::string save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {}, bool allowMissingAssets = false);
+// A scene file larger than this is refused before it is read (the largest scene in the repository and in the stress set is about 11 MB; 20000 objects stay far below it).
+constexpr std::uintmax_t MaxSceneFileBytes = std::uintmax_t(512) << 20;
 // `hash`, when given, receives the hash of the exact bytes that were decoded (not of a second read of the file).
 SceneData load_scene(const fs::path &, std::string *hash = nullptr);
 json export_playable_game(const SceneData &, const fs::path &destination, const fs::path &runtime);

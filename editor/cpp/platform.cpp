@@ -85,6 +85,13 @@ std::string new_id() {
     return out;
 }
 std::string read_file(const fs::path &p) {
+    return read_file(p, std::uintmax_t(1) << 30);
+}
+std::string read_file(const fs::path &p, std::uintmax_t maxBytes) {
+    const auto limitText = [maxBytes] {
+        constexpr std::uintmax_t gibibyte = std::uintmax_t(1) << 30, mebibyte = std::uintmax_t(1) << 20;
+        return maxBytes % gibibyte == 0 ? std::to_string(maxBytes / gibibyte) + " GiB" : std::to_string(maxBytes / mebibyte) + " MiB";
+    };
     std::ifstream f(native_file_path(p), std::ios::binary);
     if (!f)
         throw std::runtime_error("Cannot open " + utf8(p.wstring()));
@@ -98,10 +105,12 @@ std::string read_file(const fs::path &p) {
         std::string streamed((std::istreambuf_iterator<char>(f)), {});
         if (f.bad())
             throw std::runtime_error("Read failed");
+        if (streamed.size() > maxBytes)
+            throw std::runtime_error(utf8(p.wstring()) + " is larger than " + limitText() + "; Starlight does not load it whole");
         return streamed;
     }
-    if (size > (std::streamoff(1) << 30))
-        throw std::runtime_error(utf8(p.wstring()) + " is larger than 1 GiB; Starlight does not load it whole");
+    if (std::uintmax_t(size) > maxBytes)
+        throw std::runtime_error(utf8(p.wstring()) + " is larger than " + limitText() + "; Starlight does not load it whole");
     std::string data(size_t(size), char(0));
     f.seekg(0, std::ios::beg);
     if (size > 0)
@@ -114,13 +123,17 @@ std::string hash_file(const fs::path &p) {
     return hash_bytes(read_file(p));
 }
 std::string hash_bytes(std::string_view data) {
+    return hash_bytes({}, data);
+}
+std::string hash_bytes(std::string_view head, std::string_view data) {
     unsigned char hash[32];
-    if(data.size()>ULONG_MAX)throw std::runtime_error("SHA256 input too large");
+    if(head.size()>ULONG_MAX||data.size()>ULONG_MAX)throw std::runtime_error("SHA256 input too large");
     BCRYPT_ALG_HANDLE algorithm=nullptr;
     if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)
         throw std::runtime_error("Cannot open SHA256 provider");
     BCRYPT_HASH_HANDLE operation=nullptr;
     auto status=BCryptCreateHash(algorithm,&operation,nullptr,0,nullptr,0,0);
+    if(status>=0&&!head.empty())status=BCryptHashData(operation,reinterpret_cast<PUCHAR>(const_cast<char*>(head.data())),ULONG(head.size()),0);
     if(status>=0)status=BCryptHashData(operation,reinterpret_cast<PUCHAR>(const_cast<char*>(data.data())),ULONG(data.size()),0);
     if(status>=0)status=BCryptFinishHash(operation,hash,32,0);
     if(operation)BCryptDestroyHash(operation);
@@ -252,7 +265,7 @@ std::string save_scene(const SceneData &scene, const fs::path &path, const std::
 SceneData load_scene(const fs::path &path, std::string *hash) {
     // A portable bundle (exported scene or game) carries its engine assets in an "assets" folder beside the scene; the library reads from there too.
     EngineAssets::discover_near(fs::absolute(path).parent_path());
-    auto bytes = read_file(path);
+    auto bytes = read_file(path, MaxSceneFileBytes);
     if (hash) *hash = hash_bytes(bytes);
     return SceneData::decode(bytes);
 }

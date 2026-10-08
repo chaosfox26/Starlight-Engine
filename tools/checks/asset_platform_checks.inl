@@ -1,5 +1,6 @@
 // Asset, file-writing and platform robustness checks from the 2026-10-08 audit (06 assets/platform, 10 security).
 #include "../../deep/engine/event_log.h"
+#include "../../deep/engine/model/load_error.h"
 static void asset_platform_checks(const auto& require,const fs::path& folder){
     const fs::path dir=folder/"asset-platform-checks";std::error_code cleared;fs::remove_all(dir,cleared);fs::create_directories(dir);
     {
@@ -101,6 +102,44 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
                 if(read_file(entry.path()).find("LOAD_WITH_ALTERED_SEARCH_PATH")!=std::string::npos)offender=entry.path().string();
             }
         require(offender.empty(),"A-10-1: No engine DLL load uses the unrestricted LOAD_WITH_ALTERED_SEARCH_PATH search order");
+    }
+    {
+        // CORE-B01 / A-06-9: files and collections are bounded before memory is allocated for them, and storing an asset no longer joins the kind and payload into a second copy.
+        const auto budgets=dir/"budgets";fs::create_directories(budgets);
+        atomic_write(budgets/"ten.bin","0123456789");
+        std::string why;
+        require(read_file(budgets/"ten.bin",10)=="0123456789"&&read_file(budgets/"ten.bin")=="0123456789","CORE-B01: A file exactly at the byte limit is read");
+        try{(void)read_file(budgets/"ten.bin",9);}catch(const std::exception& e){why=e.what();}
+        require(why.find("is larger than")!=std::string::npos,"CORE-B01: A file over the byte limit is refused before it is read");
+        model::LoadError modelRead;std::vector<uint8_t> modelBytes;
+        modelRead=model::readWholeFile((budgets/"ten.bin").string(),modelBytes,9);
+        require(modelRead.code==model::LoadCode::TooLarge&&modelBytes.empty(),"CORE-B01: The model loader refuses a file over its byte limit before allocating for it");
+        modelRead=model::readWholeFile((budgets/"ten.bin").string(),modelBytes,10);
+        require(modelRead.ok()&&modelBytes.size()==10,"CORE-B01: The model loader still reads a file at its byte limit");
+        require(hash_bytes("abc")=="BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD","A-06-9: SHA-256 of a known input is unchanged");
+        require(hash_bytes("abc","defgh")==hash_bytes("abcdefgh")&&hash_bytes({},"abcdefgh")==hash_bytes("abcdefgh")&&hash_bytes("abcdefgh","")==hash_bytes("abcdefgh"),"A-06-9: Hashing a head and a body in two steps gives the hash of the joined bytes");
+        EngineAssets::ScopedRoot library(budgets/"library");
+        std::string payload(5000,'q');for(size_t i=0;i<payload.size();++i)payload[i]=char('a'+i%23);
+        const uint32_t kindValue=uint32_t(AssetKind::Blob);
+        std::string joined(reinterpret_cast<const char*>(&kindValue),4);joined+=payload;
+        auto expected=hash_bytes(joined);std::transform(expected.begin(),expected.end(),expected.begin(),[](unsigned char c){return char(std::tolower(c));});
+        const auto id=EngineAssets::put(AssetKind::Blob,payload);
+        require(id=="blob-"+expected,"A-06-9: An asset id is still the SHA-256 of the kind and payload joined");
+        require(*EngineAssets::get(AssetKind::Blob,id)==payload,"A-06-9: A stored asset reads back unchanged from memory");
+        EngineAssets::drop_memory_cache();
+        require(*EngineAssets::get(AssetKind::Blob,id)==payload,"A-06-9: A stored asset reads back unchanged from the library file");
+        EngineAssets::drop_memory_cache();
+        require(EngineAssets::put(AssetKind::Blob,payload)==id&&*EngineAssets::get(AssetKind::Blob,id)==payload,"A-06-9: Storing an asset that is already in the library returns the same id and payload");
+        const auto verifiedFile=EngineAssets::verified_file_bytes(id);
+        require(verifiedFile.size()==payload.size()+20&&verifiedFile.substr(20)==payload,"A-06-9: The whole-file read of an asset still returns header and payload");
+        // A file over the limit of its kind is refused as a damaged asset before it is read; a payload over the limit is refused before anything is written.
+        const std::string terrainId="terrain-"+std::string(64,'0');
+        {std::ofstream oversize(EngineAssets::file_for(terrainId),std::ios::binary);const std::string chunk(1<<20,'\0');for(int i=0;i<65;++i)oversize.write(chunk.data(),std::streamsize(chunk.size()));}
+        why.clear();try{(void)EngineAssets::get(AssetKind::Terrain,terrainId);}catch(const AssetMissing& e){why=e.what();}
+        require(why.find("larger than the 64 MiB limit")!=std::string::npos,"CORE-B01: A terrain asset file over 64 MiB is refused before it is read");
+        const std::string bigPayload((size_t(64)<<20)-19,'z');   // header (20 bytes) + payload is one byte over 64 MiB
+        why.clear();try{(void)EngineAssets::put(AssetKind::Terrain,std::string_view(bigPayload));}catch(const std::exception& e){why=e.what();}
+        require(why.find("exceeds the 64 MiB limit")!=std::string::npos,"CORE-B01: A terrain payload over 64 MiB is refused before it is written");
     }
     // Later groups scan the scratch folder for scenes and leftover backups, so these files must not stay behind.
     fs::remove_all(dir,cleared);

@@ -74,7 +74,8 @@ inline LoadError makeLoadError(LoadCode code, const std::string& label, const st
     return e;
 }
 
-inline LoadError readWholeFile(const std::string& path, std::vector<uint8_t>& bytes) {
+// A file larger than `maxBytes` (1 GiB by default, the same ceiling as the editor's read_file) is refused before any memory is allocated for it.
+inline LoadError readWholeFile(const std::string& path, std::vector<uint8_t>& bytes, uint64_t maxBytes = uint64_t(1) << 30) {
     bytes.clear();
     try {
         const std::filesystem::path p = std::filesystem::u8path(path);
@@ -85,6 +86,7 @@ inline LoadError readWholeFile(const std::string& path, std::vector<uint8_t>& by
         file.seekg(0, std::ios::end);
         const std::streamoff size = file.tellg();
         if (size < 0) return makeLoadError(LoadCode::IoError, path, "file size could not be determined");
+        if (static_cast<uint64_t>(size) > maxBytes) return makeLoadError(LoadCode::TooLarge, path, "file is larger than " + std::to_string(maxBytes >> 20) + " MiB; it is not loaded whole");
         file.seekg(0, std::ios::beg);
         bytes.resize(static_cast<size_t>(size));
         if (size > 0 && !file.read(reinterpret_cast<char*>(bytes.data()), size)) {
