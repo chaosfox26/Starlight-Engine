@@ -6,9 +6,11 @@
 Sections (each is skipped with a reason if its source is missing): branch and commits ahead, last ledger results with currentness against the checkout,
 audit tracker counts, the decision queue size, the newest continuation file. Read-only; writes nothing."""
 import argparse, glob, json, os, re, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import registry
 
-REPO = r'D:\projects\Starlight-Engine-repair'
-RESULTS = r'D:\projects\_recovery\regression-results-branch'
+REPO = registry.REPO_ROOT
+RESULTS = registry.DEFAULT_RESULTS
 TRACKER = r'D:\projects\_recovery\AUDIT-MASTER'
 NOTES = r'D:\projects\_recovery\claude-fix-20261002'
 BASE = 'ea4adf8'

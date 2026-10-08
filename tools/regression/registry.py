@@ -10,6 +10,8 @@ Usage: registry.py --self-test | registry.py --check-ledger"""
 import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(HERE))   # the checkout this copy of the tools belongs to
+DEFAULT_RESULTS = r'D:\projects\_recovery\regression-results-branch'   # one results folder for run_ledger, verify_all and briefing
 REGISTRY_PATH = os.path.join(HERE, 'check_registry.json')
 SCHEMA = 'starlight-check-registry-1'
 IMPLEMENTED_PLACEHOLDERS = ('repo', 'buildDir', 'runFolder')
@@ -187,7 +189,7 @@ def undercounted(ledger, repo=None):
     """Ledger tests whose minChecks is below the number of check-name literals that carry their token in the core suite sources. A run that stops after minChecks
     matching checks reads VERIFIED, so a minimum below what the author wrote leaves the remaining checks unprotected. Names built in a loop make the real count higher
     than the literal count, never lower, so this can only under-report."""
-    folder = os.path.join(repo or os.path.dirname(os.path.dirname(HERE)), 'tools', 'checks')
+    folder = os.path.join(repo or REPO_ROOT, 'tools', 'checks')
     text = ''
     for name in sorted(os.listdir(folder)):
         if name.endswith('.inl') or name == 'core_checks.cpp':

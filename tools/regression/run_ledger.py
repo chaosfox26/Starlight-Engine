@@ -13,6 +13,21 @@ import argparse, hashlib, json, os, subprocess, sys, time, uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import registry
 
+def configured_from(build_dir):
+    """The source folder the build tree next to the executables folder was configured from (its CMakeCache.txt), or None when there is no cache."""
+    cache = os.path.join(os.path.dirname(os.path.abspath(build_dir).rstrip('\\/')), 'CMakeCache.txt')
+    try:
+        with open(cache, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if line.startswith('CMAKE_HOME_DIRECTORY:'):
+                    return line.split('=', 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+def same_folder(a, b):
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
@@ -265,15 +280,25 @@ def self_test():
             refused = True
         print('  %s history keeps every run and never replaces one' % ('ok ' if kept and refused and json.load(open(one))['marker'] == 'full run' else 'BAD'))
         bad += not (kept and refused and json.load(open(one))['marker'] == 'full run')
+    with tempfile.TemporaryDirectory() as tree:
+        build = os.path.join(tree, 'Release')
+        os.makedirs(build)
+        before = configured_from(build)
+        with open(os.path.join(tree, 'CMakeCache.txt'), 'w') as f:
+            f.write('CMAKE_HOME_DIRECTORY:INTERNAL=' + tree.replace('\\', '/') + '\n')
+        home = configured_from(build)
+        ok = before is None and home is not None and same_folder(home, tree) and not same_folder(home, os.path.dirname(tree))
+        print('  %s the repo a build was configured from is read from its CMake cache and compared by real path' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--repo', default=r'D:\projects\Starlight-Engine')
+    ap.add_argument('--repo', default=registry.REPO_ROOT)
     ap.add_argument('--build-dir')
     ap.add_argument('--ledger', default=None)
-    ap.add_argument('--results', default=r'D:\projects\_recovery\regression-results')
+    ap.add_argument('--results', default=registry.DEFAULT_RESULTS)
     ap.add_argument('--timeout', type=int, default=1800)
     ap.add_argument('--self-test', action='store_true')
     args = ap.parse_args()
@@ -282,6 +307,10 @@ def main():
     if not args.build_dir:
         ap.error('--build-dir is required')
 
+    home = configured_from(args.build_dir)
+    if home and not same_folder(home, args.repo):
+        print('REFUSING TO RUN: the build was configured from %s but --repo is %s' % (home, args.repo))
+        return 2
     ledger_path = args.ledger or os.path.join(args.repo, 'tools', 'regression', 'ledger.json')
     ledger = json.load(open(ledger_path, encoding='utf-8'))
     os.makedirs(args.results, exist_ok=True)

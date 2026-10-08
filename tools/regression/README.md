@@ -6,7 +6,7 @@ End goal (owner): audit-based self-healing, where a regression is detected, pack
 - `ledger.json`: one entry per CONFIRMED fix (committed). Unconfirmed audit leads do not belong here. No states are stored here.
 - `run_ledger.py`: runs `Starlight.NativeCoreChecks.exe`, maps each entry's tests to checks by name token (for example `CC-01:`), and writes per-entry states for the exact binaries that ran.
 - `run_ledger.py --self-test`: exercises every state and notice type without running the engine.
-- Results (not committed): `D:\projects\_recovery\regression-results\` with `latest.json`, one file per build identity, `notices.log` (transitions only) and `runs\` (suite output, `progress.log`).
+- Results (not committed): `D:\projects\_recovery\regression-results-branch\` (`registry.DEFAULT_RESULTS`, shared by run_ledger, verify_all and briefing; `--repo` defaults to the checkout the tools sit in) with `latest.json`, one file per build identity, `notices.log` (transitions only) and `runs\` (suite output, `progress.log`).
 
 ## States
 VERIFIED, REGRESSED, NOT-CHECKED, COVERAGE-ERROR, SKIPPED. A missing or too-small set of tagged checks is a coverage error, never a pass. A deterministic failure is reported at once. A crash inside an entry's own checks is REGRESSED; a crash before them leaves them NOT-CHECKED.
