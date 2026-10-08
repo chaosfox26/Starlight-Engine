@@ -92,4 +92,15 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         size_t lines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("events.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++lines;}
         require(lines==2,"A-10-5: Both events are written out when the log is closed");
     }
+    {
+        // A-10-1: one DLL load kept the unrestricted search order after the vendor-DLL hardening; no load in the engine sources may use it.
+        const fs::path engine="deep/engine";std::string offender;
+        if(fs::is_directory(engine))
+            for(const auto& entry:fs::recursive_directory_iterator(engine)){
+                const auto extension=entry.path().extension().string();
+                if(!entry.is_regular_file()||(extension!=".cpp"&&extension!=".h"))continue;
+                if(read_file(entry.path()).find("LOAD_WITH_ALTERED_SEARCH_PATH")!=std::string::npos)offender=entry.path().string();
+            }
+        require(offender.empty(),"A-10-1: No engine DLL load uses the unrestricted LOAD_WITH_ALTERED_SEARCH_PATH search order");
+    }
 }

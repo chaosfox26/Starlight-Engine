@@ -83,7 +83,7 @@ struct DlssUpscaler : Upscaler {
     bool preDevice(LogFn l) override {
         log = l; g_dlssForLog = this;
         std::wstring dir = vendorDir(L"sl.interposer.dll");
-        mod = LoadLibraryExW((dir + L"\\sl.interposer.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        mod = loadVendorModule(L"sl.interposer.dll");
         if (!mod) { say("sl.interposer.dll not found next to the host module or the exe"); return false; }
         bool ok = fetch(slInit, "slInit") && fetch(slShutdown, "slShutdown") && fetch(slIsFeatureSupported, "slIsFeatureSupported")
             && fetch(slIsFeatureLoaded, "slIsFeatureLoaded") && fetch(slSetTagForFrame, "slSetTagForFrame") && fetch(slSetConstants, "slSetConstants")
