@@ -108,21 +108,61 @@ void FlowObstacleMask::add(const Mesh &mesh, const Character &transform) {
         int gz0=geometryCell(min3(a.z,b.z,c.z)),gz1=geometryCell(max3(a.z,b.z,c.z));
         for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x)triangleCells[z*GeometryN+x].push_back(triangle);
         if(std::abs(det)<1e-12)continue;
-        for (int z = z0; z <= z1; z++)
-            for (int x = x0; x <= x1; x++)
-                for (int sub = 0; sub < 4; sub++) {
-                    double px = -12 + (x + .25 + (sub % 2) * .5) * .5,
-                           pz = -12 + (z + .25 + (sub / 2) * .5) * .5,
-                           u = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / det,
-                           v = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / det, w = 1 - u - v;
-                    if (min3(u, v, w) < -.00001)
-                        continue;
-                    double y = u * a.y + v * b.y + w * c.y;
-                    int k = (z * 48 + x) * 4 + sub;
-                    low[k] = std::min(low[k], y);
-                    high[k] = std::max(high[k], y);
-                }
+        rasterize_columns(triangles.back(),x0,x1,z0,z1);
     }
+}
+static uint64_t next_mask_revision();
+// Samples one triangle into the column extents of the given cell range (the 48 x 48 grid, four sub-columns per cell).
+void FlowObstacleMask::rasterize_columns(const ColumnTriangle& triangle,int x0,int x1,int z0,int z1) {
+    const Vec3 a=triangle.a,b=triangle.b,c=triangle.c;
+    double det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+    if(std::abs(det)<1e-12)return;
+    for (int z = z0; z <= z1; z++)
+        for (int x = x0; x <= x1; x++)
+            for (int sub = 0; sub < 4; sub++) {
+                double px = -12 + (x + .25 + (sub % 2) * .5) * .5,
+                       pz = -12 + (z + .25 + (sub / 2) * .5) * .5,
+                       u = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / det,
+                       v = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / det, w = 1 - u - v;
+                if (min3(u, v, w) < -.00001)
+                    continue;
+                double y = u * a.y + v * b.y + w * c.y;
+                int k = (z * 48 + x) * 4 + sub;
+                low[k] = std::min(low[k], y);
+                high[k] = std::max(high[k], y);
+            }
+}
+void FlowObstacleMask::remove_objects(const std::vector<unsigned>& objects) {
+    if(objects.empty()||layerRevision==0)return;
+    std::vector<char> gone(objectCount,0);
+    for(unsigned o:objects)if(o<objectCount)gone[o]=1;
+    auto geometryCell=[](double value){return std::clamp(int(std::floor((value+12)*GeometryN/24)),0,GeometryN-1);};
+    auto columnCell=[](double v){return std::clamp(int(std::floor((v+12)/.5)),0,47);};
+    int cx0=47,cx1=0,cz0=47,cz1=0;
+    const bool compact=cellStart.size()==size_t(GeometryN)*GeometryN+1&&cellMasks.size()==cellEntries.size();
+    for(size_t id=0;id<triangles.size();++id){
+        auto& t=triangles[id];
+        if(t.dead||t.object>=gone.size()||!gone[t.object])continue;
+        const int gx0=geometryCell(t.boundsLow.x),gx1=geometryCell(t.boundsHigh.x),gz0=geometryCell(t.boundsLow.z),gz1=geometryCell(t.boundsHigh.z);
+        for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x){
+            const size_t cell=size_t(z)*GeometryN+x;
+            auto& list=triangleCells[cell];
+            list.erase(std::remove(list.begin(),list.end(),unsigned(id)),list.end());
+            if(compact)for(uint32_t k=cellStart[cell];k<cellStart[cell+1];++k)if(cellMasks[k].id==id)cellMasks[k].mask=0;
+        }
+        cx0=std::min(cx0,columnCell(t.boundsLow.x));cx1=std::max(cx1,columnCell(t.boundsHigh.x));cz0=std::min(cz0,columnCell(t.boundsLow.z));cz1=std::max(cz1,columnCell(t.boundsHigh.z));
+        t.dead=true;
+    }
+    if(cx0<=cx1&&cz0<=cz1){
+        for(int z=cz0;z<=cz1;++z)for(int x=cx0;x<=cx1;++x)for(int sub=0;sub<4;++sub){const int k=(z*48+x)*4+sub;low[k]=INFINITY;high[k]=-INFINITY;}
+        for(const auto& t:triangles){
+            if(t.dead)continue;
+            const int x0=std::max(cx0,columnCell(t.boundsLow.x)),x1=std::min(cx1,columnCell(t.boundsHigh.x)),z0=std::max(cz0,columnCell(t.boundsLow.z)),z1=std::min(cz1,columnCell(t.boundsHigh.z));
+            if(x0<=x1&&z0<=z1)rasterize_columns(t,x0,x1,z0,z1);
+        }
+    }
+    recompute_columns();
+    layerRevision=next_mask_revision();geometryRevision=layerRevision;
 }
 // ---- layered queries: the immutable layer (this) plus an optional layer of objects that move (`mobile`) ----
 double FlowObstacleMask::clearance(const Vec3& p) const {double r=clearance_layer(p);if(lightStatic)r=std::min(r,lightStatic->clearance_layer(p));if(mobile)r=std::min(r,mobile->clearance_layer(p));return r;}

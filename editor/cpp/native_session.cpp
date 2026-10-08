@@ -288,6 +288,8 @@ void NativeSession::run(std::stop_token stop) {
         // it, so they join the mask only then, and the mask is rebuilt only when the set of objects it holds, or any held pose,
         // actually changed (STARLIGHT_FIX_DELTA=0 restores the old rebuild on every call).
         uint64_t obstacleHeavySig=0,obstacleLightSig=0,obstacleMobileSig=0;bool obstacleMarkValid=false;FlowObstacleMask::Mark obstacleMark;
+        struct LightEntry {uint64_t idHash,objectSig;bool alive;};
+        std::vector<LightEntry> obstacleLightEntries; // the light layer's objects in the order they were added (its object numbers), with the ones taken out since marked dead
         double lastObstacleCheck=-1; // re-evaluates which mobile objects touch liquid even when no scene update arrives
         auto obstacles = [&](std::span<const Character> debris=std::span<const Character>{}) {
             if (!flow)
@@ -303,7 +305,7 @@ void NativeSession::run(std::stop_token stop) {
             // Three layers: heavy immutable scenery (sculpted or imported models), light immutable scenery (rocks, stones, shapes) and the movers.
             // Removing or adding a rock only replaces the light layer; the heavy models are registered once.
             uint64_t heavySig=1469598103934665603ull,lightSig=1469598103934665603ull,mobileSig=1469598103934665603ull;
-            struct Held {const Character* object;int layer;}; // 0 heavy, 1 light, 2 mobile
+            struct Held {const Character* object;int layer;uint64_t idHash,objectSig;}; // 0 heavy, 1 light, 2 mobile
             std::vector<Held> held;
             std::deque<Character> posed; // stable addresses
             auto consider=[&](const Character& source,bool mobile){
@@ -315,10 +317,12 @@ void NativeSession::run(std::stop_token stop) {
                 if(!source.Route.empty()&&!source.PhysicsRotation){posed.push_back(route_pose(source,seconds));use=&posed.back();}
                 const int layer=mobile?2:(source.Sculpt||!source.Asset.empty())?0:1;
                 uint64_t& sig=layer==0?heavySig:layer==1?lightSig:mobileSig;
-                auto mix=[&](uint64_t v){sig^=v;sig*=1099511628211ull;};
-                mix(std::hash<std::string>{}(source.Id));
+                uint64_t own=1469598103934665603ull;
+                auto mix=[&](uint64_t v){sig^=v;sig*=1099511628211ull;own^=v;own*=1099511628211ull;};
+                const uint64_t idHash=std::hash<std::string>{}(source.Id);
+                mix(idHash);
                 for(double v:{use->X,use->Y,use->Z,use->RotationX,use->RotationY,use->RotationZ,use->Size,use->Width,use->Height,use->Depth}){uint64_t bits;std::memcpy(&bits,&v,8);mix(bits);}
-                held.push_back({use,layer});
+                held.push_back({use,layer,idHash,own});
             };
             for (const auto& c : simulation.Characters)consider(c,render_dynamic(c,&sceneCache));
             for(const auto& body:debris)consider(body,true);
@@ -339,10 +343,35 @@ void NativeSession::run(std::stop_token stop) {
                 if(ob0>0)starlight_diag::evlog("obstL",t1-t0,starlight_diag::evnow()-t1,double(which)*1e6+double(objects));
                 return layer;
             };
+            // The light layer: when the only change is that some of its objects are gone (a rock broke), they are taken out of the
+            // existing layer instead of registering every remaining rock again; anything else rebuilds it.
+            auto lightLayer=[&](const std::shared_ptr<const FlowObstacleMask>& current)->std::shared_ptr<const FlowObstacleMask> {
+                std::vector<LightEntry> now;
+                for(const auto& entry:held)if(entry.layer==1)now.push_back({entry.idHash,entry.objectSig,true});
+                if(current&&obstacleLightEntries.size()==current->objectCount){
+                    std::vector<unsigned> gone;size_t matched=0;
+                    for(unsigned i=0;i<obstacleLightEntries.size();++i){
+                        const auto& old=obstacleLightEntries[i];
+                        if(!old.alive)continue;
+                        if(matched<now.size()&&old.idHash==now[matched].idHash&&old.objectSig==now[matched].objectSig)++matched;else gone.push_back(i);
+                    }
+                    if(matched==now.size()&&!gone.empty()){
+                        if(now.empty()){obstacleLightEntries.clear();return nullptr;}
+                        const double r0=ob0>0?starlight_diag::evnow():0;
+                        const_cast<FlowObstacleMask&>(*current).remove_objects(gone);
+                        for(unsigned i:gone)obstacleLightEntries[i].alive=false;
+                        if(ob0>0)starlight_diag::evlog("obstR",starlight_diag::evnow()-r0,double(gone.size()),double(now.size()));
+                        return current;
+                    }
+                }
+                auto built=buildLayer(1);
+                if(built)obstacleLightEntries=std::move(now);else obstacleLightEntries.clear();
+                return built;
+            };
             if(reuse&&flow->has_obstacles()&&obstacleMarkValid&&heavySig==obstacleHeavySig){
                 if(lightSig==obstacleLightSig&&mobileSig==obstacleMobileSig)return;
                 flow->amend_obstacles([&](FlowObstacleMask& mask){
-                    auto light=lightSig==obstacleLightSig?mask.lightStatic:buildLayer(1);
+                    auto light=lightSig==obstacleLightSig?mask.lightStatic:lightLayer(mask.lightStatic);
                     auto movers=mobileSig==obstacleMobileSig?mask.mobile:buildLayer(2);
                     mask.set_layers(light,movers,obstacleMark.low,obstacleMark.high);
                 });
@@ -378,7 +407,7 @@ void NativeSession::run(std::stop_token stop) {
             for(const auto& entry:held)if(entry.layer==0)addTo(mask,*entry.object,0);
             mask.finish();
             obstacleMark=mask.mark();
-            mask.set_layers(buildLayer(1),buildLayer(2),obstacleMark.low,obstacleMark.high);
+            mask.set_layers(lightLayer(nullptr),buildLayer(2),obstacleMark.low,obstacleMark.high);
             flow->set_obstacles(std::move(mask));
             obstacleHeavySig=heavySig;obstacleLightSig=lightSig;obstacleMobileSig=mobileSig;obstacleMarkValid=true;
             if(ob0>0)starlight_diag::evlog("obst2",starlight_diag::evnow()-ob0,0.,double(held.size()));

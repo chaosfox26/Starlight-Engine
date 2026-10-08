@@ -6,7 +6,7 @@
 namespace starlight::editor {
 struct FlowObstacleMask {
     static constexpr int GeometryN=384;
-    struct ColumnTriangle { Vec3 a,b,c; unsigned object=0; Vec3 boundsLow{},boundsHigh{}; };
+    struct ColumnTriangle { Vec3 a,b,c; unsigned object=0; Vec3 boundsLow{},boundsHigh{}; bool dead=false; };
     // Exact immutable object surfaces for render clearance. The existing
     // subcolumns remain the physics displacement/transport contract.
     std::vector<ColumnTriangle> triangles;
@@ -66,6 +66,11 @@ struct FlowObstacleMask {
     bool region_clear(double xLow,double xHigh,double zLow,double zHigh,double yLow,double yHigh,double cap) const;
     void add(const Mesh &, const Character &);
     void finish();
+    // Takes whole objects (numbered in add() order) out of a finished layer without rebuilding it: their triangles leave every cell list and
+    // block mask, the column extents are recomputed where they stood, and the revisions change so memoised answers are dropped. The
+    // per-cell vertical extents and the occupancy table are left as they were, which can only make a query take its slower exact path.
+    void remove_objects(const std::vector<unsigned>& objects);
+    void rasterize_columns(const ColumnTriangle& triangle,int cellX0,int cellX1,int cellZ0,int cellZ1);
     // A point in the accumulated geometry. truncate() removes everything added after it (the mask must be re-finished), so
     // immutable scenery stays registered while objects that move are replaced.
     struct Mark { size_t triangleCount=0; unsigned objectCount=0; std::vector<double> low,high; };
