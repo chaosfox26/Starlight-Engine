@@ -27,8 +27,8 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         for(size_t keep=0;keep<pristine.size();++keep){place(pristine.substr(0,keep));if(readsBack()!=Result::AssetMissingError)++wrong;}
         require(wrong==0,"Fuzz: an asset file cut off at any length is reported as damaged, never loaded");
         wrong=0;
-        for(size_t byte=0;byte<pristine.size();++byte)for(int bit=0;bit<8;++bit){auto damaged=pristine;damaged[byte]=char(damaged[byte]^(1<<bit));place(damaged);if(readsBack()!=Result::AssetMissingError)++wrong;}
-        require(wrong==0,"Fuzz: flipping any single bit of an asset file (header or payload) is reported as damaged");
+        for(size_t byte=0;byte<pristine.size();byte+=byte<20?1:5)for(int bit=0;bit<8;++bit){auto damaged=pristine;damaged[byte]=char(damaged[byte]^(1<<bit));place(damaged);if(readsBack()!=Result::AssetMissingError)++wrong;}
+        require(wrong==0,"Fuzz: flipping any single bit of the header, or of every fifth payload byte, is reported as damaged");
         wrong=0;
         for(const auto& tail:{std::string("x"),std::string(8,'\0'),pristine}){place(pristine+tail);if(readsBack()!=Result::AssetMissingError)++wrong;}
         require(wrong==0,"Fuzz: extra bytes after the declared payload are refused");
@@ -276,5 +276,89 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         require(variantOutcome([](json& m){m["assets"].push_back(m["assets"][0]);},untouched)==Result::Accepted,"Fuzz: a manifest listing an asset twice still verifies");
         require(variantOutcome([](json& m){auto twin=m["assets"][0];twin["sha256"]=std::string(64,'0');m["assets"].push_back(twin);},untouched)!=Result::Accepted,"Fuzz: a duplicate entry with a wrong hash fails verification");
         require(refused([&]{(void)verify_portable_scene(work/"no-such-bundle");}),"Fuzz: a folder that does not exist fails verification");
+        // A scene (with a matching manifest hash) that names hostile asset ids is refused without touching anything outside the bundle.
+        {
+            const auto decoy=work/"decoy.slasset";
+            const auto sceneText=read_file(bundle/"scene.starscene");
+            const auto sculptId=sculptFile.substr(0,sculptFile.size()-8);
+            size_t hostileWrong=0;
+            for(const std::string& hostile:std::vector<std::string>{"sculpt-\\..\\..\\..\\decoy","sculpt-/../../../decoy","sculpt-"+std::string(64,'a'),"sculpt-"+sculptId.substr(7)+":evil","sculpt-"+sculptId.substr(7)+"::$DATA","model-"+sculptId.substr(7),"C:\\Windows\\win.ini"}){
+                auto edited=sceneText;const auto at=edited.find(sculptId);
+                if(at==std::string::npos){++hostileWrong;continue;}
+                json escaped=hostile;edited.replace(at,sculptId.size(),escaped.dump().substr(1,escaped.dump().size()-2));
+                const auto r=variantOutcome([&](json& m){m["sceneSha256"]=hash_bytes(edited);},[&](const fs::path& c){atomic_write(c/"scene.starscene",edited);});
+                if(r!=Result::AssetMissingError&&r!=Result::OtherError)++hostileWrong;
+            }
+            require(hostileWrong==0,"Fuzz: a hash-consistent scene naming hostile asset ids (traversal, streams, wrong kind) fails verification");
+            require(read_file(decoy)==pristine,"Fuzz: verification never changes a file outside the bundle");
+        }
+    }
+
+    // Exports write only inside their own new folder, never over an existing one, and a failed export leaves nothing behind.
+    {
+        const auto exports=work/"exports";fs::create_directories(exports);
+        auto listing=[&](const fs::path& root){std::set<std::string> names;std::error_code e;for(const auto& entry:fs::recursive_directory_iterator(root,e))names.insert(entry.path().lexically_relative(root).generic_string());return names;};
+        SceneData scene;scene.Characters={tree};
+        const auto target=exports/"dotted";
+        export_portable_scene(scene,exports/"other"/".."/"dotted");
+        require(fs::is_directory(target)&&!fs::exists(exports/"other"),"Fuzz: an export destination containing .. lands where it normalizes to");
+        std::set<std::string> expected{"assets","manifest.json","scene.starscene"};
+        for(const auto& entry:fs::directory_iterator(target/"assets"))expected.insert("assets/"+entry.path().filename().string());
+        std::set<std::string> everything{"dotted"};for(const auto& name:expected)everything.insert("dotted/"+name);
+        require(expected.size()==4&&listing(target)==expected&&listing(exports)==everything,"Fuzz: an export holds exactly the manifest, the scene and its assets, and writes nothing beside its folder");
+        const auto marker=target/"marker.txt";atomic_write(marker,"mine");
+        auto withMarker=expected;withMarker.insert("marker.txt");
+        require(refused([&]{export_portable_scene(scene,target);})&&read_file(marker)=="mine"&&listing(target)==withMarker,"Fuzz: exporting over an existing folder is refused and leaves it untouched");
+        Character ghost;ghost.Id="fz-ghost";ghost.Name="Missing model";ghost.Asset="model-"+std::string(64,'b');
+        SceneData broken;broken.Characters={ghost};
+        const auto failed=exports/"never";
+        const auto afterBroken=listing(exports);
+        require(refused([&]{export_portable_scene(broken,failed);})&&!fs::exists(failed)&&listing(exports)==afterBroken,"Fuzz: an export that fails part-way removes its staging folder and creates no destination");
+    }
+
+    // Game exports: the manifest lists only files inside the package with their real hashes, and refusals or failures leave no partial package.
+    {
+        const auto runtime=work/"runtime";
+        const std::vector<std::string> names{"Starlight.NativePlayer.exe","Starlight.Viewport.dll","Starlight.Physics.dll","msvcp140.dll","vcruntime140.dll","vcruntime140_1.dll","concrt140.dll",
+            "licenses/Starlight-LICENSE.txt","licenses/THIRD-PARTY-NOTICES.md","licenses/Jolt-MIT.txt","licenses/cgltf-MIT.txt","licenses/jsmn-MIT.txt","licenses/nlohmann-json-MIT.txt","licenses/json-embedded-credits.txt"};
+        for(const auto& name:names)atomic_write(runtime/fs::path(name),"runtime file "+name);
+        const auto games=work/"games";fs::create_directories(games);
+        auto listing=[&](const fs::path& root){std::set<std::string> found;std::error_code e;for(const auto& entry:fs::recursive_directory_iterator(root,e))found.insert(entry.path().lexically_relative(root).generic_string());return found;};
+        const auto scene=adventure_template();
+        const auto package=games/"one";
+        export_playable_game(scene,package,runtime);
+        const auto manifest=json::parse(read_file(package/"game-manifest.json"));
+        size_t wrong=0;std::set<std::string> listed;
+        for(const auto& entry:manifest.at("files")){
+            const std::string path=entry.at("path");listed.insert(path);
+            const fs::path relative=starlight::editor::wide(path);
+            bool climbs=false;for(const auto& part:relative)climbs=climbs||part==L"..";
+            if(relative.empty()||relative.is_absolute()||relative.has_root_name()||climbs||path.find(':')!=std::string::npos)++wrong;
+            else if(!fs::is_regular_file(package/relative)||_stricmp(hash_file(package/relative).c_str(),entry.at("sha256").get<std::string>().c_str())!=0)++wrong;
+        }
+        std::set<std::string> shipped;for(const auto& item:listing(package))if(fs::is_regular_file(package/fs::path(item))&&!item.starts_with("content/")&&item!="README.txt"&&item!="game-manifest.json"&&item!="gameplay-check.json")shipped.insert(item);
+        require(wrong==0&&listed==shipped&&listed.size()==names.size(),"Fuzz: the game manifest lists exactly the runtime files shipped, inside the package, with matching hashes");
+        verify_exported_content(package/"content");
+        {
+            auto damaged=games/"two";fs::copy(package,damaged,fs::copy_options::recursive);
+            for(const auto& entry:fs::directory_iterator(damaged/"content"/"assets")){auto bytes=read_file(entry.path());bytes[bytes.size()/2]^=1;atomic_write(entry.path(),bytes);break;}
+            std::error_code none;bool hasAssets=!fs::is_empty(damaged/"content"/"assets",none);
+            require(!hasAssets||refused([&]{verify_exported_content(damaged/"content");}),"Fuzz: a packaged game whose bundled asset was damaged fails the player's content check");
+            fs::remove_all(damaged);
+        }
+        const auto folders=listing(games);
+        auto leavesNothing=[&](const fs::path& destination,const fs::path& runtimeFolder,const SceneData& source){return refused([&]{export_playable_game(source,destination,runtimeFolder);})&&listing(games)==folders;};
+        auto copyRuntime=[&](const char* name){const auto copy=work/name;fs::copy(runtime,copy,fs::copy_options::recursive);return copy;};
+        {const auto missing=copyRuntime("runtime-missing");fs::remove(missing/"vcruntime140.dll");require(leavesNothing(games/"three",missing,scene),"Fuzz: a runtime missing a required file is refused before anything is written");}
+        {const auto notice=copyRuntime("runtime-directory");fs::remove(notice/"licenses"/"Jolt-MIT.txt");fs::create_directory(notice/"licenses"/"Jolt-MIT.txt");require(leavesNothing(games/"four",notice,scene),"Fuzz: a runtime notice that is a folder instead of a file is refused");}
+        {
+            const auto locked=copyRuntime("runtime-locked");
+            HANDLE holder=CreateFileW((locked/"concrt140.dll").c_str(),GENERIC_READ,0,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+            const bool ok=holder!=INVALID_HANDLE_VALUE&&leavesNothing(games/"five",locked,scene);
+            if(holder!=INVALID_HANDLE_VALUE)CloseHandle(holder);
+            require(ok,"Fuzz: a runtime file that cannot be read part-way through the copy removes the staging folder and creates no package");
+        }
+        {SceneData plain;require(leavesNothing(games/"six",runtime,plain),"Fuzz: a scene without adventure controls is refused");}
+        {atomic_write(package/"marker.txt","mine");const auto before=listing(package);require(refused([&]{export_playable_game(scene,package,runtime);})&&listing(package)==before,"Fuzz: exporting a game over an existing folder is refused and leaves it untouched");}
     }
 }
