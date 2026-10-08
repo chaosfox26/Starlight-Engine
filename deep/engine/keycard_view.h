@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "host_readiness.h"
 
 namespace keycard {
 
@@ -164,6 +165,16 @@ bool assetPresent(AssetClass kind, const std::string& id, std::string& why);
 std::string fetchAsset(AssetClass kind, const std::string& id, AssetBytes& out);
 LibraryStatus libraryStatus();
 void releaseLibraryCache();
+
+// Objects the card holds but this host cannot draw (models, sculpts, other shapes) become one Degraded readiness item with the count and the first few names,
+// so a card that is partly missing never reads as fully loaded (audit 04 finding 7). The item is Optional: a card that loads today still loads.
+inline void reportSkippedContent(const KeyCard& card, host_readiness::Readiness& ready, const std::string& cardFile) {
+    if (card.skipped.empty()) return;
+    std::string detail = std::to_string(card.skipped.size()) + (card.skipped.size() == 1 ? " object is missing from the scene: " : " objects are missing from the scene: ");
+    for (size_t i = 0; i < card.skipped.size() && i < 5; ++i) detail += (i ? "; " : "") + card.skipped[i];
+    if (card.skipped.size() > 5) detail += "; and " + std::to_string(card.skipped.size() - 5) + " more";
+    ready.markDegraded(ready.require("key card content", "objects this host cannot draw", cardFile, host_readiness::Need::Optional), detail);
+}
 
 inline std::string resolveCardPath(const std::string& requested, const std::string& moduleFolder, const std::string& fileName, std::string& error) {
     namespace fs = std::filesystem;
