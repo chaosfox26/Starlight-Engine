@@ -1,4 +1,4 @@
-// Gameplay audit repairs (08#1 camera boom, 08#4 lightning chain, 08#5 tab-targeting of routed breakables, 08#8 presentation cube).
+// Gameplay audit repairs (08#1 camera boom, 08#4 lightning chain, 08#5 tab-targeting of routed breakables, 08#7 deterministic rubble, 08#8 presentation cube).
 static void gameplay_audit_checks(const auto& require){
     {
         // 08#1: effect shapes are not solid, so the camera boom ignores them as it ignores keys; a real wall still stops it.
@@ -30,6 +30,23 @@ static void gameplay_audit_checks(const auto& require){
         storm.Characters={bolt,third,first,second};
         auto path=trace_lightning(bolt,storm,0);
         require(path.size()==3&&path[0].hit==first.Id&&path[1].hit==second.Id&&path[2].hit==third.Id,"08#4: Lightning chains to the nearest reachable body on each hop and reaches the one behind it afterwards");
+    }
+    {
+        // 08#7: STARLIGHT_DETERMINISTIC_RUBBLE=1 gives the same pieces for the same break id in every run; unset, each run still differs.
+        auto rubble_signature=[](const char* setting){
+            _putenv_s("STARLIGHT_DETERMINISTIC_RUBBLE",setting);
+            auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=0;
+            Character stone;stone.Shape="boulder";stone.Id="deterministic-boulder";stone.Size=2;stone.Z=-3;stone.Color="#555D67";stone.DestructionHealth=10;scene->Characters={stone};
+            auto player=std::make_unique<AdventurePlayer>();player->start(*scene);player->move(0,0,1./120.);
+            player->apply_attack_hits({stone.Id},1000);
+            double sum=0;size_t pieces=0;
+            for(const auto& f:player->presentation().fragments)if(f.part){++pieces;for(const auto& v:f.part->mesh.vertices)sum+=v.position.x*1.3+v.position.y*1.7+v.position.z*1.9;}
+            _putenv_s("STARLIGHT_DETERMINISTIC_RUBBLE","");
+            return std::pair<size_t,double>{pieces,sum};
+        };
+        const auto first=rubble_signature("1"),second=rubble_signature("1"),varied=rubble_signature("0"),other=rubble_signature("0");
+        require(first.first>0&&first==second,"08#7: With STARLIGHT_DETERMINISTIC_RUBBLE=1 the same break gives the same pieces in every run");
+        require(varied!=other,"08#7: By default the same break still gives different pieces from run to run");
     }
     {
         // 08#8: the shared unit cube equals a freshly built one, and building presentation boxes does not alter it.

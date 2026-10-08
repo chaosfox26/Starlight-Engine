@@ -134,6 +134,8 @@ class AdventurePlayer {
     int breakOrdinal_=0;
     std::string lastPursuitBlocker_;uint64_t pursuitBlocked_=0;uint64_t turnApplied_=0,turnBlocked_=0,astarCalls_=0,astarFails_=0;double astarMs_=0;std::string lastTurnBlocker_; // boss diagnostics
     uint32_t fracturePatternSerial_=[](){uint32_t value=2166136261u;for(unsigned char byte:new_id())value=(value^byte)*16777619u;return value;}();
+    // Audit 08#7: the pattern serial starts from a fresh GUID, so the same break differs between runs. STARLIGHT_DETERMINISTIC_RUBBLE=1 uses one fixed serial instead; the seed still mixes in the broken object's id, so each break id gets the same pieces every run. Default off keeps the varied rubble.
+    uint32_t next_fracture_serial(){char v[8]{};return GetEnvironmentVariableA("STARLIGHT_DETERMINISTIC_RUBBLE",v,8)&&v[0]=='1'?1u:uint32_t(++fracturePatternSerial_);}
     ProjectilePhysics projectiles_;
     std::unordered_map<std::string,std::pair<Bounds,uint64_t>> projectileBounds_;uint64_t projectileBoundsPass_=0;
     std::shared_ptr<const LiquidSnapshot> liquidSnapshot_;
@@ -240,7 +242,7 @@ class AdventurePlayer {
             std::lock_guard lock(preMutex_);
             for(size_t k=0;k<ranked.size()&&k<room;++k){
                 const auto* c=ranked[k].second;
-                auto entry=std::make_shared<PreFracture>();entry->source=*c;entry->pose=route_pose_of(*c,seconds_);entry->key=fracture_source_key(*c);entry->serial=uint32_t(++fracturePatternSerial_);
+                auto entry=std::make_shared<PreFracture>();entry->source=*c;entry->pose=route_pose_of(*c,seconds_);entry->key=fracture_source_key(*c);entry->serial=next_fracture_serial();
                 preFractures_.emplace(c->Id,entry);preQueue_.push_back(entry);preTried_.insert(c->Id);
             }
         }
@@ -985,7 +987,7 @@ class AdventurePlayer {
             auto moved=route_pose_of(c,seconds_);
             FractureResult fracture;
             if(auto ready=obtain_prefracture(c,moved))fracture=std::move(*ready);
-            else{++runtime_bypass().fractureComputedAtBreak;fracture=compute_fracture(c,moved,uint32_t(++fracturePatternSerial_));}
+            else{++runtime_bypass().fractureComputedAtBreak;fracture=compute_fracture(c,moved,next_fracture_serial());}
             auto physicalPieces=std::move(fracture.pieces);const bool fractureSupported=fracture.supported;uint32_t fractureSeed=fracture.seed;
             lastDestruction.fractureMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-destructionStart).count();
             if(fractureSupported){
