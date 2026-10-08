@@ -588,8 +588,11 @@ void from_json(const json &j, Character &v) {
         j.at("Size").get_to(v.Size);
     if (j.contains("Speed"))
         j.at("Speed").get_to(v.Speed);
-    if (j.contains("Route"))
+    if (j.contains("Route")) {
+        if (!j.at("Route").is_array() || j.at("Route").size() > 4096)
+            throw std::runtime_error("A route supports at most 4096 points");
         j.at("Route").get_to(v.Route);
+    }
 }
 void to_json(json& j,const GameplayCondition& v){j={{"Type",v.Type},{"Value",v.Value}};}
 void from_json(const json& j,GameplayCondition& v){j.at("Type").get_to(v.Type);j.at("Value").get_to(v.Value);}
@@ -672,6 +675,7 @@ void from_json(const json &j, SceneData &v) {
         throw std::runtime_error("Expected SceneData object");
     if(j.contains("Quests")){if(!j.at("Quests").is_array() || j.at("Quests").size()>32)throw std::runtime_error("Too many quests");j.at("Quests").get_to(v.Quests);}
     if(j.contains("Rules")){if(!j.at("Rules").is_array() || j.at("Rules").size()>64)throw std::runtime_error("Too many gameplay rules");j.at("Rules").get_to(v.Rules);}
+    if(j.contains("LiquidSources") && (!j.at("LiquidSources").is_array() || j.at("LiquidSources").size()>32))throw std::runtime_error("Too many pours");
     if(j.contains("Game") && !j.at("Game").is_null())v.Game=j.at("Game").get<GameSettings>();
     if (j.contains("Hour"))
         j.at("Hour").get_to(v.Hour);

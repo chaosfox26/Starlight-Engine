@@ -43,4 +43,14 @@ static void scene_validation_checks(const auto& require){
         limits.Characters.pop_back();
         require(!refused(limits,why),"CC-04: A scene with exactly 20000 objects is accepted");
     }
+    auto decodeWhy=[&](const nlohmann::json& file){std::string reason;try{SceneData::decode(file.dump());}catch(const std::exception& e){reason=e.what();}return reason;};
+    // SCENE-1: the pour and route-point limits apply while the file is decoded, before the oversized lists are turned into objects.
+    {
+        auto pours=nlohmann::json::parse(text);pours["LiquidSources"]=nlohmann::json::array();for(int i=0;i<33;++i)pours["LiquidSources"].push_back(nlohmann::json::object());
+        require(decodeWhy(pours)=="Too many pours","SCENE-1: A file listing more than 32 pours is refused while decoding");
+        auto route=nlohmann::json::parse(text);route["Characters"][0]["Route"]=nlohmann::json::array();for(int i=0;i<4097;++i)route["Characters"][0]["Route"].push_back({{"X",0.},{"Z",0.}});
+        require(decodeWhy(route)=="A route supports at most 4096 points","SCENE-1: A file with more than 4096 route points on one object is refused while decoding");
+        route["Characters"][0]["Route"].erase(route["Characters"][0]["Route"].begin());
+        require(decodeWhy(route).empty(),"SCENE-1: A file with exactly 4096 route points still decodes");
+    }
 }
