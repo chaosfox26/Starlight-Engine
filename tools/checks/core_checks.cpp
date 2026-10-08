@@ -1052,8 +1052,12 @@ static int checks_main(int argc, char **argv) {
         Character grass;
         grass.Shape = "grass";
         auto grassMesh = shape_geometry(grass)[0].mesh;
-        require(grassMesh.vertices.size() == 2200 && grassMesh.indices.size() == 7800,
-                "Curved grass blades have folded cross sections and tapered tips");
+        {   // 100 blades; each has three columns of rings (the folded cross section) and a tip. Full detail has 7 rings; STARLIGHT_MESH_DETAIL removes rings, nothing else.
+            const double detail = mesh_detail();
+            const int rings = detail >= 1 ? 7 : std::clamp(int(std::lround(1 + 6 * detail)), 3, 7);
+            require(grassMesh.vertices.size() == size_t(100 * (rings * 3 + 1)) && grassMesh.indices.size() == size_t(100 * ((rings - 1) * 4 + 2) * 3),
+                    "Curved grass blades have folded cross sections and tapered tips");
+        }
         bool grassValid=true;size_t roots=0;
         for(const auto& v:grassMesh.vertices){grassValid&=std::isfinite(v.normal.x+v.normal.y+v.normal.z)&&std::abs(v.normal.length()-1)<1e-8&&v.color.x>=0&&v.color.x<=1&&v.color.y>=0&&v.color.y<=1&&v.color.z>=0&&v.color.z<=1;roots+=v.position.y==0;}
         for(size_t i=0;i<grassMesh.indices.size();i+=3){auto a=grassMesh.vertices[grassMesh.indices[i]].position,b=grassMesh.vertices[grassMesh.indices[i+1]].position,c=grassMesh.vertices[grassMesh.indices[i+2]].position;grassValid&=(b-a).cross(c-a).length()>1e-12;}
