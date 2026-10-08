@@ -8,10 +8,10 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         const std::vector<std::string> bystanders{"scene.starscene.bak","scene.starscene.20260101.bak","other.starscene."+std::string(32,'a')+".bak","scene.starscene."+std::string(32,'A')+".bak","scene.starscene."+std::string(32,'a')+".bak.keep"};
         for(const auto& name:bystanders)atomic_write(dir/name,"not ours");
         atomic_write(target,"version 0");
-        for(int i=1;i<=2;++i){Sleep(20);atomic_write(target,"early "+std::to_string(i),true);}
-        const auto countBackups=[&]{size_t n=0;for(const auto& entry:fs::directory_iterator(dir)){const auto name=entry.path().filename().string();if(name.size()==std::string("scene.starscene.").size()+32+4&&name.starts_with("scene.starscene.")&&name.ends_with(".bak")&&name.find("aaaa")==std::string::npos)++n;}return n;};
+        for(int i=1;i<=8;++i){Sleep(20);atomic_write(target,"early "+std::to_string(i),true);}
+        const auto countBackups=[&]{size_t n=0;for(const auto& entry:fs::directory_iterator(dir)){const auto name=entry.path().filename().string();if(name.size()==std::string("scene.starscene.").size()+32+4&&name.starts_with("scene.starscene.")&&name.ends_with(".bak")&&std::all_of(name.begin()+16,name.begin()+16+32,[](unsigned char c){return std::isdigit(c)||(c>='a'&&c<='f');}))++n;}return n;};
         const auto beforePrune=countBackups();
-        require(beforePrune>=2,"A-06-3: Backups are kept by default, nothing is deleted unless the owner asks");
+        require(beforePrune==8,"A-06-3: Backups are kept by default, nothing is deleted unless the owner asks");
         SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT","5");
         for(int i=1;i<=8;++i){Sleep(20);atomic_write(target,"version "+std::to_string(i),true);}
         SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT",nullptr);
