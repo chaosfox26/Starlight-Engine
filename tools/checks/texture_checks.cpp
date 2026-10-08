@@ -185,6 +185,33 @@ std::vector<uint8_t> makeSparseGlb(uint32_t indicesOffset) {
     return glb;
 }
 
+// Parses, loads the buffers of and validates a GLB held in memory. A fault while doing so (a read outside the memory) returns 1.
+static int guardedValidate(const uint8_t* bytes, size_t size, cgltf_result& validated) {
+    cgltf_options opts{}; cgltf_data* d = nullptr;
+    __try {
+        if (cgltf_parse(&opts, bytes, size, &d) != cgltf_result_success) return 2;
+        if (cgltf_load_buffers(&opts, d, nullptr) != cgltf_result_success) return 3;
+        validated = cgltf_validate(d);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 1; }
+    cgltf_free(d);
+    return 0;
+}
+
+// Places the GLB so that its last byte is the last byte before an inaccessible page: any read past the end of its binary buffer faults instead of returning stray bytes.
+int validateAtGuardPage(const std::vector<uint8_t>& glb, cgltf_result& validated) {
+    SYSTEM_INFO info; GetSystemInfo(&info);
+    const size_t page = info.dwPageSize, pages = (glb.size() + page - 1) / page;
+    uint8_t* base = static_cast<uint8_t*>(VirtualAlloc(nullptr, (pages + 1) * page, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    if (!base) return -1;
+    DWORD previous = 0;
+    VirtualProtect(base + pages * page, page, PAGE_NOACCESS, &previous);
+    uint8_t* at = base + pages * page - glb.size();
+    std::memcpy(at, glb.data(), glb.size());
+    const int result = guardedValidate(at, glb.size(), validated);
+    VirtualFree(base, 0, MEM_RELEASE);
+    return result;
+}
+
 std::vector<uint8_t> atlasBytes(const std::vector<float>& values) {
     std::vector<uint8_t> b(values.size() * 4);
     if (!values.empty()) std::memcpy(b.data(), values.data(), b.size());
@@ -930,6 +957,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(sparse(76, validated, got) && validated == cgltf_result_success, "sparse interleaved fixture validates and unpacks");
             require(got[0] == 1.f && got[3] == 10.f && got[4] == 11.f && got[5] == 12.f && got[6] == 13.f && got[7] == 14.f && got[8] == 15.f, "R7: sparse values are read tightly packed, not at the interleaved base stride");
             require(sparse(200, validated, got) && validated == cgltf_result_data_too_short, "DEP-01: a sparse index view outside its real buffer is rejected before any read");
+            validated = cgltf_result_success;
+            require(validateAtGuardPage(makeSparseGlb(76), validated) == 0 && validated == cgltf_result_success, "DEP-01: a sparse accessor inside its buffer validates with the GLB placed against a guard page");
+            validated = cgltf_result_success;
+            require(validateAtGuardPage(makeSparseGlb(200), validated) == 0 && validated == cgltf_result_data_too_short, "DEP-01: validation rejects a sparse index view outside its buffer without reading it (a read past the buffer faults on the guard page)");
         }
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
