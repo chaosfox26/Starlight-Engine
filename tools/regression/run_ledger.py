@@ -199,6 +199,8 @@ def write_packets(packets, report, run_folder, results_dir):
     folder = os.path.join(results_dir, 'packets', report['runId'])
     os.makedirs(folder, exist_ok=True)
     for packet in packets:
+        if not registry.ENTRY_ID.match(str(packet['failureId'])):
+            raise RuntimeError('packet id is not a safe file name: %r' % (packet['failureId'],))
         path = os.path.join(folder, packet['failureId'] + '.json')
         if os.path.exists(path):
             raise RuntimeError('packet already exists (packets are immutable): %s' % path)
@@ -271,6 +273,14 @@ def self_test():
         ok = len(refs) == 3 and again_blocked and all(x['path'].startswith('packets/b-1-x/') for x in refs)
         print('  %s packet files are immutable and referenced by path: %s' % ('ok ' if ok else 'BAD', again_blocked))
         bad += not ok
+        escaped = False
+        try:
+            write_packets([dict(packets[0], failureId='..\\..\\outside')], fake_report, run, results)
+        except RuntimeError:
+            escaped = True
+        ok = escaped and not os.path.exists(os.path.join(os.path.dirname(results), 'outside.json')) and not os.path.exists(os.path.join(results, 'outside.json'))
+        print('  %s a packet id that is not a plain file name is refused before anything is written' % ('ok ' if ok else 'BAD'))
+        bad += not ok
         other = dict(fake_report, runId='b-1-y')
         e1 = [p for p in make_packets(fake_entries, fake_report, run, results) if p['failureId'] == 'R'][0]['eventId']
         e2 = [p for p in make_packets(fake_entries, other, run, results) if p['failureId'] == 'R'][0]['eventId']
@@ -341,10 +351,12 @@ def main():
         print('REFUSING TO RUN: ' + stale)
         return 2
     ledger_path = args.ledger or os.path.join(args.repo, 'tools', 'regression', 'ledger.json')
-    ledger = json.load(open(ledger_path, encoding='utf-8'))
     os.makedirs(args.results, exist_ok=True)
 
-    mismatch = registry.check_ledger(ledger_path) + registry.undercounted(ledger, args.repo)
+    mismatch = registry.check_ledger(ledger_path)
+    if not mismatch:
+        ledger = registry.read_json_object(ledger_path)
+        mismatch = registry.undercounted(ledger, args.repo)
     if mismatch:
         print('REFUSING TO RUN: the ledger and the committed check registry disagree: ' + '; '.join(mismatch))
         return 2
