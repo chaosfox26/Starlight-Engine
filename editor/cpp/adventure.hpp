@@ -1289,10 +1289,14 @@ class AdventurePlayer {
         const double angle=dodgeRollSign_*6.283185307179586*(phase*phase*(3-2*phase));
         return up*std::cos(angle)+right*std::sin(angle);
     }
+    // Audit 08#2: with STARLIGHT_CAMERA_BOOM_SMOOTHING=1 the boom closes at once when geometry gets in the way but opens again over about 0.15 s, and never shrinks below 0.25 m (or the requested distance if that is shorter), so the eye cannot sit inside the drawn body. Default off keeps the exact current boom.
+    static bool boom_smoothing(){char v[8]{};return GetEnvironmentVariableA("STARLIGHT_CAMERA_BOOM_SMOOTHING",v,8)&&v[0]=='1';}
+    static double eased_boom_length(double eased,double target,double dt,double requested){target=std::max(target,std::min(requested,.25));if(!(eased>=0)||!(dt>=0)||dt>1||target<=eased)return target;return eased+(target-eased)*(1-std::exp(-dt/.05));}
+    mutable double boomLength_=0,boomStamp_=-1;
     Vec3 camera_eye() const {
         const double camT0=starlight_diag::events_enabled()?starlight_diag::evnow():0;
         struct CamLog{double t0;~CamLog(){if(t0>0){const double ms=starlight_diag::evnow()-t0;if(ms>.2)starlight_diag::evlog("cam",ms,0,0);}}} camLog{camT0};
-        if(cameraDistance<=.001)return view_position();
+        if(cameraDistance<=.001){if(boom_smoothing())boomStamp_=-1;return view_position();}
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
         each_ray_candidate(view_position(),backward,cameraDistance+.2,[&](const Character& object){
             if(!blocks_movement(object))return; // keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in
@@ -1328,6 +1332,7 @@ class AdventurePlayer {
         // Sample the short camera boom against terrain to avoid looking through hills.
         for(double d=.1;d<=distance;d+=.1){auto p=view_position()+backward*d;
             if(terrain_ && (terrain_->Volumes.empty()?p.y<terrain_->height_at(p.x,p.z)+.15:terrain_->density_at(p.x,p.y,p.z)<.15)){distance=std::max(0.,d-.1);break;}}
+        if(boom_smoothing()){const double dt=boomStamp_<0||seconds_<boomStamp_?-1:seconds_-boomStamp_;distance=eased_boom_length(dt<0?-1:boomLength_,distance,dt,cameraDistance);boomLength_=distance;boomStamp_=seconds_;}
         return view_position()+backward*distance;
     }
     bool standing_inside_solid() const {return blocked(position);}
@@ -1455,7 +1460,7 @@ class AdventurePlayer {
         for(size_t i=0;i<solids_.size();++i){solidSlot_[solids_[i].first]=uint32_t(i);solidIndex_.set(uint32_t(i),spatial_box(solids_[i].second));}
         solidIndex_.end_bulk();
         position={settings_.SpawnX,settings_.SpawnY,settings_.SpawnZ};yaw=pitch=0;
-        cameraYaw=cameraPitch=0;cameraDistance=5;
+        cameraYaw=cameraPitch=0;cameraDistance=5;boomStamp_=-1;
         // The first dust update needs the bounds of every immutable solid; computing them lazily cost about 15 ms in the middle of the
         // first break. Same objects, same calculation, done while the scene is being prepared.
         if(GetEnvironmentVariableA("STARLIGHT_DISABLE_PREWARM",nullptr,0)==0){const double w0=starlight_diag::events_enabled()?starlight_diag::evnow():0;

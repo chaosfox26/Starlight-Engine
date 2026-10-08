@@ -1,4 +1,4 @@
-// Gameplay audit repairs (08#1 camera boom, 08#4 lightning chain, 08#5 tab-targeting of routed breakables, 08#7 deterministic rubble, 08#8 presentation cube).
+// Gameplay audit repairs (08#1 camera boom, 08#2 boom smoothing, 08#4 lightning chain, 08#5 tab-targeting of routed breakables, 08#7 deterministic rubble, 08#8 presentation cube).
 static void gameplay_audit_checks(const auto& require){
     {
         // 08#1: effect shapes are not solid, so the camera boom ignores them as it ignores keys; a real wall still stops it.
@@ -30,6 +30,35 @@ static void gameplay_audit_checks(const auto& require){
         storm.Characters={bolt,third,first,second};
         auto path=trace_lightning(bolt,storm,0);
         require(path.size()==3&&path[0].hit==first.Id&&path[1].hit==second.Id&&path[2].hit==third.Id,"08#4: Lightning chains to the nearest reachable body on each hop and reaches the one behind it afterwards");
+    }
+    {
+        // 08#2: with STARLIGHT_CAMERA_BOOM_SMOOTHING=1 the boom closes at once, opens over about 0.15 s, and keeps a minimum length; unset, it is exactly as before.
+        require(AdventurePlayer::eased_boom_length(-1,3,1./60,5)==3,"08#2: The first boom sample is taken as it is");
+        require(AdventurePlayer::eased_boom_length(4,1,1./60,5)==1,"08#2: A boom that has to shorten does so at once");
+        require(AdventurePlayer::eased_boom_length(1,5,0,5)==1,"08#2: No time passing means no outward easing");
+        require(AdventurePlayer::eased_boom_length(1,5,5,5)==5,"08#2: A long gap restarts at the target");
+        require(AdventurePlayer::eased_boom_length(-1,0,1./60,5)==.25&&AdventurePlayer::eased_boom_length(-1,0,1./60,.1)==.1,"08#2: The boom never drops below 0.25 m, or below the requested length when that is shorter");
+        double length=1;bool rising=true;
+        for(int tick=0;tick<9;++tick){const double next=AdventurePlayer::eased_boom_length(length,5,1./60,5);rising&=next>length&&next<5;length=next;}
+        require(rising&&length>1+.94*4&&length<5,"08#2: The boom opens smoothly and is nearly open after 0.15 s");
+        auto wall_at=[](double z){SceneData level;level.Game.emplace();level.Game->SpawnZ=0;Character wall;wall.Shape="cube";wall.Width=5;wall.Height=5;wall.Depth=.2;wall.Z=z;level.Characters={wall};return level;};
+        auto boom=[](AdventurePlayer& p){return (p.camera_eye()-p.view_position()).length();};
+        for(const char* setting:{"","1"}){
+            _putenv_s("STARLIGHT_CAMERA_BOOM_SMOOTHING",setting);
+            const bool on=setting[0]=='1';
+            AdventurePlayer close;close.start(wall_at(.25));
+            const double collapsed=boom(close);
+            require(on?collapsed>=.25-1e-9:collapsed<1e-9,on?"08#2: With smoothing on, a wall almost touching the player leaves a 0.25 m boom":"08#2: With smoothing off, a wall almost touching the player collapses the boom as before");
+            AdventurePlayer turning;turning.start(wall_at(2));
+            const double blocked=boom(turning);
+            turning.cameraYaw=3.14159265358979;turning.move(0,0,1./60);
+            const double first=boom(turning);
+            for(int tick=0;tick<60;++tick)turning.move(0,0,1./60);
+            const double settled=boom(turning);
+            require(blocked<2&&std::abs(settled-5)<1e-6,"08#2: The boom reaches its full length once the wall is no longer behind the camera");
+            require(on?first>blocked+.01&&first<4.9:std::abs(first-5)<1e-9,on?"08#2: With smoothing on, the boom opens gradually after the wall is passed":"08#2: With smoothing off, the boom opens in one frame as before");
+        }
+        _putenv_s("STARLIGHT_CAMERA_BOOM_SMOOTHING","");
     }
     {
         // 08#7: STARLIGHT_DETERMINISTIC_RUBBLE=1 gives the same pieces for the same break id in every run; unset, each run still differs.
