@@ -180,6 +180,13 @@ def self_test():
     A.gpu = A.python = True
     check('with --gpu the ledger step leaves them on', plan(A, 't')[0][4] == {})
     check('GPU and Python steps are planned when asked', [s[0] for s in plan(A, 't')] == ['ledger', 'python', 'denoise', 'fallback'])
+    python_step = [s for s in plan(A, 't') if s[0] == 'python'][0]
+    check('the Python step makes ctest fail when no py- test is registered', '--no-tests=error' in python_step[1])
+    with tempfile.TemporaryDirectory() as empty:
+        open(os.path.join(empty, 'CTestTestfile.cmake'), 'w').write('')
+        argv = list(python_step[1])
+        argv[argv.index('--test-dir') + 1] = empty
+        check('with no py- tests registered the Python step is not PASS', run_step('t', argv, None, 60)['outcome'] != 'PASS')
     print('SELF-TEST PASSED' if ok else 'SELF-TEST FAILED')
     return 0 if ok else 1
 
