@@ -5,7 +5,7 @@ from pathlib import Path
 def source_files(root):
     root = Path(root).resolve()
     folders = ('editor/cpp', 'editor/native', 'deep/src', 'deep/engine',
-               'deep/Physics', 'deep/projects', 'tools', 'cmake',
+               'deep/Physics', 'deep/graphics_runtime', 'deep/projects', 'tools', 'cmake',
                'deep/third_party/JoltPhysics/Jolt',
                'deep/third_party/JoltPhysics/Build')
     excluded = (root/'editor/native/build', root/'deep/Physics/build')
@@ -26,7 +26,9 @@ def source_files(root):
                 if not source.resolve().is_relative_to(root):
                     raise ValueError('Source path escapes package root')
                 selected.add(source)
-    for name in ('CMakeLists.txt', 'deep/third_party/JoltPhysics/LICENSE'):
+    for name in ('CMakeLists.txt', 'LICENSE', 'deep/third_party/JoltPhysics/LICENSE',
+                 *(str(p.relative_to(root)) for p in sorted((root/'starters').glob('*/*.starscene'))),
+                 *(str(p.relative_to(root)) for p in sorted((root/'licenses').glob('*')) if p.is_file())):
         source = root/name
         if not source.is_file():
             raise FileNotFoundError('Required source file: ' + name)
