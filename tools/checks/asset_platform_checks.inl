@@ -89,6 +89,19 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         _putenv_s("STARLIGHT_EVENT_LOG","");
         size_t lines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("events.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++lines;}
         require(lines==2,"A-10-5: Both events are written out when the log is closed");
+        // A-10-5, closing: a slot another thread reserved but has not filled yet is not written, the log is off once closed, and its buffer is left in place for a worker that is still logging.
+        _putenv_s("STARLIGHT_EVENT_LOG",(dir/"closing").string().c_str());
+        alignas(starlight_diag::EventLog) unsigned char storage[sizeof(starlight_diag::EventLog)];
+        auto* closing=new(storage) starlight_diag::EventLog;
+        closing->add("first",1,2,3);closing->count.fetch_add(1);closing->add("second",4,5,6);
+        closing->~EventLog();
+        _putenv_s("STARLIGHT_EVENT_LOG","");
+        MEMORY_BASIC_INFORMATION buffer{};
+        const bool buffered=closing->events&&VirtualQuery(closing->events,&buffer,sizeof(buffer))&&buffer.State==MEM_COMMIT;
+        require(!closing->enabled.load()&&buffered,"A-10-5: A closed event log accepts no more events and keeps its buffer instead of freeing it under a late writer");
+        if(buffered)VirtualFree(closing->events,0,MEM_RELEASE);
+        size_t closedLines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("closing.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++closedLines;}
+        require(closedLines==2,"A-10-5: An event reserved but never filled is not written out");
     }
     {
         // A-10-1: one DLL load kept the unrestricted search order after the vendor-DLL hardening; no load in the engine sources may use it.
