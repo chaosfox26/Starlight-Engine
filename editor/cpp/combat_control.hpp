@@ -81,7 +81,7 @@ struct BossBreakBar {
     enum class Phase { Ready, Staggered, Recovering };
     Phase phase=Phase::Ready;
     double capacity=1000,strength=1000,remaining=0;
-    std::unordered_set<uint64_t> resolvedEvents;
+    std::unordered_set<uint64_t> resolvedEvents; // events that already counted in this Ready period (a repeat delivery is refused); a later phase refuses everything anyway, so the set is emptied when the bar is Ready again and holds at most one id per effect that wore the bar down
     bool apply(ControlEffect effect,uint64_t event=0){
         if(phase!=Phase::Ready)return false;
         if(event && !resolvedEvents.insert(event).second)return false;
@@ -101,7 +101,7 @@ struct BossBreakBar {
             auto used=std::min(dt,remaining);remaining-=used;dt-=used;
             if(remaining<=0){phase=Phase::Recovering;remaining=90;}
         }
-        if(phase==Phase::Recovering){remaining=std::max(0.,remaining-dt);strength=capacity*(1-remaining/90);if(remaining==0){phase=Phase::Ready;strength=capacity;}}
+        if(phase==Phase::Recovering){remaining=std::max(0.,remaining-dt);strength=capacity*(1-remaining/90);if(remaining==0){phase=Phase::Ready;strength=capacity;resolvedEvents.clear();}}
     }
 };
 inline uint64_t combat_identity(const std::string& id){
