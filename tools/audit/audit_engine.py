@@ -40,11 +40,11 @@ def native_progress(runtime, age):
     return message
 
 
-def execute(command, directory, log, timeout, progress):
+def execute(command, directory, log, timeout, progress, env=None):
     start = time.monotonic()
     with log.open('w', encoding='utf-8') as stream:
         try:
-            process = subprocess.Popen(command, cwd=directory, stdout=stream, stderr=subprocess.STDOUT,
+            process = subprocess.Popen(command, cwd=directory, env=env, stdout=stream, stderr=subprocess.STDOUT,
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         except OSError as error:
             return {'outcome': 'unavailable', 'error': str(error), 'command': command}
@@ -78,6 +78,16 @@ def source_paths(root):
 
 def source_hashes(root, sources):
     return {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in sources}
+
+
+def test_context(test, root):
+    """The CTest ENVIRONMENT and WORKING_DIRECTORY properties of a discovered test, which running its command array directly would lose."""
+    properties = {item['name']: item['value'] for item in test.get('properties', [])}
+    env = dict(os.environ)
+    for entry in properties.get('ENVIRONMENT', []):
+        key, _, value = entry.partition('=')
+        env[key] = value
+    return properties.get('WORKING_DIRECTORY') or root, env
 
 
 def test_command(test, stage):
@@ -238,8 +248,9 @@ def main():
                     executable = Path(command[command.index('--runtime')+1])/'Starlight.NativePlayer.exe'
                 before = native_capture_record(executable, root, sources, FEATURE_BINDINGS.get(name, ['diagnostics-and-existing-audits']),
                     'unknown', name) if executable.is_file() else None
-                result = execute(command, root, log, 270,
-                    lambda age, n=name, pos=i: progress(5+int(45*pos/max(1,len(tests))), f'Error check: {n} — {age}s (deadline 270s)'))
+                directory, environment = test_context(test, root)
+                result = execute(command, directory, log, 270,
+                    lambda age, n=name, pos=i: progress(5+int(45*pos/max(1,len(tests))), f'Error check: {n} — {age}s (deadline 270s)'), environment)
                 result['name'] = name; records.append(result)
                 if name not in FEATURE_BINDINGS:
                     result['coverageWarning'] = 'New test discovered; feature binding and artifact redirection require review'
