@@ -9,6 +9,8 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
 
 namespace starlight::gfxrt {
 using json = nlohmann::json;
@@ -152,13 +154,30 @@ Store::Store(StoreOptions options) : options_(std::move(options)) {
     load();
 }
 
+// Only abandoned work is swept: staging that belongs to a live process, and temporary state files written in the last minute, are another operation in progress (audit DEP-07).
+static bool process_alive(unsigned long pid) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return GetLastError() != ERROR_INVALID_PARAMETER;
+    DWORD code = 0;
+    const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    CloseHandle(h);
+    return alive;
+}
+
 void Store::sweep() {
     std::error_code ec;
     for (auto& e : fs::directory_iterator(options_.root / "sets", ec)) {
         auto name = utf8(e.path().filename());
-        if (name.rfind(".staging-", 0) == 0) fs::remove_all(e.path(), ec);
+        if (name.rfind(".staging-", 0) != 0) continue;
+        const unsigned long pid = std::strtoul(name.c_str() + 9, nullptr, 10);
+        if (pid && (pid == GetCurrentProcessId() || process_alive(pid))) continue;
+        fs::remove_all(e.path(), ec);
     }
-    for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) fs::remove(options_.root / n, ec);
+    for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) {
+        auto path = options_.root / n;
+        auto written = fs::last_write_time(path, ec);
+        if (ec || fs::file_time_type::clock::now() - written > std::chrono::minutes(1)) fs::remove(path, ec);
+    }
 }
 
 void Store::load() {
