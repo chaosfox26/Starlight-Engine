@@ -1,5 +1,6 @@
 #pragma once
 #include "mesh.hpp"
+#include "mesh_reduce.hpp"
 
 namespace starlight::editor {
 inline const Mesh& grass_surface(){
@@ -17,7 +18,7 @@ inline const Mesh& grass_surface(){
             for(int ring=0;ring<6;++ring)for(int column=0;column<2;++column){int a=base+ring*3+column,b=a+1,c=a+3,d=c+1;mesh.indices.insert(mesh.indices.end(),{a,c,b,b,c,d});}
             mesh.indices.insert(mesh.indices.end(),{base+18,base+21,base+19,base+19,base+21,base+20});
         }
-        mesh.normals();return mesh;
+        mesh=reduce_mesh(mesh,mesh_detail());mesh.normals();return mesh; // full detail unless STARLIGHT_MESH_DETAIL asks for fewer triangles
     }();return source;
 }
 }
