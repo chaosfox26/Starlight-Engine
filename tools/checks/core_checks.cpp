@@ -43,6 +43,7 @@ using namespace starlight::editor;
 #include "missing_asset_save_checks.inl"
 #include "obstacle_removal_checks.inl"
 #include "glb_index_budget_checks.inl"
+#include "id_remap_checks.inl"
 #include "contact_index_checks.inl"
 #include "mesh_reduce_checks.inl"
 #include "terrain_brush_checks.inl"
@@ -118,6 +119,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(missing_asset_save_checks, missing_asset_save_checks(require));
         RUN_GROUP(obstacle_removal_checks, obstacle_removal_checks(require));
         RUN_GROUP(glb_index_budget_checks, glb_index_budget_checks(require,folder));
+        RUN_GROUP(id_remap_checks, id_remap_checks(require));
         RUN_GROUP(contact_index_checks, contact_index_checks(require));
         RUN_GROUP(mesh_reduce_checks, mesh_reduce_checks(require));
         RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));
@@ -1941,6 +1943,7 @@ static int checks_main(int argc, char **argv) {
 #include <windows.h>
 namespace { struct ChecksArgs { int argc; char **argv; int result; }; }
 int main(int argc, char **argv) {
+    if (!std::getenv("STARLIGHT_MESH_DETAIL")) SetEnvironmentVariableA("STARLIGHT_MESH_DETAIL", "1");   // the canonical geometry reference is the full-detail mesh; the product default (0.33) is not what these checks measure
     ChecksArgs args{argc, argv, 1};
     HANDLE thread = CreateThread(nullptr, 64u * 1024 * 1024, [](LPVOID parameter) -> DWORD {
         auto *a = static_cast<ChecksArgs *>(parameter);

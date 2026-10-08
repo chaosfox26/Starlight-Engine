@@ -609,7 +609,7 @@ struct RenderDevice {
     bool instanceGpuUpload = false;
     ComPtr<ID3D12Resource> instData; uint8_t* instBase = nullptr;
     // parallel EMIT: per-chunk dense bucket sets keyed (model,variant,submesh); merged lock-free in flushInstances
-    static const UINT kBktVariants = 4, kBktMaxSubs = 32;
+    static const UINT kBktVariants = 8, kBktMaxSubs = 32;
     std::vector<std::vector<std::vector<InstData>>> threadBuckets;           // [chunk][bucketIdx] -> instances
     UINT bktStride() const { return kBktVariants * kBktMaxSubs; }
     UINT bktCount()  const { return (UINT)models.size() * bktStride(); }

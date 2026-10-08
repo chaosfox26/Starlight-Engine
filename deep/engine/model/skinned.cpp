@@ -276,6 +276,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 }
             } else for (cgltf_size i = 0; i < pos->count; ++i) out.indices.push_back(base + (uint32_t)i);
             sm.indexCount = (uint32_t)out.indices.size() - sm.firstIndex;
+            if (out.subs.size() >= 30) return bad(LoadCode::Unsupported, pi, "a model can draw at most 30 primitives; two instance slots are reserved for its reduced-detail meshes");
             out.subs.push_back(sm);
         }
         return true;
