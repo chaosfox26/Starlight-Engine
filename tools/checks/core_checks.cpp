@@ -42,6 +42,7 @@ using namespace starlight::editor;
 #include "lightning_target_checks.inl"
 #include "missing_asset_save_checks.inl"
 #include "obstacle_removal_checks.inl"
+#include "glb_index_budget_checks.inl"
 #include "contact_index_checks.inl"
 #include "mesh_reduce_checks.inl"
 #include "terrain_brush_checks.inl"
@@ -116,6 +117,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(lightning_target_checks, lightning_target_checks(require));
         RUN_GROUP(missing_asset_save_checks, missing_asset_save_checks(require));
         RUN_GROUP(obstacle_removal_checks, obstacle_removal_checks(require));
+        RUN_GROUP(glb_index_budget_checks, glb_index_budget_checks(require,folder));
         RUN_GROUP(contact_index_checks, contact_index_checks(require));
         RUN_GROUP(mesh_reduce_checks, mesh_reduce_checks(require));
         RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));

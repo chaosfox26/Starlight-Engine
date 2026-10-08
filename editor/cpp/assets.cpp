@@ -153,7 +153,7 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
         return Access{vo + ao, stride, count, component};
     };
     std::vector<MeshPart> parts;
-    size_t total = 0;
+    size_t total = 0, indexTotal = 0;
     Vec3 minimum{INFINITY, INFINITY, INFINITY}, maximum{-INFINITY, -INFINITY, -INFINITY};
     auto mesh = [&](size_t index, FXMMATRIX matrix) {
         for (const auto &primitive : root.at("meshes").at(index).at("primitives")) {
@@ -181,6 +181,9 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
             }
             if (primitive.contains("indices")) {
                 auto ix = access(natural(primitive.at("indices")), 1);
+                if (ix.count > 6000000 - indexTotal)
+                    throw std::runtime_error("GLB primitives need more than six million indices in total");
+                indexTotal += ix.count;
                 for (size_t i = 0; i < ix.count; i++) {
                     size_t o = ix.offset + i * ix.stride;
                     uint32_t n;
