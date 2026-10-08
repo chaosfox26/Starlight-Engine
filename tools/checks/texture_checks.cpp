@@ -971,6 +971,18 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         GlbSpec stepSpec; stepSpec.step = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
         require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "linear.glb", scratch).ok() && !scratch.clips[0].channels[0].step, "R3: LINEAR interpolation is not held");
+        {
+            // Halfway between a key at 0 (no rotation) and a key at 1 (90 degrees about z): a held key keeps the first pose, a blended one is at 45 degrees. _11 of the child joint is the cosine of its rotation.
+            auto halfwayCos = [&](bool step) {
+                GlbSpec spec; spec.step = step;
+                model::SkinnedModel posed; XMFLOAT4X4 global[2];
+                if (!model::loadSkinnedFromMemory(ByteView(makeGlb(spec)), nullptr, "pose.glb", posed).ok() || posed.joints.size() != 2) return -2.f;
+                model::evalPose(posed, 0, 0.5f, -1, 0.f, 0.f, nullptr, global);
+                return global[1]._11;
+            };
+            require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
+            require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
+        }
         for (int bad : { 1, 2 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
