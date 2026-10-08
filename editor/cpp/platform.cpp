@@ -72,6 +72,8 @@ std::string read_file(const fs::path &p) {
             throw std::runtime_error("Read failed");
         return streamed;
     }
+    if (size > (std::streamoff(1) << 30))
+        throw std::runtime_error(utf8(p.wstring()) + " is larger than 1 GiB; Starlight does not load it whole");
     std::string data(size_t(size), char(0));
     f.seekg(0, std::ios::beg);
     if (size > 0)
