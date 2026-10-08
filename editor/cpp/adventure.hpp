@@ -135,7 +135,7 @@ class AdventurePlayer {
     std::string lastPursuitBlocker_;uint64_t pursuitBlocked_=0;uint64_t turnApplied_=0,turnBlocked_=0,astarCalls_=0,astarFails_=0;double astarMs_=0;std::string lastTurnBlocker_; // boss diagnostics
     uint32_t fracturePatternSerial_=[](){uint32_t value=2166136261u;for(unsigned char byte:new_id())value=(value^byte)*16777619u;return value;}();
     ProjectilePhysics projectiles_;
-    std::unordered_map<std::string,Bounds> projectileBounds_;
+    std::unordered_map<std::string,std::pair<Bounds,uint64_t>> projectileBounds_;uint64_t projectileBoundsPass_=0;
     std::shared_ptr<const LiquidSnapshot> liquidSnapshot_;
     std::unordered_map<std::string,CombatActor> combatActors_;
     double dodgeRemaining_=0;
@@ -1126,11 +1126,15 @@ class AdventurePlayer {
     void advance_projectiles(double dt){
         if(projectiles_.shots().empty()){projectileBounds_.clear();return;}
         std::vector<ProjectileTarget> targets;
+        // Each id keeps its bounds from the previous update for the sweep; ids not seen this update (removed objects, expired debris) are dropped below.
+        const uint64_t pass=++projectileBoundsPass_;
+        auto track=[&](const std::string& id,const Bounds& after){auto [it,fresh]=projectileBounds_.try_emplace(id,after,pass);targets.push_back({id,fresh?after:it->second.first,after});it->second={after,pass};};
         for(const auto& object:playScene_.Characters){if(rules_.removed.contains(object.Id)||(!object.Breakable&&!lightning_solid(object)))continue;
-            auto after=posed_bounds(object);auto before=projectileBounds_.contains(object.Id)?projectileBounds_.at(object.Id):after;targets.push_back({object.Id,before,after});projectileBounds_[object.Id]=after;
+            track(object.Id,posed_bounds(object));
         }
-        for(const auto& c:environment_objects()){auto bounds=object_bounds(c);auto before=projectileBounds_.contains(c.Id)?projectileBounds_.at(c.Id):bounds;targets.push_back({c.Id,before,bounds});projectileBounds_[c.Id]=bounds;}
-        if(health_>0){auto bounds=body_bounds();auto before=projectileBounds_.contains(projectile_player_id)?projectileBounds_.at(projectile_player_id):bounds;targets.push_back({projectile_player_id,before,bounds});projectileBounds_[projectile_player_id]=bounds;}
+        for(const auto& c:environment_objects())track(c.Id,object_bounds(c));
+        if(health_>0)track(projectile_player_id,body_bounds());
+        std::erase_if(projectileBounds_,[&](const auto& entry){return entry.second.second!=pass;});
         for(const auto& impact:projectiles_.step(dt,terrain_?&*terrain_:nullptr,targets)){
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
             if(controller_&&!impact.target.empty()){controller_->impulse(impact.target,impact.position,impact.velocity*impact.mass);for(const auto& fragment:fragments_)if(fragment.body!=UINT32_MAX&&impact.target=="debris-"+std::to_string(fragment.serial))controller_->impulse_body(fragment.body,impact.position,impact.velocity*impact.mass);}
