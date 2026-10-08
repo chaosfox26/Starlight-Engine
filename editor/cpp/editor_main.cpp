@@ -2021,6 +2021,9 @@ struct Editor {
             auto b = [&](const char* key, bool& value) { if (inputs.contains(key)) value = checked(key); };
             if (page == 0) {
                 auto c = actor(); if (!c) return;
+        } catch (const std::runtime_error &changed) {
+            if (!std::string_view(changed.what()).starts_with("File changed;")) throw;
+            throw std::runtime_error("The scene file changed outside the editor, so saving here would overwrite that change. Your edits are kept: use Save as to write them to a new file.");
                 double x = c->X, z = c->Z; n("x", x); n("z", z);
                 for (auto& p : c->Route) { p.X += x - c->X; p.Z += z - c->Z; }
                 c->Name = text(inputs.at("name")); c->X = x; c->Z = z;
@@ -3167,7 +3170,7 @@ struct Editor {
                     if (diskHash && hash != *diskHash) {
                         if (dirty)
                             SetWindowTextW(status,
-                                           L"Scene changed outside the editor. Unsaved edits are preserved.");
+                                           L"Scene changed outside the editor. Your unsaved edits are kept; use Save as to write them to a new file (Save would overwrite the other change).");
                         else {
                             LoadingScreen loading;
                             std::optional<SceneData> next;
