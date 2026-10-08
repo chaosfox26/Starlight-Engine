@@ -83,6 +83,8 @@ template<class Fn> inline void rock_fracture_parallel_for(size_t count,size_t la
         if(slots.fetch_sub(1)<=0){slots.fetch_add(1);break;}
         try{helpers.push_back(std::async(std::launch::async,[&]{
 #ifdef _WIN32
+            // The task runs on a shared pool thread that outlives it, so the priority goes back when the task ends.
+            struct PriorityRestore{int previous=GetThreadPriority(GetCurrentThread());~PriorityRestore(){if(previous!=THREAD_PRIORITY_ERROR_RETURN)SetThreadPriority(GetCurrentThread(),previous);}} restore;
             SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
 #endif
             drain();}));}catch(...){slots.fetch_add(1);break;}
