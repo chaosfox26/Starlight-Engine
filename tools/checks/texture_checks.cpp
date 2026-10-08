@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; int badTimes = 0; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -132,6 +132,8 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<uint16_t> indices{ 0,1,2, 0,2,uint16_t(spec.badIndex ? 9 : 3) };
     std::vector<float> ibm{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,-1,0,1 };
     std::vector<float> times{ 0.f, 1.f };
+    if (spec.badTimes == 1) times[0] = std::nanf("");
+    if (spec.badTimes == 2) times = { 1.f, 0.f };
     std::vector<float> rot = spec.cubic ? std::vector<float>{ 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,.7071f,.7071f, 0,0,0,0 } : std::vector<float>{ 0,0,0,1, 0,0,.7071f,.7071f };
     std::vector<uint8_t> bin;
     const size_t offs[9] = { addBlob(bin, pos), addBlob(bin, nrm), addBlob(bin, uv), addBlob(bin, joints), addBlob(bin, weights), addBlob(bin, indices), addBlob(bin, ibm), addBlob(bin, times), addBlob(bin, rot) };
@@ -153,7 +155,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
         "\"meshes\":[{\"primitives\":[" + primitiveList + "]}],"
         "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\",\"translation\":[0,1,0]}],"
         "\"skins\":[{\"joints\":[1,2],\"inverseBindMatrices\":6}],"
-        "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
+        "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : spec.step ? "STEP" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
         "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
     while (json.size() % 4) json.push_back(' ');
     bin.resize(bin.size() - spec.trimBin);
@@ -935,6 +937,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirtyone.glb", scratch);
         show("GLB with 31 drawable primitives", e);
         require(e.code == LoadCode::Unsupported, "CORE-12: a model with more primitives than the instance buckets hold is refused");
+        GlbSpec stepSpec; stepSpec.step = true;
+        require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
+        require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "linear.glb", scratch).ok() && !scratch.clips[0].channels[0].step, "R3: LINEAR interpolation is not held");
+        for (int bad : { 1, 2 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
+            require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

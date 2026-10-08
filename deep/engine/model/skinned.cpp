@@ -313,9 +313,15 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             k.times.resize(ch.sampler->input->count);
             if (cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size()) != k.times.size())
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times could not be read");
+            for (size_t i = 0; i < k.times.size(); ++i)
+                if (!std::isfinite(k.times[i]) || k.times[i] < 0 || (i && k.times[i] <= k.times[i - 1]))
+                    return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times must be finite, not negative and strictly increasing");
+            k.step = ch.sampler->interpolation == cgltf_interpolation_type_step;
             k.values.resize(ch.sampler->output->count * (size_t)comps);
             if (cgltf_accessor_unpack_floats(ch.sampler->output, k.values.data(), k.values.size()) != k.values.size())
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe values could not be read");
+            if (!std::all_of(k.values.begin(), k.values.end(), [](float v) { return std::isfinite(v); }))
+                return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe values must be finite");
             if (!k.times.empty()) c.duration = std::max(c.duration, k.times.back());
             c.channels.push_back(std::move(k));
         }
@@ -389,6 +395,7 @@ static void SampleChannel(const Channel& ch, float t, float* out, int comps) {
     if (t >= ch.times.back()) { std::memcpy(out, ch.values.data() + (n - 1) * (size_t)comps, sizeof(float) * (size_t)comps); return; }
     size_t hi = (size_t)(std::upper_bound(ch.times.begin(), ch.times.end(), t) - ch.times.begin());
     size_t lo = hi - 1;
+    if (ch.step) { std::memcpy(out, ch.values.data() + lo * (size_t)comps, sizeof(float) * (size_t)comps); return; }
     float span = ch.times[hi] - ch.times[lo];
     float a = span > 0 ? (t - ch.times[lo]) / span : 0.0f;
     const float* v0 = ch.values.data() + lo * (size_t)comps; const float* v1 = ch.values.data() + hi * (size_t)comps;

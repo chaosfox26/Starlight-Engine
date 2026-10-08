@@ -42,6 +42,7 @@ struct Joint {
 struct Channel {
     int joint = -1;
     int path = 0;              // 0 translation, 1 rotation, 2 scale
+    bool step = false;         // glTF STEP interpolation: hold each key until the next
     std::vector<float> times;
     std::vector<float> values; // 3 floats per key (t/s) or 4 (r)
 };
