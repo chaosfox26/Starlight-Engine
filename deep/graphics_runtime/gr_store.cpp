@@ -9,7 +9,6 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstdlib>
 
 namespace starlight::gfxrt {
@@ -154,7 +153,7 @@ Store::Store(StoreOptions options) : options_(std::move(options)) {
     load();
 }
 
-// Only abandoned work is swept: staging that belongs to a live process, and temporary state files written in the last minute, are another operation in progress (audit DEP-07).
+// Staging that belongs to another live process is that process's operation in progress and is not swept (audit DEP-07). The shared temporary state files are still removed; a store-wide lock would be needed to protect them.
 static bool process_alive(unsigned long pid) {
     HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!h) return GetLastError() != ERROR_INVALID_PARAMETER;
@@ -170,14 +169,10 @@ void Store::sweep() {
         auto name = utf8(e.path().filename());
         if (name.rfind(".staging-", 0) != 0) continue;
         const unsigned long pid = std::strtoul(name.c_str() + 9, nullptr, 10);
-        if (pid && (pid == GetCurrentProcessId() || process_alive(pid))) continue;
+        if (pid && pid != GetCurrentProcessId() && process_alive(pid)) continue;
         fs::remove_all(e.path(), ec);
     }
-    for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) {
-        auto path = options_.root / n;
-        auto written = fs::last_write_time(path, ec);
-        if (ec || fs::file_time_type::clock::now() - written > std::chrono::minutes(1)) fs::remove(path, ec);
-    }
+    for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) fs::remove(options_.root / n, ec);
 }
 
 void Store::load() {
