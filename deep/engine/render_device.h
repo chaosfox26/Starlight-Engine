@@ -2112,7 +2112,8 @@ struct RenderDevice {
             cmd->SetPipelineState(pso.Get());
         }
 
-        if(editorDraw)editorDraw();stageMarks[4]=timingNow();gpuMark(2);
+        if(editorDraw){try{editorDraw();}catch(...){(void)cmd->Close();throw;}}   // an exception must not leave the frame command list open for every later frame
+        stageMarks[4]=timingNow();gpuMark(2);
         // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
         if (msaa > 1) resolveScene();
         if (msaa <= 1) barrier(sceneColor.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
