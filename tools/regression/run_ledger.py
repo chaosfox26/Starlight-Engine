@@ -286,7 +286,7 @@ def main():
     ledger = json.load(open(ledger_path, encoding='utf-8'))
     os.makedirs(args.results, exist_ok=True)
 
-    mismatch = registry.check_ledger(ledger_path)
+    mismatch = registry.check_ledger(ledger_path) + registry.undercounted(ledger, args.repo)
     if mismatch:
         print('REFUSING TO RUN: the ledger and the committed check registry disagree: ' + '; '.join(mismatch))
         return 2

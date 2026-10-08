@@ -260,7 +260,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "CC-04:",
-     "minChecks": 5
+     "minChecks": 11
     }
    ],
    "testStrength": "Moderate: validate, encode and decode all refuse a repeated id and the full suite still accepts every scene it builds; the 4 shipped scenes have no duplicates. The count, route-length and identifier-length caps from the same audit item are NOT done: they need agreed limits that keep all authored scenes valid.",
@@ -333,7 +333,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "EL-05:",
-     "minChecks": 4
+     "minChecks": 7
     }
    ],
    "testStrength": "Strong for the error path: with an injected update failure the next step advances exactly one tick identical to a control world; with the reset removed that check fails (verified). The real Jolt capacity error was not produced. NOT covered: the accumulator limit for ordinary slow frames (owner decision) and the CharacterStep double advance (EL-13).",
