@@ -80,6 +80,21 @@ std::uint32_t crc32_bytes(std::string_view data) {
     return c ^ 0xFFFFFFFFu;
 }
 
+std::string fold_name(std::string_view s) {
+    std::string folded(s);
+    std::transform(folded.begin(), folded.end(), folded.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    int n = s.empty() ? 0 : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    if (n <= 0) return folded;
+    std::wstring wide(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), wide.data(), n);
+    CharLowerBuffW(wide.data(), static_cast<DWORD>(n));
+    int m = WideCharToMultiByte(CP_UTF8, 0, wide.data(), n, nullptr, 0, nullptr, nullptr);
+    if (m <= 0) return folded;
+    std::string out(static_cast<std::size_t>(m), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide.data(), n, out.data(), m, nullptr, nullptr);
+    return out;
+}
+
 bool safe_relative_path(std::string_view path, std::string& why) {
     if (path.empty()) { why = "empty path"; return false; }
     if (path.size() > 240) { why = "path too long"; return false; }

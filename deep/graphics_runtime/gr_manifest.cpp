@@ -110,10 +110,6 @@ static bool hex64(const std::string& s) {
     for (unsigned char c : s) if (!(std::isdigit(c) || (c >= 'a' && c <= 'f'))) return false;
     return true;
 }
-static std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
 
 void validate_manifest(const SetManifest& m) {
     if (m.schema != 1) throw GrError("Unsupported manifest schema " + std::to_string(m.schema));
@@ -141,7 +137,7 @@ void validate_manifest(const SetManifest& m) {
         for (auto& f : c.files) {
             std::string why;
             if (!safe_relative_path(f.path, why)) throw GrError("Unsafe path '" + f.path + "' (" + why + ")");
-            if (!paths.insert(lower(f.path)).second) throw GrError("Duplicate or case-colliding path " + f.path);
+            if (!paths.insert(fold_name(f.path)).second) throw GrError("Duplicate or case-colliding path " + f.path);
             if (!hex64(f.sha256)) throw GrError("File " + f.path + " needs a lowercase SHA-256");
             own.insert(f.path);
         }
@@ -173,7 +169,7 @@ Result verify_set_folder(const fs::path& dir, const SetManifest& m) {
         for (auto& c : m.components) {
             for (auto& f : c.files) {
                 auto p = dir / from_utf8(f.path);
-                expected.insert(lower(f.path));
+                expected.insert(fold_name(f.path));
                 if (is_reparse_or_link(p)) return Result::fail("File is a link: " + f.path);
                 std::error_code ec;
                 if (!fs::is_regular_file(p, ec)) return Result::fail("File is missing: " + f.path);
@@ -185,7 +181,7 @@ Result verify_set_folder(const fs::path& dir, const SetManifest& m) {
         for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
             if (is_reparse_or_link(it->path())) return Result::fail("Unexpected link in set folder");
             if (!it->is_regular_file()) continue;
-            auto rel = lower(utf8(fs::relative(it->path(), dir)));
+            auto rel = fold_name(utf8(fs::relative(it->path(), dir)));
             std::replace(rel.begin(), rel.end(), '\\', '/');
             if (rel != "set.json" && !expected.count(rel)) return Result::fail("Unexpected file in set folder: " + rel);
         }

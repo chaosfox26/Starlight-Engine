@@ -158,11 +158,6 @@ const char* dynamic(Bits& b, std::string& out, std::uint64_t limit) {
 std::uint32_t le32(const unsigned char* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<std::uint32_t>(p[3]) << 24); }
 unsigned le16(const unsigned char* p) { return p[0] | (p[1] << 8); }
 
-std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
-
 bool valid_utf8(std::string_view s) {
     for (std::size_t i = 0; i < s.size();) {
         unsigned char c = static_cast<unsigned char>(s[i]);
@@ -244,7 +239,7 @@ Result extract_zip_bytes(std::string_view zip, const fs::path& dest, const ZipLi
         std::string path = e.dir ? e.name.substr(0, e.name.size() - 1) : e.name, why;
         if (!valid_utf8(path)) return fail("entry name is not valid UTF-8");
         if (!safe_relative_path(path, why)) return fail("unsafe entry name '" + path + "' (" + why + ")");
-        if (!seen.insert(lower(path)).second) return fail("duplicate or case-colliding entry " + path);
+        if (!seen.insert(fold_name(path)).second) return fail("duplicate or case-colliding entry " + path);
         if (e.dir) {
             if (e.usize || e.csize) return fail("directory entry has data");
         } else {
@@ -254,12 +249,12 @@ Result extract_zip_bytes(std::string_view zip, const fs::path& dest, const ZipLi
             if (sum > lim.maxTotal) return fail("total expanded size too large");
             if (e.method == 0 && e.csize != e.usize) return fail("stored entry sizes differ: " + path);
             if (e.method == 8 && e.usize > lim.ratioFloor && (e.csize == 0 || e.usize / e.csize > lim.maxRatio)) return fail("suspicious expansion ratio: " + path);
-            fileNames.insert(lower(path));
+            fileNames.insert(fold_name(path));
         }
         entries.push_back(std::move(e));
     }
     for (auto& e : entries) {
-        std::string path = lower(e.dir ? e.name.substr(0, e.name.size() - 1) : e.name);
+        std::string path = fold_name(e.dir ? e.name.substr(0, e.name.size() - 1) : e.name);
         for (auto s = path.find('/'); s != std::string::npos; s = path.find('/', s + 1))
             if (fileNames.count(path.substr(0, s))) return fail("entry " + e.name + " lies inside a file");
     }
