@@ -57,6 +57,7 @@ struct Clip {
 
 struct SkinnedModel {
     std::string name, source;
+    std::string warnings;      // non-fatal load notes, e.g. primitives the loader does not draw (POINTS / LINES*); empty when nothing was skipped
     std::vector<SkinVertex> verts;
     std::vector<uint32_t>   indices;
     std::vector<Submesh>    subs;
@@ -71,7 +72,7 @@ struct SkinnedModel {
 
 // glbPath: the charfactory GLB. atlasUvBin: <m>_atlas_uv.bin (may be empty -> keep GLB UVs).
 // Vertex order matches bake_job.py's walk (scene roots depth-first, triangle primitives with
-// POSITION + TEXCOORD_0) so the atlas UV stream lines up 1:1; a count mismatch is reported.
+// POSITION + TEXCOORD_0; TRIANGLE_STRIP and TRIANGLE_FAN are expanded to triangle lists without adding vertices) so the atlas UV stream lines up 1:1; a count mismatch is reported.
 bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, SkinnedModel& out, std::string& err);
 
 // glb: complete GLB bytes. atlasUv: nullptr = keep the GLB UVs; otherwise raw little-endian float32 [vertices][2], validated against the vertex count. The translation unit that owns cgltf must define CGLTF_IMPLEMENTATION exactly once per module.

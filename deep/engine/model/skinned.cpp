@@ -211,6 +211,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         out.bbMax.x = std::max(out.bbMax.x, x); out.bbMax.y = std::max(out.bbMax.y, y); out.bbMax.z = std::max(out.bbMax.z, z);
     };
     LoadError geometryError;
+    int skippedPrimitives[5] = { 0, 0, 0, 0, 0 };   // indexed by cgltf_primitive_type: invalid, points, lines, line loop, line strip
     auto visit = [&](const cgltf_node* node) -> bool {
         if (!node->mesh) return true;
         float world[16]; cgltf_node_transform_world(node, world);
@@ -223,7 +224,10 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         };
         for (cgltf_size pi = 0; pi < node->mesh->primitives_count; ++pi) {
             const cgltf_primitive* prim = &node->mesh->primitives[pi];
-            if (prim->type != cgltf_primitive_type_triangles) continue;
+            if (prim->type != cgltf_primitive_type_triangles && prim->type != cgltf_primitive_type_triangle_strip && prim->type != cgltf_primitive_type_triangle_fan) {
+                if ((int)prim->type < 5) ++skippedPrimitives[(int)prim->type];
+                continue;
+            }
             const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jn = nullptr, *wt = nullptr;
             for (cgltf_size a = 0; a < prim->attributes_count; ++a) {
                 const cgltf_attribute& at = prim->attributes[a];
@@ -243,7 +247,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 return bad(LoadCode::Malformed, pi, "vertex attribute counts differ from POSITION (" + std::to_string(pos->count) + ")");
             if (out.verts.size() + pos->count > 0xFFFFFFFFull) return bad(LoadCode::TooLarge, pi, "vertex total exceeds the 32-bit index range");
             const cgltf_size triangleIndices = prim->indices ? prim->indices->count : pos->count;
-            if (triangleIndices % 3 != 0) return bad(LoadCode::Malformed, pi, "index count " + std::to_string(triangleIndices) + " is not a multiple of 3");
+            if (prim->type == cgltf_primitive_type_triangles && triangleIndices % 3 != 0) return bad(LoadCode::Malformed, pi, "index count " + std::to_string(triangleIndices) + " is not a multiple of 3");
             Submesh sm; sm.node = nodeName;
             if (prim->material) {
                 sm.material = prim->material->name ? prim->material->name : "";
@@ -280,13 +284,20 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 out.verts.push_back(sv);
                 grow(fp.x, fp.y, fp.z);
             }
+            std::vector<uint32_t> src;
+            src.reserve(triangleIndices);
             if (prim->indices) {
                 for (cgltf_size i = 0; i < prim->indices->count; ++i) {
                     const cgltf_size index = cgltf_accessor_read_index(prim->indices, i);
                     if (index >= pos->count) return bad(LoadCode::Malformed, pi, "index " + std::to_string(i) + " is " + std::to_string(index) + " but the primitive has " + std::to_string(pos->count) + " vertices");
-                    out.indices.push_back(base + (uint32_t)index);
+                    src.push_back((uint32_t)index);
                 }
-            } else for (cgltf_size i = 0; i < pos->count; ++i) out.indices.push_back(base + (uint32_t)i);
+            } else for (cgltf_size i = 0; i < pos->count; ++i) src.push_back((uint32_t)i);
+            if (prim->type == cgltf_primitive_type_triangles) for (uint32_t s : src) out.indices.push_back(base + s);
+            else if (prim->type == cgltf_primitive_type_triangle_strip)   // glTF: triangle i = v[i], v[i+1+i%2], v[i+2-i%2]
+                for (size_t i = 0; i + 2 < src.size(); ++i) { const size_t odd = i & 1; out.indices.push_back(base + src[i]); out.indices.push_back(base + src[i + 1 + odd]); out.indices.push_back(base + src[i + 2 - odd]); }
+            else   // fan: triangle i = v[i+1], v[i+2], v[0]
+                for (size_t i = 0; i + 2 < src.size(); ++i) { out.indices.push_back(base + src[i + 1]); out.indices.push_back(base + src[i + 2]); out.indices.push_back(base + src[0]); }
             sm.indexCount = (uint32_t)out.indices.size() - sm.firstIndex;
             if (out.subs.size() >= 30) return bad(LoadCode::Unsupported, pi, "a model can draw at most 30 primitives; two instance slots are reserved for its reduced-detail meshes");
             out.subs.push_back(sm);
@@ -340,7 +351,12 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         out.clips.push_back(std::move(c));
     }
     owner.reset();
-    if (out.verts.empty() || out.indices.empty()) return fail(LoadCode::NoGeometry, "no textured triangle geometry (needs triangle primitives with POSITION and TEXCOORD_0)");
+    {
+        static const char* const kinds[5] = { "unknown-mode", "POINTS", "LINES", "LINE_LOOP", "LINE_STRIP" };
+        for (int k = 0; k < 5; ++k)
+            if (skippedPrimitives[k]) out.warnings += (out.warnings.empty() ? "primitives not drawn (only triangles, strips and fans are loaded): " : ", ") + std::to_string(skippedPrimitives[k]) + " " + kinds[k];
+    }
+    if (out.verts.empty() || out.indices.empty()) return fail(LoadCode::NoGeometry, "no textured triangle geometry (needs triangle primitives with POSITION and TEXCOORD_0)" + (out.warnings.empty() ? std::string() : "; " + out.warnings));
 
     if (atlasUv) {
         LoadError atlasError = CheckAtlas(out, *atlasUv, label);
@@ -395,6 +411,7 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
     }
     if (e.failed()) { err = e.message; return false; }
     err = warning;
+    if (!out.warnings.empty()) err += (err.empty() ? "" : "; ") + out.warnings;
     return true;
     } catch (...) { out = SkinnedModel(); err = glbPath + ": unexpected exception while loading the model"; return false; }
 }

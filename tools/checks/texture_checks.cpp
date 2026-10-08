@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; int armature = 0; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; int armature = 0; int extraMode = -1; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -150,6 +150,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     }
     std::string primitiveList;
     for (int i = 0; i < spec.primitives; ++i) primitiveList += std::string(i ? "," : "") + "{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"JOINTS_0\":3,\"WEIGHTS_0\":4},\"indices\":5,\"material\":0}";
+    if (spec.extraMode >= 0) primitiveList += std::string(primitiveList.empty() ? "" : ",") + "{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"JOINTS_0\":3,\"WEIGHTS_0\":4},\"mode\":" + std::to_string(spec.extraMode) + ",\"material\":0}";
     const std::string extraNode = spec.armature == 1 ? ",{\"name\":\"armature\",\"children\":[1],\"translation\":[5,0,0],\"rotation\":[0,0,0.70710678,0.70710678],\"scale\":[2,2,2]}"
         : spec.armature == 2 ? ",{\"name\":\"mid\",\"translation\":[0,0,3],\"children\":[2]}" : "";
     std::string json = "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" + std::to_string(declared) + "}],\"bufferViews\":[" + views + "],\"accessors\":[" + accessors + "],"
@@ -966,6 +967,23 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
             const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
             require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
+        }
+        {
+            auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
+            model::SkinnedModel strip, fan, points, lines, onlyLines;
+            const std::vector<uint32_t> wantStrip{ 4, 5, 6, 5, 7, 6 }, wantFan{ 5, 6, 4, 6, 7, 4 };
+            require(loadWith(1, 5, strip).ok() && strip.subs.size() == 2 && strip.verts.size() == 8 && strip.warnings.empty() && std::vector<uint32_t>(strip.indices.begin() + 6, strip.indices.end()) == wantStrip && strip.subs[1].firstIndex == 6 && strip.subs[1].indexCount == 6,
+                    "06#11: a TRIANGLE_STRIP primitive is expanded with the spec winding (v0 v1 v2, v1 v3 v2) next to a TRIANGLES primitive");
+            require(loadWith(1, 6, fan).ok() && fan.subs.size() == 2 && std::vector<uint32_t>(fan.indices.begin() + 6, fan.indices.end()) == wantFan && fan.warnings.empty(),
+                    "06#11: a TRIANGLE_FAN primitive is expanded with the spec winding (v1 v2 v0, v2 v3 v0)");
+            require(loadWith(1, 0, points).ok() && points.subs.size() == 1 && points.verts.size() == 4 && points.warnings.find("1 POINTS") != std::string::npos, "06#11: a POINTS primitive is skipped and reported in the load result");
+            require(loadWith(1, 1, lines).ok() && lines.subs.size() == 1 && lines.warnings.find("1 LINES") != std::string::npos, "06#11: a LINES primitive is skipped and reported in the load result");
+            const fs::path modesPath = work / "modes.glb";
+            { GlbSpec s; s.extraMode = 0; writeBytes(modesPath, makeGlb(s)); }
+            model::SkinnedModel viaPath; std::string note;
+            require(model::loadSkinned(modesPath.string(), "", viaPath, note) && note.find("1 POINTS") != std::string::npos, "06#11: the path loader returns the skipped-primitive note in its message");
+            e = loadWith(0, 1, onlyLines);
+            require(e.code == LoadCode::NoGeometry && e.message.find("1 LINES") != std::string::npos, "06#11: a model whose only primitive is not a triangle type fails with a message that names what was skipped");
         }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
