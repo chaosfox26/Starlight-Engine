@@ -70,14 +70,14 @@ template<class P,class N> inline void adapt_fracture(FractureResult& result,cons
         piece.center=o1+Vec3{r[0][0]*d.x+r[0][1]*d.y+r[0][2]*d.z,r[1][0]*d.x+r[1][1]*d.y+r[1][2]*d.z,r[2][0]*d.x+r[2][1]*d.y+r[2][2]*d.z};
     }
 }
-template<class P> inline FractureResult compute_fracture(const Character& c,const P& moved,uint32_t serial){
+template<class P> inline FractureResult compute_fracture(const Character& c,const P& moved,uint32_t serial,std::stop_token stop={}){
     FractureResult result;
     auto fractureParts=object_parts(c);
     result.supported=!fractureParts.empty();
     const bool geological=!c.Sculpt&&(c.Shape=="rock"||c.Shape=="boulder"||c.Shape=="pebbles"||c.Shape=="chaos-rock");
     auto origin=world_point(moved,{}),bx=world_point(moved,{1,0,0})-origin,by=world_point(moved,{0,1,0})-origin,bz=world_point(moved,{0,0,1})-origin;
     uint32_t fractureSeed=serial*2654435761u;for(unsigned char byte:c.Id)fractureSeed=(fractureSeed^byte)*16777619u;
-    for(auto part:fractureParts){foliage_fragment_fallback(part.mesh,c);for(auto& v:part.mesh.vertices){v.position=world_point(moved,v.position);v.normal=(by.cross(bz)*v.normal.x+bz.cross(bx)*v.normal.y+bx.cross(by)*v.normal.z).unit();}auto pieces=geological?fracture_rock(part.mesh,part.color,part.emissive,fractureSeed++):std::vector<FracturePiece>{};if(pieces.empty())pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){result.supported=false;break;}result.pieces.insert(result.pieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
+    for(auto part:fractureParts){foliage_fragment_fallback(part.mesh,c);for(auto& v:part.mesh.vertices){v.position=world_point(moved,v.position);v.normal=(by.cross(bz)*v.normal.x+bz.cross(bx)*v.normal.y+bx.cross(by)*v.normal.z).unit();}auto pieces=geological?fracture_rock(part.mesh,part.color,part.emissive,fractureSeed++,nullptr,stop):std::vector<FracturePiece>{};if(pieces.empty()&&stop.stop_requested()){result.supported=false;break;}if(pieces.empty())pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){result.supported=false;break;}result.pieces.insert(result.pieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
     result.seed=fractureSeed;
     return result;
 }
@@ -265,7 +265,7 @@ class AdventurePlayer {
                     }
                     FractureResult result;std::string failure;
                     const double preStart=starlight_diag::events_enabled()?starlight_diag::evnow():0;
-                    try{result=compute_fracture(entry->source,entry->pose,entry->serial);}catch(const std::exception& error){result={};failure=std::string("fracture computation threw: ")+error.what();}catch(...){result={};failure="fracture computation threw an unknown error";}
+                    try{result=compute_fracture(entry->source,entry->pose,entry->serial,stop);}catch(const std::exception& error){result={};failure=std::string("fracture computation threw: ")+error.what();}catch(...){result={};failure="fracture computation threw an unknown error";}
                     if(failure.empty()&&(!result.supported||result.pieces.empty()))failure="the object's geometry produced no fracture pieces";
                     const double preFractured=preStart>0?starlight_diag::evnow():0;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER

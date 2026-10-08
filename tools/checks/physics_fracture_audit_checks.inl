@@ -38,6 +38,19 @@ template<class Require> void physics_fracture_audit_checks(Require require){
             slp_destroy(world);
         }
     }
+    {   // 03#4: a stop request ends a fracture early instead of making the caller wait for the whole rock.
+        Character rock;rock.Shape="boulder";auto source=shape_geometry(rock).front();
+        auto plain=fracture_rock(source.mesh,source.color,false,117);
+        std::stop_source idle;std::string unused;
+        auto withToken=fracture_rock(source.mesh,source.color,false,117,&unused,idle.get_token());
+        bool same=withToken.size()==plain.size();for(size_t i=0;same&&i<plain.size();++i)same&=(plain[i].center-withToken[i].center).length()<1e-12;
+        require(!plain.empty()&&same,"03#4: A fracture whose stop token is never triggered gives exactly the same pieces");
+        std::stop_source stopped;stopped.request_stop();std::string reason;
+        auto cut=fracture_rock(source.mesh,source.color,false,117,&reason,stopped.get_token());
+        require(cut.empty()&&reason=="Stopped","03#4: A fracture asked to stop returns no pieces and says it was stopped");
+        auto object=compute_fracture(rock,rock,7,stopped.get_token());
+        require(!object.supported&&object.pieces.empty(),"03#4: A stopped object fracture is reported as unsupported with no pieces, not completed another way");
+    }
     {   // 03#2: a physics world that cannot take the rubble must not leave a break half done.
         auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=0;
         Character stone;stone.Shape="boulder";stone.Id="full-world-boulder";stone.Size=2;stone.Z=-3;stone.Color="#555D67";stone.DestructionHealth=10;
