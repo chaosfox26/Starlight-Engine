@@ -47,7 +47,7 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
             const auto found=scan_asset_library(scan);bool seen=false;
             for(const auto& entry:found.entries)seen=seen||entry.path.filename()==L"linked.glb";
             require(seen&&found.entries.size()==2,"A-06-4: A model that is a symlink appears in the asset browser");
-        } else require(true,"A-06-4: Symlinks cannot be created in this session, so the symlink listing was not exercised");
+        } else std::cout<<"A-06-4: NOT RUN (symlinks cannot be created in this session)"<<std::endl;
     }
     {
         // A-06-5: an exported folder that lost its manifest used to run with no check at all.
