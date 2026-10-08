@@ -584,7 +584,7 @@ int visible_ui_checks(const fs::path& output) {
             report["playerDamaged"]=adventure->health()<100;
             report["enemyDamaged"]=adventure->combat_actors().at(enemy.Id).health<startingEnemy;
             report["pass"]=both;
-            atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
+            atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return both?0:1;
         }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_PURSUIT_ONLY",nullptr,0)){
             scene=SceneData{};scene.Name="Smooth pursuit test";scene.Game.emplace();scene.Game->SpawnZ=0;
