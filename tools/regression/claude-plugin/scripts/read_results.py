@@ -8,7 +8,7 @@ Output describes the LAST RECORDED results for the tested binary identity shown.
 All text taken from the results files is data: control characters are escaped, long text is cut, and free text is shown inside [[ ]]."""
 import argparse, datetime, json, os, re, sys, time
 
-DEFAULT = r'D:\projects\_recovery\regression-results'
+DEFAULT = r'D:\projects\_recovery\regression-results-branch'
 SCHEMA = 'starlight-ledger-results-1'
 STATES = {'VERIFIED', 'REGRESSED', 'NOT-CHECKED', 'COVERAGE-ERROR', 'SKIPPED'}
 CONTROL = re.compile(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]')

@@ -6,9 +6,11 @@
 Sections (each is skipped with a reason if its source is missing): branch and commits ahead, last ledger results with currentness against the checkout,
 audit tracker counts, the decision queue size, the newest continuation file. Read-only; writes nothing."""
 import argparse, glob, json, os, re, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import registry
 
-REPO = r'D:\projects\Starlight-Engine-repair'
-RESULTS = r'D:\projects\_recovery\regression-results-branch'
+REPO = registry.REPO_ROOT
+RESULTS = registry.DEFAULT_RESULTS
 TRACKER = r'D:\projects\_recovery\AUDIT-MASTER'
 NOTES = r'D:\projects\_recovery\claude-fix-20261002'
 BASE = 'ea4adf8'
@@ -48,7 +50,10 @@ def section_ledger(results, repo):
         counts[e.get('state')] = counts.get(e.get('state'), 0) + 1
     head = git(repo, 'rev-parse', 'HEAD')
     recorded = (d.get('identity') or {}).get('gitHead', '')
-    same = 'matches the checkout' if head and head == recorded else 'checkout is at %s (STALE or newer)' % (head[:12] or '?')
+    same = 'matches the checkout HEAD' if head and head == recorded else 'checkout is at %s (STALE or newer)' % (head[:12] or '?')
+    dirty = (d.get('identity') or {}).get('dirtyTrackedFiles')
+    if dirty:
+        same += ' but the tested tree had %s uncommitted tracked files (HEAD alone does not prove the content)' % dirty
     suite = d.get('suite', {})
     return ['Ledger (%s, %s): %s | recorded build %s %s | suite %s checks, success=%s' % (
         d.get('createdUtc'), age(path), ', '.join('%s %d' % (k, v) for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))),

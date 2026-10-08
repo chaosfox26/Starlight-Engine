@@ -46,7 +46,7 @@
     bad=level;bad.Quests[0].StepSizes={3,2};require(rejected(bad),"Step sizes must include every objective");
     bad=level;bad.Rules[0].Conditions={{"objective-complete","block-1"}};require(rejected(bad),"Same-step prerequisite rejected to preserve any-order completion");
     bad=level;bad.Rules[0].Conditions={{"objective-complete","block-5"}};require(rejected(bad),"Future-step prerequisite rejected to prevent deadlock");
-    bad=level;bad.Rules[5].Conditions={{"objective-complete","block-0"}};bad.validate();require(true,"Previous-step prerequisite remains valid");
+    bad=level;bad.Rules[5].Conditions={{"objective-complete","block-0"}};require(!rejected(bad),"Previous-step prerequisite remains valid");
 }
 
 {

@@ -14,6 +14,8 @@ verified; 2 a requested step could not run. The summary is written to <results>/
 import argparse, json, os, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import registry
 FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 SOURCE_SUFFIXES = ('.cpp', '.c', '.cc', '.h', '.hpp', '.inl', '.inc')
 SOURCE_FOLDERS = ('editor/', 'deep/', 'tools/checks/')
@@ -186,7 +188,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--repo')
     ap.add_argument('--build-dir')
-    ap.add_argument('--results', default=r'D:\projects\_recovery\regression-results')
+    ap.add_argument('--results', default=registry.DEFAULT_RESULTS)
     ap.add_argument('--python', action='store_true')
     ap.add_argument('--gpu', action='store_true')
     ap.add_argument('--self-test', action='store_true')

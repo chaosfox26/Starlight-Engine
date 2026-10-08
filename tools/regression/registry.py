@@ -10,6 +10,8 @@ Usage: registry.py --self-test | registry.py --check-ledger"""
 import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(HERE))   # the checkout this copy of the tools belongs to
+DEFAULT_RESULTS = r'D:\projects\_recovery\regression-results-branch'   # one results folder for run_ledger, verify_all and briefing
 REGISTRY_PATH = os.path.join(HERE, 'check_registry.json')
 SCHEMA = 'starlight-check-registry-1'
 IMPLEMENTED_PLACEHOLDERS = ('repo', 'buildDir', 'runFolder')
@@ -183,6 +185,25 @@ def check_ledger(ledger_path=None, registry=None):
     return found
 
 
+def undercounted(ledger, repo=None):
+    """Ledger tests whose minChecks is below the number of check-name literals that carry their token in the core suite sources. A run that stops after minChecks
+    matching checks reads VERIFIED, so a minimum below what the author wrote leaves the remaining checks unprotected. Names built in a loop make the real count higher
+    than the literal count, never lower, so this can only under-report. Names on a require(false, ...) line run only when something already went wrong and are not counted."""
+    folder = os.path.join(repo or REPO_ROOT, 'tools', 'checks')
+    text = ''
+    for name in sorted(os.listdir(folder)):
+        if name.endswith('.inl') or name == 'core_checks.cpp':
+            with open(os.path.join(folder, name), encoding='utf-8', errors='replace') as f:
+                text += f.read()
+    found = []
+    for entry in ledger['entries']:
+        for test in entry['tests']:
+            have = len(re.findall(r'(?<!require\(false,)"' + re.escape(test['token']), text))   # require(false,...) only runs on a failure branch
+            if have > test.get('minChecks', 1):
+                found.append('ledger entry %s: minChecks is %d but the sources hold %d checks named %s' % (entry['id'], test.get('minChecks', 1), have, test['token']))
+    return found
+
+
 def command_for_ledger(ledger, registry):
     """The one registered command that serves every ledger test. check_ledger must already have passed."""
     by_id = {c['checkId']: c for c in registry['checks']}
@@ -273,6 +294,10 @@ def self_test():
     fmt = copy.deepcopy(registry)
     fmt['commands']['core-suite']['evidenceFiles'] = ['result.json']
     expect('an unsupported result format is refused', any('fixed result format' in p for p in check_ledger(registry=fmt)))
+    expect('every ledger minChecks covers the check names in the sources: %s' % (undercounted(ledger) or 'no differences'), not undercounted(ledger))
+    low = copy.deepcopy(ledger)
+    low['entries'][0]['tests'][0]['minChecks'] = 1
+    expect('a minChecks below the number of named checks is caught', any(low['entries'][0]['id'] in p for p in undercounted(low)))
     print('REGISTRY SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -281,7 +306,7 @@ if __name__ == '__main__':
     if '--self-test' in sys.argv:
         sys.exit(self_test())
     if '--check-ledger' in sys.argv:
-        problems = check_ledger()
+        problems = check_ledger() + undercounted(json.load(open(os.path.join(HERE, 'ledger.json'), encoding='utf-8')))
         print('\n'.join(problems) if problems else 'registry and ledger agree')
         sys.exit(1 if problems else 0)
     print(__doc__)

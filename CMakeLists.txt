@@ -97,12 +97,28 @@ add_executable(Starlight WIN32 deep/src/runtime.cpp)
 set_target_properties(Starlight PROPERTIES CXX_STANDARD ${STARLIGHT_HOST_CXX_STANDARD})
 target_link_libraries(Starlight PRIVATE user32 shell32 comdlg32 dbghelp)
 enable_testing()
-# Python tests of the audit tools. Only the ones that pass from a clean checkout are registered; test_analysis_gui_source_build, test_audit_engine, test_deep_analysis
-# and tools/checks/test_verify_no_managed currently fail (missing native executables or paths) and are not.
+# Python tests of the audit tools. The ones that pass from a clean checkout run; test_analysis_gui_source_build, test_audit_engine, test_deep_analysis
+# and tools/checks/test_verify_no_managed currently fail (missing native executables or paths) and are registered as disabled.
+# The GPU executables (Starlight.NativeRenderChecks, NativeDenoiseChecks, NativeFallbackChecks) are not ctest tests: they need a free GPU and packet arguments;
+# verify_all.py --gpu runs the denoise and fallback ones, and nothing runs the render checks yet.
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
  foreach(py_test test_artifact_cleanup test_audit_engine_contracts test_engine_comparison test_native_analysis test_native_audit test_native_audit_records test_native_cleanup_bridge test_native_knowledge test_native_reports test_source_lookup)
   add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
+ endforeach()
+ # The four known-failing tests are listed but disabled, so ctest reports them as "Not Run (Disabled)" instead of leaving them invisible.
+ foreach(py_test test_analysis_gui_source_build test_audit_engine test_deep_analysis)
+  add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
+  set_tests_properties(py-${py_test} PROPERTIES DISABLED TRUE LABELS known-failing)
+ endforeach()
+ add_test(NAME py-test_verify_no_managed COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/checks/test_verify_no_managed.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+ set_tests_properties(py-test_verify_no_managed PROPERTIES DISABLED TRUE LABELS known-failing)
+ # The regression tooling decides what counts as VERIFIED, so its own self-tests are gated too.
+ foreach(regression_tool run_ledger registry verify_all impact)
+  add_test(NAME py-regression-${regression_tool} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/regression/${regression_tool}.py" --self-test WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+ endforeach()
+ foreach(plugin_test test_packets test_reader)
+  add_test(NAME py-regression-${plugin_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/regression/claude-plugin/${plugin_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/regression/claude-plugin")
  endforeach()
 endif()
 add_test(NAME audit-contract COMMAND Starlight.AuditContractChecks)
