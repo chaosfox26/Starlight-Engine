@@ -72,7 +72,10 @@ int starlight::editor::run_commands(int argc, wchar_t **argv) {
         else if (args.size() == 2 && args[0] == L"--verify-portable")
             report = verify_portable_scene(args[1]);
         else if (args.size() == 2 && args[0] == L"--import-model")
+        {
             report = {{"success", true}, {"kind", "model"}, {"asset", import_model(fs::absolute(args[1]))}};
+            if (const auto note = model_skipped_note(*load_model_bytes(report["asset"].get<std::string>())); !note.empty()) report["note"] = note;
+        }
         else if (args.size() == 2 && args[0] == L"--import-texture")
             report = {{"success", true}, {"kind", "texture"}, {"asset", import_texture(fs::absolute(args[1]))}};
         else if (!args.empty() && args[0].starts_with(L"--asset-root-"))

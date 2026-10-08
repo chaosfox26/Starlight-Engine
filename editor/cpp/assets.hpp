@@ -9,7 +9,8 @@
 #include <string_view>
 namespace starlight::editor {
 constexpr size_t MaxImportBytes = 256ull * 1024 * 1024;
-std::vector<MeshPart> parse_glb(std::string_view bytes);
+std::vector<MeshPart> parse_glb(std::string_view bytes, std::string *skipped = nullptr);
+std::string model_skipped_note(std::string_view bytes);
 std::vector<MeshPart> load_glb(const std::filesystem::path &);
 void validate_model_bytes(std::string_view bytes);
 std::string import_model_bytes(std::string_view bytes);

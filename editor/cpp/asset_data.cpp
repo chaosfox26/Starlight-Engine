@@ -639,7 +639,7 @@ size_t model_uv_vertex_count(std::string_view glb) {
     auto count_of = [&](const json &primitive) -> size_t {
         const auto &attributes = primitive.at("attributes");
         if (!attributes.contains("POSITION") || !attributes.contains("TEXCOORD_0")) return 0;
-        if (primitive.contains("mode") && native_int(primitive.at("mode")) != 4) return 0;
+        if (primitive.contains("mode") && (native_int(primitive.at("mode")) < 4 || native_int(primitive.at("mode")) > 6)) return 0;
         return size_t(native_int(description.at("accessors").at(size_t(native_int(attributes.at("POSITION")))).at("count")));
     };
     std::function<void(size_t, int)> walk = [&](size_t index, int depth) {
