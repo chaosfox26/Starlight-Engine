@@ -751,6 +751,42 @@ LoadError CheckDecodedSize(uint64_t w, uint64_t h, const std::string& label) {
     return makeLoadError(code, label, starlight::texture_limits::explain(fit, w, h, starlight::texture_limits::DecodedChannels, starlight::texture_limits::DecodedBytesPerChannel));
 }
 
+// Smallest file a baseline Huffman JPEG of the declared geometry can be: every 8x8 block codes at least a DC code and an end-of-block code, one bit each.
+// 0 when the header is not one this can bound (progressive, arithmetic, lossless, or a walk that does not reach a frame header).
+uint64_t JpegMinimumBytes(ByteView b, uint32_t& width, uint32_t& height) {
+    size_t pos = 2;
+    while (pos + 4 <= b.size) {
+        if (b.data[pos] != 0xFF) return 0;
+        const uint8_t marker = b.data[pos + 1];
+        if (marker == 0xFF) { ++pos; continue; }
+        if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) { pos += 2; continue; }
+        const size_t length = (size_t(b.data[pos + 2]) << 8) | b.data[pos + 3];
+        if (length < 2 || length > b.size - pos - 2) return 0;
+        if (marker == 0xC0 || marker == 0xC1) {
+            const uint8_t* s = b.data + pos + 4;
+            const size_t count = length >= 8 ? s[5] : 0;
+            if (count < 1 || count > 4 || length < 8 + 3 * count) return 0;
+            height = (uint32_t(s[1]) << 8) | s[2]; width = (uint32_t(s[3]) << 8) | s[4];
+            if (!width || !height) return 0;
+            uint32_t hMax = 1, vMax = 1;
+            for (size_t c = 0; c < count; ++c) {
+                const uint32_t h = s[7 + 3 * c] >> 4, v = s[7 + 3 * c] & 15u;
+                if (h < 1 || h > 4 || v < 1 || v > 4) return 0;
+                hMax = std::max(hMax, h); vMax = std::max(vMax, v);
+            }
+            uint64_t blocks = 0;
+            for (size_t c = 0; c < count; ++c) {
+                const uint32_t h = s[7 + 3 * c] >> 4, v = s[7 + 3 * c] & 15u;
+                blocks += uint64_t((uint64_t(width) * h + hMax - 1) / hMax + 7) / 8 * (uint64_t((uint64_t(height) * v + vMax - 1) / vMax + 7) / 8);
+            }
+            return (blocks * 2 + 7) / 8;
+        }
+        if (marker == 0xDA || marker == 0xD9 || (marker >= 0xC2 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)) return 0;
+        pos += 2 + length;
+    }
+    return 0;
+}
+
 LoadError DecodeEncoded(ByteView encoded, const std::string& label, bool verifyPngStream, DecodedImage& out) {
     out = DecodedImage();
     if (encoded.size == 0) return makeLoadError(LoadCode::Truncated, label, "encoded image is empty");
@@ -777,6 +813,10 @@ LoadError DecodeEncoded(ByteView encoded, const std::string& label, bool verifyP
         while (end > 2 && encoded.data[end - 1] == 0) --end;
         if (end < 4 || encoded.data[end - 2] != 0xFF || encoded.data[end - 1] != 0xD9)
             return makeLoadError(LoadCode::Truncated, label, "JPEG ends without an EOI marker");
+        uint32_t jpegWidth = 0, jpegHeight = 0;
+        const uint64_t jpegFloor = JpegMinimumBytes(encoded, jpegWidth, jpegHeight);
+        if (jpegFloor > encoded.size)
+            return makeLoadError(LoadCode::Truncated, label, "JPEG header declares " + std::to_string(jpegWidth) + "x" + std::to_string(jpegHeight) + " pixels, which needs at least " + std::to_string(jpegFloor) + " bytes of image data, but the file is only " + std::to_string(encoded.size) + " bytes");
     }
     struct ComScope {
         HRESULT result;

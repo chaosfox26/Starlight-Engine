@@ -497,6 +497,18 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         LoadError e = model::probeTextureDecode(ByteView(bytes.data(), bytes.size() / 2), "half.jpg", probe);
         show("truncated JPEG", e);
         require(e.failed(), "truncated JPEG is rejected");
+        {
+            size_t sof = 2;
+            while (sof + 9 < bytes.size() && !(bytes[sof] == 0xFF && (bytes[sof + 1] == 0xC0 || bytes[sof + 1] == 0xC1))) sof += 2 + ((size_t(bytes[sof + 2]) << 8) | bytes[sof + 3]);
+            require(sof + 9 < bytes.size(), "the JPEG fixture has a baseline frame header");
+            auto lie = bytes;
+            lie[sof + 5] = lie[sof + 7] = 0x40; lie[sof + 6] = lie[sof + 8] = 0x00;
+            e = model::probeTextureDecode(ByteView(lie), "lie.jpg", probe);
+            show("98 KB JPEG whose header claims 16384x16384", e);
+            require(e.code == LoadCode::Truncated && e.message.find("needs at least") != std::string::npos, "a baseline JPEG whose header claims far more image than its bytes can hold is rejected before any pixel buffer is allocated");
+            lie[sof + 5] = lie[sof + 7] = 0; lie[sof + 6] = lie[sof + 8] = 0;
+            require(model::probeTextureDecode(ByteView(lie), "zero.jpg", probe).failed(), "a JPEG with a zero-sized frame is rejected");
+        }
     }
     {
         const auto png = makePng(8, 6, gradient(8, 6));
