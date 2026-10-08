@@ -119,7 +119,7 @@ bool asset_browser_command(int id) {
         Character object; object.Asset = import_model(path); object.Name = utf8(path.stem().wstring());
         objects.push_back(std::move(object));
     }
-    for (auto &object : objects) object.Id = new_id();
+    renew_object_ids(objects);
     place_object_group(objects, scene, placement_point().x, placement_point().z, gridSnap, objectSnap, groundSnap,gridStep);
     const auto oldSelected = selected; const auto oldIds = selectionIds;
     try {

@@ -19,8 +19,8 @@ bool selection_clipboard_command(int id) {
     std::unordered_set<std::string> validated;
     for (auto &object : copies) {
         if (!object.Shape && !object.Sculpt && validated.insert(object.Asset).second) (void)load_model(object.Asset);
-        object.Id = new_id();
     }
+    renew_object_ids(copies);
     place_object_group(copies, scene, placement_point().x, placement_point().z, gridSnap, objectSnap, groundSnap,gridStep);
     auto previousSelected = selected;
     auto previousIds = selectionIds;

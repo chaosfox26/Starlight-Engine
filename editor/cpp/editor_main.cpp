@@ -2521,7 +2521,7 @@ struct Editor {
                 if (!source) return;
                 objects = std::move(source->Characters);
             } else objects = open_with_context(files.front(), "reusable group", [&] { return load_object_group(files.front()); });
-            for (auto &object : objects) object.Id = new_id();
+            renew_object_ids(objects);
             place_object_group(objects, scene, placement_point().x, placement_point().z, gridSnap, objectSnap, groundSnap,gridStep);
             const auto oldSelected = selected;
             const auto oldSelectionIds = selectionIds;
@@ -2695,9 +2695,10 @@ struct Editor {
             std::vector<Character> copies;
             for (size_t i = 0; i < scene.Characters.size(); ++i)
                 if (int(i) == selected || selectionIds.contains(scene.Characters[i].Id)) {
-                    auto copy = scene.Characters[i]; copy.Id = new_id(); copy.Name += " copy";
+                    auto copy = scene.Characters[i]; copy.Name += " copy";
                     copies.push_back(std::move(copy));
                 }
+            renew_object_ids(copies);
             place_object_group(copies, scene, copies.front().X + .5, copies.front().Z);
             const auto oldSelected = selected;
             const auto oldSelectionIds = selectionIds;

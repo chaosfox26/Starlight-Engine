@@ -94,6 +94,17 @@ std::vector<Character> load_object_group(const fs::path& path) {
     EngineAssets::discover_near(fs::absolute(path).parent_path());
     return decode_object_group(read_file(path));
 }
+void renew_object_ids(std::vector<Character>& objects) {
+    std::unordered_map<std::string,std::string> renamed;
+    for (auto& object : objects) {
+        auto old = object.Id; object.Id = new_id();
+        if (!renamed.emplace(old, object.Id).second) throw std::runtime_error("Two copied objects share one identity");
+    }
+    for (auto& object : objects) {
+        if (auto target = renamed.find(object.JointTargetId); !object.JointTargetId.empty() && target != renamed.end()) object.JointTargetId = target->second;
+        if (auto target = renamed.find(object.LightningTargetId); !object.LightningTargetId.empty() && target != renamed.end()) object.LightningTargetId = target->second;
+    }
+}
 void place_object_group(std::vector<Character>& objects, SceneData& scene, double x, double z,
                         bool grid, bool objectSnap, bool ground,double gridStep) {
     if (objects.empty()) throw std::runtime_error("Cannot place an empty group");
