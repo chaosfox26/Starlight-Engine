@@ -704,8 +704,11 @@ void from_json(const json &j, SceneData &v) {
     v.SchemaVersion = native_int(j.at("SchemaVersion"));
     if (j.contains("Name"))
         j.at("Name").get_to(v.Name);
-    if (j.contains("Characters"))
+    if (j.contains("Characters")) {
+        if (j.at("Characters").is_array() && j.at("Characters").size() > SceneData::MaxCharacters)
+            throw std::runtime_error("A scene supports at most 20000 objects");
         j.at("Characters").get_to(v.Characters);
+    }
     if (j.contains("LiquidSources"))
         j.at("LiquidSources").get_to(v.LiquidSources);
     if (j.contains("Terrain")) {
