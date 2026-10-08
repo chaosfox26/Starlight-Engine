@@ -179,6 +179,12 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             Joint jt; jt.name = n->name ? n->name : ("joint" + std::to_string(j));
             auto pit = n->parent ? jointOf.find(n->parent) : jointOf.end();
             jt.parent = pit == jointOf.end() ? -1 : pit->second;
+            if (n->has_matrix) {
+                XMVECTOR scale, rotation, translation;
+                if (!XMMatrixDecompose(&scale, &rotation, &translation, FromGltf(n->matrix)))
+                    return fail(LoadCode::SkeletonInvalid, "joint '" + jt.name + "' has a matrix transform that cannot be split into translation, rotation and scale");
+                XMStoreFloat3(&jt.t, translation); XMStoreFloat4(&jt.r, rotation); XMStoreFloat3(&jt.s, scale);
+            }
             if (n->has_translation) jt.t = XMFLOAT3(n->translation[0], n->translation[1], n->translation[2]);
             if (n->has_rotation) jt.r = XMFLOAT4(n->rotation[0], n->rotation[1], n->rotation[2], n->rotation[3]);
             if (n->has_scale) jt.s = XMFLOAT3(n->scale[0], n->scale[1], n->scale[2]);
