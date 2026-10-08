@@ -351,15 +351,23 @@ void Store::revert_pending(State& s, const std::string& family, const std::strin
 Result Store::confirm_good() {
     State s = state_;
     std::vector<std::string> done;
+    // A set is only promoted when it is the one resolve() really picks now (audit GR-1); the CLI runs this in another process, so loaded_ cannot be used.
+    const auto res = resolve();
     for (auto& [name, f] : s.families) {
+        const auto* rf = res.find(name);
+        const bool resolvedAs = rf && !rf->setId.empty();
         if (f.pending && f.pending->boots >= 1 && f.lock.empty()) {
-            if (auto base = baseline(name, f); base != f.pending->set) f.previous = base;
-            f.active = f.pending->set;
-            f.lastKnownGood = f.active;
-            done.push_back(name + " now runs " + f.active);
-            f.pending.reset();
+            if (resolvedAs && rf->source == "trial" && rf->setId == f.pending->set) {
+                if (auto base = baseline(name, f); base != f.pending->set) f.previous = base;
+                f.active = f.pending->set;
+                f.lastKnownGood = f.active;
+                done.push_back(name + " now runs " + f.active);
+                f.pending.reset();
+            } else {
+                revert_pending(s, name, "the trial set could not be used at launch");
+            }
         } else if (!f.active.empty() && f.lastKnownGood != f.active && f.lock.empty() && !f.pending) {
-            f.lastKnownGood = f.active;
+            if (resolvedAs && rf->source == "active" && rf->setId == f.active) f.lastKnownGood = f.active;
         }
     }
     save(std::move(s));

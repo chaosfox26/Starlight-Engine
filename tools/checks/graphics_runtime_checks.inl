@@ -393,6 +393,35 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
     }
 
     {
+        gr::Store s(opts("store-confirm-unusable"));
+        s.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        s.activate("plain", "plain-1.1.0", api);
+        s.begin_launch(); s.confirm_good();
+        s.stage_folder(pkgs / "plain-1.2.0-exp", gr::StageTrust::Local);
+        s.activate("plain", "plain-1.2.0-exp", api);
+        fs::remove(s.set_dir("plain-1.2.0-exp") / "bin" / "test.plain.core.dll");
+        auto launch = s.begin_launch();
+        require(launch.find("plain")->source == "active" && launch.find("plain")->version == "1.1.0", "GFX a trial set that cannot be used at launch falls back to the active set");
+        s.confirm_good();
+        const auto& f = s.state().families.at("plain");
+        require(f.active == "plain-1.1.0" && f.lastKnownGood == "plain-1.1.0" && f.previous == "plain-1.0.0" && !f.pending && s.state().sets.at("plain-1.2.0-exp").bad,
+                "GFX confirming a launch never promotes a trial set that could not be used; it is marked bad and the old sets stay");
+
+        gr::Store t(opts("store-confirm-active"));
+        t.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        t.activate("plain", "plain-1.1.0", api);
+        t.begin_launch(); t.confirm_good();
+        t.stage_folder(pkgs / "plain-1.2.0-exp", gr::StageTrust::Local);
+        t.activate("plain", "plain-1.2.0-exp", api);
+        t.begin_launch(); t.confirm_good();
+        t.activate("plain", "plain-1.1.0", api);
+        require(t.state().families.at("plain").active == "plain-1.1.0" && t.state().families.at("plain").lastKnownGood == "plain-1.2.0-exp", "GFX fixture: the active set differs from the last known good set");
+        fs::remove(t.set_dir("plain-1.1.0") / "bin" / "test.plain.core.dll");
+        t.begin_launch(); t.confirm_good();
+        require(t.state().families.at("plain").active == "plain-1.1.0" && t.state().families.at("plain").lastKnownGood == "plain-1.2.0-exp", "GFX confirming a launch never makes an unusable active set the last known good set");
+    }
+
+    {
         auto o = opts("store-lock");
         gr::Store s(o);
         s.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
