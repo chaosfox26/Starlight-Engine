@@ -322,6 +322,8 @@ void NativeSession::run(std::stop_token stop) {
                 const uint64_t idHash=std::hash<std::string>{}(source.Id);
                 mix(idHash);
                 for(double v:{use->X,use->Y,use->Z,use->RotationX,use->RotationY,use->RotationZ,use->Size,use->Width,use->Height,use->Depth}){uint64_t bits;std::memcpy(&bits,&v,8);mix(bits);}
+                if(use->PhysicsRotation)for(double v:*use->PhysicsRotation){uint64_t bits;std::memcpy(&bits,&v,8);mix(bits);}else mix(0x9e3779b97f4a7c15ull);
+                mix(std::hash<std::string>{}(use->Asset));mix(std::hash<std::string>{}(use->Shape.value_or("")));
                 held.push_back({use,layer,idHash,own});
             };
             for (const auto& c : simulation.Characters)consider(c,render_dynamic(c,&sceneCache));
