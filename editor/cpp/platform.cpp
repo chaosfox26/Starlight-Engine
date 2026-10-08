@@ -22,6 +22,31 @@ void check(HRESULT hr) {
         throw std::runtime_error("Windows operation failed: " +
                                  std::to_string(static_cast<unsigned long>(hr)));
 }
+// Saves with backup keep the newest few "<file>.<32 hex digits>.bak" copies beside the file. Only names in exactly that form are ever removed.
+constexpr size_t kBackupsKept = 5;
+void prune_backups(const fs::path& file) noexcept {
+    try {
+        const auto prefix = file.filename().wstring() + L".";
+        std::vector<std::pair<fs::file_time_type, fs::path>> found;
+        std::error_code ec;
+        for (fs::directory_iterator it(file.parent_path(), ec), end; !ec && it != end; it.increment(ec)) {
+            const auto name = it->path().filename().wstring();
+            if (name.size() != prefix.size() + 32 + 4 || name.compare(0, prefix.size(), prefix) != 0 || name.compare(name.size() - 4, 4, L".bak") != 0)
+                continue;
+            bool hex = true;
+            for (size_t i = prefix.size(); i < prefix.size() + 32; ++i)
+                hex = hex && ((name[i] >= L'0' && name[i] <= L'9') || (name[i] >= L'a' && name[i] <= L'f'));
+            std::error_code entry;
+            const auto time = fs::last_write_time(it->path(), entry);
+            if (hex && !entry && it->is_regular_file(entry) && !entry)
+                found.emplace_back(time, it->path());
+        }
+        std::sort(found.begin(), found.end());
+        for (size_t i = 0; i + kBackupsKept < found.size(); ++i)
+            fs::remove(found[i].second, ec);
+    } catch (...) {
+    }
+}
 } // namespace
 std::wstring wide(std::string_view s) {
     if (s.empty())
@@ -152,6 +177,7 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
         if (fs::exists(p) && backup) {
             auto previous = p.wstring() + L"." + wide(new_id()) + L".bak";
             commit([&]{return ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr);});
+            prune_backups(p);
         } else commit([&]{return MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);});
     } catch (...) {
         std::error_code ec;

@@ -36,6 +36,7 @@ using namespace starlight::editor;
 #include "scene_preparation_checks.inl"
 #include "scene_validation_checks.inl"
 #include "file_io_checks.inl"
+#include "asset_platform_checks.inl"
 #include "asset_scan_checks.inl"
 #include "error_throttle_checks.inl"
 #include "project_module_checks.inl"
@@ -113,6 +114,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(scene_preparation_checks, scene_preparation_checks(require));
         RUN_GROUP(scene_validation_checks, scene_validation_checks(require));
         RUN_GROUP(file_io_checks, file_io_checks(require,folder));
+        RUN_GROUP(asset_platform_checks, asset_platform_checks(require,folder));
         RUN_GROUP(asset_scan_checks, asset_scan_checks(require,folder));
         RUN_GROUP(error_throttle_checks, error_throttle_checks(require));
         RUN_GROUP(project_module_checks, project_module_checks(require));
