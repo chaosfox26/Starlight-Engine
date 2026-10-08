@@ -71,6 +71,16 @@ def git(repo, *args):
     except Exception:
         return ''
 
+def child_environment(extra):
+    return {k: v for k, v in dict(os.environ, **extra).items() if k != 'STARLIGHT_CHECK_GROUPS'}
+
+def apply_result(suite, data):
+    suite['completed'] = True
+    suite['success'] = bool(data.get('success')) and not data.get('filtered')
+    suite['error'] = data.get('error') or ('filtered run (STARLIGHT_CHECK_GROUPS): not a full pass' if data.get('filtered') else None)
+    suite['checks'] = data.get('checks', [])
+    suite['schema'] = data.get('schema')
+
 def evaluate_test(test, suite):
     """State of one ledger test given what the suite did. suite keys: started, completed, success, error, checks (names of passed checks), skippedReason."""
     token = test['token']
@@ -223,6 +233,18 @@ def self_test():
         ('suite could not start', dict(base, started=False, completed=False, success=None, checks=[], skippedReason='no exe'), 'SKIPPED'),
     ]
     bad = 0
+    filtered = {'started': True}
+    apply_result(filtered, {'success': True, 'filtered': True, 'checks': ['a']})
+    got, _ = evaluate_entry(entry, filtered)
+    ok = filtered['success'] is False and 'not a full pass' in filtered['error'] and got == 'NOT-CHECKED'
+    print('  %s a filtered result.json is never a success: %s' % ('ok ' if ok else 'BAD', got))
+    bad += not ok
+    os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
+    env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
+    del os.environ['STARLIGHT_CHECK_GROUPS']
+    ok = 'STARLIGHT_CHECK_GROUPS' not in env and env.get('KEEP_ME') == '1'
+    print('  %s the child suite environment drops STARLIGHT_CHECK_GROUPS' % ('ok ' if ok else 'BAD'))
+    bad += not ok
     for name, suite, want in cases:
         got, _ = evaluate_entry(entry, suite)
         flag = 'ok ' if got == want else 'BAD'
@@ -376,7 +398,7 @@ def main():
         suite['started'] = True
         try:
             proc = subprocess.run(command['argv'], cwd=command['cwd'], capture_output=True, text=True,
-                                  timeout=min(args.timeout, command['timeoutSeconds']), env={k: v for k, v in dict(os.environ, **command['env']).items() if k != 'STARLIGHT_CHECK_GROUPS'})
+                                  timeout=min(args.timeout, command['timeoutSeconds']), env=child_environment(command['env']))
             suite['exitCode'] = proc.returncode
             suite['stdoutTail'] = proc.stdout[-400:]
             suite['stderrTail'] = proc.stderr[-400:]
@@ -385,13 +407,7 @@ def main():
         if os.path.exists(result_json):
             try:
                 data = json.load(open(result_json, encoding='utf-8'))
-                suite['completed'] = True
-                suite['success'] = bool(data.get('success')) and not data.get('filtered')
-                if data.get('filtered'):
-                    suite['error'] = 'filtered run (STARLIGHT_CHECK_GROUPS): not a full pass'
-                suite['error'] = data.get('error')
-                suite['checks'] = data.get('checks', [])
-                suite['schema'] = data.get('schema')
+                apply_result(suite, data)
             except Exception as e:
                 suite['error'] = 'result.json unreadable: %s' % e
         elif os.path.exists(progress_path):
