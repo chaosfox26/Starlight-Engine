@@ -351,6 +351,7 @@ TextureInfo describe_texture(std::string_view bytes) {
         while (at + 4 <= bytes.size()) {
             if (uint8_t(bytes[at]) != 0xff) throw std::runtime_error("The JPEG segment layout is damaged");
             while (at + 1 < bytes.size() && uint8_t(bytes[at + 1]) == 0xff) ++at;
+            if (at + 1 >= bytes.size()) throw std::runtime_error("The JPEG is truncated");
             const auto marker = uint8_t(bytes[at + 1]);
             if (marker == 0xda || marker == 0xd9) break;
             if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd8)) { at += 2; continue; }

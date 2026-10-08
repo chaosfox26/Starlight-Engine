@@ -70,7 +70,7 @@ struct Player {
             renderer=std::make_unique<NativeSession>(view,1280,720);
             message(WM_SIZE,0,0);
             loading.update(0,"Reading the scene");pump_loading_messages();
-            if(fs::exists(scenePath.parent_path()/L"manifest.json"))verify_portable_scene(scenePath.parent_path());
+            verify_exported_content(scenePath.parent_path());
             authored=load_scene(scenePath);
             SetWindowTextW(window,wide(authored.Name).c_str());
             loading.update(0,"Starting your scene");
@@ -168,7 +168,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
             else scenePath=argv[i];
         }LocalFree(argv);
         Player player;player.combatCheckOutput=combatCheckOutput;player.smokeOutput=smokeOutput;player.smokeDeadline=GetTickCount64()+20000;player.scenePath=scenePath;
-        if(validate){if(fs::exists(scenePath.parent_path()/L"manifest.json"))verify_portable_scene(scenePath.parent_path());player.authored=load_scene(scenePath);player.gameplay.start(player.authored);CoUninitialize();return 0;}
+        if(validate){verify_exported_content(scenePath.parent_path());player.authored=load_scene(scenePath);player.gameplay.start(player.authored);CoUninitialize();return 0;}
         WNDCLASSW cls{};cls.hInstance=instance;cls.lpszClassName=L"StarlightGamePlayer";cls.lpfnWndProc=Player::proc;cls.hCursor=LoadCursor(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&cls);
         auto window=CreateWindowW(cls.lpszClassName,L"Starlight",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1280,800,nullptr,nullptr,instance,&player);
         if(!window)throw std::runtime_error("Cannot create game window");

@@ -15,12 +15,13 @@
 
 namespace starlight_diag {
 inline void starlight_diag_anchor_dummy(){}
-struct Event {double ms;uint32_t thread;char tag[20];double a,b,c;};
+struct Event {double ms;uint32_t thread;char tag[20];double a,b,c;std::atomic<uint32_t> ready;};
 struct EventLog {
     static constexpr size_t capacity=1u<<21;
-    Event* events=nullptr;std::atomic<uint32_t> count{0};bool enabled=false;char prefix[400]{};double frequency=0;
+    Event* events=nullptr;std::atomic<uint32_t> count{0};std::atomic<bool> enabled{false};char prefix[400]{};double frequency=0;
     EventLog(){
-        if(!GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix)))return;
+        const DWORD length=GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix));
+        if(!length||length>=sizeof(prefix)){prefix[0]=0;return;}
         LARGE_INTEGER f;QueryPerformanceFrequency(&f);frequency=double(f.QuadPart);
         events=static_cast<Event*>(VirtualAlloc(nullptr,sizeof(Event)*capacity,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         enabled=events!=nullptr;
@@ -28,10 +29,11 @@ struct EventLog {
     static double now(){static const double perMs=[]{LARGE_INTEGER f;QueryPerformanceFrequency(&f);return double(f.QuadPart)/1000.;}();LARGE_INTEGER q;QueryPerformanceCounter(&q);return double(q.QuadPart)/perMs;}
     void add(const char* tag,double a,double b,double c){
         const uint32_t i=count.fetch_add(1,std::memory_order_relaxed);if(i>=capacity)return;
-        Event& e=events[i];e.ms=now();e.thread=GetCurrentThreadId();std::strncpy(e.tag,tag,sizeof(e.tag)-1);e.tag[sizeof(e.tag)-1]=0;e.a=a;e.b=b;e.c=c;
+        Event& e=events[i];e.ms=now();e.thread=GetCurrentThreadId();std::strncpy(e.tag,tag,sizeof(e.tag)-1);e.tag[sizeof(e.tag)-1]=0;e.a=a;e.b=b;e.c=c;e.ready.store(1,std::memory_order_release);
     }
     ~EventLog(){
         if(!enabled)return;
+        enabled=false; // a worker still logging at exit now stops at the evlog check, and the buffer is left for the process to reclaim so a late write cannot hit freed memory
         HMODULE module=nullptr;char name[MAX_PATH]{};
         GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCSTR>(&starlight_diag_anchor_dummy),&module);
         GetModuleFileNameA(module,name,MAX_PATH);
@@ -39,9 +41,8 @@ struct EventLog {
         char path[900];std::snprintf(path,sizeof(path),"%s.%s.events",prefix,base);
         FILE* f=nullptr;fopen_s(&f,path,"w");
         if(f){const uint32_t n=std::min<uint32_t>(count.load(),uint32_t(capacity));
-            for(uint32_t i=0;i<n;++i)std::fprintf(f,"%.4f %u %s %.5f %.5f %.5f\n",events[i].ms,events[i].thread,events[i].tag,events[i].a,events[i].b,events[i].c);
+            for(uint32_t i=0;i<n;++i)if(events[i].ready.load(std::memory_order_acquire))std::fprintf(f,"%.4f %u %s %.5f %.5f %.5f\n",events[i].ms,events[i].thread,events[i].tag,events[i].a,events[i].b,events[i].c);
             std::fclose(f);}
-        VirtualFree(events,0,MEM_RELEASE);
     }
 };
 inline EventLog& event_log(){static EventLog log;return log;}

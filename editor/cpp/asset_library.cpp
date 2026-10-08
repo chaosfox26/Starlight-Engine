@@ -24,7 +24,7 @@ AssetIndex scan_asset_library(const fs::path& folder, const std::atomic<bool>* c
         const auto entry = *current;
         const auto attributes = GetFileAttributesW(entry.path().c_str());
         if (attributes == INVALID_FILE_ATTRIBUTES) { ++result.errors; result.partial = true; current.disable_recursion_pending(); }
-        else if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) { current.disable_recursion_pending(); }
+        else if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) && (attributes & FILE_ATTRIBUTE_DIRECTORY)) { current.disable_recursion_pending(); }
         else if (entry.is_directory(error)) {
             if (current.depth() >= 8) { current.disable_recursion_pending(); result.partial = true; }
         } else if (entry.is_regular_file(error)) {

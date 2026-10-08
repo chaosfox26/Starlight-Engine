@@ -22,6 +22,31 @@ void check(HRESULT hr) {
         throw std::runtime_error("Windows operation failed: " +
                                  std::to_string(static_cast<unsigned long>(hr)));
 }
+// Saves with backup keep the newest few "<file>.<32 hex digits>.bak" copies beside the file. Only names in exactly that form are ever removed.
+constexpr size_t kBackupsKept = 5;
+void prune_backups(const fs::path& file) noexcept {
+    try {
+        const auto prefix = file.filename().wstring() + L".";
+        std::vector<std::pair<fs::file_time_type, fs::path>> found;
+        std::error_code ec;
+        for (fs::directory_iterator it(file.parent_path(), ec), end; !ec && it != end; it.increment(ec)) {
+            const auto name = it->path().filename().wstring();
+            if (name.size() != prefix.size() + 32 + 4 || name.compare(0, prefix.size(), prefix) != 0 || name.compare(name.size() - 4, 4, L".bak") != 0)
+                continue;
+            bool hex = true;
+            for (size_t i = prefix.size(); i < prefix.size() + 32; ++i)
+                hex = hex && ((name[i] >= L'0' && name[i] <= L'9') || (name[i] >= L'a' && name[i] <= L'f'));
+            std::error_code entry;
+            const auto time = fs::last_write_time(it->path(), entry);
+            if (hex && !entry && it->is_regular_file(entry) && !entry)
+                found.emplace_back(time, it->path());
+        }
+        std::sort(found.begin(), found.end());
+        for (size_t i = 0; i + kBackupsKept < found.size(); ++i)
+            fs::remove(found[i].second, ec);
+    } catch (...) {
+    }
+}
 } // namespace
 std::wstring wide(std::string_view s) {
     if (s.empty())
@@ -112,13 +137,28 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
     // path form for our Win32 file calls without depending on machine policy.
     auto p = native_file_path(path);
     fs::create_directories(p.parent_path());
-    Handle lock(CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
-                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr));
-    if (!lock)
-        throw std::runtime_error("File is busy");
+    // A second writer holding the lock is retried briefly (a double save), and any other failure reports its real Windows error instead of "busy".
+    Handle lock;
+    DWORD lockError = ERROR_SUCCESS;
+    for (unsigned attempt = 0; attempt < 51; ++attempt) {
+        lock.value = CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
+                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+        if (lock)
+            break;
+        lockError = GetLastError();
+        if (lockError != ERROR_SHARING_VIOLATION && lockError != ERROR_LOCK_VIOLATION)
+            break;
+        Sleep(20);
+    }
+    if (!lock) {
+        if (lockError == ERROR_SHARING_VIOLATION || lockError == ERROR_LOCK_VIOLATION)
+            throw std::runtime_error("File is busy");
+        throw std::runtime_error("Cannot lock file for writing (Windows error " + std::to_string(lockError) + ")");
+    }
     if (expected && (!fs::exists(p) || _stricmp(hash_file(p).c_str(), expected->c_str())))
         throw std::runtime_error("File changed; reopen before saving");
     auto temp = fs::path(p.wstring() + L"." + wide(new_id()) + L".tmp");
+    std::wstring previous;
     try {
         {
             Handle f(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
@@ -150,11 +190,16 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
             throw std::runtime_error("Cannot commit file (Windows error "+std::to_string(error)+"); original preserved");
         };
         if (fs::exists(p) && backup) {
-            auto previous = p.wstring() + L"." + wide(new_id()) + L".bak";
+            previous = p.wstring() + L"." + wide(new_id()) + L".bak";
             commit([&]{return ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr);});
+            prune_backups(p);
         } else commit([&]{return MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);});
     } catch (...) {
+        // ReplaceFileW can fail after it has already renamed the old file to the backup name (errors 1176/1177). Put it back so the path is never left empty,
+        // and keep the temporary file (the only copy of the new data) if that is not possible.
         std::error_code ec;
+        if (!previous.empty() && !fs::exists(p, ec) && !ec && !MoveFileExW(previous.c_str(), p.c_str(), MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("Cannot commit file; " + utf8(p.wstring()) + " was moved to " + utf8(previous) + " and the new data is in " + utf8(temp.wstring()));
         fs::remove(temp, ec);
         throw;
     }

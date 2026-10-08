@@ -550,7 +550,7 @@ void NativeSession::run(std::stop_token stop) {
                 const auto nowTime=StageClock::now();
                 if(same){++cameraRepeats;++cameraRun;cameraLongest=std::max(cameraLongest,cameraRun);}
                 else{if(haveLastCamera){const double gap=stageMs(cameraChangedAt,nowTime);cameraGapMax=std::max(cameraGapMax,gap);cameraGapSum+=gap;++cameraChanges;}cameraRun=0;cameraChangedAt=nowTime;lastCamera=camera;haveLastCamera=true;}
-                {static FILE* cameraLog=[]()->FILE*{char path[512];if(!GetEnvironmentVariableA("STARLIGHT_CAMERA_LOG",path,512))return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();
+                {static FILE* cameraLog=[]()->FILE*{char path[512]{};const DWORD length=GetEnvironmentVariableA("STARLIGHT_CAMERA_LOG",path,512);if(!length||length>=512)return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();
                 static uint64_t cameraLogLines=0;
                 if(cameraLog){fprintf(cameraLog,"%.4f %.6f %.6f %.6f %.6f %.6f %.6f\n",std::chrono::duration<double,std::milli>(nowTime.time_since_epoch()).count(),camera.eye.x,camera.eye.y,camera.eye.z,camera.target.x,camera.target.y,camera.target.z);if((++cameraLogLines&511)==0)fflush(cameraLog);}}
             }
@@ -874,7 +874,7 @@ void NativeSession::run(std::stop_token stop) {
             stageFrame+=frameCallMs;
             if(starlight_diag::events_enabled()){const double total=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();starlight_diag::evlog("it",double(iterationCount),total,lockWaitMs);starlight_diag::evlog("it2",stageSim-b_sim,stagePrep-b_prep,stageOverlay-b_ov);starlight_diag::evlog("it3",stagePacket-b_pk,stageInstall-b_in,stageFrame-b_fr);starlight_diag::evlog("it4",mLock,mPre,0);starlight_diag::evlog("it5",mk0,mk1,mk2);starlight_diag::evlog("it6",mk3,mk4,mPre);starlight_diag::evlog("it7",mA,mB,mC);starlight_diag::evlog("it8",mD,mE,0);}
             const double postT0=starlight_diag::events_enabled()?starlight_diag::evnow():0;double postMid=0;
-            {static FILE* stallLog=[]()->FILE*{char path[512];if(!GetEnvironmentVariableA("STARLIGHT_STALL_LOG",path,512))return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();
+            {static FILE* stallLog=[]()->FILE*{char path[512]{};const DWORD length=GetEnvironmentVariableA("STARLIGHT_STALL_LOG",path,512);if(!length||length>=512)return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();
              if(stallLog){const double total=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();if(total>12){fprintf(stallLog,"iteration %.1f ms: lockWait %.1f sim %.1f prep %.1f overlay %.1f packet %.1f install %.1f frame %.1f\n",total,lockWaitMs,stageSim-b_sim,stagePrep-b_prep,stageOverlay-b_ov,stagePacket-b_pk,stageInstall-b_in,stageFrame-b_fr);fflush(stallLog);}}}
             if(fogProbe){std::array<double,7> sample{};if(!sl_fog_readback(viewport.get(),sample.data()))throw std::runtime_error(sl_error());std::lock_guard lock(mutex_);status_.fog_sample=sample;++status_.fog_probes;}
             if(motionProbe){std::array<double,3> sample{};if(!sl_motion_readback(viewport.get(),sample.data()))throw std::runtime_error(sl_error());std::lock_guard lock(mutex_);status_.motion_sample=sample;++status_.motion_probes;}

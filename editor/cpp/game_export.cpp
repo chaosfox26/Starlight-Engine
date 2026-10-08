@@ -22,7 +22,7 @@ json export_playable_game(const SceneData& source,const fs::path& destination,co
     try{
         export_portable_scene(source,stage/L"content");verify_portable_scene(stage/L"content");
         json files=json::array();
-        auto copy=[&](const fs::path& name){fs::copy_file(runtime/name,stage/name);files.push_back({{"path",utf8(name.wstring())},{"sha256",hash_file(stage/name)}});};
+        auto copy=[&](const fs::path& name){const auto expected=hash_file(runtime/name);fs::copy_file(runtime/name,stage/name);const auto copied=hash_file(stage/name);if(copied!=expected)throw std::runtime_error("Runtime file changed or was damaged while copying: "+utf8(name.wstring()));files.push_back({{"path",utf8(name.wstring())},{"sha256",copied}});};
         for(const auto& name:required)copy(name);
         fs::create_directory(stage/L"licenses");
         for(const auto& name:notices)copy(name);
