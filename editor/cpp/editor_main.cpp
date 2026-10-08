@@ -392,6 +392,7 @@ struct Editor {
     std::unique_ptr<NativeSession> renderer;
     fs::path filename;
     std::optional<std::string> diskHash;
+    bool userMessage = false;         // the message being handled comes from a person's action, so its errors are never throttled
     ErrorThrottle errorThrottle;      // a failure that repeats on every tick is reported once per window (audit ED-06)
     bool errorDialogOpen = false;     // the modal error box runs its own message loop, which delivers timer ticks that can fail again
     int selected = -1;
@@ -404,6 +405,7 @@ struct Editor {
     ULONGLONG lastTick = GetTickCount64(), brushTick = 0, watchTick = 0;
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
+    bool watchMissing = false;        // the open scene file has disappeared: said once, not re-reported every second
 
     #define playback_command playback_command_prepared
     #include "classic_completion.inl"
@@ -452,6 +454,11 @@ struct Editor {
         Gdiplus::GdiplusShutdown(graphicsToken);
     }
 
+    // Messages that mean a person just did something: their errors are always shown, while a failure on any other message (timer, frame, paint) can repeat by itself and stays throttled (audit ED-06).
+    static bool user_action(UINT m) {
+        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_KEYDOWN || m == WM_SYSKEYDOWN || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
+    }
+
     static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
         auto self = reinterpret_cast<Editor *>(GetWindowLongPtr(h, GWLP_USERDATA));
         if (m == WM_NCCREATE) {
@@ -460,11 +467,14 @@ struct Editor {
             SetWindowLongPtr(h, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         try {
-            if (self)
+            if (self) {
+                struct Mark { bool &flag; bool saved; ~Mark() { flag = saved; } } mark{self->userMessage, self->userMessage};
+                self->userMessage = user_action(m);
                 return self->message(m, w, l);
+            }
         } catch (const std::exception &e) {
             if (self)
-                self->error(e.what());
+                self->report(e.what(), m);
         }
         return DefWindowProc(h, m, w, l);
     }
@@ -565,7 +575,7 @@ struct Editor {
             self->history.cancel(self->scene);
             self->stroke = self->orbit = false;
             ReleaseCapture();
-            self->error(e.what());
+            self->report(e.what(), m);
         }
         return DefSubclassProc(h, m, w, l);
     }
@@ -1316,8 +1326,15 @@ struct Editor {
         EndPaint(window, &ps);
     }
 
+    void report(std::string_view text, UINT m) {
+        const bool saved = userMessage;
+        userMessage = user_action(m);
+        error(text);
+        userMessage = saved;
+    }
+
     void error(std::string_view text) {
-        if (!errorThrottle.admit(text, std::chrono::steady_clock::now())) return;
+        if (!errorThrottle.admit(text, std::chrono::steady_clock::now(), !userMessage)) return;
         diagnostic("native editor", text);
         std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
         SetWindowTextW(status, wide(text).c_str());
@@ -1946,12 +1963,12 @@ struct Editor {
         auto answer = MessageBoxW(window, L"Save your changes before continuing?\nYes: Save   No: Discard   Cancel: Keep editing", L"Starlight", MB_YESNOCANCEL | MB_ICONQUESTION);
         return answer == IDNO || (answer == IDYES && save(false));
     }
-    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired, LoadingScreen* loading = nullptr) {
+    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired, LoadingScreen* loading = nullptr, std::string* hash = nullptr) {
         if (loading) {
             loading->show(window, view);
             loading->update(0, "Reading " + utf8(path.filename().wstring()));
         }
-        auto next = open_with_context(path, "scene", [&] { return load_scene(path); });
+        auto next = open_with_context(path, "scene", [&] { return load_scene(path, hash); });
         auto result = repair_scene_models(next, [&](const std::string&, const std::string& objectName) -> std::optional<fs::path> {
             auto title = L"Locate missing model: " + wide(objectName);
             if (loading) loading->close();
@@ -2633,13 +2650,14 @@ struct Editor {
                 return;
             bool repaired = false;
             LoadingScreen loading;
-            auto next = open_scene_data(files[0], repaired, &loading);
+            std::string loadedHash;
+            auto next = open_scene_data(files[0], repaired, &loading, &loadedHash);
             if (!next) return;
             open_with_context(files[0], "scene", [&] { render_scene(*next); });
             scene = std::move(*next);
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             filename = files[0];
-            diskHash = hash_file(filename);
+            diskHash = loadedHash;
             history.clear();
             selected = -1;
             dirty = repaired;
@@ -2692,6 +2710,12 @@ struct Editor {
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
+            if (auto stale = rules_naming_objects(scene, ids); !stale.empty()) {
+                std::string list;
+                for (size_t i = 0; i < stale.size() && i < 3; ++i) list += (i ? ", " : "") + stale[i];
+                if (stale.size() > 3) list += ", and " + std::to_string(stale.size() - 3) + " more";
+                SetWindowTextW(status, wide("Deleted. These gameplay rules still point at a deleted object: " + list + ". Edit or remove them before playing.").c_str());
+            }
         } else if (id == Duplicate && actor()) {
             std::vector<Character> copies;
             for (size_t i = 0; i < scene.Characters.size(); ++i)
@@ -3130,8 +3154,11 @@ struct Editor {
         if (!filename.empty() && !playing && !stroke && now - watchTick >= 1000) {
             watchTick = now;
             try {
-                auto modified = fs::last_write_time(filename);
-                if (!watchedTime || *watchedTime != modified) {
+                std::error_code missing;
+                auto modified = fs::last_write_time(filename, missing);
+                if (missing && !watchMissing) SetWindowTextW(status, L"The scene file is no longer where it was opened from. Use Save As to keep your work.");
+                watchMissing = bool(missing);
+                if (!missing && (!watchedTime || *watchedTime != modified)) {
                     watchedTime = modified;
                     auto hash = hash_file(filename);
                     if (diskHash && hash != *diskHash) {
@@ -3574,12 +3601,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 bool repaired = false;
                 LoadingScreen loading;
                 try {
-                    auto next = editor.open_scene_data(path, repaired, &loading);
+                    std::string loadedHash;
+                    auto next = editor.open_scene_data(path, repaired, &loading, &loadedHash);
                     if (!next) continue;
                     open_with_context(path, "scene", [&] { render_scene(*next); });
                     editor.scene = std::move(*next);
                     editor.filename = path;
-                    editor.diskHash = hash_file(path);
+                    editor.diskHash = loadedHash;
                     editor.dirty = repaired;
                     editor.refresh();
                     editor.settle_scene(loading, "Preparing " + utf8(path.filename().wstring()));

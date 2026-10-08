@@ -105,6 +105,15 @@ void renew_object_ids(std::vector<Character>& objects) {
         if (auto target = renamed.find(object.LightningTargetId); !object.LightningTargetId.empty() && target != renamed.end()) object.LightningTargetId = target->second;
     }
 }
+std::vector<std::string> rules_naming_objects(const SceneData& scene, const std::unordered_set<std::string>& ids) {
+    std::vector<std::string> names;
+    for (const auto& rule : scene.Rules) {
+        bool names_one = !rule.Subject.empty() && ids.contains(rule.Subject);
+        for (const auto& action : rule.Actions) names_one = names_one || (action.Type == "open-door" && ids.contains(action.Target));
+        if (names_one) names.push_back(rule.Name);
+    }
+    return names;
+}
 void place_object_group(std::vector<Character>& objects, SceneData& scene, double x, double z,
                         bool grid, bool objectSnap, bool ground,double gridStep) {
     if (objects.empty()) throw std::runtime_error("Cannot place an empty group");

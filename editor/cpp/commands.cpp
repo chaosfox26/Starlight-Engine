@@ -133,6 +133,7 @@ json apply_commands(const fs::path &file) {
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
     bool allowMissingAssets = false;
+    std::vector<std::string> staleRules;
     for (const auto &op : operations) {
         auto kind = op.at("op").get<std::string>();
         if (kind == "merge-scene") {
@@ -376,6 +377,7 @@ json apply_commands(const fs::path &file) {
             keys(op, {"op", "id"});
             auto index = &c - scene.Characters.data();
             auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
+            for (auto &name : rules_naming_objects(scene, {removedId})) if (std::find(staleRules.begin(), staleRules.end(), name) == staleRules.end()) staleRules.push_back(std::move(name));
             for(auto& object:scene.Characters)if(object.JointTargetId==removedId){object.JointKind=0;object.JointTargetId.clear();}for(auto& object:scene.Characters)if(object.LightningTargetId==removedId)object.LightningTargetId.clear();
         } else
             throw std::runtime_error("Unsupported editor operation: " + kind);
@@ -385,11 +387,13 @@ json apply_commands(const fs::path &file) {
     json characters = json::array();
     for (const auto &c : scene.Characters)
         characters.push_back({{"Id", c.Id}, {"Name", c.Name}});
-    return {{"success", true},
-            {"scenePath", utf8(path.wstring())},
-            {"sha256", hash_file(path)},
-            {"characters", characters},
-            {"note", "Scene saved with backup. No engine code or preset changed."}};
+    json report{{"success", true},
+                {"scenePath", utf8(path.wstring())},
+                {"sha256", hash_file(path)},
+                {"characters", characters},
+                {"note", "Scene saved with backup. No engine code or preset changed."}};
+    if (!staleRules.empty()) report["rulesNamingRemovedObjects"] = staleRules;
+    return report;
 }
 } // namespace starlight::editor
 

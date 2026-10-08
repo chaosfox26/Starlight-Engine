@@ -201,10 +201,12 @@ std::string save_scene(const SceneData &scene, const fs::path &path, const std::
     atomic_write(path, encoded, true, expected);
     return hash_bytes(encoded);
 }
-SceneData load_scene(const fs::path &path) {
+SceneData load_scene(const fs::path &path, std::string *hash) {
     // A portable bundle (exported scene or game) carries its engine assets in an "assets" folder beside the scene; the library reads from there too.
     EngineAssets::discover_near(fs::absolute(path).parent_path());
-    return SceneData::decode(read_file(path));
+    auto bytes = read_file(path);
+    if (hash) *hash = hash_bytes(bytes);
+    return SceneData::decode(bytes);
 }
 namespace {
 fs::path shell_path(IShellItem *item) {
