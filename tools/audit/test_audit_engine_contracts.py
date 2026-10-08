@@ -40,6 +40,21 @@ def main():
         time.sleep(1)
         child = int(pid_file.read_text())
         assert not alive(child), 'the child process was left running after progress() raised'
+        work = base/'work'
+        work.mkdir()
+        test = {'properties': [{'name': 'ENVIRONMENT', 'value': ['AUDIT_CONTEXT_CHECK=a=b', 'AUDIT_CONTEXT_OTHER=1']},
+                               {'name': 'WORKING_DIRECTORY', 'value': str(work)}]}
+        directory, env = engine.test_context(test, base)
+        assert directory == str(work), directory
+        assert env['AUDIT_CONTEXT_CHECK'] == 'a=b' and env['AUDIT_CONTEXT_OTHER'] == '1', 'ENVIRONMENT entries split at the first ='
+        assert 'PATH' in env or 'Path' in env, 'the parent environment is kept'
+        bare_directory, bare_env = engine.test_context({'command': ['x']}, base)
+        assert bare_directory == base and 'AUDIT_CONTEXT_CHECK' not in bare_env, 'a test without properties runs from the source root'
+        probe = base/'probe.txt'
+        code = f'import os;open(r"{probe}","w").write(os.getcwd()+"|"+os.environ["AUDIT_CONTEXT_CHECK"])'
+        result = engine.execute([sys.executable, '-c', code], directory, base/'probe.log', 30, lambda _: None, env)
+        assert result['outcome'] == 'pass', result
+        assert probe.read_text() == f'{work}|a=b', probe.read_text()
     print('audit coordinator contracts pass')
 
 
