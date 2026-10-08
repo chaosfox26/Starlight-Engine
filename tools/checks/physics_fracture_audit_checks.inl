@@ -1,5 +1,6 @@
 // Regression checks for the physics, fracture and destruction audit findings (audit 03).
 extern "C" __declspec(dllimport) void slp_debug_fail_adds(int);
+extern "C" __declspec(dllimport) int slp_present(void *, void *, int);
 template<class Require> void physics_fracture_audit_checks(Require require){
     {   // 03#1: fracture helpers run below normal priority, but the pool thread they borrowed must go back to normal afterwards.
         std::mutex lock;std::set<DWORD> helperThreads;
@@ -16,6 +17,26 @@ template<class Require> void physics_fracture_audit_checks(Require require){
             for(auto& probe:probes)probe.get();
         }
         require(!leaked,"03#1: A thread that helped with a fracture is back at normal priority for the next task it is given");
+    }
+    {   // 03#6: removing one body must not cancel the presentation interpolation of the bodies after it.
+        struct State{uint32_t id;float x,y,z,qx,qy,qz,qw;};
+        const float cube[24]={-.5f,-.5f,-.5f, .5f,-.5f,-.5f, .5f,.5f,-.5f, -.5f,.5f,-.5f, -.5f,-.5f,.5f, .5f,-.5f,.5f, .5f,.5f,.5f, -.5f,.5f,.5f};
+        const uint32_t faces[36]={0,1,2,0,2,3, 4,6,5,4,7,6, 0,4,5,0,5,1, 1,5,6,1,6,2, 2,6,7,2,7,3, 3,7,4,3,4,0};
+        const std::vector<float> flat(97*97,0.f);
+        void* world=slp_create();int ready=0;
+        if(world&&slp_terrain(world,flat.data())==1)for(int i=0;i<5000&&ready==0;++i){ready=slp_ready(world);if(ready==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+        require(world&&ready==1,"03#6: A physics world is ready for the presentation check");
+        if(world&&ready==1){
+            uint32_t ids[3];for(int i=0;i<3;++i){ids[i]=slp_add(world,cube,8,faces,36,1,1,float(i)*3,20,0,0,0,0,1);slp_body_velocity(world,ids[i],6,0,0,0,0,0);}
+            State stepped[4]{};slp_step(world,1./60+1./120,nullptr,0,stepped,4); // one fixed tick, half a tick left over
+            State before[4]{},after[4]{};
+            const int countBefore=slp_present(world,before,4);
+            slp_character_remove(world,ids[0]);
+            const int countAfter=slp_present(world,after,4);
+            require(countBefore==3&&countAfter==2&&after[0].id==ids[1]&&before[1].id==ids[1],"03#6: The presentation lists the bodies that remain");
+            require(std::memcmp(&before[1],&after[0],sizeof(State))==0&&std::memcmp(&before[2],&after[1],sizeof(State))==0,"03#6: Bodies after a removed one keep their interpolated pose");
+            slp_destroy(world);
+        }
     }
     {   // 03#2: a physics world that cannot take the rubble must not leave a break half done.
         auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=0;
