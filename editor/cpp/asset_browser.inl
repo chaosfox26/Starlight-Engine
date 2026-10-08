@@ -77,7 +77,7 @@ void scan_asset_browser() {
 void poll_asset_browser() {
     if (!libraryTask.valid() || libraryTask.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
     try { libraryIndex = libraryTask.get(); filter_asset_browser(); }
-    catch (const std::exception& e) { libraryIndex = {}; filter_asset_browser(); SetWindowTextW(libraryMessage, wide(e.what()).c_str()); }
+    catch (const std::exception& e) { libraryIndex = {}; filter_asset_browser(); SetWindowTextW(libraryMessage, wide_lossy(e.what()).c_str()); }
     for (int id : {ChooseAssets, RefreshAssets}) EnableWindow(GetDlgItem(libraryPanel, id), TRUE);
 }
 bool asset_browser_command(int id) {

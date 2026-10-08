@@ -1338,12 +1338,12 @@ struct Editor {
         if (!errorThrottle.admit(text, std::chrono::steady_clock::now(), !userMessage)) return;
         diagnostic("native editor", text);
         std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
-        SetWindowTextW(status, wide(text).c_str());
+        SetWindowTextW(status, wide_lossy(text).c_str());
         static const bool quiet = [] { char v[8]{}; return GetEnvironmentVariableA("STARLIGHT_SUPPRESS_DIALOGS", v, 8) && v[0] == '1'; }(); // automated runs: report, do not block on a modal box
         if (!quiet && !errorDialogOpen) {
             errorDialogOpen = true;
             struct Reset { bool &flag; ~Reset() { flag = false; } } reset{errorDialogOpen};
-            MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, wide_lossy(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
         }
     }
 
@@ -3137,7 +3137,7 @@ struct Editor {
                     launch_project(engine_path(), *project, preset->path);
                 if(projectWindow && IsWindowVisible(projectWindow)){project_form();SetWindowTextW(projectMessage,L"Settings checked successfully.");}else inspector_fields();
             } catch (const std::exception &e) {
-                if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
+                if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide_lossy(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
             }
         }
         }
@@ -3651,7 +3651,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 try { atomic_write(automatedReport, json{{"pass",false},{"error",e.what()},{"interrupted",true}}.dump(2)); }
                 catch (...) {}
             }
-        } else MessageBoxW(nullptr, wide(e.what()).c_str(), L"Starlight startup error", MB_OK | MB_ICONERROR);
+        } else MessageBoxW(nullptr, wide_lossy(e.what()).c_str(), L"Starlight startup error", MB_OK | MB_ICONERROR);
         result = 1;
     }
     CoUninitialize();
