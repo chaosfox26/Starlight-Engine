@@ -3536,7 +3536,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 automatedCheck = true;
                 if (i + 1 < commandArgc) automatedReport = commandArgv[i + 1];
             }
-            commands |= a == L"--commands" || a == L"--inspect" || a == L"--describe" || a == L"--feature" || a == L"--export-portable" || a == L"--verify-portable";
+            commands |= is_command_flag(a);
         }
         if (commands) {
             int code = run_commands(commandArgc, commandArgv);

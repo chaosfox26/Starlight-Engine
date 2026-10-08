@@ -1,5 +1,8 @@
 // Editor state edges found by the 2026-10-08 editor audit: a scene load reports the hash of the bytes it decoded (finding 7) and deleting an object names the rules left pointing at it (finding 11).
 #include "../../editor/cpp/object_template.hpp"
+#include "../../editor/cpp/commands.hpp"
+#include <regex>
+#include <set>
 static void editor_state_checks(const auto& require,const fs::path& folder){
     const auto work=folder/"editor-state-checks";fs::remove_all(work);fs::create_directories(work);
     {
@@ -36,5 +39,18 @@ static void editor_state_checks(const auto& require,const fs::path& folder){
         require(rules_naming_objects(scene,{object("gem1","none","brass")}).empty(),"Editor audit 11: only key objects carry a collectable key");
         scene.Characters={object("gem2","key","brass")};
         require(rules_naming_objects(scene,{object("gem1","key","brass")}).empty(),"Editor audit 11: a rule is not reported while another key object still carries its key");
+    }
+    {
+        // Editor audit 5: the windowed executable runs a command instead of opening a window for every command flag the interface documents.
+        std::set<std::string> advertised;
+        const std::regex flag("--[a-z][a-z-]*");
+        const auto text=describe_commands().dump();
+        for(std::sregex_iterator it(text.begin(),text.end(),flag),end;it!=end;++it)advertised.insert(it->str());
+        for(const char* option:{"--result","--writable","--read-only","--label"})advertised.erase(option);
+        bool every=advertised.size()>=10;std::string missed;
+        for(const auto& name:advertised)if(!is_command_flag(wide(name))){every=false;missed+=name+" ";}
+        if(!every)std::fprintf(stderr,"Editor audit 5: not routed: %s\n",missed.c_str());
+        require(every,"Editor audit 5: every command flag in the interface description is routed by the windowed executable");
+        require(!is_command_flag(L"--scene")&&!is_command_flag(L"--ui-check")&&!is_command_flag(L"--play"),"Editor audit 5: windowed-only flags still open the window");
     }
 }

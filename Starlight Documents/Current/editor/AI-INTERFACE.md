@@ -7,6 +7,8 @@ The editor executable accepts JSON commands and writes a JSON result. These comm
 Executable after building:
 `D:\projects\Starlight-Engine\out\native\Release\Starlight.NativeEditor.exe`
 
+Every command flag listed by `--describe` (`--inspect`, `--commands`, `--feature`, `--new-adventure`, `--import-model`, `--import-texture`, `--import-blob`, `--asset-ready`, `--validate-atlas`, `--asset-root-*`, `--export-portable`, `--verify-portable`, `--export-game`) also runs without a window from this executable and writes the `--result` file; `Starlight.NativeCommands.exe` is the console build of the same commands and prints the report as well.
+
 ## Discover and inspect
 
 Run the executable with `--describe --result <absolute-report.json>` to discover capabilities.

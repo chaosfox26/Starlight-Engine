@@ -43,6 +43,12 @@ json asset_root_command(const std::vector<std::wstring> &args) {
     return asset_root_report(command.substr(2));
 }
 }
+bool starlight::editor::is_command_flag(std::wstring_view a) {
+    for (const auto flag : {L"--describe", L"--inspect", L"--commands", L"--feature", L"--new-adventure", L"--export-game", L"--export-portable", L"--verify-portable",
+                            L"--import-model", L"--import-texture", L"--import-blob", L"--asset-ready", L"--validate-atlas"})
+        if (a == flag) return true;
+    return a.starts_with(L"--asset-root-");
+}
 int starlight::editor::run_commands(int argc, wchar_t **argv) {
     fs::path result;
     json report;
