@@ -230,7 +230,7 @@ void NativeSession::run(std::stop_token stop) {
         RenderSceneCache sceneCache;
         int w = 0, h = 0;
         double seconds = 0;
-        bool physicsNeeded = false,fogTerrainDirty=true;
+        bool physicsNeeded = false,fogTerrainDirty=true,physicsFresh=false; // physicsFresh: the rigid-body session was created behind a loading barrier and has not finished preparing
         auto previous = std::chrono::steady_clock::now();
         std::vector<uint8_t> packet;
         FramePacingMonitor pacing;
@@ -248,7 +248,7 @@ void NativeSession::run(std::stop_token stop) {
             sceneCache.clear();
             simulation = authored;++simulationEpoch;
             seconds = 0;
-            physics.reset();
+            physics.reset();physicsFresh=false;
             environment.reset();fogCenters.clear();
             if(viewport)sl_environment_reset(viewport.get());
             {std::lock_guard lock(mutex_);status_.environment_epoch=environment.epoch();status_.environment_lightning=0;status_.environment_sounds.clear();status_.effect_sparks=0;status_.fire_particles=0;status_.liquid_splashes=0;status_.rain_particles=0;status_.rain_impacts=0;status_.liquid_volume=0;status_.liquid_wave_energy=0;}
@@ -548,6 +548,9 @@ void NativeSession::run(std::stop_token stop) {
             // The poses are no longer re-sent while they do not change, so a scene that was just replaced or reset gets the last ones again.
             if(!runtimeUpdate&&next)lastRuntimeObjects.clear();
             if((next&&!runtimeUpdate)||doReset){sceneCache.allowResting=false;settlePoses.clear();lastBodyMotion=seconds;}
+            // No rigid-body session moves the bodies of this scene (gameplay drives them, and a body that does move leaves the base through promote_moved), so the loading barrier
+            // installs the resting set play will use instead of rebuilding the base 0.75 s into play (audit 04-loading-readiness finding 2).
+            if(prewarm&&!play&&!physicsNeeded&&repair_delta())sceneCache.allowResting=true;
             if(runtimeObjects.empty()&&(next||doReset)&&!lastRuntimeObjects.empty())runtimeObjects=lastRuntimeObjects;
             if(!runtimeObjects.empty()){
                 for(const auto& pose:runtimeObjects)for(auto& c:simulation.Characters)if(c.Id==pose.Id && c.Dynamic){c.X=pose.X;c.Y=pose.Y;c.Z=pose.Z;c.PhysicsRotation=pose.PhysicsRotation;c.JointRuntimePoints=pose.JointRuntimePoints;c.Route.clear();break;}
@@ -561,6 +564,37 @@ void NativeSession::run(std::stop_token stop) {
                 {static FILE* cameraLog=[]()->FILE*{char path[512]{};const DWORD length=GetEnvironmentVariableA("STARLIGHT_CAMERA_LOG",path,512);if(!length||length>=512)return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();
                 static uint64_t cameraLogLines=0;
                 if(cameraLog){fprintf(cameraLog,"%.4f %.6f %.6f %.6f %.6f %.6f %.6f\n",std::chrono::duration<double,std::milli>(nowTime.time_since_epoch()).count(),camera.eye.x,camera.eye.y,camera.eye.z,camera.target.x,camera.target.y,camera.target.z);if((++cameraLogLines&511)==0)fflush(cameraLog);}}
+            }
+            // A loading barrier creates the rigid-body session and waits for its terrain cook here, so the failure (or a stuck cook) is reported before reveal and play only has to step it
+            // (audit 04-loading-readiness finding 3). physics_pending is raised before the scene is reported installed and dropped only after the iteration's install.
+            const bool physicsPrewarm=prewarm&&!play&&physicsNeeded;bool physicsPrepared=false;
+            if(physicsPrewarm){
+                if(!physics){physics=std::make_unique<PhysicsSession>();physics->reset(simulation);physicsFresh=true;}
+                if(physics->ready()){
+                    if(physicsFresh){
+                        physicsFresh=false;
+                        // Opt-in: let the bodies settle here, bounded, so the resting set is known before reveal and the base is built once. It changes how play begins (bodies start at rest), so
+                        // it is off unless STARLIGHT_SETTLE_BEFORE_PLAY=1.
+                        char settleValue[8]{};
+                        if(repair_delta()&&GetEnvironmentVariableA("STARLIGHT_SETTLE_BEFORE_PLAY",settleValue,8)&&settleValue[0]=='1'){
+                            std::unordered_map<std::string,std::array<Vec3,4>> last;int still=0;
+                            const auto limit=StageClock::now()+std::chrono::milliseconds(3000);
+                            for(int step=0;step<900&&still<45&&StageClock::now()<limit;++step){ // 45 quiet steps of 1/60 s = the 0.75 s rest rule
+                                physics->step(simulation,1./60,flow.get());
+                                bool moved=false;
+                                for(const auto& c:simulation.Characters){
+                                    if(!resting_eligible(c))continue;
+                                    const auto probe=pose_probe(c);const auto seen=last.find(c.Id);
+                                    if(seen==last.end()){last.emplace(c.Id,probe);moved=true;}
+                                    else if(!same_pose(seen->second,probe)){last[c.Id]=probe;moved=true;}
+                                }
+                                still=moved?0:still+1;
+                            }
+                            sceneCache.clear();sceneCache.allowResting=true;rebuild=true;obstacles(collisionObjects);
+                        }
+                    }
+                    physicsPrepared=true;
+                }else{std::lock_guard lock(mutex_);status_.physics_pending=true;}
             }
             const double mA=mkNow();const auto simStart=StageClock::now();
             if (play) {
@@ -774,6 +808,7 @@ void NativeSession::run(std::stop_token stop) {
                 sceneCostMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-uploadStart).count();
                 {std::lock_guard lock(mutex_);status_.scene_cpu_total_ms+=sceneCostMs;++status_.scene_updates;status_.scene_generation_installed=lastTakenScene;}
             }
+            {std::lock_guard lock(mutex_);status_.physics_pending=physicsPrewarm&&!physicsPrepared;status_.physics_prepared=physicsPrewarm&&physicsPrepared;}
             {static MotionTrace trace;if(play)trace.sample(simulation,"mot.render");}
             const double mD=mkNow();
             if(preloadDirty){preloadList=preload;preloadPending=true;}

@@ -267,7 +267,7 @@ inline void finish_scene_upload(Renderer& renderer, const Status& first, Adventu
     std::vector<std::shared_ptr<const MeshPart>> prepared;
     if (adventure.take_prefractured_parts(prepared)) report.preloadGeneration = renderer.rubble_preload(std::move(prepared), true);
     const size_t cpuDone = report.tasksDone;
-    report.tasksTotal = cpuDone + 3;
+    report.tasksTotal = cpuDone + 4;
     bool fenceRequested = false;
     double fenceStarted = 0;
     auto stopWith = [&](PreparationReport::State why, const std::string& text, uint64_t frames) {
@@ -281,15 +281,16 @@ inline void finish_scene_upload(Renderer& renderer, const Status& first, Adventu
         if (preparation_cancel().load()) { report.cancelled = true; stopWith(PreparationReport::State::Incomplete, "Loading was cancelled because the window was closed", status.frames); break; }
         const bool installed = report.sceneGeneration ? status.scene_generation_installed >= report.sceneGeneration : status.scene_updates > first.scene_updates;
         const bool preloaded = report.preloadGeneration == 0 || status.preload_generation_submitted >= report.preloadGeneration;
-        if (installed && preloaded && !fenceRequested) {
+        const bool physicsReady = installed && !status.physics_pending; // a scene with rigid bodies is not ready until its physics session has finished cooking (audit 04 finding 3)
+        if (installed && preloaded && physicsReady && !fenceRequested) {
             report.gpuFence = renderer.request_gpu_fence();
             fenceRequested = true;
             fenceStarted = prepare_now_ms();
         }
         const bool fenceDone = fenceRequested && status.gpu_fence_done >= report.gpuFence;
-        report.tasksDone = cpuDone + (installed ? 1 : 0) + (preloaded ? 1 : 0) + (fenceDone ? 1 : 0);
-        const double fraction = double(report.tasksDone - cpuDone) / 3.0;
-        const char* label = !installed ? "Uploading scene data" : !preloaded ? "Uploading prepared pieces" : "Finishing on the graphics card";
+        report.tasksDone = cpuDone + (installed ? 1 : 0) + (preloaded ? 1 : 0) + (physicsReady ? 1 : 0) + (fenceDone ? 1 : 0);
+        const double fraction = double(report.tasksDone - cpuDone) / 4.0;
+        const char* label = !installed ? "Uploading scene data" : !preloaded ? "Uploading prepared pieces" : !physicsReady ? "Preparing physics" : "Finishing on the graphics card";
         screen.update(base + PreparationStages::upload * fraction, label);
         if (loading_observer()) loading_observer()(base + PreparationStages::upload * fraction);
         if (fenceDone) {
@@ -302,7 +303,7 @@ inline void finish_scene_upload(Renderer& renderer, const Status& first, Adventu
         }
         const std::string paused = status.suspended ? " (the window is minimized, so the graphics renderer is paused)" : std::string();
         if (!fenceRequested && prepare_now_ms() - started > installLimitMs) {
-            stopWith(PreparationReport::State::Incomplete, std::string(installed ? "The prepared pieces did not reach the graphics card within 30 seconds" : "The scene was not accepted by the graphics renderer within 30 seconds") + paused, status.frames);
+            stopWith(PreparationReport::State::Incomplete, std::string(!installed ? "The scene was not accepted by the graphics renderer within 30 seconds" : !preloaded ? "The prepared pieces did not reach the graphics card within 30 seconds" : "The physics simulation did not finish preparing within 30 seconds") + paused, status.frames);
             break;
         }
         if (fenceRequested && prepare_now_ms() - fenceStarted > fenceLimitMs) {
