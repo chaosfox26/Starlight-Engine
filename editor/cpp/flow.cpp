@@ -161,6 +161,23 @@ void FlowObstacleMask::remove_objects(const std::vector<unsigned>& objects) {
             if(x0<=x1&&z0<=z1)rasterize_columns(t,x0,x1,z0,z1);
         }
     }
+    // Once more than half of the records are dead, drop them and register the survivors again (finish() rebuilds the tables and
+    // the revision), so a layer that lost many objects does not keep scanning dead records and treating their cells as occupied.
+    // Object numbers stay as they were; only the record order closes up.
+    size_t alive=0;for(const auto& t:triangles)if(!t.dead)++alive;
+    if(alive*2<triangles.size()){
+        std::vector<ColumnTriangle> kept;kept.reserve(alive);
+        for(const auto& t:triangles)if(!t.dead)kept.push_back(t);
+        triangles=std::move(kept);
+        for(auto& list:triangleCells)std::vector<unsigned>().swap(list);
+        for(unsigned id=0;id<triangles.size();++id){
+            const auto& t=triangles[id];
+            const int gx0=geometryCell(t.boundsLow.x),gx1=geometryCell(t.boundsHigh.x),gz0=geometryCell(t.boundsLow.z),gz1=geometryCell(t.boundsHigh.z);
+            for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x)triangleCells[size_t(z)*GeometryN+x].push_back(id);
+        }
+        finish();
+        return;
+    }
     recompute_columns();
     layerRevision=next_mask_revision();geometryRevision=layerRevision;
 }

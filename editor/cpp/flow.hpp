@@ -68,7 +68,9 @@ struct FlowObstacleMask {
     void finish();
     // Takes whole objects (numbered in add() order) out of a finished layer without rebuilding it: their triangles leave every cell list and
     // block mask, the column extents are recomputed where they stood, and the revisions change so memoised answers are dropped. The
-    // per-cell vertical extents and the occupancy table are left as they were, which can only make a query take its slower exact path.
+    // per-cell vertical extents and the occupancy table are left as they were, which can only make a query take its slower exact path,
+    // until more than half of the triangle records are dead: then the survivors are renumbered and the layer is finished again.
+    // That moves triangle indices, so it is for layers nobody holds a Mark of (not the heavy layer that truncate() works on).
     void remove_objects(const std::vector<unsigned>& objects);
     void rasterize_columns(const ColumnTriangle& triangle,int cellX0,int cellX1,int cellZ0,int cellZ1);
     // A point in the accumulated geometry. truncate() removes everything added after it (the mask must be re-finished), so
