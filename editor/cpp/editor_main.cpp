@@ -3428,7 +3428,7 @@ struct Editor {
             return 0;
         case NativeSession::frameUpdateMessage:
             if(loadingActive){renderer->frame_update_handled();return 0;}
-            tick(true);renderer->frame_update_handled();
+            renderer->frame_update_handled();tick(true);
             return 0;
         case WM_TIMER:
             if(loadingActive)return 0;
