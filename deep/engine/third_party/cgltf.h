@@ -1588,6 +1588,11 @@ static cgltf_size cgltf_calc_index_bound(cgltf_buffer_view* buffer_view, cgltf_s
 	return bound;
 }
 
+static int cgltf_span_wraps(cgltf_size offset, cgltf_size size, cgltf_size count)
+{
+	return size && count > (~(cgltf_size)0 - offset) / size;
+}
+
 #if CGLTF_VALIDATE_ENABLE_ASSERTS
 #define CGLTF_ASSERT_IF(cond, result) assert(!(cond)); if (cond) return result;
 #else
@@ -1609,6 +1614,7 @@ cgltf_result cgltf_validate(cgltf_data* data)
 		{
 			cgltf_size req_size = accessor->offset + accessor->stride * (accessor->count - 1) + element_size;
 
+			CGLTF_ASSERT_IF(cgltf_span_wraps(accessor->offset, element_size, 1) || (accessor->count > 1 && cgltf_span_wraps(accessor->offset + element_size, accessor->stride, accessor->count - 1)), cgltf_result_data_too_short);
 			CGLTF_ASSERT_IF(accessor->buffer_view->size < req_size, cgltf_result_data_too_short);
 		}
 
@@ -1617,6 +1623,9 @@ cgltf_result cgltf_validate(cgltf_data* data)
 			cgltf_accessor_sparse* sparse = &accessor->sparse;
 
 			cgltf_size indices_component_size = cgltf_component_size(sparse->indices_component_type);
+			CGLTF_ASSERT_IF(cgltf_span_wraps(sparse->indices_byte_offset, indices_component_size, sparse->count) ||
+							cgltf_span_wraps(sparse->values_byte_offset, element_size, sparse->count), cgltf_result_data_too_short);
+
 			cgltf_size indices_req_size = sparse->indices_byte_offset + indices_component_size * sparse->count;
 			cgltf_size values_req_size = sparse->values_byte_offset + element_size * sparse->count;
 

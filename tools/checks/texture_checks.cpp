@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool hugeIndexCount = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -142,7 +142,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     const size_t declared = bin.size();
     const struct { int component; size_t count; const char* type; } acc[9] = {
         { 5126, 4, "VEC3" }, { 5126, 4, "VEC3" }, { 5126, 4, "VEC2" }, { 5121, 4, "VEC4" }, { 5126, 4, "VEC4" },
-        { 5123, 6, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
+        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
     std::string views, accessors;
     for (int i = 0; i < 9; ++i) {
         views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";
@@ -931,6 +931,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(got[0] == 1.f && got[3] == 10.f && got[4] == 11.f && got[5] == 12.f && got[6] == 13.f && got[7] == 14.f && got[8] == 15.f, "R7: sparse values are read tightly packed, not at the interleaved base stride");
             require(sparse(200, validated, got) && validated == cgltf_result_data_too_short, "DEP-01: a sparse index view outside its real buffer is rejected before any read");
         }
+        GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
+        show("GLB whose index count wraps the size check", e);
+        require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-2: an accessor count that wraps the 64-bit size check is rejected instead of read");
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
         manySpec.primitives = 31;
