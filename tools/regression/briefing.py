@@ -42,19 +42,21 @@ def section_branch(repo):
 def section_ledger(results, repo):
     path = os.path.join(results, 'latest.json')
     try:
-        d = json.load(open(path, encoding='utf-8'))
+        d = registry.read_json_object(path)
     except (OSError, ValueError) as error:
         return ['Ledger: no readable results in %s (%s)' % (results, type(error).__name__)]
     counts = {}
-    for e in d.get('entries', []):
-        counts[e.get('state')] = counts.get(e.get('state'), 0) + 1
+    for e in registry.list_of(d.get('entries')):
+        state = registry.dict_of(e).get('state')
+        counts[state] = counts.get(state, 0) + 1
     head = git(repo, 'rev-parse', 'HEAD')
-    recorded = (d.get('identity') or {}).get('gitHead', '')
+    recorded = registry.dict_of(d.get('identity')).get('gitHead', '')
+    recorded = recorded if isinstance(recorded, str) else ''
     same = 'matches the checkout HEAD' if head and head == recorded else 'checkout is at %s (STALE or newer)' % (head[:12] or '?')
-    dirty = (d.get('identity') or {}).get('dirtyTrackedFiles')
+    dirty = registry.dict_of(d.get('identity')).get('dirtyTrackedFiles')
     if dirty:
         same += ' but the tested tree had %s uncommitted tracked files (HEAD alone does not prove the content)' % dirty
-    suite = d.get('suite', {})
+    suite = registry.dict_of(d.get('suite'))
     return ['Ledger (%s, %s): %s | recorded build %s %s | suite %s checks, success=%s' % (
         d.get('createdUtc'), age(path), ', '.join('%s %d' % (k, v) for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))),
         recorded[:12], same, d.get('suiteCheckCount'), suite.get('success'))]
@@ -63,8 +65,10 @@ def section_ledger(results, repo):
 def section_since_ledger(results, repo):
     """Files changed since the recorded run and the check groups worth running first (guide only; the full run is what verifies)."""
     try:
-        recorded = (json.load(open(os.path.join(results, 'latest.json'), encoding='utf-8')).get('identity') or {}).get('gitHead', '')
+        recorded = registry.dict_of(registry.read_json_object(os.path.join(results, 'latest.json')).get('identity')).get('gitHead', '')
     except (OSError, ValueError):
+        return []
+    if not isinstance(recorded, str):
         return []
     head = git(repo, 'rev-parse', 'HEAD')
     if not recorded or not head or recorded == head:
@@ -83,12 +87,15 @@ def section_since_ledger(results, repo):
 def section_tracker(tracker):
     path = os.path.join(tracker, 'AUDIT-TRACKER.json')
     try:
-        items = json.load(open(path, encoding='utf-8'))['items']
+        items = registry.read_json_object(path)['items']
     except (OSError, ValueError, KeyError) as error:
         return ['Audit tracker: unavailable (%s)' % type(error).__name__]
+    if not isinstance(items, list):
+        return ['Audit tracker: unavailable (items is not a list)']
     counts = {}
     for i in items:
-        counts[i.get('state')] = counts.get(i.get('state'), 0) + 1
+        state = registry.dict_of(i).get('state')
+        counts[state] = counts.get(state, 0) + 1
     return ['Audit tracker (%d items, updated %s): %s' % (len(items), age(path), ', '.join('%s %d' % (k, v) for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))))]
 
 

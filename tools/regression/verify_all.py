@@ -93,12 +93,12 @@ def stale_reason(repo, build_dir, targets=('Starlight.NativeCoreChecks',)):
 def suite_failure(results):
     """The ledger can report every tracked fix VERIFIED while the suite itself failed on another check; that is still a failure."""
     try:
-        suite = json.load(open(os.path.join(results, 'latest.json'), encoding='utf-8')).get('suite', {})
+        suite = registry.dict_of(registry.read_json_object(os.path.join(results, 'latest.json')).get('suite'))
     except (OSError, ValueError):
         return 'the ledger wrote no readable latest.json'
     if suite.get('success') is True:
         return None
-    return 'the core suite did not pass: %s' % (suite.get('error') or 'a check failed')[:300]
+    return 'the core suite did not pass: %s' % str(suite.get('error') or 'a check failed')[:300]
 
 
 def plan(args, stamp):
@@ -169,6 +169,18 @@ def self_test():
         check('a passing suite is not a failure', suite_with({'success': True}) is None)
         check('a failed suite is a failure even when the ledger finished', 'did not pass' in (suite_with({'success': False, 'error': 'boom'}) or ''))
         check('a missing latest.json is a failure', suite_failure(os.path.join(folder, 'nowhere')) is not None)
+        import briefing
+        for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}'):
+            open(os.path.join(folder, 'latest.json'), 'w').write(text)
+            open(os.path.join(folder, 'AUDIT-TRACKER.json'), 'w').write(text)
+            try:
+                suite_failure(folder)
+                lines = briefing.section_ledger(folder, folder) + briefing.section_since_ledger(folder, folder) + briefing.section_tracker(folder)
+                survived = all(isinstance(l, str) for l in lines)
+            except Exception as error:
+                survived = False
+                text += ' raised ' + type(error).__name__
+            check('result files holding odd JSON (%s) give a report line, not a traceback' % text[:40], survived)
     check('a step that could not run gives 2', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'denoise', 'outcome': 'NOT RUN'}]) == 2)
 
     class A:
