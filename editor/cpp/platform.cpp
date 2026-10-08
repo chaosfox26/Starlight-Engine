@@ -137,10 +137,24 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
     // path form for our Win32 file calls without depending on machine policy.
     auto p = native_file_path(path);
     fs::create_directories(p.parent_path());
-    Handle lock(CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
-                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr));
-    if (!lock)
-        throw std::runtime_error("File is busy");
+    // A second writer holding the lock is retried briefly (a double save), and any other failure reports its real Windows error instead of "busy".
+    Handle lock;
+    DWORD lockError = ERROR_SUCCESS;
+    for (unsigned attempt = 0; attempt < 51; ++attempt) {
+        lock.value = CreateFileW((p.wstring() + L".lock").c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
+                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+        if (lock)
+            break;
+        lockError = GetLastError();
+        if (lockError != ERROR_SHARING_VIOLATION && lockError != ERROR_LOCK_VIOLATION)
+            break;
+        Sleep(20);
+    }
+    if (!lock) {
+        if (lockError == ERROR_SHARING_VIOLATION || lockError == ERROR_LOCK_VIOLATION)
+            throw std::runtime_error("File is busy");
+        throw std::runtime_error("Cannot lock file for writing (Windows error " + std::to_string(lockError) + ")");
+    }
     if (expected && (!fs::exists(p) || _stricmp(hash_file(p).c_str(), expected->c_str())))
         throw std::runtime_error("File changed; reopen before saving");
     auto temp = fs::path(p.wstring() + L"." + wide(new_id()) + L".tmp");

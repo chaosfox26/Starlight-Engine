@@ -18,4 +18,18 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         bool bystandersKept=true;for(const auto& name:bystanders)bystandersKept=bystandersKept&&fs::exists(dir/name)&&read_file(dir/name)=="not ours";
         require(bystandersKept&&read_file(target)=="version 8","A-06-3: Pruning never touches a file that is not this program's own backup name, and the saved file is intact");
     }
+    {
+        // A-06-10: a failure to take the write lock used to be reported as "File is busy" whatever the cause.
+        const auto contested=dir/"contested.txt";
+        HANDLE holder=CreateFileW((contested.wstring()+L".lock").c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+        bool busy=false;try{atomic_write(contested,"x");}catch(const std::exception& e){busy=std::string(e.what())=="File is busy";}
+        require(holder!=INVALID_HANDLE_VALUE&&busy,"A-06-10: A file held by another writer is still reported as busy");
+        std::thread release([holder]{Sleep(150);CloseHandle(holder);});
+        bool waited=true;try{atomic_write(contested,"second writer");}catch(const std::exception&){waited=false;}
+        release.join();
+        require(waited&&read_file(contested)=="second writer","A-06-10: A writer that finds the lock held for a moment waits and then saves instead of failing");
+        fs::create_directories(dir/"blocked.txt.lock");
+        std::string why;try{atomic_write(dir/"blocked.txt","x");}catch(const std::exception& e){why=e.what();}
+        require(why.find("Windows error")!=std::string::npos&&why.find("busy")==std::string::npos,"A-06-10: A lock that cannot be created for another reason reports the Windows error instead of 'busy'");
+    }
 }
