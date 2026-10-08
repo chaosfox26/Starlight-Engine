@@ -2,11 +2,15 @@
 // Checks for the scene-preparation stage runner (audit CC-10): the worker is always joined, progress is not completion, and a display failure does not end the process.
 static void scene_preparation_checks(const auto& require){
     {
-        std::atomic<bool> returned{false};int ticks=0,ticksAfterFull=0;double last=-1;std::string failure;
-        run_pumped_stage([&](std::atomic<double>& fraction){fraction=1.0;std::this_thread::sleep_for(std::chrono::milliseconds(300));returned=true;},
+        // The work finishes once the pump has served it five times after full progress (a handshake, not a wall-clock budget, so a starved pump thread cannot fail
+        // the check); the limit only stops the work waiting forever when the runner no longer pumps.
+        std::atomic<bool> returned{false};std::atomic<int> ticksAfterFull{0};int ticks=0;double last=-1;std::string failure;
+        run_pumped_stage([&](std::atomic<double>& fraction){fraction=1.0;
+                for(auto limit=std::chrono::steady_clock::now()+std::chrono::seconds(10);ticksAfterFull.load()<5&&std::chrono::steady_clock::now()<limit;)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                returned=true;},
             [&](double fraction){++ticks;last=fraction;if(fraction>=1.0)++ticksAfterFull;},failure);
         require(returned.load()&&failure.empty(),"CC-10: The stage runner returns only after the work has returned, even when the work reports full progress first");
-        require(ticksAfterFull>=5,"CC-10: The loading display keeps being served while work that already reported full progress is still finishing");
+        require(ticksAfterFull.load()>=5,"CC-10: The loading display keeps being served while work that already reported full progress is still finishing");
         require(last>=1.0&&ticks>=6,"CC-10: Progress reaches full only through the stage's own report");
     }
     {
