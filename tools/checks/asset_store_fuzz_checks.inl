@@ -160,6 +160,14 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         cut.resize(100);count(cut);
         cut.resize(3);count(cut);
         require(wrong==0,"Fuzz: terrain payloads with a wrong grid size, absurd volume counts, short or long bodies are refused");
+        // Loading the grids does not range-check them; opening a scene does (TerrainData::validate), so readiness must agree with what opening would do.
+        const auto readyTerrain=[&](const std::string& bytes){return check_asset_ready(EngineAssets::put(AssetKind::Terrain,bytes)).ready;};
+        require(readyTerrain(terrainBytes(n,0,0,1,1,1)),"Fuzz: a sound terrain asset is ready");
+        require(!readyTerrain(terrainBytes(n,nan,0,0,1,0))&&!readyTerrain(terrainBytes(n,1e9,0,0,1,0))&&!readyTerrain(terrainBytes(n,0,9,0,1,0))&&!readyTerrain(terrainBytes(n,0,-1,0,1,0))&&
+                !readyTerrain(terrainBytes(n,0,0,1,nan,1))&&!readyTerrain(terrainBytes(n,0,0,1,100,1)),"Fuzz: a terrain asset with a non-finite or out-of-range height, paint index or cut radius is not reported ready");
+        auto scene=SceneData();scene.Terrain.emplace();auto card=json::parse(scene.encode());
+        card["Terrain"]["Asset"]=EngineAssets::put(AssetKind::Terrain,terrainBytes(n,nan,0,0,1,0));
+        require(refused([&]{(void)SceneData::decode(card.dump());}),"Fuzz: a scene whose terrain asset holds a non-finite height is refused when opened");
     }
 
     // Identifiers that are not exactly <kind>-<64 lowercase hex digits> must never be turned into a file path.
