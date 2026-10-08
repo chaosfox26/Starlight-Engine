@@ -14,6 +14,11 @@ static void only_keys(const json& j, std::initializer_list<const char*> allowed,
         if (!known) throw GrError(std::string("Unknown key '") + it.key() + "' in " + where);
     }
 }
+static bool fits_int(const json& v) {
+    if (!v.is_number_integer()) return false;
+    double d = v.get<double>();
+    return d >= -2147483648.0 && d <= 2147483647.0;
+}
 static std::string str_of(const json& j, const char* key, const char* where, bool required = true) {
     if (!j.contains(key)) {
         if (required) throw GrError(std::string("Missing '") + key + "' in " + where);
@@ -38,7 +43,7 @@ SetManifest parse_manifest(std::string_view text) {
     try { j = json::parse(text); } catch (const std::exception& e) { throw GrError(std::string("Manifest is not valid JSON: ") + e.what()); }
     only_keys(j, {"schema", "set_id", "family", "category", "channel", "version", "components"}, "manifest");
     SetManifest m;
-    if (!j.contains("schema") || !j["schema"].is_number_integer()) throw GrError("Missing 'schema' in manifest");
+    if (!j.contains("schema") || !fits_int(j["schema"])) throw GrError("Missing 'schema' in manifest");
     m.schema = j["schema"].get<int>();
     m.set_id = str_of(j, "set_id", "manifest");
     m.family = str_of(j, "family", "manifest");
@@ -58,7 +63,7 @@ SetManifest parse_manifest(std::string_view text) {
         k.version = str_of(c, "version", "component");
         k.release = str_of(c, "release", "component");
         k.api_family = str_of(c, "api_family", "component");
-        if (!c.contains("api_major") || !c["api_major"].is_number_integer()) throw GrError("Missing 'api_major' in component " + k.id);
+        if (!c.contains("api_major") || !fits_int(c["api_major"])) throw GrError("Missing 'api_major' in component " + k.id);
         k.api_major = c["api_major"].get<int>();
         k.matched_set = str_of(c, "matched_set", "component");
         k.signer = str_of(c, "signer", "component");
