@@ -144,6 +144,7 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
     if (expected && (!fs::exists(p) || _stricmp(hash_file(p).c_str(), expected->c_str())))
         throw std::runtime_error("File changed; reopen before saving");
     auto temp = fs::path(p.wstring() + L"." + wide(new_id()) + L".tmp");
+    std::wstring previous;
     try {
         {
             Handle f(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
@@ -175,12 +176,16 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
             throw std::runtime_error("Cannot commit file (Windows error "+std::to_string(error)+"); original preserved");
         };
         if (fs::exists(p) && backup) {
-            auto previous = p.wstring() + L"." + wide(new_id()) + L".bak";
+            previous = p.wstring() + L"." + wide(new_id()) + L".bak";
             commit([&]{return ReplaceFileW(p.c_str(), temp.c_str(), previous.c_str(), 0, nullptr, nullptr);});
             prune_backups(p);
         } else commit([&]{return MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);});
     } catch (...) {
+        // ReplaceFileW can fail after it has already renamed the old file to the backup name (errors 1176/1177). Put it back so the path is never left empty,
+        // and keep the temporary file (the only copy of the new data) if that is not possible.
         std::error_code ec;
+        if (!previous.empty() && !fs::exists(p, ec) && !ec && !MoveFileExW(previous.c_str(), p.c_str(), MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("Cannot commit file; " + utf8(p.wstring()) + " was moved to " + utf8(previous) + " and the new data is in " + utf8(temp.wstring()));
         fs::remove(temp, ec);
         throw;
     }
