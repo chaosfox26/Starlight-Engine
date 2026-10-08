@@ -161,6 +161,8 @@ class TerrainFlow {
     std::array<double, 2304> water{}, lava{};
     double emitted = 0;
     TerrainFlow(const TerrainData &, const std::vector<LiquidSource> &, std::span<const Character> = {});
+    // The scratch buffers and the background geometry job belong to one flow's state; the default assignment would change that state underneath them (a copy starts without either, see their holders). A flow is replaced, never assigned.
+    TerrainFlow& operator=(const TerrainFlow&)=delete;
     static int index(double x, double z) {
         return std::clamp(int((z + 12) / Cell), 0, N - 1) * N + std::clamp(int((x + 12) / Cell), 0, N - 1);
     }
