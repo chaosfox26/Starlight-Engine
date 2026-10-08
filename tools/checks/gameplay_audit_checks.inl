@@ -31,4 +31,12 @@ static void gameplay_audit_checks(const auto& require){
         auto path=trace_lightning(bolt,storm,0);
         require(path.size()==3&&path[0].hit==first.Id&&path[1].hit==second.Id&&path[2].hit==third.Id,"08#4: Lightning chains to the nearest reachable body on each hop and reaches the one behind it afterwards");
     }
+    {
+        // GAME-1: without collision a Launch must still end.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);
+        p.apply_control(ControlEffect::Launch,{1,true},true,false,{0,1.7,-3});
+        for(int i=0;i<720;++i)p.move(0,0,1./120.);
+        require(!p.crowd_control().active,"GAME-1: A launch on a player in a no-collision scene ends instead of freezing the player");
+    }
 }
