@@ -20,6 +20,10 @@ __declspec(noinline) static void terrain_destruction_checks(const auto& require,
     require(!damage.damage(protectedTerrain,{0,.04,0},{0,1,0},1e9)&&json(protectedTerrain).dump()==protectedSaved,"Explicit permanent terrain rejects damage without altering its volume or paint");
     for(auto amount:std::array<double,4>{0.,-1.,NAN,INFINITY})require(!damage.damage(terrain,{0,.04,0},{0,1,0},amount),"Invalid terrain damage cannot create carving operations");
     require(!damage.damage(terrain,{NAN,0,0},{0,1,0},20)&&!damage.damage(terrain,{13,0,0},{0,1,0},20)&&!damage.damage(terrain,{0,0,0},{},20),"Invalid, out-of-domain and normal-less terrain contacts are ignored");
+    {   // TERR-1: a hit just inside the +/-12 domain must not push its hole centre past the edge, where validate() would stop the game.
+        auto edge=*level->Terrain;TerrainDestruction edgeDamage;bool carved=edgeDamage.damage(edge,{11.95,0,11.95},{-.5,.7,-.5},20);bool valid=true;try{edge.validate();terrain_volume_geometry(edge);}catch(...){valid=false;}
+        require(carved&&edge.Volumes.size()==1&&valid&&std::abs(edge.Volumes[0].X)<=12&&std::abs(edge.Volumes[0].Z)<=12,"TERR-1: A hit next to the terrain edge still carves, with its hole centre kept inside the domain");
+    }
     auto resetTerrain=*level->Terrain;damage.reset();require(!damage.damage(resetTerrain,{0,.04,0},{0,1,0},10),"Fresh terrain starts with undamaged local durability");damage.reset();require(!damage.damage(resetTerrain,{0,.04,0},{0,1,0},10),"Reset clears partial local terrain damage as well as visible carving");
     // Volume collision replaces the old phantom heightfield inside caves.
     auto cave=std::make_unique<TerrainData>();std::fill(cave->Heights.begin(),cave->Heights.end(),2.);cave->Volumes.push_back({0,-1,0,2,true});

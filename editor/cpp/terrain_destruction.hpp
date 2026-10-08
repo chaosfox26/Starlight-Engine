@@ -16,7 +16,7 @@ public:
         if(!terrain.Breakable||!std::isfinite(amount)||amount<=0||!std::isfinite(point.x)||!std::isfinite(point.y)||!std::isfinite(point.z)||!std::isfinite(normal.x)||!std::isfinite(normal.y)||!std::isfinite(normal.z)||normal.length()<.5||std::abs(point.x)>=12||std::abs(point.z)>=12||std::abs(point.y)>20)return false;
         terrain.validate();
         normal=normal.unit();double radius=terrain.DestructionRadius;
-        auto center=point-normal*(radius*.3);
+        auto center=point-normal*(radius*.3);center.x=std::clamp(center.x,-12.,12.);center.z=std::clamp(center.z,-12.,12.);
         if(std::abs(center.y)>20||terrain.density_at(center.x,center.y,center.z)>radius*.5)return false;
         if(terrain.Volumes.size()>=128){if(!capped_){capped_=true;std::fprintf(stderr,"terrain destruction: the terrain already holds 128 holes, so further hits no longer carve it\n");}return false;}
         auto cell=std::array{int(std::floor(point.x*2)),int(std::floor(point.y*2)),int(std::floor(point.z*2))};
