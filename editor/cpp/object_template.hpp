@@ -12,8 +12,8 @@ std::vector<Character> decode_object_group(std::string_view);
 void save_object_group(const std::vector<Character>&, const fs::path&);
 std::vector<Character> load_object_group(const fs::path&);
 void renew_object_ids(std::vector<Character>&);
-// Names of the gameplay rules whose subject or open-door target is one of these object ids: deleting the objects leaves those rules pointing at nothing.
-std::vector<std::string> rules_naming_objects(const SceneData&, const std::unordered_set<std::string>& ids);
+// Names of the gameplay rules whose subject or open-door target is one of the removed objects (by id), or whose item-collected subject is the key of a removed key object that no remaining object also carries: deleting the objects leaves those rules pointing at nothing. The scene is the one after the removal.
+std::vector<std::string> rules_naming_objects(const SceneData&, const std::vector<Character>& removed);
 void place_object_group(std::vector<Character>&, SceneData&, double x, double z,
                         bool grid = false, bool objects = false, bool ground = false,double gridStep=.5);
 }

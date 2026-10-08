@@ -376,8 +376,8 @@ json apply_commands(const fs::path &file) {
         } else if (kind == "remove") {
             keys(op, {"op", "id"});
             auto index = &c - scene.Characters.data();
-            auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
-            for (auto &name : rules_naming_objects(scene, {removedId})) if (std::find(staleRules.begin(), staleRules.end(), name) == staleRules.end()) staleRules.push_back(std::move(name));
+            auto removed=std::vector<Character>{c};auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
+            for (auto &name : rules_naming_objects(scene, removed)) if (std::find(staleRules.begin(), staleRules.end(), name) == staleRules.end()) staleRules.push_back(std::move(name));
             for(auto& object:scene.Characters)if(object.JointTargetId==removedId){object.JointKind=0;object.JointTargetId.clear();}for(auto& object:scene.Characters)if(object.LightningTargetId==removedId)object.LightningTargetId.clear();
         } else
             throw std::runtime_error("Unsupported editor operation: " + kind);

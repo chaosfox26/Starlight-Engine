@@ -2711,7 +2711,7 @@ struct Editor {
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
-            if (auto stale = rules_naming_objects(scene, ids); !stale.empty()) {
+            if (auto stale = rules_naming_objects(scene, removed); !stale.empty()) {
                 std::string list;
                 for (size_t i = 0; i < stale.size() && i < 3; ++i) list += (i ? ", " : "") + stale[i];
                 if (stale.size() > 3) list += ", and " + std::to_string(stale.size() - 3) + " more";
@@ -2732,6 +2732,8 @@ struct Editor {
                 edit([&] {
                     selected = int(scene.Characters.size()); selectionIds.clear();
                     for (auto &copy : copies) { selectionIds.insert(copy.Id); scene.Characters.push_back(std::move(copy)); }
+            std::vector<Character> removed;
+            for (const auto &object : scene.Characters) if (ids.contains(object.Id)) removed.push_back(object);
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
         } else if (id == Frame) {
