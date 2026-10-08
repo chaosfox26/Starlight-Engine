@@ -105,6 +105,11 @@ static void decode_fuzz_checks(const auto& require, const fs::path& folder) {
                 wrapped |= !refuses([&] { SceneData::decode(bad.dump()); });
             }
         require(!wrapped, "Decode fuzz: an object setting that is not a 32-bit whole number is refused instead of wrapping or truncating");
+        Character one = fighter, other = fighter;
+        one.Id = "twin"; other.Id = "other"; other.Dynamic = true; other.JointKind = 3; other.JointTargetId = "twin";
+        json group = json::parse(encode_object_group({one, other}));
+        group["Objects"].push_back(group["Objects"][0]);
+        require(refuses([&] { decode_object_group(group.dump()); }), "Decode fuzz: a reusable group that repeats an object identity is refused instead of linking joints to the later copy");
     }
     std::vector<std::string> problems;
     size_t refused = 0, accepted = 0;

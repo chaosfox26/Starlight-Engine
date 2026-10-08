@@ -77,7 +77,7 @@ std::vector<Character> decode_object_group(std::string_view bytes) {
         throw std::runtime_error("Reusable groups require between 1 and 4096 objects");
     std::vector<Character> result;
     std::unordered_map<std::string,std::string> ids;
-    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty())ids[old]=decoded.Id;result.push_back(std::move(decoded));}
+    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty()&&!ids.emplace(old,decoded.Id).second)throw std::runtime_error("Reusable group repeats an object identity");result.push_back(std::move(decoded));}
     for(auto& object:result)if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Reusable group lightning target is missing");object.LightningTargetId=target->second;}
 
     for(auto& object:result)if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Reusable group joint target is missing");object.JointTargetId=target->second;}
