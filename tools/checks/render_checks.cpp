@@ -75,6 +75,8 @@ extern "C" __declspec(dllimport) int sl_motion_readback(void*,double*);
 #include "../../deep/engine/surface_texture_data.h"
 #include "../audit/visible_resolution.hpp"
 using json = nlohmann::json;
+// Assertion failures in the VALIDATE_* blocks use this type so they exit 15 (a real defect), never 11 (an environment precondition).
+struct ValidationFailure : std::runtime_error { using std::runtime_error::runtime_error; };
 #include "grass_gpu_checks.inl"
 #include "night_sky_checks.inl"
 static bool interactive = false, userStarted = false, userClosed = false;
@@ -282,12 +284,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       for(int count:{1,32,31,8,1,0,32,0,1}){
         if(!sl_environment_lights(context,count?lamps.data():nullptr,count)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
         uint64_t state[6]{};sl_local_shadow_stats(context,state);
-        if(state[2]<uint64_t(count)||(!count&&(state[2]!=0||state[1]!=65536))||(count&&state[3]==0))throw std::runtime_error("Changing light counts did not retain and release shadow resources correctly: count="+std::to_string(count)+" capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1])+" draws="+std::to_string(state[3]));
+        if(state[2]<uint64_t(count)||(!count&&(state[2]!=0||state[1]!=65536))||(count&&state[3]==0))throw ValidationFailure("Changing light counts did not retain and release shadow resources correctly: count="+std::to_string(count)+" capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1])+" draws="+std::to_string(state[3]));
       }
       uint64_t before[6]{},after[6]{};sl_local_shadow_stats(context,before);
-      if(sl_environment_lights(context,lamps.data(),33))throw std::runtime_error("Invalid local light count accepted");
+      if(sl_environment_lights(context,lamps.data(),33))throw ValidationFailure("Invalid local light count accepted");
       if(!sl_frame(context,0,13))throw std::runtime_error(sl_error());sl_local_shadow_stats(context,after);
-      if(!std::equal(before,before+6,after))throw std::runtime_error("Invalid light update changed active shadows");
+      if(!std::equal(before,before+6,after))throw ValidationFailure("Invalid light update changed active shadows");
       if(!sl_scene(context,bytes.data(),int(bytes.size())))throw std::runtime_error(sl_error());
     }
     bool shadowSettingsValidated=GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_SHADOW_SETTINGS",nullptr,0)>0;
@@ -296,12 +298,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       for(int quality:{1,2,3,0}){
         if(!sl_shadow_settings(context,quality)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
         uint64_t sun[4]{},local[6]{};sl_sun_shadow_stats(context,sun);sl_local_shadow_stats(context,local);sunBytes[quality]=sun[1];localBytes[quality]=local[1];
-        if(sun[0]!=uint64_t(!quality?1:quality==1?1024:quality==3?4096:2048)||local[0]!=uint64_t(quality==1?256:quality==3?1024:512)||sun[3]!=uint64_t(quality>0)||local[5]!=uint64_t(quality>0))throw std::runtime_error("Shadow quality did not set expected resources");
+        if(sun[0]!=uint64_t(!quality?1:quality==1?1024:quality==3?4096:2048)||local[0]!=uint64_t(quality==1?256:quality==3?1024:512)||sun[3]!=uint64_t(quality>0)||local[5]!=uint64_t(quality>0))throw ValidationFailure("Shadow quality did not set expected resources");
       }
-      if(!(sunBytes[0]<sunBytes[1]&&sunBytes[1]<sunBytes[2]&&sunBytes[2]<sunBytes[3]&&localBytes[0]<localBytes[1]&&localBytes[1]<localBytes[2]&&localBytes[2]<localBytes[3]))throw std::runtime_error("Shadow presets did not scale memory");
+      if(!(sunBytes[0]<sunBytes[1]&&sunBytes[1]<sunBytes[2]&&sunBytes[2]<sunBytes[3]&&localBytes[0]<localBytes[1]&&localBytes[1]<localBytes[2]&&localBytes[2]<localBytes[3]))throw ValidationFailure("Shadow presets did not scale memory");
       uint64_t before[6]{},after[6]{};sl_local_shadow_stats(context,before);
-      if(sl_shadow_settings(context,-1)||sl_shadow_settings(context,4))throw std::runtime_error("Invalid shadow quality accepted");
-      sl_local_shadow_stats(context,after);if(!std::equal(before,before+6,after))throw std::runtime_error("Invalid shadow quality changed resources");
+      if(sl_shadow_settings(context,-1)||sl_shadow_settings(context,4))throw ValidationFailure("Invalid shadow quality accepted");
+      sl_local_shadow_stats(context,after);if(!std::equal(before,before+6,after))throw ValidationFailure("Invalid shadow quality changed resources");
       if(!sl_shadow_settings(context,2))throw std::runtime_error(sl_error());
     }
     bool glowSettingsValidated=GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_GLOW_SETTINGS",nullptr,0)>0;
@@ -519,6 +521,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                     denoiser == 0 ? "native-wavelet" : "ray-reconstruction"},
                    {"frozenSnapshot", !animated}},
                   0);
+  } catch (const ValidationFailure &e) {
+    return finish({{"error", e.what()}}, 15);
   } catch (const std::exception &e) {
     return finish({{"error", e.what()}}, 11);
   }
