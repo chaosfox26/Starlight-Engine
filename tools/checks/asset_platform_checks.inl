@@ -43,4 +43,15 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         bool survives=true;try{EngineAssets::verify_on_disk(id);}catch(const std::exception&){survives=false;}
         require(survives,"A-06-1: The stored asset is still readable after the search folder is gone");
     }
+    {
+        // A-06-4: a file that is a symlink (or any file with a reparse attribute) was dropped from the asset browser without a trace.
+        const auto scan=dir/"scan";fs::create_directories(scan/"real");
+        atomic_write(scan/"real"/"model.glb","x");
+        std::error_code linked;fs::create_symlink(scan/"real"/"model.glb",scan/"linked.glb",linked);
+        if(!linked){
+            const auto found=scan_asset_library(scan);bool seen=false;
+            for(const auto& entry:found.entries)seen=seen||entry.path.filename()==L"linked.glb";
+            require(seen&&found.entries.size()==2,"A-06-4: A model that is a symlink appears in the asset browser");
+        } else require(true,"A-06-4: Symlinks cannot be created in this session, so the symlink listing was not exercised");
+    }
 }
