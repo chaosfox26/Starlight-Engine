@@ -29,6 +29,67 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(notBelowStill,"07#1: A wave trough never takes the liquid top below the still level, so objects stay in the wet-object filter");
         require(trough,"07#1: The rippled lake has troughs where the drawn surface is below the still level and the filter still uses the still level");
     }
+    {   // 07#3: a triangle is registered only in the cells its x/z projection meets, and every query answers as if its whole bounding box were registered.
+        constexpr int G=FlowObstacleMask::GeometryN;
+        auto cellOf=[](double v){return std::clamp(int(std::floor((v+12)*G/24)),0,G-1);};
+        auto registrations=[](const FlowObstacleMask& m){size_t n=0;for(const auto& c:m.triangleCells)n+=c.size();return n;};
+        auto boxed=[&](const FlowObstacleMask& source){ // the previous scheme: every cell of the bounding box
+            FlowObstacleMask wide=source;for(auto& c:wide.triangleCells)c.clear();
+            for(unsigned id=0;id<wide.triangles.size();++id){const auto& t=wide.triangles[id];for(int z=cellOf(t.boundsLow.z);z<=cellOf(t.boundsHigh.z);++z)for(int x=cellOf(t.boundsLow.x);x<=cellOf(t.boundsHigh.x);++x)wide.triangleCells[size_t(z)*G+x].push_back(id);}
+            wide.finish();return wide;
+        };
+        uint32_t seed=97531u;auto random=[&]{seed=seed*1664525u+1013904223u;return double(seed>>8)/double(1<<24);};
+        {   // one long diagonal triangle no longer fills its 24 m x 24 m bounding box
+            Mesh sliver;sliver.vertices.resize(3);sliver.vertices[0].position={-12,0,-12};sliver.vertices[1].position={12,0,12};sliver.vertices[2].position={12,1,11.9};sliver.indices={0,1,2};
+            FlowObstacleMask diagonal;diagonal.add(sliver,Character{});diagonal.finish();
+            require(diagonal.triangles.size()==1&&diagonal.triangles[0].c.z==11.9&&registrations(boxed(diagonal))==size_t(G)*G,"07#3: The diagonal test triangle spans the whole domain");
+            require(registrations(diagonal)<2500&&registrations(diagonal)>=size_t(G),"07#3: A long diagonal triangle is registered in a thin band of cells, not in its whole bounding box");
+            bool covered=true;const auto& t=diagonal.triangles[0];
+            for(int k=0;k<4000;++k){double u=random(),v=random();if(u+v>1){u=1-u;v=1-v;}const Vec3 p=t.a*(1-u-v)+t.b*u+t.c*v;const auto& list=diagonal.triangleCells[size_t(cellOf(p.z))*G+cellOf(p.x)];covered&=std::find(list.begin(),list.end(),0u)!=list.end();}
+            require(covered,"07#3: Every point of the triangle's projection lies in a cell that lists it");
+        }
+        std::vector<Character> solids;
+        for(int i=0;i<16;++i){
+            Character c;c.Id="solid-"+std::to_string(i);c.Shape=i%3==0?"chaos-rock":"cube";c.KeepAboveFloor=false;
+            c.X=-13+26*random();c.Y=2*random();c.Z=-13+26*random();c.Size=1;
+            c.Width=i%4==1?.2+9*random():.3+2*random();c.Height=.1+2*random();c.Depth=i%4==2?.2+9*random():.3+2*random(); // some long and thin
+            c.RotationY=360*random();if(i%4==3){c.RotationX=40*random();c.RotationZ=40*random();}
+            solids.push_back(c);
+        }
+        FlowObstacleMask fresh;for(const auto& c:solids)fresh.add(object_mesh(c),c);fresh.finish();
+        const FlowObstacleMask wide=boxed(fresh);
+        require(registrations(fresh)<registrations(wide),"07#3: The scene's solids need fewer registrations than their bounding boxes");
+        bool depth=true,capped=true,triangles=true,reference=true,emptyRegions=true,clearRegions=true;size_t blocked=0,close=0;
+        for(int k=0;k<6000;++k){
+            const Character& around=solids[size_t(random()*solids.size())%solids.size()];
+            const double spread=.5+std::max({around.Width,around.Depth})*.7;
+            const Vec3 p{around.X+(random()*2-1)*spread,around.Y+(random()*2-1)*(1+around.Height),around.Z+(random()*2-1)*spread};
+            const double a=fresh.clearance_layer(p),b=wide.clearance_layer(p);
+            depth&=std::isfinite(a)==std::isfinite(b)&&(!std::isfinite(a)||std::abs(a-b)<1e-9);
+            const double ca=fresh.clearance_capped_layer(p,.05),cb=wide.clearance_capped_layer(p,.05);
+            capped&=(ca<.05||cb<.05)?std::abs(ca-cb)<1e-9:true;
+            if(std::isfinite(a)&&a<0)++close;
+            const double edge=.05+.5*random();
+            const Vec3 q=p+Vec3{(random()*2-1)*edge,(random()*2-1)*edge*.3,(random()*2-1)*edge},r=p+Vec3{(random()*2-1)*edge,(random()*2-1)*edge*.3,(random()*2-1)*edge};
+            const bool freshClear=fresh.clear_triangle_layer(p,q,r);if(!freshClear)++blocked;
+            triangles&=freshClear==wide.clear_triangle_layer(p,q,r);
+            reference&=fresh.clear_triangle_reference_layer(p,q,r)==wide.clear_triangle_reference_layer(p,q,r)&&freshClear==fresh.clear_triangle_reference_layer(p,q,r);
+            const double xLow=std::min({p.x,q.x,r.x}),xHigh=std::max({p.x,q.x,r.x}),zLow=std::min({p.z,q.z,r.z}),zHigh=std::max({p.z,q.z,r.z}),yLow=std::min({p.y,q.y,r.y}),yHigh=std::max({p.y,q.y,r.y});
+            emptyRegions&=!wide.region_empty_layer(xLow,xHigh,zLow,zHigh)||fresh.region_empty_layer(xLow,xHigh,zLow,zHigh);
+            if(fresh.region_clear_layer(xLow,xHigh,zLow,zHigh,yLow,yHigh,.05))clearRegions&=wide.clear_triangle_layer(p,q,r)&&wide.clearance_capped_layer((p+q+r)/3,.05)>=.05&&wide.clearance_capped_layer(p,.05)>=.05;
+        }
+        require(close>50&&blocked>50,"07#3: The probes include points inside solids and triangles that touch them");
+        require(depth,"07#3: Column clearance is unchanged by registering only the cells a triangle meets");
+        require(capped,"07#3: Capped clearance is unchanged wherever it is below the cap");
+        require(triangles&&reference,"07#3: Triangle clearance, indexed and exhaustive, is unchanged");
+        require(emptyRegions&&clearRegions,"07#3: The empty-region and clear-region shortcuts only skip probes that find nothing in the box-registered layer either");
+        // Taking objects back out (truncate) walks the same cells it was registered in.
+        FlowObstacleMask grown;for(size_t i=0;i<6;++i)grown.add(object_mesh(solids[i]),solids[i]);grown.finish();
+        const auto mark=grown.mark();const auto expected=grown.triangleCells;
+        for(size_t i=6;i<12;++i)grown.add(object_mesh(solids[i]),solids[i]);
+        grown.truncate(mark);
+        require(grown.triangleCells==expected&&grown.triangles.size()==mark.triangleCount,"07#3: Truncating a layer removes exactly the registrations of the triangles it drops");
+    }
     {   // 07#5: editing a layer that another holder shares must not change what that holder sees.
         auto make=[](double x){Character c;c.Id="shared-rock";c.Shape="chaos-rock";c.X=x;c.Y=.5;c.Width=c.Height=c.Depth=c.Size=1.2;auto layer=std::make_shared<FlowObstacleMask>();layer->add(object_mesh(c),c);layer->finish();return std::shared_ptr<const FlowObstacleMask>(layer);};
         auto alone=make(1);const FlowObstacleMask* addressBefore=alone.get();

@@ -13,6 +13,7 @@ struct FlowObstacleMask {
     // Vertical extent of every triangle registered in a cell (valid when geometryRevision != 0): lets a query skip a
     // cell whose triangles all lie above or below it, which the per-triangle box test would reject one by one.
     std::vector<double> cellLowY,cellHighY;
+    // Each triangle is listed in the cells its x/z projection (grown by the query tolerances) meets, not in its whole bounding box.
     std::vector<std::vector<unsigned>> triangleCells=std::vector<std::vector<unsigned>>(GeometryN*GeometryN);
     unsigned objectCount=0;
     double clearance(const Vec3&) const;
@@ -51,7 +52,7 @@ struct FlowObstacleMask {
     std::vector<int> occupancy;
     // Compact, cache-friendly copy of every cell registration (same order as triangleCells), built by finish(): conservative
     // extents let a column or triangle query reject most registrations without touching the 128-byte triangle record.
-    struct CellEntry { float yLow,yHigh; uint16_t cellX,cellZ; }; // outward-rounded vertical extent and first registered cell
+    struct CellEntry { float yLow,yHigh; }; // outward-rounded vertical extent
     std::vector<CellEntry> cellEntries;
     // One 64-bit mask per registration (same order as cellEntries): bit (z*8+x) is set when the triangle's padded x/z box
     // can contain a point of that 1/8th-cell block. A column query tests one bit instead of four box comparisons.
