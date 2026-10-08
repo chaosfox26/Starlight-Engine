@@ -54,7 +54,7 @@ static json inspect(const fs::path& requestedRoot,const json& manifest) {
             std::ifstream f(p,std::ios::binary);if(!f)throw std::runtime_error("Cannot read executable");
             std::string b(4096,'\0');f.read(b.data(),b.size());b.resize(size_t(f.gcount()));
             if(b.starts_with("MZ"))try {
-                auto pe=integer(b,0x3c,4);if(pe>b.size() || b.substr(pe,4)!=std::string("PE\0\0",4))continue;
+                auto pe=integer(b,0x3c,4);if(pe>b.size() || b.substr(pe,4)!=std::string("PE\0\0",4))throw std::runtime_error("PE header outside the inspected window or with a wrong signature");
                 auto opt=size_t(pe)+24;auto magic=integer(b,opt,2);
                 if(magic!=0x20b && magic!=0x10b)throw std::runtime_error("Unsupported PE header");
                 auto dirs=opt+(magic==0x20b?112:96);
@@ -85,6 +85,8 @@ static void selfTest() {
     write(archive,b+"changed");require(inspect(root,manifest).at("violations").size()==1,"Changed reference incorrectly exempted");write(archive,b);
     write(source,"class Unexpected {}");require(inspect(root,manifest).at("violations").size()==1,"Archived source incorrectly exempted");fs::remove(source);
     write(active,"MZbroken");require(inspect(root,manifest).at("violations").size()==1,"Broken executable silently accepted");fs::remove(active);
+    {std::string late(9000,'\0');late.replace(0,2,"MZ");late[0x3c]=0x00;late[0x3d]=0x20;write(active,late);require(inspect(root,manifest).at("violations").size()==1,"PE header beyond the read window silently accepted");fs::remove(active);}
+    {auto wrong=b;wrong[0x80]='X';write(active,wrong);require(inspect(root,manifest).at("violations").size()==1,"PE image with a wrong signature silently accepted");fs::remove(active);}
     auto unicode=root/L"\u2605.txt",unicodeSource=root/L"\u2605.cs";
     write(unicode,"Plain Unicode-named file");
     auto unicodePlain=inspect(root,manifest);
