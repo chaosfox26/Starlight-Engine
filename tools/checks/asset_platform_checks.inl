@@ -32,4 +32,15 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         std::string why;try{atomic_write(dir/"blocked.txt","x");}catch(const std::exception& e){why=e.what();}
         require(why.find("Windows error")!=std::string::npos&&why.find("busy")==std::string::npos,"A-06-10: A lock that cannot be created for another reason reports the Windows error instead of 'busy'");
     }
+    {
+        // A-06-1: put() used to count a copy found only in a bundle or search folder as stored, so a saved scene could depend on a folder that later disappears.
+        const std::string payload="asset platform check: terrain payload that lives in a search folder";std::string id;
+        {EngineAssets::ScopedRoot source(dir/"put-source");id=EngineAssets::put(AssetKind::Terrain,payload);}
+        EngineAssets::ScopedRoot home(dir/"put-home");EngineAssets::add_search_root(dir/"put-source");
+        require(!fs::exists(EngineAssets::file_for(id)),"A-06-1: The check starts with the asset only in the search folder");
+        require(EngineAssets::put(AssetKind::Terrain,payload)==id&&fs::is_regular_file(EngineAssets::file_for(id)),"A-06-1: Storing an asset that exists only in a search folder copies it into the library");
+        fs::remove_all(dir/"put-source");EngineAssets::drop_memory_cache();
+        bool survives=true;try{EngineAssets::verify_on_disk(id);}catch(const std::exception&){survives=false;}
+        require(survives,"A-06-1: The stored asset is still readable after the search folder is gone");
+    }
 }

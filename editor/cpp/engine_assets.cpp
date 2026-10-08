@@ -696,8 +696,11 @@ std::string EngineAssets::put(AssetKind kind, std::string_view payload) {
         if (roots().persisted.contains(id)) { memory().add(id, std::make_shared<const std::string>(payload)); return id; }
     }
     bool valid = false;
-    if (auto existing = locate(id); !existing.empty()) {
-        try { read_verified(kind, id, existing); valid = true; } catch (const AssetMissing&) {}
+    std::error_code error;
+    for (const auto& candidate : candidate_files(id)) {
+        if (!fs::is_regular_file(candidate.path, error)) continue;
+        // A copy found only in a bundle, shipped or search folder is not stored: that folder may be a USB stick or a temporary export, so the library keeps its own.
+        try { read_verified(kind, id, candidate.path); valid = candidate.durable; break; } catch (const AssetMissing&) {}
     }
     if (!valid) {
         std::string file;
