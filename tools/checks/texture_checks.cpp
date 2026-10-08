@@ -433,6 +433,33 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(e.code == LoadCode::Truncated && e.message.find("cannot hold") != std::string::npos, "a header declaring about 1 GB of pixels over a tiny stream is rejected by the size check, before any buffer is allocated");
             require(verdict(build({ { "IHDR", ihdrOf(16384, 16384, 8, 6) }, { "IDAT", zlibZeros(1000) }, { "IEND", {} } }), "over-cap").code == LoadCode::TooLarge, "a header whose pixel stream exceeds 1 GiB is rejected as too large");
             require(verdict(build({ { "IHDR", ihdrOf(70000, 70000, 8, 0) }, { "IDAT", zlibZeros(1000) }, { "IEND", {} } }), "over-side").code == LoadCode::TooLarge, "a header with a side above 16384 is rejected as too large");
+            {
+                auto emptyBlocks = [](uint32_t count, bool fixed) {
+                    Bytes out; uint32_t acc = 0; int used = 0;
+                    auto bits = [&](uint32_t v, int n) { for (int i = 0; i < n; ++i) { acc |= ((v >> i) & 1u) << used; if (++used == 8) { out.push_back(uint8_t(acc)); acc = 0; used = 0; } } };
+                    auto code = [&](uint32_t v, int len) { for (int i = len - 1; i >= 0; --i) bits(v >> i, 1); };
+                    for (uint32_t b = 0; b < count && fixed; ++b) { bits(0, 1); bits(1, 2); code(0, 7); }
+                    for (uint32_t b = 0; b < count && !fixed; ++b) {
+                        bits(0, 1); bits(2, 2); bits(0, 5); bits(0, 5); bits(15, 4);
+                        for (int k = 0; k < 19; ++k) bits(k == 2 || k == 18 ? 1 : 0, 3);
+                        code(1, 1); bits(127, 7); code(1, 1); bits(107, 7); code(0, 1); code(0, 1); code(0, 15);
+                    }
+                    bits(1, 1); bits(1, 2); code(0x30, 8); code(0x30, 8); code(0, 7);
+                    if (used) out.push_back(uint8_t(acc));
+                    Bytes z{ 0x78, 0x01 }; z.insert(z.end(), out.begin(), out.end()); putBE(z, 0x00020001u);
+                    return z;
+                };
+                for (const bool fixed : { false, true })
+                    for (uint32_t count : { 1u, 1000u, 200000u }) {
+                        const auto z = emptyBlocks(count, fixed);
+                        const auto start = std::chrono::steady_clock::now();
+                        const auto e = verdict(build({ { "IHDR", ihdrOf(1, 1, 8, 0) }, { "IDAT", z }, { "IEND", {} } }), "empty-blocks");
+                        std::cout << "  " << count << " empty " << (fixed ? "fixed" : "dynamic") << " blocks (" << z.size() << " bytes): " << model::loadCodeName(e.code) << " in " << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms\n";
+                        const bool flood = !fixed && count > 1;
+                        require(flood ? e.failed() && e.message.find("table building") != std::string::npos : e.ok(),
+                                flood ? "a zlib stream of thousands of empty blocks that each build maximum-size Huffman tables is rejected instead of burning CPU" : "a short zlib stream of empty blocks, or any number of empty fixed-code blocks, is still accepted");
+                    }
+            }
             require(verdict(build({ { "IHDR", ihdrOf(0, 4, 8, 0) }, { "IDAT", zlibZeros(5) }, { "IEND", {} } }), "zero-side").failed(), "a zero-sized image is rejected");
         }
         {

@@ -218,9 +218,25 @@ struct Huffman {
     }
 };
 
+struct FixedTables {
+    Huffman lit, dist;
+    FixedTables() {
+        uint8_t lengths[288];
+        for (int i = 0; i < 144; ++i) lengths[i] = 8;
+        for (int i = 144; i < 256; ++i) lengths[i] = 9;
+        for (int i = 256; i < 280; ++i) lengths[i] = 7;
+        for (int i = 280; i < 288; ++i) lengths[i] = 8;
+        lit.build(lengths, 288);
+        uint8_t fixedDist[30];
+        for (auto& d : fixedDist) d = 5;
+        dist.build(fixedDist, 30);
+    }
+};
+
 struct Inflater {
     const uint8_t* in = nullptr;
     size_t inSize = 0, inPos = 0;
+    uint64_t tableWork = 0, tableLimit = UINT64_MAX;   // Huffman table entries built so far, and the most the stream's size can justify (real encoders stay under 2 per input byte).
     uint64_t buffer = 0;
     int have = 0;
     uint8_t* out = nullptr;
@@ -296,17 +312,13 @@ struct Inflater {
                 inPos += len; outPos += len;
             } else if (type == 1 || type == 2) {
                 Huffman lit, dist;
-                uint8_t lengths[320]{};
+                const Huffman* useLit = &lit;
+                const Huffman* useDist = &dist;
                 if (type == 1) {
-                    for (int i = 0; i < 144; ++i) lengths[i] = 8;
-                    for (int i = 144; i < 256; ++i) lengths[i] = 9;
-                    for (int i = 256; i < 280; ++i) lengths[i] = 7;
-                    for (int i = 280; i < 288; ++i) lengths[i] = 8;
-                    lit.build(lengths, 288);
-                    uint8_t fixedDist[30];
-                    for (auto& d : fixedDist) d = 5;
-                    dist.build(fixedDist, 30);
+                    static const FixedTables fixed;
+                    useLit = &fixed.lit; useDist = &fixed.dist;
                 } else {
+                    uint8_t lengths[320]{};
                     uint32_t nlit, ndist, ncode;
                     if (!take(5, nlit) || !take(5, ndist) || !take(4, ncode)) return false;
                     nlit += 257; ndist += 1; ncode += 4;
@@ -333,8 +345,10 @@ struct Inflater {
                     }
                     if (!lengths[256]) { failure = "block has no end-of-block code"; return false; }
                     if (!lit.build(lengths, int(nlit)) || !dist.build(lengths + nlit, int(ndist))) { failure = "invalid Huffman table"; return false; }
+                    tableWork += lenCode.table.size() + lit.table.size() + dist.table.size();
+                    if (tableWork > tableLimit) { failure = "the block headers need far more table building than the data size can justify"; return false; }
                 }
-                if (!codes(lit, dist)) return false;
+                if (!codes(*useLit, *useDist)) return false;
             } else { failure = "invalid block type"; return false; }
             if (last) return true;
         }
@@ -376,6 +390,7 @@ LoadError VerifyPngPixelStream(ByteView b, const PngInfo& info, const std::strin
     std::unique_ptr<uint8_t[]> raw(new uint8_t[size_t(expected)]);
     Inflater z;
     z.in = joined.data() + 2; z.inSize = joined.size() - 2; z.out = raw.get(); z.outCap = size_t(expected);
+    z.tableLimit = (uint64_t(1) << 20) + 32 * uint64_t(z.inSize);
     if (!z.run())
         return makeLoadError(LoadCode::DecodeFailed, label, "PNG image data does not decompress: " + z.failure);
     if (z.outPos != expected)
