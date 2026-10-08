@@ -13,4 +13,13 @@ static void gameplay_audit_checks(const auto& require){
         AdventurePlayer p;p.start(level);
         require(p.camera_eye().z<2,"08#1: A solid wall behind the player still stops the camera boom");
     }
+    {
+        // 08#5: tab-targeting measures a routed breakable where it is now, not where it started.
+        SceneData level;level.Game.emplace();level.Game->SpawnZ=0;
+        Character platform;platform.Shape="cube";platform.Breakable=true;platform.Z=-100;platform.Speed=50;platform.Route={{0,-4}};level.Characters={platform};
+        AdventurePlayer p;p.start(level);
+        for(int i=0;i<240;++i)p.move(0,0,1./120.);
+        p.select_target();
+        require(p.selected_target()==platform.Id,"08#5: A breakable that has moved along its route into view is selected from its current position");
+    }
 }

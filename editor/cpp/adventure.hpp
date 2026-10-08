@@ -575,7 +575,7 @@ class AdventurePlayer {
     void select_target(){
         std::vector<std::pair<double,std::string>> targets;
         for(const auto& c:playScene_.Characters)if((combatActors_.contains(c.Id) ? combatActors_.at(c.Id).hostile_to(1) : c.Breakable) && !rules_.removed.contains(c.Id) && perceived(c)){
-            const auto b=object_bounds(c);const auto delta=(b.low+b.high)*.5-view_position();
+            const auto b=posed_bounds(c);const auto delta=(b.low+b.high)*.5-view_position();
             if(delta.length()<=25 && delta.unit().dot(camera_direction())>0)targets.push_back({1-delta.unit().dot(camera_direction())+delta.length()*.0001,c.Id});
         }
         std::sort(targets.begin(),targets.end());
