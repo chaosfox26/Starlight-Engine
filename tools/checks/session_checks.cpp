@@ -124,7 +124,69 @@ static json handle_snapshot() {
   }
   return {{"available", true}, {"entries", entries}};
 }
+// Loading must prepare the scene that play reveals (audit 04-loading-readiness, finding 1). Mirrors the loading barrier on a hidden window: install the
+// scene with playback stopped, wait for the graphics fence, then start play and count the resident-scene installs. The fire and grass objects are what
+// make the stopped-mode and play-mode static packets differ; without the prewarm, starting play builds and installs a second base.
+static json play_start_base_installs(bool prewarm) {
+  WNDCLASSW wc{};
+  wc.hInstance = GetModuleHandle(nullptr);
+  wc.lpfnWndProc = DefWindowProcW;
+  wc.lpszClassName = L"StarlightPlayStartCheck";
+  RegisterClassW(&wc);
+  HWND window = CreateWindowW(wc.lpszClassName, L"Play start check", WS_OVERLAPPEDWINDOW, 0, 0, 800, 600, nullptr, nullptr, wc.hInstance, nullptr);
+  if (!window) throw std::runtime_error("Play start check window");
+  json result;
+  try {
+    SceneData scene;
+    Character rock; rock.Shape = "rock"; rock.X = -2;
+    Character fire; fire.Shape = "fire"; fire.ParticleRate = 100; fire.X = 2;
+    Character grass; grass.Shape = "grass"; grass.Size = 2; grass.Z = 2;
+    scene.Characters = {rock, fire, grass};
+    NativeSession session(window, 640, 360);
+    auto until = [&](auto done) {
+      const auto deadline = GetTickCount64() + 20000;
+      for (;;) {
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); }
+        auto status = session.status();
+        if (!status.error.empty()) throw std::runtime_error(status.error);
+        if (done(status)) return status;
+        if (GetTickCount64() > deadline) throw std::runtime_error("Play start check timeout");
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+    };
+    session.playback(false);
+    if (prewarm) session.prewarm_play(true);
+    const uint64_t generation = session.scene(scene);
+    session.playback(false, true);
+    until([&](const RenderStatus& s) { return s.scene_generation_installed >= generation; });
+    const uint64_t fence = session.request_gpu_fence();
+    auto fenced = until([&](const RenderStatus& s) { return s.gpu_fence_done >= fence; });
+    auto ready = until([&](const RenderStatus& s) { return s.frames >= fenced.frames + 2; }); // the install counters are published at the end of a frame
+    session.playback(true);
+    auto playing = until([&](const RenderStatus& s) { return s.playing && s.frames >= ready.frames + 120; });
+    result = {{"prewarm", prewarm}, {"baseInstallsAtReady", ready.scene_base_installs}, {"baseInstallsAfterPlay", playing.scene_base_installs},
+              {"wholePacketUpdatesAtReady", ready.scene_full_updates}, {"wholePacketUpdatesAfterPlay", playing.scene_full_updates},
+              {"deltaUpdatesAtReady", ready.scene_delta_updates}, {"deltaUpdatesAfterPlay", playing.scene_delta_updates}};
+    session.suspend_rendering(true);
+  } catch (...) {
+    if (IsWindow(window)) DestroyWindow(window);
+    throw;
+  }
+  DestroyWindow(window);
+  return result;
+}
 int wmain(int argc, wchar_t **argv) {
+  if(argc>=3&&std::wstring_view(argv[1])==L"--play-start-base"){
+    fs::path output=argv[2];fs::create_directories(output);
+    try{
+      const auto control=play_start_base_installs(false),prewarmed=play_start_base_installs(true);
+      atomic_write(output/L"play-start-base.json",json{{"control",control},{"prewarmed",prewarmed}}.dump(2));
+      const bool pass=prewarmed["baseInstallsAtReady"].get<uint64_t>()>=1&&prewarmed["baseInstallsAfterPlay"]==prewarmed["baseInstallsAtReady"]&&prewarmed["wholePacketUpdatesAfterPlay"]==prewarmed["wholePacketUpdatesAtReady"];
+      std::cout<<(pass?"PASS":"FAIL")<<" play start base installs\n"<<control.dump()<<'\n'<<prewarmed.dump()<<'\n';
+      return pass?0:1;
+    }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
+  }
   if(argc>=4&&std::wstring_view(argv[1])==L"--graphics-preview")return graphics_preview::run(argv[2],argv[3],argc>4&&std::wstring_view(argv[4])==L"visible");
   if(argc>=4&&std::wstring_view(argv[1])==L"--destruction-dust-preview")return destruction_dust_preview(argv[2],argv[3]);
   if(argc>=4&&std::wstring_view(argv[1])==L"--terrain-destruction-preview")return terrain_destruction_preview(argv[2],argv[3]);
@@ -469,6 +531,13 @@ int wmain(int argc, wchar_t **argv) {
               "Repeat and character-follow continue beyond route duration");
     }
     DestroyWindow(window);
+    {
+      const auto prewarmed = play_start_base_installs(true);
+      require(prewarmed["baseInstallsAtReady"].get<uint64_t>() >= 1 &&
+                  prewarmed["baseInstallsAfterPlay"] == prewarmed["baseInstallsAtReady"] &&
+                  prewarmed["wholePacketUpdatesAfterPlay"] == prewarmed["wholePacketUpdatesAtReady"],
+              "A scene prepared behind the loading barrier is the one play uses: starting play installs no second resident scene");
+    }
     if (argc > 2) {
       auto project = ProjectData::load(fs::path(argv[2]) /
                                        L"deep/projects/Empty/Empty.star");

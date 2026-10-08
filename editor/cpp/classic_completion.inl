@@ -58,6 +58,7 @@ void playback_command(int id)
     if(!next){adventureLook=false;camera();}
     if(id==Stop){if(adventure)renderer->scene(scene);adventure.reset();adventureHint.clear();}
     if(next && adventure){
+        if(loading)renderer->prewarm_play(true); // the barrier installs the scene play will use; playback(true) below ends the prewarm
         renderer->gameplay_time(adventure->seconds());
         renderer->camera({adventure->position,adventure->position+adventure->direction(),1});
         adventure->update_rules();
@@ -78,6 +79,7 @@ void playback_command(int id)
         finish_scene_upload(*renderer,statusBeforeInstall,*adventure,*loading,lastPreparation);
         if(!lastPreparation.ready()){
             const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();
+            renderer->prewarm_play(false);
             playback_command(Stop);
             release_deferred_close();
             if(!cancelled)error("Play stopped because loading did not finish. "+reason);

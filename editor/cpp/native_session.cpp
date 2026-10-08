@@ -114,7 +114,13 @@ void NativeSession::playback(bool play, bool reset) {
     if (playing_ != play)
         tools_dirty_ = true;
     playing_ = play;
+    if (play)
+        prewarmPlay_ = false;
     reset_ |= reset;
+}
+void NativeSession::prewarm_play(bool prewarm) {
+    std::lock_guard lock(mutex_);
+    prewarmPlay_ = prewarm;
 }
 void NativeSession::gameplay_overlays(std::vector<MeshPart> parts,bool probeMotion){
     std::vector<GpuTelegraph> gpu;
@@ -425,7 +431,7 @@ void NativeSession::run(std::stop_token stop) {
             std::shared_ptr<const std::vector<MeshPart>> gameplayOverlays;
             std::vector<GpuTelegraph> gpuTelegraphs;
             std::vector<Character> runtimeObjects;std::shared_ptr<const std::vector<RubbleInstance>> rubble;bool rubbleDirty=false;std::shared_ptr<const std::vector<std::shared_ptr<const MeshPart>>> preload;bool preloadDirty=false;
-            bool play, doReset, repeat, toolsDirty;
+            bool play, doReset, repeat, toolsDirty, prewarm;
             std::string follow, selected, tool;
             int requestedW, requestedH;
             std::optional<SceneData> next;
@@ -449,6 +455,7 @@ void NativeSession::run(std::stop_token stop) {
                 measurePacing=pacingEnabled_;if(measurePacing){debrisPoses=debrisPoses_;playerPosition=playerPosition_;playerPose=playerPose_;timing=runtimeTiming_;updateSequence=runtimeSequence_;inputSequence=inputSequence_;inputEvent=inputEventTime_;events.swap(timingEvents_);}
                 gameplayTime=gameplayTime_;
                 play = playing_;
+                prewarm = prewarmPlay_;
                 repeat = repeat_;
                 follow = follow_;
                 selected = selected_;
@@ -647,7 +654,8 @@ void NativeSession::run(std::stop_token stop) {
             if(!sl_hdr_post_settings(viewport.get(),simulation.BloomQuality,float(simulation.BloomStrength)))throw std::runtime_error(sl_error());
             if(!sl_shadow_settings(viewport.get(),simulation.ShadowQuality))throw std::runtime_error(sl_error());
             sl_multicore_begin(viewport.get(),measurePacing?1:0);
-            const bool gpuGrass=gpuGrassRequested&&play&&!simulation.RaytracingEnabled;
+            const bool playBuild=play||prewarm; // the resident scene is built in play's mode while a loading barrier prewarms it
+            const bool gpuGrass=gpuGrassRequested&&playBuild&&!simulation.RaytracingEnabled;
             if(gpuGrass!=hadGpuGrass){rebuild=true;hadGpuGrass=gpuGrass;}
             stagePrep+=stageMs(prepStart,StageClock::now());const double mC=mkNow();
             if (rebuild || (packet.empty() && !sceneInstalled)) {
@@ -697,7 +705,7 @@ void NativeSession::run(std::stop_token stop) {
                     }
                 }
                 sceneCache.bodiesAsInstances=repair_delta()&&repair_instances()&&!simulation.RaytracingEnabled;
-                if(deltaScene && render_scene_delta(simulation, flow.get(), overlays, sceneCache, play, gpuGrass, delta, trailingOverlays)){
+                if(deltaScene && render_scene_delta(simulation, flow.get(), overlays, sceneCache, playBuild, gpuGrass, delta, trailingOverlays)){
                     const auto packetDone=StageClock::now();
                     stagePacket+=stageMs(overlaysDone,packetDone);
                     if(sceneCache.packet.size()>INT_MAX || delta.size()>INT_MAX)
@@ -714,7 +722,7 @@ void NativeSession::run(std::stop_token stop) {
                     installedDelta=true;sceneInstalled=true;++deltaUpdates;packet.clear();
                     if(verifyDelta){
                         // Contract: whole packet == resident base (draw count patched) + delta draws.
-                        auto whole=render_scene(simulation, flow.get(), overlays, &sceneCache, play, gpuGrass, trailingOverlays);
+                        auto whole=render_scene(simulation, flow.get(), overlays, &sceneCache, playBuild, gpuGrass, trailingOverlays);
                         const auto& base=sceneCache.packet;
                         uint32_t baseCount=0,deltaCount=0,wholeCount=0;
                         std::memcpy(&baseCount,base.data()+4,4);std::memcpy(&deltaCount,delta.data()+12,4);std::memcpy(&wholeCount,whole.data()+4,4);
@@ -726,7 +734,7 @@ void NativeSession::run(std::stop_token stop) {
                 }
                 if(!installedDelta){if(std::any_of(simulation.Characters.begin(),simulation.Characters.end(),[](const Character& c){return drives_effect_channels(c);}))bypass_counters().effectRepublish.fetch_add(1,std::memory_order_relaxed);
                     if(!sceneCache.removedIdentities.empty())sceneCache.clear();
-                    packet = render_scene(simulation, flow.get(), overlays, &sceneCache,play,gpuGrass,trailingOverlays);
+                    packet = render_scene(simulation, flow.get(), overlays, &sceneCache,playBuild,gpuGrass,trailingOverlays);
                     const auto packetDone=StageClock::now();
                     stagePacket+=stageMs(overlaysDone,packetDone);
                     if (packet.size() > INT_MAX || !sl_scene(viewport.get(), packet.data(), int(packet.size())))
