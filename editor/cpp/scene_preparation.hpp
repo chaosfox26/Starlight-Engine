@@ -190,7 +190,7 @@ inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen
         return true;
     };
     auto stage = [&](const std::string& label, double weight, double& elapsed, const std::function<void(std::atomic<double>&)>& work) {
-        if (cancelled()) return;
+        if (report.stopped() || cancelled()) return;
         const double started = prepare_now_ms();
         std::string failure, interface_failure;
         try {
@@ -211,7 +211,7 @@ inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen
     };
     stage("Preparing scenery shapes", PreparationStages::geometry, report.geometryMs, [&](std::atomic<double>& fraction) { adventure.prepare_geometry(fraction); });
     stage("Preparing collision", PreparationStages::collision, report.collisionMs, [&](std::atomic<double>& fraction) { adventure.prepare_collision(fraction); });
-    if (!cancelled()) {
+    if (!report.stopped() && !cancelled()) {
         const double started = prepare_now_ms();
         const auto initial = adventure.fracture_progress();
         report.breakablesQueued = initial.total;
