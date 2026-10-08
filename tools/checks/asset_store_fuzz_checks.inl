@@ -247,6 +247,15 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         expectRefused(sameEdit,[](const fs::path& c){fs::remove_all(c/"assets");});
         expectRefused([](json& m){m["assets"]=json::array();},untouched);
         require(wrong==0,"Fuzz: manifests with wrong types, missing fields, wrong hashes or sizes, and bundles with missing or damaged files are refused");
+        // Windows lets "file:name" address a hidden data stream of a file and "file::$DATA" address the file itself under another spelling; no export contains a colon.
+        {
+            const std::string streamData="not the asset";
+            auto streamed=[&](const std::string& suffix,bool createStream){
+                return variantOutcome([&](json& m){m["assets"][0]["path"]="assets/"+sculptFile+suffix;if(createStream){m["assets"][0]["sha256"]=hash_bytes(streamData);m["assets"][0]["bytes"]=streamData.size();}},
+                    [&](const fs::path& c){if(createStream)std::ofstream(L"\\\\?\\"+fs::path(c/"assets"/sculptFile).make_preferred().wstring()+L":evil",std::ios::binary)<<streamData;});};
+            require(streamed(":evil",true)!=Result::Accepted,"Fuzz: a manifest entry naming a hidden data stream with a matching hash does not verify");
+            require(streamed("::$DATA",false)!=Result::Accepted,"Fuzz: a manifest entry spelling a file as file::$DATA is refused");
+        }
         // A junction that points the assets folder somewhere else must not be followed out of the bundle.
         const auto outside=work/"outside-copy";fs::copy(bundle/"assets",outside,fs::copy_options::recursive);
         const auto linked=work/"bundle-linked";fs::copy(bundle,linked,fs::copy_options::recursive);fs::remove_all(linked/"assets");
