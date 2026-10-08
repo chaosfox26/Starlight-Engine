@@ -43,6 +43,8 @@ std::atomic<uint64_t> geometryCalls{0},geometryVertices{0},geometryTriangles{0};
 using GeometryClock=std::chrono::steady_clock;
 double geometryMs(GeometryClock::time_point a,GeometryClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();}
 }
+static std::atomic<uint64_t>& nonfinite_parts_dropped(){static std::atomic<uint64_t> count{0};return count;}
+uint64_t flow_nonfinite_parts_dropped(){return nonfinite_parts_dropped().load(std::memory_order_relaxed);}
 FlowGeometryProfile flow_geometry_profile(){return {geometrySetupMs.load(),geometryGridMs.load(),geometryRefineMs.load(),geometryClipMs.load(),geometryVertexMs.load(),geometryObstacleMs.load(),geometryNormalsMs.load(),geometryCalls.load(),geometryVertices.load(),geometryTriangles.load(),geometryClipTopologyMs.load(),geometryClipCrossingsMs.load(),geometryClipClearanceMs.load()};}
 namespace {
 // Obstacle columns depend only on (x,z) and the finished mask, so their intervals are cached across frames in one
@@ -1449,7 +1451,9 @@ std::vector<MeshPart> TerrainFlow::geometry_unverified() const {
         geometryVertexMs=geometryVertexMs+lap();
         geometryObstacleMs=geometryObstacleMs+lap();
         // ---- normals (Mesh::normals() with the per-vertex sums split across workers; same summation order) ------------------
-        if(!finite.load())throw std::runtime_error("Nonfinite mesh vertex");
+        // One bad vertex costs this liquid for this frame: it is counted and logged, and the next frame builds again. Throwing here would be
+        // rethrown into the render loop by the next change to the flow and end the render worker.
+        if(!finite.load()){nonfinite_parts_dropped().fetch_add(1,std::memory_order_relaxed);starlight_diag::evlog("liquidNonFin",isLava?1.:0.);geometryClipMs=geometryClipMs+lap();return;}
         {
             const size_t triangleCount=keptTotal;
             const unsigned parts=unsigned(std::min<size_t>(kThreads,std::max<size_t>(1,vertexCount/2048)));

@@ -113,6 +113,8 @@ struct LiquidSplash {Vec3 position,velocity;double strength=0;bool lava=false;};
 // Cumulative time inside TerrainFlow::geometry() by stage (milliseconds), for performance diagnosis.
 struct FlowGeometryProfile { double setupMs=0,gridMs=0,refineMs=0,clipMs=0,vertexMs=0,obstacleMs=0,normalsMs=0; uint64_t calls=0,vertices=0,triangles=0; double clipTopologyMs=0,clipCrossingsMs=0,clipClearanceMs=0; };
 FlowGeometryProfile flow_geometry_profile();
+// Number of liquid surfaces left out of a frame because one of their vertices was not finite (the frame is skipped for that liquid; rendering goes on).
+uint64_t flow_nonfinite_parts_dropped();
 struct FlowGeometryScratch;
 // Reusable per-flow buffers of TerrainFlow::geometry(); a copy of a flow starts with empty scratch.
 struct FlowGeometryScratchHolder {

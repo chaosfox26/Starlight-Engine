@@ -29,6 +29,22 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(notBelowStill,"07#1: A wave trough never takes the liquid top below the still level, so objects stay in the wet-object filter");
         require(trough,"07#1: The rippled lake has troughs where the drawn surface is below the still level and the filter still uses the still level");
     }
+    {   // 07#8: one non-finite vertex costs that liquid its frame; it does not throw into the render loop.
+        TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=1.5;
+        auto lake=std::make_unique<TerrainFlow>(terrain,std::vector<LiquidSource>{});
+        const auto healthy=lake->geometry();
+        require(!healthy.empty(),"07#8: The test lake produces a water surface");
+        const uint64_t before=flow_nonfinite_parts_dropped();
+        const double good=lake->water[1000];lake->water[1000]=INFINITY;
+        bool threw=false;std::vector<MeshPart> broken;
+        try{broken=lake->geometry();}catch(...){threw=true;}
+        require(!threw&&broken.empty()&&flow_nonfinite_parts_dropped()==before+1,"07#8: A non-finite water height drops the water surface for that frame, is counted, and does not throw");
+        lake->geometry_begin_async();
+        threw=false;try{(void)lake->geometry_for_render();lake->wind(1,0);}catch(...){threw=true;}
+        require(!threw,"07#8: The one-frame-ahead path does not store an error that the next change would throw into the render loop");
+        lake->water[1000]=good;
+        require(lake->geometry().size()==healthy.size(),"07#8: The next frame with a finite height builds the liquid again");
+    }
     {   // 07#2: the surface search skips volumes that cannot change a decision, so it must return exactly what the full evaluation returns.
         auto reference=[](const TerrainData& t,double x,double z){ // the search as it was: every volume at every probe
             if(t.Volumes.empty())return t.height_at(x,z);
