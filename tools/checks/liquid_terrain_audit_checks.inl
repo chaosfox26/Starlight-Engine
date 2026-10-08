@@ -25,6 +25,16 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         }
         require(within&&crest,"07#1: Waves raise and lower the liquid top by no more than the 0.3 m wave limit");
     }
+    {   // 07#5: editing a layer that another holder shares must not change what that holder sees.
+        auto make=[](double x){Character c;c.Id="shared-rock";c.Shape="chaos-rock";c.X=x;c.Y=.5;c.Width=c.Height=c.Depth=c.Size=1.2;auto layer=std::make_shared<FlowObstacleMask>();layer->add(object_mesh(c),c);layer->finish();return std::shared_ptr<const FlowObstacleMask>(layer);};
+        auto alone=make(1);const FlowObstacleMask* addressBefore=alone.get();
+        require(editable_obstacle_layer(alone).get()==addressBefore,"07#5: A layer nobody else holds is edited in place");
+        auto original=make(-2);auto holder=original;const auto columnsBefore=original->coverage;const auto trianglesBefore=original->triangles.size();
+        auto edited=editable_obstacle_layer(original);
+        const_cast<FlowObstacleMask&>(*edited).remove_objects({0});
+        require(edited.get()!=original.get()&&original->coverage==columnsBefore&&original->triangles.size()==trianglesBefore,"07#5: A shared layer is copied before an edit, so the other holder keeps its triangles and columns");
+        require(edited->coverage!=columnsBefore,"07#5: The copy carries the edit");
+    }
     {   // 07#7: the 128 hole limit is not silent.
         TerrainData ground;TerrainDestruction destruction;
         for(int i=0;i<127;++i)ground.Volumes.push_back({-11.+(i%12)*2,-10,-11.+(i/12)*2,.3,true});

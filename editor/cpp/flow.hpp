@@ -79,6 +79,12 @@ struct FlowObstacleMask {
     Mark mark() const { return {triangles.size(),objectCount,low,high}; }
     void truncate(const Mark&);
 };
+// A layer that may be edited in place: the one given when nothing else holds it, otherwise a private copy, so an edit can
+// never reach another holder of the pointer (a copy of a TerrainFlow shares its layers).
+inline std::shared_ptr<const FlowObstacleMask> editable_obstacle_layer(const std::shared_ptr<const FlowObstacleMask>& layer){
+    if(layer.use_count()==1)return layer;
+    return std::make_shared<FlowObstacleMask>(*layer); // created non-const, so the caller may cast the constness away to edit it
+}
 // Sample the same cell-centred surface continuously in both physics paths.
 // Dry cells stay dry; neighbouring liquid types are not silently mixed.
 template<class Sample> inline std::pair<double,double> sample_liquid(double x,double z,Sample sample){

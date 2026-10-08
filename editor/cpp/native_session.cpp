@@ -360,10 +360,11 @@ void NativeSession::run(std::stop_token stop) {
                     if(matched==now.size()&&!gone.empty()){
                         if(now.empty()){obstacleLightEntries.clear();return nullptr;}
                         const double r0=ob0>0?starlight_diag::evnow():0;
-                        const_cast<FlowObstacleMask&>(*current).remove_objects(gone);
+                        auto edited=editable_obstacle_layer(current);
+                        const_cast<FlowObstacleMask&>(*edited).remove_objects(gone);
                         for(unsigned i:gone)obstacleLightEntries[i].alive=false;
                         if(ob0>0)starlight_diag::evlog("obstR",starlight_diag::evnow()-r0,double(gone.size()),double(now.size()));
-                        return current;
+                        return edited;
                     }
                 }
                 auto built=buildLayer(1);
