@@ -12,6 +12,14 @@ Usage: run_ledger.py --build-dir <folder with Starlight.NativeCoreChecks.exe>   
 import argparse, hashlib, json, os, subprocess, sys, time, uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import registry
+import verify_all
+
+def dirty_digest(repo):
+    """Hash of every uncommitted change to tracked files, so two different dirty trees at one HEAD get different build ids."""
+    try:
+        return hashlib.sha256(subprocess.run(['git', '-C', repo, 'diff', 'HEAD'], capture_output=True, timeout=120).stdout).hexdigest()
+    except Exception:
+        return ''
 
 def configured_from(build_dir):
     """The source folder the build tree next to the executables folder was configured from (its CMakeCache.txt), or None when there is no cache."""
@@ -290,6 +298,22 @@ def self_test():
         ok = before is None and home is not None and same_folder(home, tree) and not same_folder(home, os.path.dirname(tree))
         print('  %s the repo a build was configured from is read from its CMake cache and compared by real path' % ('ok ' if ok else 'BAD'))
         bad += not ok
+    with tempfile.TemporaryDirectory() as repo:
+        flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        for args in (['init', '-q'], ['config', 'user.email', 'a@b'], ['config', 'user.name', 'a']):
+            subprocess.run(['git', '-C', repo] + args, creationflags=flags)
+        path = os.path.join(repo, 'a.cpp')
+        open(path, 'w').write('int a;\n')
+        subprocess.run(['git', '-C', repo, 'add', '-A'], creationflags=flags)
+        subprocess.run(['git', '-C', repo, 'commit', '-q', '-m', 'x'], creationflags=flags)
+        clean = dirty_digest(repo)
+        open(path, 'w').write('int b;\n')
+        first = dirty_digest(repo)
+        open(path, 'w').write('int c;\n')
+        second = dirty_digest(repo)
+        ok = first and second and len({clean, first, second}) == 3
+        print('  %s two different uncommitted edits at one HEAD get different dirty digests' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
@@ -311,6 +335,10 @@ def main():
     if home and not same_folder(home, args.repo):
         print('REFUSING TO RUN: the build was configured from %s but --repo is %s' % (home, args.repo))
         return 2
+    stale = verify_all.stale_reason(args.repo, args.build_dir)
+    if stale:
+        print('REFUSING TO RUN: ' + stale)
+        return 2
     ledger_path = args.ledger or os.path.join(args.repo, 'tools', 'regression', 'ledger.json')
     ledger = json.load(open(ledger_path, encoding='utf-8'))
     os.makedirs(args.results, exist_ok=True)
@@ -325,11 +353,13 @@ def main():
         'dirtyTrackedFiles': len([l for l in git(args.repo, 'status', '--porcelain', '--untracked-files=no').splitlines() if l.strip()]),
         'binaries': {},
     }
+    if identity['dirtyTrackedFiles']:
+        identity['dirtyDiffSha256'] = dirty_digest(args.repo)
     for name in registered['binaries']:
         p = os.path.join(args.build_dir, name)
         if os.path.exists(p):
             identity['binaries'][name] = {'sha256': sha256(p), 'bytes': os.path.getsize(p)}
-    build_id = (identity['gitHead'][:12] or 'nogit') + ('+dirty' if identity['dirtyTrackedFiles'] else '') + '-' + identity['binaries'].get(registered['executable'], {}).get('sha256', 'nobinary')[:10]
+    build_id = (identity['gitHead'][:12] or 'nogit') + ('+dirty' + identity['dirtyDiffSha256'][:8] if identity['dirtyTrackedFiles'] else '') + '-' + identity['binaries'].get(registered['executable'], {}).get('sha256', 'nobinary')[:10]
 
     run_id = build_id + '-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:12]
     run_folder = os.path.join(args.results, 'runs', run_id)

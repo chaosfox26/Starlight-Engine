@@ -12,7 +12,7 @@ End goal (owner): audit-based self-healing, where a regression is detected, pack
 VERIFIED, REGRESSED, NOT-CHECKED, COVERAGE-ERROR, SKIPPED. A missing or too-small set of tagged checks is a coverage error, never a pass. A deterministic failure is reported at once. A crash inside an entry's own checks is REGRESSED; a crash before them leaves them NOT-CHECKED.
 
 ## Build identity
-git HEAD, number of modified tracked files (dirty), and SHA-256 of the executables and DLLs that ran. A timestamp or a stamp baked into a binary is not proof of what is loaded.
+git HEAD, number of modified tracked files (dirty), and SHA-256 of the executables and DLLs that ran. A dirty tree also records a hash of its uncommitted changes (`dirtyDiffSha256`, part of the build id). `run_ledger.py` itself refuses to run when the build has pending steps or the sources are newer than the executable. A timestamp or a stamp baked into a binary is not proof of what is loaded.
 
 ## Notices (transitions only)
 NEW REGRESSION, RECOVERED, FIRST VERIFIED, COVERAGE RESTORED, LOST COVERAGE.
