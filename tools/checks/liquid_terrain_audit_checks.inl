@@ -25,6 +25,13 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         }
         require(within&&crest,"07#1: Waves raise and lower the liquid top by no more than the 0.3 m wave limit");
     }
+    {   // 07#7: the 128 hole limit is not silent.
+        TerrainData ground;TerrainDestruction destruction;
+        for(int i=0;i<127;++i)ground.Volumes.push_back({-11.+(i%12)*2,-10,-11.+(i/12)*2,.3,true});
+        require(destruction.damage(ground,{5.3,.04,5.3},{0,1,0},1000)&&ground.Volumes.size()==128&&!destruction.capped(),"07#7: The 128th hole is still carved");
+        require(!destruction.damage(ground,{-5.3,.04,-5.3},{0,1,0},1000)&&ground.Volumes.size()==128&&destruction.capped(),"07#7: A hit past the limit carves nothing and the refusal is reported");
+        destruction.reset();require(!destruction.capped(),"07#7: A reset clears the report");
+    }
     {   // 07#9: a layer that lost most of its objects is compacted, and repeated removals still answer like a fresh layer.
         auto rock=[](int i,double x,double z,double size){
             Character c;c.Id="rock-"+std::to_string(i);c.Shape="chaos-rock";c.X=x;c.Y=.4+.2*(i%3);c.Z=z;c.Width=c.Height=c.Depth=size;c.Size=size;
