@@ -1963,12 +1963,12 @@ struct Editor {
         auto answer = MessageBoxW(window, L"Save your changes before continuing?\nYes: Save   No: Discard   Cancel: Keep editing", L"Starlight", MB_YESNOCANCEL | MB_ICONQUESTION);
         return answer == IDNO || (answer == IDYES && save(false));
     }
-    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired, LoadingScreen* loading = nullptr) {
+    std::optional<SceneData> open_scene_data(const fs::path& path, bool& repaired, LoadingScreen* loading = nullptr, std::string* hash = nullptr) {
         if (loading) {
             loading->show(window, view);
             loading->update(0, "Reading " + utf8(path.filename().wstring()));
         }
-        auto next = open_with_context(path, "scene", [&] { return load_scene(path); });
+        auto next = open_with_context(path, "scene", [&] { return load_scene(path, hash); });
         auto result = repair_scene_models(next, [&](const std::string&, const std::string& objectName) -> std::optional<fs::path> {
             auto title = L"Locate missing model: " + wide(objectName);
             if (loading) loading->close();
@@ -2650,13 +2650,14 @@ struct Editor {
                 return;
             bool repaired = false;
             LoadingScreen loading;
-            auto next = open_scene_data(files[0], repaired, &loading);
+            std::string loadedHash;
+            auto next = open_scene_data(files[0], repaired, &loading, &loadedHash);
             if (!next) return;
             open_with_context(files[0], "scene", [&] { render_scene(*next); });
             scene = std::move(*next);
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             filename = files[0];
-            diskHash = hash_file(filename);
+            diskHash = loadedHash;
             history.clear();
             selected = -1;
             dirty = repaired;
@@ -3594,12 +3595,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 bool repaired = false;
                 LoadingScreen loading;
                 try {
-                    auto next = editor.open_scene_data(path, repaired, &loading);
+                    std::string loadedHash;
+                    auto next = editor.open_scene_data(path, repaired, &loading, &loadedHash);
                     if (!next) continue;
                     open_with_context(path, "scene", [&] { render_scene(*next); });
                     editor.scene = std::move(*next);
                     editor.filename = path;
-                    editor.diskHash = hash_file(path);
+                    editor.diskHash = loadedHash;
                     editor.dirty = repaired;
                     editor.refresh();
                     editor.settle_scene(loading, "Preparing " + utf8(path.filename().wstring()));

@@ -44,7 +44,8 @@ struct MissingAssetsError : std::runtime_error {
     MissingAssetsError(const std::string &message, std::vector<std::string> missing) : std::runtime_error(message), ids(std::move(missing)) {}
 };
 std::string save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {}, bool allowMissingAssets = false);
-SceneData load_scene(const fs::path &);
+// `hash`, when given, receives the hash of the exact bytes that were decoded (not of a second read of the file).
+SceneData load_scene(const fs::path &, std::string *hash = nullptr);
 json export_playable_game(const SceneData &, const fs::path &destination, const fs::path &runtime);
 json export_portable_scene(const SceneData &, const fs::path &destination);
 json verify_portable_scene(const fs::path &folder);
