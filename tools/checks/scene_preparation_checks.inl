@@ -25,4 +25,8 @@ static void scene_preparation_checks(const auto& require){
         run_pumped_stage([&](std::atomic<double>&){throw 7;},[&](double){},unknown);
         require(unknown=="unknown error","CC-10: A non-standard exception from the work is also reported, not lost");
     }
+    require(prepare_limit_ms("90000")==90000&&prepare_limit_ms("2500.5")==2500.5&&prepare_limit_ms(" 1500 ")==1500,"04#6: A numeric preparation limit is used as given");
+    require(prepare_limit_ms("abc")==60000&&prepare_limit_ms("60s")==60000&&prepare_limit_ms("")==60000&&prepare_limit_ms("nan")==60000&&prepare_limit_ms("inf")==60000,"04#6: An unparsable preparation limit keeps the 60 second default instead of becoming 1 ms");
+    require(prepare_limit_ms("0")==60000&&prepare_limit_ms("-5")==60000&&prepare_limit_ms("0.5")==60000,"04#6: A preparation limit below 1 ms keeps the default");
 }
+
