@@ -63,6 +63,9 @@ json describe_commands() {
             {"operations",
              {"add", "move", "route", "rename", "remove", "configure", "shape", "transform", "follow", "set-block", "terrain-brush",
               "terrain-water", "terrain-stamp", "terrain-volume", "insert-object", "insert-group", "duplicate", "replace-model", "merge-scene"}},
+            {"requestKeys",
+             {{"allowMissingAssets", "Optional boolean, default false. true saves the scene even when it names models that are not in the asset library (the editor's 'Save anyway'); by default such a save is refused and nothing is written."},
+              {"correctedAdd", "Optional boolean, default false. true makes 'add' resolve a relative model path against the request file's folder (as replace-model does) and rest the new object on the terrain; by default 'add' resolves against the working directory and leaves Y at 0."}}},
             {"sceneBlocks", {"Lighting", "Moods", "ActiveMood", "View", "Zones", "Crowd", "Cast"}},
             {"readOperations", {"describe", "inspect"}},
             {"portableExport", "--export-portable <scene.starscene> <new-folder>"},
@@ -119,7 +122,7 @@ json inspect_scene(const fs::path &input) {
 }
 json apply_commands(const fs::path &file) {
     auto request = json::parse(read_file(file));
-    keys(request, {"schemaVersion", "scenePath", "expectedSha256", "operations"});
+    keys(request, {"schemaVersion", "scenePath", "expectedSha256", "operations", "allowMissingAssets", "correctedAdd"});
     if (native_int(request.at("schemaVersion")) != 1)
         throw std::runtime_error("Unknown command schema");
     auto path = fs::absolute(wide(request.at("scenePath").get<std::string>())).lexically_normal();
@@ -132,7 +135,8 @@ json apply_commands(const fs::path &file) {
     const auto &operations = request.at("operations");
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
-    bool allowMissingAssets = false;
+    bool allowMissingAssets = request.value("allowMissingAssets", false);
+    const bool correctedAdd = request.value("correctedAdd", false);
     std::vector<std::string> staleRules;
     for (const auto &op : operations) {
         auto kind = op.at("op").get<std::string>();
@@ -302,10 +306,11 @@ json apply_commands(const fs::path &file) {
         if (kind == "add") {
             keys(op, {"op", "name", "asset", "x", "z"});
             Character c;
-            c.Asset = model_for_command(op.at("asset").get<std::string>(), fs::current_path());
+            c.Asset = model_for_command(op.at("asset").get<std::string>(), correctedAdd ? fs::absolute(file).parent_path() : fs::current_path());
             c.Name = op.at("name").get<std::string>();
             c.X = op.at("x").get<double>();
             c.Z = op.at("z").get<double>();
+            if (correctedAdd) snap(scene, c);
             scene.Characters.push_back(std::move(c));
             continue;
         }
