@@ -53,4 +53,16 @@ static void scene_validation_checks(const auto& require){
         route["Characters"][0]["Route"].erase(route["Characters"][0]["Route"].begin());
         require(decodeWhy(route).empty(),"SCENE-1: A file with exactly 4096 route points still decodes");
     }
+    // SCENE-3: whole-number settings reject values that would wrap or truncate.
+    {
+        for(const char* key:{"GrappleMode","CombatTeam","CombatControlEffect"}){
+            for(const char* bad:{"4294967297","1.9","\"1\""}){
+                auto file=nlohmann::json::parse(text);file["Characters"][0][key]=nlohmann::json::parse(bad);
+                require(decodeWhy(file)=="Expected a 32-bit integer",(std::string("SCENE-3: ")+key+" = "+bad+" is refused instead of wrapping or truncating").c_str());
+            }
+        }
+        auto file=nlohmann::json::parse(text);file["Characters"][0]["GrappleMode"]=2;file["Characters"][0]["CombatTeam"]=7;file["Characters"][0]["CombatControlEffect"]=3;
+        const auto kept=SceneData::decode(file.dump()).Characters[0];
+        require(kept.GrappleMode==2&&kept.CombatTeam==7&&kept.CombatControlEffect==3,"SCENE-3: Valid whole numbers still load");
+    }
 }
