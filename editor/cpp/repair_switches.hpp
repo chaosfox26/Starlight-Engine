@@ -12,4 +12,5 @@ inline bool repair_turn(){static const bool on=repair_switch("STARLIGHT_FIX_TURN
 inline bool repair_solids(){static const bool on=repair_switch("STARLIGHT_FIX_SOLIDS");return on;}               // enemies are not blocked by grass, lights, fire, keys (same rule the player controller uses)
 inline bool repair_instances(){static const bool on=repair_switch("STARLIGHT_FIX_INSTANCES");return on;}      // moving physics bodies are drawn as resident instances (geometry once, pose per update)
 inline bool repair_prefracture(){static const bool on=repair_switch("STARLIGHT_FIX_PREFRACTURE");return on;} // rolling break-ahead fracture
+inline bool repair_cameraboom(){static const bool on=repair_switch("STARLIGHT_FIX_CAMERABOOM");return on;}     // the third-person camera boom is pulled in only by objects that block movement (not grass, lights, fire, lava, lightning, smoke)
 }

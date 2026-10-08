@@ -1299,7 +1299,7 @@ class AdventurePlayer {
         if(cameraDistance<=.001)return view_position();
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
         each_ray_candidate(view_position(),backward,cameraDistance+.2,[&](const Character& object){
-            if(!blocks_movement(object))return; // keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in
+            if(repair_cameraboom()?!blocks_movement(object):(object.GameplayRole=="key" || object.GameplayRole=="exit"))return; // repaired: keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in; switched off, only keys and exits are skipped
             // Session-start bounds come from every actual mesh vertex. Static
             // objects outside the finite boom cannot change its exact triangle
             // hit. Moving/routed/combat actors retain the original query path.
