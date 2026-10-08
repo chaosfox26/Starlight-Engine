@@ -29,6 +29,28 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(notBelowStill,"07#1: A wave trough never takes the liquid top below the still level, so objects stay in the wet-object filter");
         require(trough,"07#1: The rippled lake has troughs where the drawn surface is below the still level and the filter still uses the still level");
     }
+    {   // 07#6: two scenes with different ground alternate without rebuilding each other's terrain mesh.
+        auto ground=[](double offset){TerrainData t;for(int j=0;j<TerrainData::N;++j)for(int i=0;i<TerrainData::N;++i)t.Heights[size_t(j)*TerrainData::N+i]=offset+.3*std::sin(i*.2)*std::cos(j*.17);t.Volumes.push_back({1.5,offset,1.5,.8,true});return t;};
+        auto sameMesh=[](const Mesh& a,const Mesh& b,double tolerance=0){if(a.indices!=b.indices||a.vertices.size()!=b.vertices.size())return false;for(size_t i=0;i<a.vertices.size();++i)if((a.vertices[i].position-b.vertices[i].position).length()>tolerance)return false;return true;};
+        const TerrainData a=ground(.2),b=ground(-.4),c=ground(.9);
+        TerrainVolumeCachePool pool;
+        const Mesh firstA=pool.get(a);const size_t coldA=pool.rebuiltChunks;
+        const Mesh firstB=pool.get(b);const size_t coldB=pool.rebuiltChunks;
+        require(coldA==169&&coldB==169&&!firstA.indices.empty()&&!sameMesh(firstA,firstB),"07#6: Two different grounds each build their mesh once");
+        bool reused=true,unchanged=true;
+        for(int round=0;round<3;++round){
+            const Mesh againA=pool.get(a);reused&=pool.rebuiltChunks==0;unchanged&=sameMesh(againA,firstA);
+            const Mesh againB=pool.get(b);reused&=pool.rebuiltChunks==0;unchanged&=sameMesh(againB,firstB);
+        }
+        require(reused&&unchanged,"07#6: Alternating between the two grounds rebuilds nothing and returns the same meshes");
+        auto edited=a;edited.Volumes.push_back({-6,.1,-6,.6,true});
+        const Mesh incremental=pool.get(edited);const size_t touched=pool.rebuiltChunks;
+        TerrainVolumeCache clean;
+        require(touched>0&&touched<169&&sameMesh(incremental,clean.get(edited),1e-8),"07#6: A new hole on a known ground rebuilds only the chunks it touches, and matches a mesh built from nothing");
+        pool.get(c);
+        const size_t afterThird=pool.rebuiltChunks;pool.get(edited);const size_t editedAgain=pool.rebuiltChunks;
+        require(afterThird==169&&editedAgain==0,"07#6: A third ground replaces the cache used longest ago and keeps the other");
+    }
     {   // 07#8: one non-finite vertex costs that liquid its frame; it does not throw into the render loop.
         TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=1.5;
         auto lake=std::make_unique<TerrainFlow>(terrain,std::vector<LiquidSource>{});
