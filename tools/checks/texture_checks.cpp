@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; int armature = 0; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -150,13 +150,15 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     }
     std::string primitiveList;
     for (int i = 0; i < spec.primitives; ++i) primitiveList += std::string(i ? "," : "") + "{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"JOINTS_0\":3,\"WEIGHTS_0\":4},\"indices\":5,\"material\":0}";
+    const std::string extraNode = spec.armature == 1 ? ",{\"name\":\"armature\",\"children\":[1],\"translation\":[5,0,0],\"rotation\":[0,0,0.70710678,0.70710678],\"scale\":[2,2,2]}"
+        : spec.armature == 2 ? ",{\"name\":\"mid\",\"translation\":[0,0,3],\"children\":[2]}" : "";
     std::string json = "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" + std::to_string(declared) + "}],\"bufferViews\":[" + views + "],\"accessors\":[" + accessors + "],"
         "\"materials\":[{\"name\":\"fur\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.5,0.25,0.75,1]}}],"
         "\"meshes\":[{\"primitives\":[" + primitiveList + "]}],"
-        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
+        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[" + std::string(spec.armature == 2 ? "3" : "2") + "]},{\"name\":\"child\"," + std::string(spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}" + extraNode + "],"
         "\"skins\":[{\"joints\":[1,2],\"inverseBindMatrices\":6}],"
         "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : spec.step ? "STEP" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
-        "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
+        "\"scenes\":[{\"nodes\":[0," + std::string(spec.armature == 1 ? "3" : "1") + "]}],\"scene\":0}";
     while (json.size() % 4) json.push_back(' ');
     bin.resize(bin.size() - spec.trimBin);
     while (bin.size() % 4) bin.push_back(0);
@@ -201,7 +203,7 @@ bool sameModel(const model::SkinnedModel& a, const model::SkinnedModel& b) {
     }
     for (size_t i = 0; i < a.joints.size(); ++i) {
         const auto &x = a.joints[i], &y = b.joints[i];
-        if (x.name != y.name || x.parent != y.parent || std::memcmp(&x.ibm, &y.ibm, sizeof(x.ibm)) || std::memcmp(&x.t, &y.t, sizeof(x.t)) || std::memcmp(&x.r, &y.r, sizeof(x.r)) || std::memcmp(&x.s, &y.s, sizeof(x.s))) return false;
+        if (x.name != y.name || x.parent != y.parent || std::memcmp(&x.ibm, &y.ibm, sizeof(x.ibm)) || std::memcmp(&x.base, &y.base, sizeof(x.base)) || std::memcmp(&x.t, &y.t, sizeof(x.t)) || std::memcmp(&x.r, &y.r, sizeof(x.r)) || std::memcmp(&x.s, &y.s, sizeof(x.s))) return false;
     }
     for (size_t i = 0; i < a.clips.size(); ++i) {
         const auto &x = a.clips[i], &y = b.clips[i];
@@ -944,6 +946,27 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(matrixSpec)), nullptr, "matrix.glb", scratch).ok() && std::fabs(scratch.joints[1].t.y - 1.f) < 1e-5f && std::fabs(scratch.joints[1].s.x - 1.f) < 1e-5f, "R4: a joint given as a matrix keeps its translation");
+        {
+            auto transformed = [&](const model::SkinnedModel& m, int joint, float x, float y, float z) {
+                XMFLOAT4X4 pal[2]; model::evalPose(m, 0, 0.f, -1, 0.f, 0.f, pal, nullptr);
+                XMFLOAT3 r; XMStoreFloat3(&r, XMVector3Transform(XMVectorSet(x, y, z, 1.f), XMLoadFloat4x4(&pal[joint]))); return r; };
+            model::SkinnedModel plainRig, armRig, midRig;
+            require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "plain.glb", plainRig).ok(), "R4: baseline rig loads");
+            GlbSpec armSpec; armSpec.armature = 1;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(armSpec)), nullptr, "armature.glb", armRig).ok() && armRig.joints[0].parent == -1 && armRig.joints[1].parent == 0, "R4: a rig under a transformed non-joint armature node loads");
+            const XMFLOAT3 a0 = transformed(armRig, 0, 1.f, 0.f, 0.f), a1 = transformed(armRig, 1, 1.f, 0.f, 0.f);
+            require(std::fabs(a0.x - 5.f) < 1e-4f && std::fabs(a0.y - 2.f) < 1e-4f && std::fabs(a0.z) < 1e-4f && std::fabs(a1.x - 5.f) < 1e-4f && std::fabs(a1.y - 2.f) < 1e-4f && std::fabs(a1.z) < 1e-4f,
+                    "R4: the armature's translation, rotation and scale reach the root joint and its child (hand-computed (1,0,0) -> (5,2,0))");
+            require(!std::memcmp(&armRig.bbMin, &plainRig.bbMin, sizeof(XMFLOAT3)) && !std::memcmp(&armRig.bbMax, &plainRig.bbMax, sizeof(XMFLOAT3)) &&
+                    std::memcmp(&armRig.joints[0].base, &plainRig.joints[0].base, sizeof(XMFLOAT4X4)) && !std::memcmp(&plainRig.joints[1].base, &plainRig.joints[0].base, sizeof(XMFLOAT4X4)),
+                    "R4: the skinned mesh bounds do not move with the armature, and a rig with no non-joint ancestor keeps an identity base");
+            const XMFLOAT3 p0 = transformed(plainRig, 0, 1.f, 0.f, 0.f);
+            require(std::fabs(p0.x - 1.f) < 1e-6f && std::fabs(p0.y) < 1e-6f && std::fabs(p0.z) < 1e-6f, "R4: with identity ancestors the palette is unchanged");
+            GlbSpec midSpec; midSpec.armature = 2;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
+            const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
+            require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

@@ -37,6 +37,7 @@ struct Joint {
     DirectX::XMFLOAT4 r{ 0, 0, 0, 1 };
     DirectX::XMFLOAT3 s{ 1, 1, 1 };
     DirectX::XMFLOAT4X4 ibm;   // inverse bind matrix (row-vector convention, like the rest of the client)
+    DirectX::XMFLOAT4X4 base{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };   // product of the local transforms of the non-joint nodes between this joint and its parent joint (or the scene root); identity when the joint hangs directly off its parent
 };
 
 struct Channel {

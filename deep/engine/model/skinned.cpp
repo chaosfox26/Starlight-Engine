@@ -177,8 +177,14 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         for (cgltf_size j = 0; j < skin->joints_count; ++j) {
             const cgltf_node* n = skin->joints[j];
             Joint jt; jt.name = n->name ? n->name : ("joint" + std::to_string(j));
-            auto pit = n->parent ? jointOf.find(n->parent) : jointOf.end();
-            jt.parent = pit == jointOf.end() ? -1 : pit->second;
+            XMMATRIX base = XMMatrixIdentity();
+            for (const cgltf_node* a = n->parent; a; a = a->parent) {
+                auto pit = jointOf.find(a);
+                if (pit != jointOf.end()) { jt.parent = pit->second; break; }
+                float local[16]; cgltf_node_transform_local(a, local);
+                base = XMMatrixMultiply(base, FromGltf(local));
+            }
+            XMStoreFloat4x4(&jt.base, base);
             if (n->has_matrix) {
                 XMVECTOR scale, rotation, translation;
                 if (!XMMatrixDecompose(&scale, &rotation, &translation, FromGltf(n->matrix)))
@@ -444,7 +450,8 @@ void evalPose(const SkinnedModel& m, int clipA, float ta, int clipB, float tb, f
             s = XMVectorLerp(s, XMLoadFloat3(&lb[j].s), blend);
         }
         XMMATRIX L = XMMatrixMultiply(XMMatrixMultiply(XMMatrixScalingFromVector(s), XMMatrixRotationQuaternion(r)), XMMatrixTranslationFromVector(t));
-        XMMATRIX G = m.joints[j].parent < 0 ? L : XMMatrixMultiply(L, XMLoadFloat4x4(&gl[(size_t)m.joints[j].parent]));
+        XMMATRIX Lb = XMMatrixMultiply(L, XMLoadFloat4x4(&m.joints[j].base));
+        XMMATRIX G = m.joints[j].parent < 0 ? Lb : XMMatrixMultiply(Lb, XMLoadFloat4x4(&gl[(size_t)m.joints[j].parent]));
         XMStoreFloat4x4(&gl[j], G);
         if (global) global[j] = gl[j];
         if (palette) XMStoreFloat4x4(&palette[j], XMMatrixMultiply(XMLoadFloat4x4(&m.joints[j].ibm), G));
