@@ -410,7 +410,7 @@ static void BuildHeart(Mesh& m, int seg = 64) {
 }
 
 // ---- per-entity smoothed transform (interpolation between snapshots) ---------------------------
-struct SmoothXf { float x = 0, z = 0, y = 0, yaw = 0; bool init = false; };
+#include "smooth_xf.h"
 
 #include "persistent_workers.h"
 #include "parallel_metrics.h"
@@ -1678,11 +1678,7 @@ struct RenderDevice {
     // exponential smoothing toward the snapshot target (interpolation between snapshots).
     SmoothXf& track(uint64_t key, float tx, float tz, float ty, float tyaw, float a) {
         SmoothXf& s = smooth[key];
-        if (!s.init) { s.x = tx; s.z = tz; s.y = ty; s.yaw = tyaw; s.init = true; return s; }
-        s.x += (tx - s.x) * a; s.z += (tz - s.z) * a; s.y += (ty - s.y) * a;
-        float dyaw = tyaw - s.yaw;
-        while (dyaw > XM_PI) dyaw -= XM_2PI; while (dyaw < -XM_PI) dyaw += XM_2PI;
-        s.yaw += dyaw * a;
+        s.follow(tx, tz, ty, tyaw, a);
         return s;
     }
 
