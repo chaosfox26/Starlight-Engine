@@ -44,6 +44,10 @@ Supported operations:
 | rename | id, name | Change its display name |
 | remove | id | Remove it from the scene; the asset file is preserved |
 
+Optional top-level request keys, both default `false` (the default behaviour is unchanged): `allowMissingAssets` saves the scene even when it names models that are not in the asset library, like the editor's "Save anyway"; `correctedAdd` makes `add` resolve a relative model path against the request file's folder (as `replace-model` does) and rest the new object on the terrain.
+
+The open editor keeps `<scene>.starscene.autosave` beside a scene that has unsaved edits (at most every 2 minutes). It is a recovery copy only: it never replaces the scene, and the editor removes it after a normal Save.
+
 Coordinates are metres on the floor: X and Z. The preview floor spans -12 to +12 on each axis. Character assets remain referenced by absolute path; this is not a portable asset-package exporter. [Superseded 2026-10-04: a model is referenced by a library id, not a path. `add` and `replace-model` import the GLB you name into the library (or accept an existing model id), `merge-scene` no longer rebases model paths, and portable export bundles the referenced assets.]
 
 The whole batch validates before any scene write. A stale fingerprint rejects the batch. A file lock serializes participating editor writers, with another fingerprint check before saving. Existing scene contents are backed up on every replacement. A repeated request carrying the old fingerprint is rejected; inspect again before another edit. This is trusted local tooling, not a security sandbox against processes that already have filesystem access.
