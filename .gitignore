@@ -1,6 +1,7 @@
 /*
 !/.gitignore
 !/.gitmodules
+!/.gitattributes
 !/README.md
 !/STARLIGHT-PRODUCT-DIRECTION.md
 !/Build-Native.py
