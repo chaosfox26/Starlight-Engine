@@ -17,6 +17,8 @@ class ErrorThrottle {
         at_ = now;
         return true;
     }
+    // Only a failure raised by the timer or frame message can repeat on its own. An error from something the person just did (a second Save, Open or Paste) is always reported.
+    bool admit(std::string_view text, std::chrono::steady_clock::time_point now, bool periodic) { return !periodic || admit(text, now); }
     size_t suppressed() const { return suppressed_; }
 
   private:

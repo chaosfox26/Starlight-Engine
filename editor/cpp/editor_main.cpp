@@ -392,6 +392,7 @@ struct Editor {
     std::unique_ptr<NativeSession> renderer;
     fs::path filename;
     std::optional<std::string> diskHash;
+    bool userMessage = false;         // the message being handled comes from a person's action, so its errors are never throttled
     ErrorThrottle errorThrottle;      // a failure that repeats on every tick is reported once per window (audit ED-06)
     bool errorDialogOpen = false;     // the modal error box runs its own message loop, which delivers timer ticks that can fail again
     int selected = -1;
@@ -452,6 +453,11 @@ struct Editor {
         Gdiplus::GdiplusShutdown(graphicsToken);
     }
 
+    // Messages that mean a person just did something: their errors are always shown, while a failure on any other message (timer, frame, paint) can repeat by itself and stays throttled (audit ED-06).
+    static bool user_action(UINT m) {
+        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_KEYDOWN || m == WM_SYSKEYDOWN || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
+    }
+
     static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
         auto self = reinterpret_cast<Editor *>(GetWindowLongPtr(h, GWLP_USERDATA));
         if (m == WM_NCCREATE) {
@@ -460,11 +466,14 @@ struct Editor {
             SetWindowLongPtr(h, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         try {
-            if (self)
+            if (self) {
+                struct Mark { bool &flag; bool saved; ~Mark() { flag = saved; } } mark{self->userMessage, self->userMessage};
+                self->userMessage = user_action(m);
                 return self->message(m, w, l);
+            }
         } catch (const std::exception &e) {
             if (self)
-                self->error(e.what());
+                self->report(e.what(), m);
         }
         return DefWindowProc(h, m, w, l);
     }
@@ -565,7 +574,7 @@ struct Editor {
             self->history.cancel(self->scene);
             self->stroke = self->orbit = false;
             ReleaseCapture();
-            self->error(e.what());
+            self->report(e.what(), m);
         }
         return DefSubclassProc(h, m, w, l);
     }
@@ -1316,8 +1325,15 @@ struct Editor {
         EndPaint(window, &ps);
     }
 
+    void report(std::string_view text, UINT m) {
+        const bool saved = userMessage;
+        userMessage = user_action(m);
+        error(text);
+        userMessage = saved;
+    }
+
     void error(std::string_view text) {
-        if (!errorThrottle.admit(text, std::chrono::steady_clock::now())) return;
+        if (!errorThrottle.admit(text, std::chrono::steady_clock::now(), !userMessage)) return;
         diagnostic("native editor", text);
         std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
         SetWindowTextW(status, wide(text).c_str());
