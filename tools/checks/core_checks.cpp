@@ -943,10 +943,13 @@ static int checks_main(int argc, char **argv) {
         require(stale, "Stale edit rejected");
         configure(c, 2, -1, 2.25, .75);
         require(c.Route[0].X == 5 && c.Route[0].Z == -1, "Character configure moves route");
-        SculptMesh{}.validate();
-        SculptMesh wide{{9999, 0, 0}, {}};
-        wide.validate();
-        require(true, "Legacy sculpt limits preserved");
+        bool legacyAccepted = true;
+        try {
+            SculptMesh{}.validate();
+            SculptMesh wide{{9999, 0, 0}, {}};
+            wide.validate();
+        } catch(...){legacyAccepted=false;note_rejection(__FILE__,__LINE__);}
+        require(legacyAccepted, "Legacy sculpt limits preserved");
         Character transform;
         transform.Width = 2;
         transform.Height = .5;
@@ -1709,8 +1712,9 @@ static int checks_main(int argc, char **argv) {
             SceneData scene;scene.Game.emplace();AdventureController controller(scene,{0,1.7,0});controller.liquids(liquid);Character cube;cube.Shape="cube";auto piece=fracture_convex(shape_geometry(cube).front().mesh,{1,1,1}).front();auto id=controller.add_debris(piece.part->mesh,{3,1,0},{},500,.72,.03);Vec3 eye{0,1.7,0},at;std::array<double,4> rotation;
             for(int i=0;i<600;++i)eye=controller.step(eye,{},1./120.,false,i/120.,{});controller.debris_pose(id,at,rotation);
             require(at.y>1.5&&at.y<2.5,"Fracture bodies receive buoyancy in the same character world");controller.remove_debris(id);
-            controller.liquids(nullptr);for(int i=0;i<5;++i)eye=controller.step(eye,{},1./120.,false,5+i/120.,{});
-            require(true,"Removing floating debris clears liquid-force registrations");
+            bool steppedAfterRemoval=true;try{for(int i=0;i<5;++i)eye=controller.step(eye,{},1./120.,false,5+i/120.,{});}catch(...){steppedAfterRemoval=false;note_rejection(__FILE__,__LINE__);}
+            require(steppedAfterRemoval,"Removing floating debris clears liquid-force registrations (the liquid is still attached while stepping on)");
+            controller.liquids(nullptr);
         }
         {
             SceneData level;level.Game.emplace();Character body;body.Shape="cube";body.Dynamic=true;body.X=3;body.Y=4;body.Size=.3;body.JointKind=1;level.Characters={body};
