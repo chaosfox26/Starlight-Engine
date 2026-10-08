@@ -163,6 +163,24 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     return glb;
 }
 
+std::vector<uint8_t> makeSparseGlb(uint32_t indicesOffset) {
+    std::vector<uint8_t> bin(104, 0);
+    auto putF = [&](size_t at, float v) { std::memcpy(bin.data() + at, &v, 4); };
+    for (int i = 0; i < 3; ++i) for (int c = 0; c < 3; ++c) putF(size_t(i) * 32 + c * 4, float(1 + c));
+    bin[76] = 1; bin[77] = 2;
+    for (int i = 0; i < 6; ++i) putF(80 + size_t(i) * 4, float(10 + i));
+    std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":104}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":76,\"byteStride\":32},{\"buffer\":0,\"byteOffset\":" + std::to_string(indicesOffset) + ",\"byteLength\":2},{\"buffer\":0,\"byteOffset\":80,\"byteLength\":24}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"sparse\":{\"count\":2,\"indices\":{\"bufferView\":1,\"componentType\":5121},\"values\":{\"bufferView\":2}}}]}";
+    while (json.size() % 4) json.push_back(' ');
+    std::vector<uint8_t> glb;
+    putLE(glb, 0x46546C67u); putLE(glb, 2); putLE(glb, uint32_t(12 + 8 + json.size() + 8 + bin.size()));
+    putLE(glb, uint32_t(json.size())); putLE(glb, 0x4E4F534Au); glb.insert(glb.end(), json.begin(), json.end());
+    putLE(glb, uint32_t(bin.size())); putLE(glb, 0x004E4942u); glb.insert(glb.end(), bin.begin(), bin.end());
+    return glb;
+}
+
 std::vector<uint8_t> atlasBytes(const std::vector<float>& values) {
     std::vector<uint8_t> b(values.size() * 4);
     if (!values.empty()) std::memcpy(b.data(), values.data(), b.size());
@@ -892,6 +910,23 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(cubicSpec)), nullptr, "cubic.glb", scratch);
         show("GLB with CUBICSPLINE animation", e);
         require(e.code == LoadCode::Unsupported, "CUBICSPLINE animation is an explicit Unsupported error");
+        {
+            auto sparse = [&](uint32_t indicesOffset, cgltf_result& validated, std::vector<float>& out) {
+                const auto bytes = makeSparseGlb(indicesOffset);
+                cgltf_options opts{}; cgltf_data* d = nullptr;
+                if (cgltf_parse(&opts, bytes.data(), bytes.size(), &d) != cgltf_result_success) return false;
+                bool loaded = cgltf_load_buffers(&opts, d, nullptr) == cgltf_result_success;
+                validated = loaded ? cgltf_validate(d) : cgltf_result_data_too_short;
+                out.assign(9, 0.f);
+                bool unpacked = validated == cgltf_result_success && cgltf_accessor_unpack_floats(&d->accessors[0], out.data(), 9) == 9;
+                cgltf_free(d);
+                return unpacked || validated != cgltf_result_success;
+            };
+            cgltf_result validated = cgltf_result_success; std::vector<float> got;
+            require(sparse(76, validated, got) && validated == cgltf_result_success, "sparse interleaved fixture validates and unpacks");
+            require(got[0] == 1.f && got[3] == 10.f && got[4] == 11.f && got[5] == 12.f && got[6] == 13.f && got[7] == 14.f && got[8] == 15.f, "R7: sparse values are read tightly packed, not at the interleaved base stride");
+            require(sparse(200, validated, got) && validated == cgltf_result_data_too_short, "DEP-01: a sparse index view outside its real buffer is rejected before any read");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

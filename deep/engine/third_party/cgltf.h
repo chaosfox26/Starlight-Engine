@@ -1627,6 +1627,12 @@ cgltf_result cgltf_validate(cgltf_data* data)
 							sparse->indices_component_type != cgltf_component_type_r_16u &&
 							sparse->indices_component_type != cgltf_component_type_r_32u, cgltf_result_invalid_gltf);
 
+			CGLTF_ASSERT_IF(!sparse->indices_buffer_view->buffer || !sparse->values_buffer_view->buffer ||
+							sparse->indices_buffer_view->offset > sparse->indices_buffer_view->buffer->size ||
+							sparse->indices_buffer_view->size > sparse->indices_buffer_view->buffer->size - sparse->indices_buffer_view->offset ||
+							sparse->values_buffer_view->offset > sparse->values_buffer_view->buffer->size ||
+							sparse->values_buffer_view->size > sparse->values_buffer_view->buffer->size - sparse->values_buffer_view->offset, cgltf_result_data_too_short);
+
 			if (sparse->indices_buffer_view->buffer->data)
 			{
 				cgltf_size index_bound = cgltf_calc_index_bound(sparse->indices_buffer_view, sparse->indices_byte_offset, sparse->indices_component_type, sparse->count);
@@ -2387,7 +2393,7 @@ static const uint8_t* cgltf_find_sparse_index(const cgltf_accessor* accessor, cg
 		return NULL;
 
 	cgltf_size index = cgltf_component_read_index(index_data + offset * index_stride, sparse->indices_component_type);
-	return index == needle ? value_data + offset * accessor->stride : NULL;
+	return index == needle ? value_data + offset * cgltf_calc_size(accessor->type, accessor->component_type) : NULL;
 }
 
 cgltf_bool cgltf_accessor_read_float(const cgltf_accessor* accessor, cgltf_size index, cgltf_float* out, cgltf_size element_size)
@@ -2473,7 +2479,7 @@ cgltf_size cgltf_accessor_unpack_floats(const cgltf_accessor* accessor, cgltf_fl
 		reader_head += sparse->values_byte_offset;
 
 		cgltf_size index_stride = cgltf_component_size(sparse->indices_component_type);
-		for (cgltf_size reader_index = 0; reader_index < sparse->count; reader_index++, index_data += index_stride, reader_head += accessor->stride)
+		for (cgltf_size reader_index = 0; reader_index < sparse->count; reader_index++, index_data += index_stride, reader_head += cgltf_calc_size(accessor->type, accessor->component_type))
 		{
 			size_t writer_index = cgltf_component_read_index(index_data, sparse->indices_component_type);
 			float* writer_head = out + writer_index * floats_per_element;
