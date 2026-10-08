@@ -34,6 +34,7 @@ inline int run(const fs::path& scenePath,const fs::path& output,bool visible){
                 last=session.status();if(!last.error.empty())throw std::runtime_error(last.error);
                 if(grassContact&&last.frames>=5){double x=1.4*std::sin(last.seconds*1.3);session.player_body(Bounds{{x-.35,-.2,-3.35},{x+.35,1.7,-2.65}});}
                 if(last.frames<5&&GetTickCount64()>deadline)throw std::runtime_error("Live graphics preview startup timeout");
+                if(!visible&&GetTickCount64()>started+120000)throw std::runtime_error("Live graphics preview did not finish its captures within two minutes");
                 if(captureStage==0&&last.frames>=5){first=last;firstWall=GetTickCount64();captureTarget=last.captures+1;session.capture(output/L"field-start.png");captureStage=1;}
                 if(captureStage==1&&last.captures>=captureTarget){capturedFirst=true;captureStage=2;}
                 if(captureStage==2&&last.seconds>first.seconds+2){captureTarget=last.captures+1;session.capture(output/L"field-motion.png");captureStage=3;}
