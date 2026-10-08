@@ -405,6 +405,7 @@ struct Editor {
     ULONGLONG lastTick = GetTickCount64(), brushTick = 0, watchTick = 0;
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
+    bool watchMissing = false;        // the open scene file has disappeared: said once, not re-reported every second
 
     #define playback_command playback_command_prepared
     #include "classic_completion.inl"
@@ -3146,8 +3147,11 @@ struct Editor {
         if (!filename.empty() && !playing && !stroke && now - watchTick >= 1000) {
             watchTick = now;
             try {
-                auto modified = fs::last_write_time(filename);
-                if (!watchedTime || *watchedTime != modified) {
+                std::error_code missing;
+                auto modified = fs::last_write_time(filename, missing);
+                if (missing && !watchMissing) SetWindowTextW(status, L"The scene file is no longer where it was opened from. Use Save As to keep your work.");
+                watchMissing = bool(missing);
+                if (!missing && (!watchedTime || *watchedTime != modified)) {
                     watchedTime = modified;
                     auto hash = hash_file(filename);
                     if (diskHash && hash != *diskHash) {
