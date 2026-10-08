@@ -610,6 +610,8 @@ API int sl_scene_remove(void* handle,const uint64_t* keys,int count){
   std::unordered_set<uint64_t> live;for(const auto& p:v.parts)live.insert(p.meshKey);
   bool retire=false,grassRemoved=false;
   for(const auto& p:removed){if(!p.streaming&&!live.count(p.meshKey))retire=true;if(p.source&&!p.source->verts.empty()&&GrassDeformation::accepts(p.source->verts.front().kind))grassRemoved=true;}
+  // Transient (streaming) meshes are not pooled with the resident ones: in-flight frames may still read them, so they go to the spare list behind the current fence.
+  for(auto& p:removed)if(p.streaming&&p.gpu.vb&&p.gpu.ib){const UINT64 vbWidth=starlight_resource_desc(p.gpu.vb).Width,ibWidth=starlight_resource_desc(p.gpu.ib).Width;v.streams.push_back({std::move(p.gpu),d.fenceVal,vbWidth,ibWidth});}
   const bool rasterOnly=v.rt.active==0&&!v.rt.tlasBuilt&&v.rt.cache.empty();
   const int removeBranch=(retire||grassRemoved)?(rasterOnly?0:1):2;
   if(retire||grassRemoved){
