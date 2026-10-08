@@ -316,6 +316,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             else continue;
             if (ch.sampler->interpolation == cgltf_interpolation_type_cubic_spline)
                 return fail(LoadCode::Unsupported, "clip '" + c.name + "' uses CUBICSPLINE interpolation, which the pose evaluator does not implement");
+            if (ch.sampler->input->count == 0) continue;
             if (ch.sampler->input->type != cgltf_type_scalar || ch.sampler->output->type != (comps == 4 ? cgltf_type_vec4 : cgltf_type_vec3))
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' sampler accessors have the wrong element type (keyframe times must be SCALAR, values VEC3 or VEC4)");
             k.times.resize(ch.sampler->input->count);

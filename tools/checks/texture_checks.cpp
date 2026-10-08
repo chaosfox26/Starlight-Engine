@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool hugeIndexCount = false; bool wideTimes = false; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool hugeIndexCount = false; bool wideTimes = false; bool emptyChannel = false; bool noViewVerts = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -142,12 +142,12 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     while (bin.size() % 4) bin.push_back(0);
     const size_t declared = bin.size();
     const struct { int component; size_t count; const char* type; } acc[9] = {
-        { 5126, 4, "VEC3" }, { 5126, 4, "VEC3" }, { 5126, 4, "VEC2" }, { 5121, 4, "VEC4" }, { 5126, 4, "VEC4" },
-        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
+        { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC2" }, { 5121, spec.noViewVerts ? 5000000u : 4u, "VEC4" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC4" },
+        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, spec.emptyChannel ? 0u : 2u, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.emptyChannel ? 0u : spec.cubic ? 6u : 2u, "VEC4" } };
     std::string views, accessors;
     for (int i = 0; i < 9; ++i) {
         views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";
-        accessors += std::string(i ? "," : "") + "{\"bufferView\":" + std::to_string(i) + ",\"componentType\":" + std::to_string(acc[i].component) + ",\"count\":" + std::to_string(acc[i].count) + ",\"type\":\"" + acc[i].type + "\"}";
+        accessors += std::string(i ? "," : "") + "{" + (spec.noViewVerts && i < 5 ? "" : "\"bufferView\":" + std::to_string(i) + ",") + "\"componentType\":" + std::to_string(acc[i].component) + ",\"count\":" + std::to_string(acc[i].count) + ",\"type\":\"" + acc[i].type + "\"}";
     }
     std::string primitiveList;
     for (int i = 0; i < spec.primitives; ++i) primitiveList += std::string(i ? "," : "") + "{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"JOINTS_0\":3,\"WEIGHTS_0\":4},\"indices\":5,\"material\":0}";
@@ -947,6 +947,8 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             if (d) cgltf_free(d);
             require(ok && untouched, "SKN-1: sparse values are never written past the float count the caller asked for");
         }
+        GlbSpec emptySpec; emptySpec.emptyChannel = true;
+        require(model::loadSkinnedFromMemory(ByteView(makeGlb(emptySpec)), nullptr, "empty-channel.glb", scratch).ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty(), "SKN-4: an animation channel with no keyframes is dropped so the joint keeps its rest pose");
         GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
         show("GLB whose index count wraps the size check", e);
