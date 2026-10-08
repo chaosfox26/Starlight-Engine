@@ -22,10 +22,13 @@ void check(HRESULT hr) {
         throw std::runtime_error("Windows operation failed: " +
                                  std::to_string(static_cast<unsigned long>(hr)));
 }
-// Saves with backup keep the newest few "<file>.<32 hex digits>.bak" copies beside the file. Only names in exactly that form are ever removed.
-constexpr size_t kBackupsKept = 5;
+// Backups are never deleted unless the owner sets STARLIGHT_BACKUPS_KEPT=<n>; then only the newest n "<file>.<32 hex digits>.bak" copies beside the file stay, and only names in exactly that form are removed.
 void prune_backups(const fs::path& file) noexcept {
     try {
+        char setting[16]{};
+        if (!GetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT", setting, sizeof(setting))) return;
+        const size_t kBackupsKept = size_t(std::atoi(setting));
+        if (kBackupsKept < 1) return;
         const auto prefix = file.filename().wstring() + L".";
         std::vector<std::pair<fs::file_time_type, fs::path>> found;
         std::error_code ec;

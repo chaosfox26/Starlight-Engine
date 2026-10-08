@@ -8,7 +8,13 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         const std::vector<std::string> bystanders{"scene.starscene.bak","scene.starscene.20260101.bak","other.starscene."+std::string(32,'a')+".bak","scene.starscene."+std::string(32,'A')+".bak","scene.starscene."+std::string(32,'a')+".bak.keep"};
         for(const auto& name:bystanders)atomic_write(dir/name,"not ours");
         atomic_write(target,"version 0");
+        for(int i=1;i<=2;++i){Sleep(20);atomic_write(target,"early "+std::to_string(i),true);}
+        const auto countBackups=[&]{size_t n=0;for(const auto& entry:fs::directory_iterator(dir)){const auto name=entry.path().filename().string();if(name.size()==std::string("scene.starscene.").size()+32+4&&name.starts_with("scene.starscene.")&&name.ends_with(".bak")&&name.find("aaaa")==std::string::npos)++n;}return n;};
+        const auto beforePrune=countBackups();
+        require(beforePrune>=2,"A-06-3: Backups are kept by default, nothing is deleted unless the owner asks");
+        SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT","5");
         for(int i=1;i<=8;++i){Sleep(20);atomic_write(target,"version "+std::to_string(i),true);}
+        SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT",nullptr);
         std::set<std::string> kept;size_t ours=0;const std::string head="scene.starscene.";
         for(const auto& entry:fs::directory_iterator(dir)){
             const auto name=entry.path().filename().string();
@@ -53,9 +59,12 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         fs::remove(game/"content"/"manifest.json");
         std::string why;try{verify_exported_content(game/"content");}catch(const std::exception& e){why=e.what();}
         require(why.find("manifest.json is missing")!=std::string::npos,"A-06-5: An exported game whose manifest was deleted is refused");
-        fs::create_directories(dir/"bundle-like"/"assets");atomic_write(dir/"bundle-like"/"scene.starscene","{}");
+        fs::create_directories(dir/"bundle-like"/"assets");atomic_write(dir/"bundle-like"/"assets"/"x.slasset","x");atomic_write(dir/"bundle-like"/"scene.starscene","{}");
         why.clear();try{verify_exported_content(dir/"bundle-like");}catch(const std::exception& e){why=e.what();}
-        require(why.find("manifest.json is missing")!=std::string::npos,"A-06-5: A scene folder with an assets folder but no manifest is refused");
+        require(why.find("manifest.json is missing")!=std::string::npos,"A-06-5: A scene folder holding engine assets but no manifest is refused");
+        fs::create_directories(dir/"plain-assets"/"assets");atomic_write(dir/"plain-assets"/"scene.starscene","{}");
+        bool plain=true;try{verify_exported_content(dir/"plain-assets");}catch(const std::exception&){plain=false;}
+        require(plain,"A-06-5: A scene folder with an unrelated assets folder still opens");
         fs::create_directories(dir/"loose");atomic_write(dir/"loose"/"scene.starscene","{}");
         bool loose=true;try{verify_exported_content(dir/"loose");}catch(const std::exception&){loose=false;}
         require(loose,"A-06-5: A scene that is not part of an export still opens without a manifest");
@@ -84,6 +93,7 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
     {
         // A-10-1: one DLL load kept the unrestricted search order after the vendor-DLL hardening; no load in the engine sources may use it.
         const fs::path engine="deep/engine";std::string offender;
+        require(fs::is_directory(engine),"A-10-1: The check runs from the repository root so it can read the engine sources");
         if(fs::is_directory(engine))
             for(const auto& entry:fs::recursive_directory_iterator(engine)){
                 const auto extension=entry.path().extension().string();

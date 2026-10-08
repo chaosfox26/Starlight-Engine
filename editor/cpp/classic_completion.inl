@@ -57,6 +57,7 @@ void playback_command(int id)
     }
     if(!next){adventureLook=false;camera();}
     if(id==Stop){if(adventure)renderer->scene(scene);adventure.reset();adventureHint.clear();}
+    struct PrewarmEnd{NativeSession* session;~PrewarmEnd(){if(session)session->prewarm_play(false);}} prewarmEnd{loading?renderer.get():nullptr}; // an exception in the barrier must not leave the session in prewarm mode
     if(next && adventure){
         if(loading)renderer->prewarm_play(true); // the barrier installs the scene play will use; playback(true) below ends the prewarm
         renderer->gameplay_time(adventure->seconds());

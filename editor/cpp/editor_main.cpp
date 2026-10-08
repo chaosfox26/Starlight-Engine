@@ -455,8 +455,9 @@ struct Editor {
     }
 
     // Messages that mean a person just did something: their errors are always shown, while a failure on any other message (timer, frame, paint) can repeat by itself and stays throttled (audit ED-06).
-    static bool user_action(UINT m) {
-        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_KEYDOWN || m == WM_SYSKEYDOWN || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
+    static bool user_action(UINT m, LPARAM l = 0) {
+        if (m == WM_KEYDOWN || m == WM_SYSKEYDOWN) return !(l & (LPARAM(1) << 30));   // a held key repeating is not a new action
+        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
     }
 
     static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -469,12 +470,12 @@ struct Editor {
         try {
             if (self) {
                 struct Mark { bool &flag; bool saved; ~Mark() { flag = saved; } } mark{self->userMessage, self->userMessage};
-                self->userMessage = user_action(m);
+                self->userMessage = user_action(m, l);
                 return self->message(m, w, l);
             }
         } catch (const std::exception &e) {
             if (self)
-                self->report(e.what(), m);
+                self->report(e.what(), m, l);
         }
         return DefWindowProc(h, m, w, l);
     }
@@ -575,7 +576,7 @@ struct Editor {
             self->history.cancel(self->scene);
             self->stroke = self->orbit = false;
             ReleaseCapture();
-            self->report(e.what(), m);
+            self->report(e.what(), m, l);
         }
         return DefSubclassProc(h, m, w, l);
     }
@@ -1326,9 +1327,9 @@ struct Editor {
         EndPaint(window, &ps);
     }
 
-    void report(std::string_view text, UINT m) {
+    void report(std::string_view text, UINT m, LPARAM l = 0) {
         const bool saved = userMessage;
-        userMessage = user_action(m);
+        userMessage = user_action(m, l);
         error(text);
         userMessage = saved;
     }

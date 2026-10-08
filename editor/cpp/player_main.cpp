@@ -49,6 +49,7 @@ struct Player {
     bool prepare_and_start(LoadingScreen& loading){
         const auto statusBefore=renderer->status();
         renderer->playback(false);renderer->prewarm_play(true); // the barrier installs the scene play will use; playback(true) below ends the prewarm
+        struct PrewarmEnd{NativeSession& session;~PrewarmEnd(){session.prewarm_play(false);}} prewarmEnd{*renderer}; // an exception in the barrier must not leave the session in prewarm mode
         questTracker.reset();gameplay.start(authored);
         lastPreparation=prepare_scene(gameplay,loading);
         if(lastPreparation.stopped()){fail_loading(loading,lastPreparation);return false;}

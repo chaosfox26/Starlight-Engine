@@ -17,9 +17,10 @@ import verify_all
 def dirty_digest(repo):
     """Hash of every uncommitted change to tracked files, so two different dirty trees at one HEAD get different build ids."""
     try:
-        return hashlib.sha256(subprocess.run(['git', '-C', repo, 'diff', 'HEAD'], capture_output=True, timeout=120).stdout).hexdigest()
+        run = subprocess.run(['git', '-C', repo, 'diff', 'HEAD'], capture_output=True, timeout=120)
+        return hashlib.sha256(run.stdout).hexdigest() if run.returncode == 0 else 'unavailable'
     except Exception:
-        return ''
+        return 'unavailable'
 
 def configured_from(build_dir):
     """The source folder the build tree next to the executables folder was configured from (its CMakeCache.txt), or None when there is no cache."""
@@ -335,7 +336,7 @@ def main():
     if home and not same_folder(home, args.repo):
         print('REFUSING TO RUN: the build was configured from %s but --repo is %s' % (home, args.repo))
         return 2
-    stale = verify_all.stale_reason(args.repo, args.build_dir)
+    stale = verify_all.stale_reason(args.repo, args.build_dir, targets=('Starlight.NativeCoreChecks', 'Starlight.Viewport', 'Starlight.Physics'))
     if stale:
         print('REFUSING TO RUN: ' + stale)
         return 2
