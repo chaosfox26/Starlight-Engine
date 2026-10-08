@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstring>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -51,9 +52,15 @@ struct ModelEntry {
     size_t bytes = 0;
     uint64_t used = 0;
 };
+// One parse in progress: threads that ask for the same model meanwhile wait for its result instead of parsing their own copy.
+struct ModelParse {
+    std::promise<std::shared_ptr<const std::vector<MeshPart>>> promise;
+    std::shared_future<std::shared_ptr<const std::vector<MeshPart>>> result{promise.get_future()};
+};
 struct ModelService {
     std::mutex lock;
     std::unordered_map<std::string, ModelEntry> entries;
+    std::unordered_map<std::string, std::shared_ptr<ModelParse>> parsing;
     size_t bytes = 0;
     uint64_t clock = 0;
     std::atomic<uint64_t> hits{0}, misses{0}, evicted{0}, pinned{0};
@@ -298,6 +305,7 @@ std::string import_model(const fs::path &path) {
 std::shared_ptr<const std::vector<MeshPart>> load_model(const std::string &id) {
     auto &s = model_service();
     if (!EngineAssets::valid_id(AssetKind::Model, id)) throw AssetMissing("Object refers to an invalid model asset id: " + id);
+    std::shared_ptr<ModelParse> running, mine;
     {
         std::lock_guard guard(s.lock);
         auto found = s.entries.find(id);
@@ -306,18 +314,36 @@ std::shared_ptr<const std::vector<MeshPart>> load_model(const std::string &id) {
             s.hits.fetch_add(1, std::memory_order_relaxed);
             return found->second.parts;
         }
+        auto parse = s.parsing.find(id);
+        if (parse != s.parsing.end()) running = parse->second;
+        else s.parsing.emplace(id, mine = std::make_shared<ModelParse>());
+    }
+    if (running) {
+        s.hits.fetch_add(1, std::memory_order_relaxed);
+        return running->result.get();
     }
     s.misses.fetch_add(1, std::memory_order_relaxed);
-    auto payload = EngineAssets::get(AssetKind::Model, id);
-    auto built = std::make_shared<const std::vector<MeshPart>>(parse_glb(*payload));
-    std::lock_guard guard(s.lock);
-    auto [slot, inserted] = s.entries.try_emplace(id);
-    if (!inserted) return slot->second.parts;
-    slot->second.parts = built;
-    slot->second.bytes = model_bytes(*built);
-    slot->second.used = ++s.clock;
-    s.bytes += slot->second.bytes;
-    if (s.bytes > kModelBytes || s.entries.size() > kModelEntries) evict_models(s, id, kModelEntries / 4 * 3, kModelBytes / 4 * 3);
+    std::shared_ptr<const std::vector<MeshPart>> built;
+    try {
+        auto payload = EngineAssets::get(AssetKind::Model, id);
+        built = std::make_shared<const std::vector<MeshPart>>(parse_glb(*payload));
+        std::lock_guard guard(s.lock);
+        auto &slot = s.entries[id]; // only the thread that owns the parse of this id ever inserts it
+        slot.parts = built;
+        slot.bytes = model_bytes(*built);
+        slot.used = ++s.clock;
+        s.bytes += slot.bytes;
+        if (s.bytes > kModelBytes || s.entries.size() > kModelEntries) evict_models(s, id, kModelEntries / 4 * 3, kModelBytes / 4 * 3);
+        s.parsing.erase(id);
+    } catch (...) {
+        {
+            std::lock_guard guard(s.lock);
+            s.parsing.erase(id);
+        }
+        mine->promise.set_exception(std::current_exception()); // waiting threads see the same failure each would have had parsing it themselves
+        throw;
+    }
+    mine->promise.set_value(built);
     return built;
 }
 ModelServiceStats model_service_stats() {
