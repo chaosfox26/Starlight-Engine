@@ -47,8 +47,26 @@ def run_step(name, argv, cwd, timeout, env=None):
             'seconds': round(time.monotonic() - start, 1), 'tail': out[-400:], 'command': argv}
 
 
-def stale_reason(repo, build_dir):
+def pending_build_steps(build_dir, targets):
+    """Ask the build system whether the targets are up to date (cmake --build ... -- -n prints the steps it would run). None when it cannot be asked."""
+    tree = os.path.dirname(build_dir.rstrip('\\/'))
+    if not os.path.exists(os.path.join(tree, 'CMakeCache.txt')):
+        return None
+    try:
+        out = subprocess.run(['cmake', '--build', tree, '--config', 'Release', '--target'] + list(targets) + ['--', '-n'], capture_output=True, text=True, timeout=300, creationflags=FLAGS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    steps = [l for l in out.stdout.splitlines() if l.startswith('[')]
+    return steps
+
+
+def stale_reason(repo, build_dir, targets=('Starlight.NativeCoreChecks',)):
     """Why the built checks cannot speak for the current sources, or None. A failed or forgotten build leaves an old executable that still passes."""
+    steps = pending_build_steps(build_dir, targets)
+    if steps is not None:
+        return ('%d build steps are pending for %s (for example %s): rebuild first' % (len(steps), ', '.join(targets), steps[0][:120])) if steps else None
     exe = os.path.join(build_dir, 'Starlight.NativeCoreChecks.exe')
     if not os.path.exists(exe):
         return None
@@ -142,6 +160,13 @@ def self_test():
     check('a failed step gives 1', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'python', 'outcome': 'FAIL'}]) == 1)
     check('a ledger run that is not all VERIFIED gives 1 even though the process finished', summarize([{'step': 'ledger', 'outcome': 'FAIL', 'exitCode': 2}]) == 1)
     check('a stale build is reported as NOT RUN and is never PASS', (lambda r: r is not None and 'rebuild' in r)(stale_reason_for_test()))
+    with tempfile.TemporaryDirectory() as folder:
+        def suite_with(suite):
+            json.dump({'suite': suite}, open(os.path.join(folder, 'latest.json'), 'w'))
+            return suite_failure(folder)
+        check('a passing suite is not a failure', suite_with({'success': True}) is None)
+        check('a failed suite is a failure even when the ledger finished', 'did not pass' in (suite_with({'success': False, 'error': 'boom'}) or ''))
+        check('a missing latest.json is a failure', suite_failure(os.path.join(folder, 'nowhere')) is not None)
     check('a step that could not run gives 2', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'denoise', 'outcome': 'NOT RUN'}]) == 2)
 
     class A:
@@ -173,7 +198,7 @@ def main():
     os.makedirs(args.results, exist_ok=True)
     stamp = time.strftime('%Y%m%d-%H%M%S')
     records = []
-    stale = stale_reason(args.repo, args.build_dir)
+    stale = stale_reason(args.repo, args.build_dir, ('Starlight.NativeCoreChecks', 'Starlight.NativeDenoiseChecks', 'Starlight.NativeFallbackChecks') if args.gpu else ('Starlight.NativeCoreChecks',))
     if stale:
         print('NOT RUN: ' + stale)
         records.append({'step': 'build', 'outcome': 'NOT RUN', 'reason': stale})
