@@ -329,7 +329,7 @@ int visible_ui_checks(const fs::path& output) {
             history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
             double firstVolume=0;bool sparks=false,flames=false,movingFog=false;
             for(int i=0;i<8;++i)step(("Dynamic fog, lightning, sparks and liquids "+std::to_string(i+1)).c_str(),[&]{},[&]{auto s=renderer->status();sparks|=s.effect_sparks>0;flames|=s.fire_particles>0;movingFog|=s.fog_moving_bodies>0;if(!i)firstVolume=s.liquid_volume;return s.playing && s.liquid_volume>0 && std::abs(s.liquid_volume-firstVolume)<1e-7;});
-            report["environmentThunderBuffers"]=gameplayAudio.submitted;report["environmentAudioErrors"]=gameplayAudio.failed;if(gameplayAudio.submitted==0||gameplayAudio.failed)throw std::runtime_error("Ordinary environment thunder did not reach the audio device");
+            report["environmentThunderBuffers"]=gameplayAudio.submitted.load();report["environmentAudioErrors"]=gameplayAudio.failed.load();if(gameplayAudio.submitted==0||gameplayAudio.failed)throw std::runtime_error("Ordinary environment thunder did not reach the audio device");
             report["movingFogObstaclesObserved"]=movingFog;if(!movingFog)throw std::runtime_error("Moving bodies were not delivered to fog transport");
             report["fireParticlesObserved"]=flames;if(!flames)throw std::runtime_error("Fire particles were not emitted");report["impactSparksObserved"]=sparks;report["liquidVolume"]=firstVolume;
             if(!sparks)throw std::runtime_error("No lightning impact sparks during environment run");
@@ -644,13 +644,13 @@ int visible_ui_checks(const fs::path& output) {
             auto authored=scene.encode();history.clear();dirty=false;refresh();toggle_menu(0);playback_command(Play);SetFocus(view);
             step("Third-person dual pistols",[&]{adventure->cameraDistance=4;adventure->cameraPitch=-.25;},[&]{return adventure->presentation().showBody && adventure->presentation().showWeapons;});
             step("First-person pistols below aim",[&]{adventure->cameraDistance=0;},[&]{return !adventure->presentation().showBody && adventure->presentation().showWeapons;});
-            auto soundsBefore=gameplayAudio.submitted;
+            auto soundsBefore=gameplayAudio.submitted.load();
             step("Committed attack begins",[&]{adventure->fire_button(true);adventure->fire_button(false);},[&]{return adventure->basic_attack().winding && adventure->presentation().shots==0;});
             step("Committed attack continues",[&]{},[&]{return adventure->basic_attack().winding;});
             step("Shot and shatter submit original sounds",[&]{},[&]{return adventure->presentation().shots==1 && adventure->presentation().shatters==1 && gameplayAudio.submitted>=soundsBefore+2 && gameplayAudio.failed==0 && scene.encode()==authored;});
-            soundsBefore=gameplayAudio.submitted;
+            soundsBefore=gameplayAudio.submitted.load();
             step("Stun birds submit chirps",[&]{adventure->cameraDistance=4;adventure->apply_control(ControlEffect::Stun,{2,true},true);},[&]{return gameplayAudio.submitted>soundsBefore && gameplayAudio.failed==0;});
-            report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;
+            report["audioSubmitted"]=gameplayAudio.submitted.load();report["audioErrors"]=gameplayAudio.failed.load();
             report["pass"]=true;atomic_write(output,report.dump(2));dirty=false;SendMessage(window,WM_CLOSE,0,0);return 0;
         }
         if(GetEnvironmentVariableW(L"STARLIGHT_UI_MOVEMENT_ONLY",nullptr,0)){

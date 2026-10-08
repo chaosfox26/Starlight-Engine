@@ -62,13 +62,13 @@ class GameplayAudio {
             v.pcm=stereo_sound(cues_[size_t(r.cue)],r.gain,r.pan);
             if(!v.device){
                 WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=2;format.nSamplesPerSec=22050;format.wBitsPerSample=16;format.nBlockAlign=4;format.nAvgBytesPerSec=88200;
-                if(waveOutOpen(&v.device,WAVE_MAPPER,&format,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){v.device=nullptr;v.pcm.clear();std::atomic_ref<uint64_t>(failed).fetch_add(1);return;}
+                if(waveOutOpen(&v.device,WAVE_MAPPER,&format,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){v.device=nullptr;v.pcm.clear();failed.fetch_add(1);return;}
             }
             v.header.lpData=reinterpret_cast<LPSTR>(v.pcm.data());v.header.dwBufferLength=static_cast<DWORD>(v.pcm.size()*sizeof(short));
-            if(waveOutPrepareHeader(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){std::atomic_ref<uint64_t>(failed).fetch_add(1);release(v);return;}
+            if(waveOutPrepareHeader(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){failed.fetch_add(1);release(v);return;}
             v.prepared=true;
-            if(waveOutWrite(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){std::atomic_ref<uint64_t>(failed).fetch_add(1);release(v);return;}
-            voicesOpen_=true;std::atomic_ref<uint64_t>(submitted).fetch_add(1);return;
+            if(waveOutWrite(v.device,&v.header,sizeof(v.header))!=MMSYSERR_NOERROR){failed.fetch_add(1);release(v);return;}
+            voicesOpen_=true;submitted.fetch_add(1);return;
         }
     }
     void run(std::stop_token stop){
@@ -87,8 +87,8 @@ class GameplayAudio {
     }
     std::jthread worker_;
 public:
-    // Written by the audio thread through atomic_ref; other threads read them as plain integers (aligned 64-bit reads on x64).
-    uint64_t submitted=0,failed=0;
+    // Written by the audio thread and read by acceptance steps on other threads.
+    std::atomic<uint64_t> submitted{0},failed{0};
     GameplayAudio():worker_([this](std::stop_token stop){run(stop);}){}
     GameplayAudio(const GameplayAudio&)=delete;
     GameplayAudio& operator=(const GameplayAudio&)=delete;

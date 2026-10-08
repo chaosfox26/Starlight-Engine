@@ -79,7 +79,7 @@ int gameplay_checks(const fs::path& output){
         step("Swing steering moves beneath anchor",[&]{checkRight=1;},[&]{return gameplay.grapple_motion().state==GrappleMotion::State::Swing && gameplay.grapple_motion().velocity.length()>.1;});
         Vec3 releasedVelocity{};
         step("Swing release retains travel momentum",[&]{releasedVelocity=gameplay.grapple_motion().velocity;checkRight=0;SendMessageW(window,WM_KEYUP,'G',0);},[&]{return releasedVelocity.length()>.1 && gameplay.grapple_motion().state==GrappleMotion::State::Free;});
-        load(empty);auto impactBefore=gameplayAudio.submitted;
+        load(empty);auto impactBefore=gameplayAudio.submitted.load();
         step("Launch visibly lifts the player",[&]{gameplay.apply_control(ControlEffect::Launch,{2,true},true);},[&]{return gameplay.position.y>2 && gameplay.presentation().impacts==0;},400);
         step("Launch landing emits one impact sound",[&]{},[&]{return gameplay.presentation().impacts==1 && gameplayAudio.submitted>impactBefore && gameplayAudio.failed==0;},1500);
         load(empty);bool blocked=false;
@@ -89,7 +89,7 @@ int gameplay_checks(const fs::path& output){
         step("Friendly control stays rejected",[&]{load(empty);friendlyRejected=gameplay.apply_control(ControlEffect::Stun,{2,true},false)==CombatControl::Result::Rejected;},[&]{return friendlyRejected && !gameplay.crowd_control().active;});
         auto combat=empty;Character target;target.Id="acceptance-target";target.Shape="cube";target.Z=-4;target.Width=2;target.Height=2;target.Depth=1;target.GameplayRole="breakable";combat.Characters={target};load(combat);
         step("Target selection never fires",[&]{key(VK_TAB);},[&]{return gameplay.presentation().targetBounds.has_value() && !gameplay.basic_attack().winding;});
-        auto audioBefore=gameplayAudio.submitted;
+        auto audioBefore=gameplayAudio.submitted.load();
         step("Released attack resolves and shatters",[&]{key('1');},[&]{return gameplay.scene().Characters.empty() && gameplay.presentation().shots==1 && gameplayAudio.submitted>=audioBefore+2;},3000);
         step("Released attack does not repeat",[&]{},[&]{return gameplay.presentation().shots==1 && !gameplay.basic_attack().winding;});
         load(empty);
@@ -104,7 +104,7 @@ int gameplay_checks(const fs::path& output){
         step("Packaged enemy impact applies player damage",[&]{},[&]{return gameplay.health()<100&&gameplay.combat_actors().at(shooter.Id).health==100;},1800);
         auto pool=empty;pool.Terrain->WaterEnabled=true;pool.Terrain->WaterLevel=2.5;load(pool);
         step("Packaged liquid buoyancy raises the player",[&]{},[&]{return gameplay.position.y>2.2;},6000);
-        auto storm=empty;Character bolt;bolt.Shape="chaos-lightning";bolt.X=4;bolt.TargetX=0;bolt.TargetY=0;storm.Characters={bolt};load(storm);auto beforeThunder=gameplayAudio.submitted;
+        auto storm=empty;Character bolt;bolt.Shape="chaos-lightning";bolt.X=4;bolt.TargetX=0;bolt.TargetY=0;storm.Characters={bolt};load(storm);auto beforeThunder=gameplayAudio.submitted.load();
         step("Packaged lightning produces spatial thunder without audio errors",[&]{},[&]{return gameplay.presentation().lightning>0&&gameplayAudio.submitted>beforeThunder&&gameplayAudio.failed==0;},1000);
         auto dynamicCombat=empty;Character drivenEnemy;drivenEnemy.Shape="cube";drivenEnemy.Dynamic=true;drivenEnemy.Size=.5;drivenEnemy.X=3;drivenEnemy.Y=4;drivenEnemy.Z=-4;drivenEnemy.CombatHealth=100;drivenEnemy.CombatPursuit=true;dynamicCombat.Characters={drivenEnemy};load(dynamicCombat);
         step("Packaged pursuing dynamic enemy retains falling and contact physics",[&]{},[&]{auto c=gameplay.scene().Characters.front();return c.Y<.3&&std::hypot(c.X-3,c.Z+4)>.2&&c.PhysicsRotation.has_value();},2400);
@@ -116,7 +116,7 @@ int gameplay_checks(const fs::path& output){
         double pausedTime=0;
         step("Pause freezes gameplay",[&]{key(VK_ESCAPE);pausedTime=gameplay.seconds();},[&]{return paused && gameplay.seconds()==pausedTime;});
         step("Restart restores original package scene",[&]{key(VK_F5);},[&]{return !paused && gameplay.health()==100 && gameplay.movement_resources().dodgeCharges==2 && gameplay.presentation().shots==0 && authored.encode()==original;});
-        report["audioSubmitted"]=gameplayAudio.submitted;report["audioErrors"]=gameplayAudio.failed;report["authoredUnchanged"]=authored.encode()==original;report["pass"]=true;
+        report["audioSubmitted"]=gameplayAudio.submitted.load();report["audioErrors"]=gameplayAudio.failed.load();report["authoredUnchanged"]=authored.encode()==original;report["pass"]=true;
     }catch(const std::exception& e){report["error"]=e.what();}
     atomic_write(output,report.dump(2));bool pass=report["pass"].get<bool>();gameplayCheck=false;gameplayObserver={};SendMessageW(window,WM_CLOSE,0,0);return pass?0:1;
 }
