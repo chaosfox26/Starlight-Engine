@@ -44,5 +44,15 @@ static void scene_preparation_checks(const auto& require){
         require(report.state==PreparationReport::State::Failed&&report.reason.find("observer failed")!=std::string::npos,"04#5: A stage whose loading display fails ends the preparation as failed with that reason");
         require(observed==1,"04#5: The stages after a failed one do not run, so the failing display is not called again");
     }
+    {
+        // 04#6, as used by prepare_scene: a STARLIGHT_PREPARE_LIMIT_MS that is not a number leaves the 60 second default, so a breakable rock that needs more than a millisecond is waited for.
+        auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=40;
+        for(int i=0;i<2;++i){Character stone;stone.Shape="boulder";stone.Id="prep-limit-boulder-"+std::to_string(i);stone.Size=2;stone.X=i*6;stone.Z=-3;stone.DestructionHealth=10;scene->Characters.push_back(stone);}
+        auto player=std::make_unique<AdventurePlayer>();player->start(*scene);
+        SetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS","abc");
+        LoadingScreen screen;auto report=prepare_scene(*player,screen);
+        SetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS",nullptr);
+        require(!report.stopped()&&report.breakablesQueued==2&&report.breakablesPrepared==2,"04#6: An unparsable STARLIGHT_PREPARE_LIMIT_MS does not cut breakable preparation short at 1 ms");
+    }
 }
 
