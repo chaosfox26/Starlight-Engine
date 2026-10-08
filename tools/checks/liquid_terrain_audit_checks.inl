@@ -29,6 +29,34 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(notBelowStill,"07#1: A wave trough never takes the liquid top below the still level, so objects stay in the wet-object filter");
         require(trough,"07#1: The rippled lake has troughs where the drawn surface is below the still level and the filter still uses the still level");
     }
+    {   // 07#2: the surface search skips volumes that cannot change a decision, so it must return exactly what the full evaluation returns.
+        auto reference=[](const TerrainData& t,double x,double z){ // the search as it was: every volume at every probe
+            if(t.Volumes.empty())return t.height_at(x,z);
+            const double height=t.height_at(x,z);double top=height+.5;
+            for(const auto& v:t.Volumes)if(!v.Subtract)top=std::max(top,v.Y+v.Radius+.5);
+            bool affected=false;for(const auto& v:t.Volumes)if(std::hypot(x-v.X,z-v.Z)<v.Radius+.3){affected=true;break;}
+            if(!affected)return height;
+            for(double high=top;high> -21.;high-=.125){double low=std::max(-21.,high-.125);
+                if(t.density_at(x,low,z)<=0){for(int i=0;i<16;++i){double mid=(low+high)*.5;if(t.density_at(x,mid,z)<=0)low=mid;else high=mid;}return (low+high)*.5;}
+            }
+            return -21.;
+        };
+        uint32_t seed=424242u;auto random=[&]{seed=seed*1664525u+1013904223u;return double(seed>>8)/double(1<<24);};
+        size_t compared=0,carved=0;bool identical=true;
+        for(int scene=0;scene<12;++scene){
+            TerrainData ground;for(auto& h:ground.Heights)h=-1+2*random();
+            const int holes=scene==0?1:scene<4?20:scene<8?60:128; // a crowded field overlaps its blends; a sparse one leaves most volumes far away
+            for(int i=0;i<holes;++i)ground.Volumes.push_back({-11.5+23*random(),-3+5*random(),-11.5+23*random(),.25+(scene<8?1.:3.)*random(),random()<(scene%3==2?.5:.85)});
+            for(int k=0;k<1500;++k){
+                double x=-12+24*random(),z=-12+24*random();
+                if(k%3==0&&!ground.Volumes.empty()){const auto& v=ground.Volumes[size_t(random()*ground.Volumes.size())%ground.Volumes.size()];x=v.X+(random()*2-1)*(v.Radius+.4);z=v.Z+(random()*2-1)*(v.Radius+.4);}
+                const double a=ground.surface_at(x,z),b=reference(ground,x,z);
+                identical&=a==b;++compared;carved+=a<ground.height_at(x,z)-.05;
+            }
+        }
+        require(compared==18000&&carved>1500,"07#2: The comparison covers carved columns");
+        require(identical,"07#2: The surface search returns bit-for-bit what the full evaluation of every volume returns");
+    }
     {   // 07#3: a triangle is registered only in the cells its x/z projection meets, and every query answers as if its whole bounding box were registered.
         constexpr int G=FlowObstacleMask::GeometryN;
         auto cellOf=[](double v){return std::clamp(int(std::floor((v+12)*G/24)),0,G-1);};
