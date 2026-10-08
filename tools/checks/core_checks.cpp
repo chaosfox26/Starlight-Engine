@@ -44,6 +44,7 @@ using namespace starlight::editor;
 #include "obstacle_removal_checks.inl"
 #include "glb_index_budget_checks.inl"
 #include "id_remap_checks.inl"
+#include "migration_path_checks.inl"
 #include "history_stroke_checks.inl"
 #include "contact_index_checks.inl"
 #include "mesh_reduce_checks.inl"
@@ -122,6 +123,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(glb_index_budget_checks, glb_index_budget_checks(require,folder));
         RUN_GROUP(id_remap_checks, id_remap_checks(require));
         RUN_GROUP(history_stroke_checks, history_stroke_checks(require));
+        RUN_GROUP(migration_path_checks, migration_path_checks(require));
         RUN_GROUP(contact_index_checks, contact_index_checks(require));
         RUN_GROUP(mesh_reduce_checks, mesh_reduce_checks(require));
         RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));
