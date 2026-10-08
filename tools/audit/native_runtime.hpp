@@ -3,9 +3,9 @@
 #include "native_process.hpp"
 namespace starlight::audit {
 inline fs::path runtime_child(const fs::path& root,const std::string& relative){
- auto name=fs::u8path(relative);if(name.is_absolute()||name.empty())throw std::runtime_error("Runtime entry must be a relative path");
+ auto name=fs::u8path(relative);if(name.is_absolute()||name.has_root_name()||name.has_root_directory()||name.empty())throw std::runtime_error("Runtime entry must be a relative path");
  for(const auto& part:name)if(part==L"..")throw std::runtime_error("Runtime entry escapes its root");
- auto path=root/name;for(auto p=path;p!=root;p=p.parent_path()){auto attrs=GetFileAttributesW(long_path(p).c_str());if(attrs!=INVALID_FILE_ATTRIBUTES&&(attrs&FILE_ATTRIBUTE_REPARSE_POINT))throw std::runtime_error("Runtime entry is redirected");}return path.lexically_normal();
+ auto path=root/name,stop=root.has_filename()?root:root.parent_path();for(auto p=path;p!=stop&&p!=p.parent_path();p=p.parent_path()){auto attrs=GetFileAttributesW(long_path(p).c_str());if(attrs!=INVALID_FILE_ATTRIBUTES&&(attrs&FILE_ATTRIBUTE_REPARSE_POINT))throw std::runtime_error("Runtime entry is redirected");}return path.lexically_normal();
 }
 inline std::string runtime_substitute(std::string value,const std::map<std::string,fs::path>& variables){for(const auto& [token,path]:variables){auto text=utf8(path.wstring());size_t pos=0;while((pos=value.find(token,pos))!=std::string::npos){value.replace(pos,token.size(),text);pos+=text.size();}}return value;}
 inline void runtime_saved_evidence(const fs::path& folder,json& evidence){
