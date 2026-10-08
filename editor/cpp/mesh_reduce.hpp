@@ -17,15 +17,17 @@
 
 namespace starlight::editor {
 
-// Detail setting for the engine's built-in (procedural) meshes: the share of triangles kept. The default is 0.33 (67% fewer triangles, the owner 2026-10-08). STARLIGHT_MESH_DETAIL=0.67
+// Detail setting for the engine's built-in (procedural) meshes: the share of triangles kept. The default is 0.33 (67% fewer triangles, the owner 2026-10-08); values below 0.05 are held at 0.05 and anything that is not a positive number keeps the default. STARLIGHT_MESH_DETAIL=0.67
 // keeps two thirds of the triangles of every large built-in mesh; STARLIGHT_MESH_DETAIL=1 restores the full meshes. Authored files are never touched: the reduction is applied
 // to the generated geometry only, once, when a shape is first built.
 inline double mesh_detail() {
     static const double value = [] {
         char text[32]{};
         if (!GetEnvironmentVariableA("STARLIGHT_MESH_DETAIL", text, sizeof(text))) return 0.33;
-        const double v = std::atof(text);
-        return (v > 0.05 && v < 1.0) ? v : 1.0;
+        char* end = nullptr;
+        const double v = std::strtod(text, &end);
+        if (end == text || *end || !(v > 0.0)) return 0.33;   // not a positive number: keep the default rather than silently restoring full detail
+        return std::clamp(v, 0.05, 1.0);
     }();
     return value;
 }
