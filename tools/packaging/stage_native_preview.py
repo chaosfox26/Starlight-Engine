@@ -143,6 +143,7 @@ copy(runtime_source/'audit/starlight_audit_tool.exe', 'runtime/Release/audit/sta
 copy(runtime_source/'projects/Empty/Empty.dll', 'runtime/Release/projects/Empty/Empty.dll')
 
 copy(root/'deep/projects/Empty/Empty.star', 'runtime/Release/projects/Empty/Empty.star')
+copy(runtime_source/'projects/Empty/Empty.starscene', 'runtime/Release/projects/Empty/Empty.starscene')
 
 for name in ('starlight-editor.ico','starlight-analysis.ico','starlight-glass-icon-v1.png',
 
@@ -244,6 +245,10 @@ for source in (root/'Starlight Documents/Current').rglob('*.md'):
 copy(runtime_source/'projects/Empty/Empty.dll', 'deep/projects/Empty/Empty.dll')
 
 copy(root/'deep/projects/Empty/Empty.star', 'deep/projects/Empty/Empty.star')
+copy(runtime_source/'projects/Empty/Empty.starscene', 'deep/projects/Empty/Empty.starscene')
+for dll in [name for name in entries if re.fullmatch(r'(?:runtime/Release|deep)/projects/(\w+)/\1\.dll', name)]:
+    if dll[:-4] + '.starscene' not in entries:
+        raise RuntimeError('Project module has no key card beside it: ' + dll)
 
 for source in (root/'deep/settings').glob('*.startest'):
 
