@@ -90,6 +90,16 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         require(refusal().find("invalid file path")!=std::string::npos,"A manifest path that leaves the game folder is refused");
     }
     {
+        // A-06-7: the asset root is process-wide, so a ScopedRoot on one thread is visible to all; overlapping scopes on two threads are counted (and assert in debug builds).
+        const auto before=EngineAssets::ScopedRoot::overlapping_uses();
+        { EngineAssets::ScopedRoot outer(dir/"scope-a"); { EngineAssets::ScopedRoot inner(dir/"scope-b"); } }
+        require(EngineAssets::ScopedRoot::overlapping_uses()==before,"A-06-7: Nested scopes on one thread are not counted as overlapping");
+#ifdef NDEBUG
+        { EngineAssets::ScopedRoot outer(dir/"scope-a"); std::thread other([&]{ EngineAssets::ScopedRoot inner(dir/"scope-b"); }); other.join(); }
+        require(EngineAssets::ScopedRoot::overlapping_uses()==before+2,"A-06-7: A scope opened and closed on a second thread while the first is live is counted");
+#endif
+    }
+    {
         // A-06-12: a JPEG ending in a run of 0xFF bytes read one byte past its end.
         const std::string ends{"\xff\xd8\xff\xe0\x00\x02\xff\xff\xff\xff",10};
         std::string why;try{(void)describe_texture(ends);}catch(const std::exception& e){why=e.what();}
