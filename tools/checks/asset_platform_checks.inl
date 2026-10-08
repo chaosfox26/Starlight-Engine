@@ -103,4 +103,6 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
             }
         require(offender.empty(),"A-10-1: No engine DLL load uses the unrestricted LOAD_WITH_ALTERED_SEARCH_PATH search order");
     }
+    // Later groups scan the scratch folder for scenes and leftover backups, so these files must not stay behind.
+    fs::remove_all(dir,cleared);
 }
