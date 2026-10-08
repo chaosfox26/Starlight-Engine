@@ -949,7 +949,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         }
         GlbSpec emptySpec; emptySpec.emptyChannel = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(emptySpec)), nullptr, "empty-channel.glb", scratch).ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty(), "SKN-4: an animation channel with no keyframes is dropped so the joint keeps its rest pose");
-        GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
+        GlbSpec noViewSpec; noViewSpec.noViewVerts = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewSpec)), nullptr, "no-view-vertices.glb", scratch);
+        show("GLB whose vertex accessors have no buffer view and 5 million elements", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-3: a vertex or index accessor without data cannot ask for millions of elements");        GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
         show("GLB whose index count wraps the size check", e);
         require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-2: an accessor count that wraps the 64-bit size check is rejected instead of read");
