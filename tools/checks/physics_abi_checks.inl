@@ -12,6 +12,8 @@ __declspec(dllimport) int slp_terrain(void *, const float *);
 __declspec(dllimport) int slp_ready(void *);
 __declspec(dllimport) void slp_debug_fail_cooks(int);
 __declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, int, float);
+__declspec(dllimport) int slp_character_start(void *, float, float, float, float);
+__declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -74,6 +76,11 @@ static void physics_abi_checks(const auto& require){
     require(slp_terrain(terrainWorld,heights.data())==1,"EL-09: The same terrain update is accepted again after the failures");
     int finalState=0;for(int i=0;i<10&&finalState!=1;++i)finalState=settle(2000);
     require(finalState==1,"EL-09: Every tile is cooked again and the terrain becomes ready after the failed cooks");
+    // TERR CHAR-1: a non-finite character step is refused and cannot poison the controller for later valid steps.
+    require(slp_character_start(terrainWorld,.3f,0,0,0)==1,"TERR CHAR-1: A character controller starts on the cooked terrain");
+    float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
+    require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
+    require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
     slp_destroy(terrainWorld);
     slp_destroy(world);
 }

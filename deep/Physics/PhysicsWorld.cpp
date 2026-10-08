@@ -160,7 +160,7 @@ public:
   return !hits.HadHit();
  }
  void CharacterStep(float dt,Vec3 feet,Vec3 input,bool jump,float* output,bool overrideMotion=false){
-  if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f)throw std::runtime_error("Invalid character step");
+  if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f || !std::isfinite(feet.GetX()+feet.GetY()+feet.GetZ()) || !std::isfinite(input.GetX()+input.GetY()+input.GetZ()))throw std::runtime_error("Invalid character step");
   if((character->GetPosition()-RVec3(feet)).LengthSq()>1.e-6){
    character->SetPosition(RVec3(feet));character->SetLinearVelocity(Vec3::sZero());
    character->RefreshContacts(world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
