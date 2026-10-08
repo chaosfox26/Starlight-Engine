@@ -15,6 +15,9 @@
 !/deep/
 /deep/*
 !/deep/engine/
+!/deep/graphics_runtime/
+!/LICENSE
+!/licenses/
 !/deep/Physics/
 !/deep/src/
 !/deep/projects/
