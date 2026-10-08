@@ -23,6 +23,8 @@ inline std::vector<MeshPart> batch_presentation(std::vector<MeshPart> parts){
     }
     return batches;
 }
+// The unit cube every presentation box starts from: built once instead of a Character (with its GUID) and a fresh mesh per box per frame (audit 08#8).
+inline const std::vector<MeshPart>& unit_cube_parts(){static const std::vector<MeshPart> parts=[]{Character c;c.Shape="cube";return shape_geometry(c);}();return parts;}
 // Temporary geometry only: never inserted into gameplay, collision or saved scenes.
 inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presentation& p,bool gpuFill=false,bool residentFragments=false){
     std::vector<MeshPart> parts;
@@ -78,8 +80,7 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         frame({Vec3{a.x,a.y,a.z},{b.x,a.y,a.z},{b.x,b.y,a.z},{a.x,b.y,a.z},{a.x,a.y,b.z},{b.x,a.y,b.z},{b.x,b.y,b.z},{a.x,b.y,b.z}},{1,.7,.1});
     }
     auto box=[&](Vec3 center,Vec3 size,Vec3 color,uint64_t identity=0){uint64_t vertexIndex=0;
-        Character c;c.Shape="cube";
-        auto shapes=shape_geometry(c);
+        auto shapes=unit_cube_parts();
         for(auto& part:shapes){
             part.color=color;
             for(auto& v:part.mesh.vertices){
@@ -107,8 +108,8 @@ inline std::vector<MeshPart> player_presentation(const AdventurePlayer::Presenta
         const auto base=p.showBody?p.feet+Vec3{0,p.bodyHeight*.68,0}:p.eye-up*.23;
         uint64_t weaponIdentity=100;
         auto weaponBox=[&](Vec3 center,Vec3 size,Vec3 color,bool glow=false){
-            Character c;c.Shape="cube";uint64_t identity=weaponIdentity++,vertexIndex=0;
-            for(auto part:shape_geometry(c)){
+            uint64_t identity=weaponIdentity++,vertexIndex=0;
+            for(auto part:unit_cube_parts()){
                 part.color=color;part.emissive=glow;
                 for(auto& v:part.mesh.vertices){v.motionIdentity=vertex_motion_identity(10,identity,vertexIndex++);auto q=v.position;v.position=center+right*(q.x*size.x)+up*((q.y-.5)*size.y)+forward*(q.z*size.z);}
                 part.mesh.normals();parts.push_back(std::move(part));
