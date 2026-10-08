@@ -73,6 +73,7 @@ using namespace starlight::editor;
 #include "object_destruction_checks.inl"
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
 #include "terrain_destruction_checks.inl"
+#include "physics_fracture_audit_checks.inl"
 #endif
 // Keep the large controller fixtures out of main's permanently reserved frame.
 // Other phases must retain room for nested collision/mesh operations on Windows.
@@ -151,6 +152,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(destruction_dust_checks, destruction_dust_checks(require,folder));
         RUN_GROUP(object_destruction_checks, object_destruction_checks(require,folder));
         RUN_GROUP(terrain_destruction_checks, terrain_destruction_checks(require,folder));
+        RUN_GROUP(physics_fracture_audit_checks, physics_fracture_audit_checks(require));
 #endif
         if (groups_filtered()) {
             std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";

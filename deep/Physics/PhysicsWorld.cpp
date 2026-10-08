@@ -197,6 +197,8 @@ public:
  static std::atomic<int>& InjectedCookFailures(){static std::atomic<int> remaining{0};return remaining;}
  static void SetInjectedUpdateFailures(int n){InjectedUpdateFailures().store(n);}
  static std::atomic<int>& InjectedUpdateFailures(){static std::atomic<int> remaining{0};return remaining;}
+ static void SetInjectedAddFailures(int n){InjectedAddFailures().store(n);}
+ static std::atomic<int>& InjectedAddFailures(){static std::atomic<int> remaining{0};return remaining;}
  static ShapeRefC Cook(const std::array<float,289>& h,int tx,int tz){
   {auto& remaining=InjectedCookFailures();int n=remaining.load();while(n>0&&!remaining.compare_exchange_weak(n,n-1)){}if(n>0)throw std::runtime_error("injected terrain cook failure");}
   TriangleList triangles;triangles.reserve(512);
@@ -388,6 +390,7 @@ public:
  }
  uint32_t AddShape(ShapeRefC shape,bool dynamic,Vec3 pos,Quat rotation){
   CheckPose(pos,rotation);
+  {auto& remaining=InjectedAddFailures();int n=remaining.load();while(n>0&&!remaining.compare_exchange_weak(n,n-1)){}if(n>0)throw std::runtime_error("injected body add failure");}
   BodyCreationSettings settings(shape,RVec3(pos),rotation.Normalized(),dynamic?EMotionType::Dynamic:EMotionType::Static,dynamic?1:0);settings.mFriction=.72f;settings.mRestitution=.03f;settings.mAngularDamping=.18f;settings.mLinearDamping=.03f;settings.mMotionQuality=dynamic?EMotionQuality::LinearCast:EMotionQuality::Discrete;
   BodyID id=world.GetBodyInterface().CreateAndAddBody(settings,dynamic?EActivation::Activate:EActivation::DontActivate);if(id.IsInvalid())throw std::runtime_error("Body capacity reached");allProps.push_back(id);if(dynamic)bodies.push_back(id);return id.GetIndexAndSequenceNumber();
  }
@@ -463,6 +466,8 @@ API void* slp_create(){try{EnsureJoltInitialized();return new starlight::Physics
 // Test hook: the next n terrain tile cooks fail. Used by the physics ABI checks to prove a failed cook is recovered (audit EL-09).
 API void slp_debug_fail_cooks(int n){starlight::PhysicsWorld::SetInjectedCookFailures(n<0?0:n);}
 API void slp_debug_fail_updates(int n){starlight::PhysicsWorld::SetInjectedUpdateFailures(n<0?0:n);}
+// Test hook: the next n body additions fail, as when the world is full (audit 03#2).
+API void slp_debug_fail_adds(int n){starlight::PhysicsWorld::SetInjectedAddFailures(n<0?0:n);}
 API void slp_destroy(void* p){delete static_cast<starlight::PhysicsWorld*>(p);}
 API void slp_clear(void* p){static_cast<starlight::PhysicsWorld*>(p)->ClearProps();}
 API int slp_terrain_mesh(void* p,const float* points,int count,const uint32_t* indices,int indexCount){try{static_cast<starlight::PhysicsWorld*>(p)->TerrainMesh(points,count,indices,indexCount);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
