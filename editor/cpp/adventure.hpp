@@ -738,10 +738,10 @@ class AdventurePlayer {
                 auto toward=target-origin;double length=std::hypot(toward.x,toward.z);auto goal=length>steeringSpacing?target-toward.unit()*steeringSpacing:origin;
                 if(routeClear(origin,goal)){actor.navigationPath.clear();}
                 else {
-                    if((actor.navigationGoal-goal).length()>1)actor.navigationPath.clear();
+                    if((actor.navigationGoal-goal).length()>1){actor.navigationPath.clear();actor.navigationBackoff=.5;}
                     while(!actor.navigationPath.empty() && (actor.navigationPath.front()-origin).length()<.2)actor.navigationPath.erase(actor.navigationPath.begin());
                     if(!actor.navigationPath.empty() && !routeClear(origin,actor.navigationPath.front()))actor.navigationPath.clear();
-                    if(actor.navigationPath.empty() && actor.navigationRetry<=0){{const auto astarT0=std::chrono::steady_clock::now();actor.navigationPath=ground_path(origin,goal,routeClear);++astarCalls_;if(actor.navigationPath.empty())++astarFails_;astarMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-astarT0).count();}actor.navigationGoal=goal;actor.navigationRetry=.5;}
+                    if(actor.navigationPath.empty() && actor.navigationRetry<=0){{const auto astarT0=std::chrono::steady_clock::now();actor.navigationPath=ground_path(origin,goal,routeClear);++astarCalls_;if(actor.navigationPath.empty())++astarFails_;astarMs_+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-astarT0).count();}actor.navigationGoal=goal;actor.navigationBackoff=actor.navigationPath.empty()?std::min(4.,actor.navigationBackoff*2):.5;actor.navigationRetry=actor.navigationBackoff;}
                     while(!actor.navigationPath.empty() && (actor.navigationPath.front()-origin).length()<.2)actor.navigationPath.erase(actor.navigationPath.begin());
                     if(!actor.navigationPath.empty()){steeringTarget=actor.navigationPath.front();steeringSpacing=0;}
                 }

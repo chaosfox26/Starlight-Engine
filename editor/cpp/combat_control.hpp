@@ -122,7 +122,7 @@ struct CombatActor {
     BasicAttack attack;
     GroundSteering steering;
     std::vector<Vec3> navigationPath;
-    Vec3 navigationGoal{};double navigationRetry=0;
+    Vec3 navigationGoal{};double navigationRetry=0,navigationBackoff=.5;
     Vec3 attackOrigin{},attackAim{},launchVelocity{};
     bool launchPending=false,launchAirborne=false;
     double tetherYank=0,tetherGuard=0;
