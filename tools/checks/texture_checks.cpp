@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -134,7 +134,10 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<float> times{ 0.f, 1.f };
     if (spec.badTimes == 1) times[0] = std::nanf("");
     if (spec.badTimes == 2) times = { 1.f, 0.f };
+    if (spec.badTimes == 3) times = { 0.f, 0.f };
+    if (spec.badTimes == 4) times = { -1.f, 1.f };
     std::vector<float> rot = spec.cubic ? std::vector<float>{ 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,.7071f,.7071f, 0,0,0,0 } : std::vector<float>{ 0,0,0,1, 0,0,.7071f,.7071f };
+    if (spec.nanKey) rot[4] = std::nanf("");
     std::vector<uint8_t> bin;
     const size_t offs[9] = { addBlob(bin, pos), addBlob(bin, nrm), addBlob(bin, uv), addBlob(bin, joints), addBlob(bin, weights), addBlob(bin, indices), addBlob(bin, ibm), addBlob(bin, times), addBlob(bin, rot) };
     const size_t lens[9] = { pos.size() * 4, nrm.size() * 4, uv.size() * 4, joints.size(), weights.size() * 4, indices.size() * 2, ibm.size() * 4, times.size() * 4, rot.size() * 4 };
@@ -983,8 +986,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
             require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
         }
-        for (int bad : { 1, 2 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
+        for (int bad : { 1, 2, 3, 4 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
+        { GlbSpec nanSpec; nanSpec.nanKey = true; e = model::loadSkinnedFromMemory(ByteView(makeGlb(nanSpec)), nullptr, "nankey.glb", scratch);
+            require(e.code == LoadCode::Malformed, "R5: a keyframe value that is not finite is Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(matrixSpec)), nullptr, "matrix.glb", scratch).ok() && std::fabs(scratch.joints[1].t.y - 1.f) < 1e-5f && std::fabs(scratch.joints[1].s.x - 1.f) < 1e-5f, "R4: a joint given as a matrix keeps its translation");
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
