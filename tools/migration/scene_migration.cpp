@@ -29,6 +29,15 @@ std::string lower(std::string s) {
 }
 std::string generic(const fs::path& p) { return utf8(p.generic_wstring()); }
 fs::path from_utf8(const std::string& s) { return fs::path(wide(s)); }
+// An inventory names its output paths; they must stay beneath the stage and archive roots (audit DEP-08).
+const std::string& confined_relative(const std::string& text) {
+    const auto path = from_utf8(text);
+    bool climbs = false;
+    for (const auto& part : path) climbs = climbs || part == L"..";
+    if (text.empty() || climbs || path.is_absolute() || path.has_root_name() || path.has_root_directory() || text.find(':') != std::string::npos)
+        throw std::runtime_error("Inventory path is not a plain relative path under the output folder: " + text);
+    return text;
+}
 std::string sha_of(std::string_view data) { return lower(hash_bytes(data)); }
 bool ends_with(const std::string& s, const std::string& tail) { return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0; }
 bool contains(const std::string& s, const std::string& part) { return s.find(part) != std::string::npos; }
@@ -356,7 +365,7 @@ json load_manifest(const fs::path& path) {
     return manifest;
 }
 json archive_original(const fs::path& in, const std::string& original, const std::string& sha, const Options& o) {
-    const std::string rel = o.relative.empty() ? sha.substr(0, 12) + "-" + utf8(in.filename().wstring()) : o.relative;
+    const std::string rel = o.relative.empty() ? sha.substr(0, 12) + "-" + utf8(in.filename().wstring()) : confined_relative(o.relative);
     const auto target = o.archive / L"files" / from_utf8(rel);
     const auto manifestPath = o.archive / L"manifest.json";
     auto manifest = load_manifest(manifestPath);
@@ -1006,7 +1015,7 @@ int run_convert_all(const fs::path& inventoryPath, Options o, const fs::path& st
             continue;
         }
         const auto source = from_utf8(f.at("path").get<std::string>());
-        const auto target = stage / from_utf8(rel);
+        const auto target = stage / from_utf8(confined_relative(rel));
         Options local = o;
         local.relative = rel;
         json report;
