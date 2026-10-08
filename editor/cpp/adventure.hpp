@@ -70,14 +70,14 @@ template<class P,class N> inline void adapt_fracture(FractureResult& result,cons
         piece.center=o1+Vec3{r[0][0]*d.x+r[0][1]*d.y+r[0][2]*d.z,r[1][0]*d.x+r[1][1]*d.y+r[1][2]*d.z,r[2][0]*d.x+r[2][1]*d.y+r[2][2]*d.z};
     }
 }
-template<class P> inline FractureResult compute_fracture(const Character& c,const P& moved,uint32_t serial){
+template<class P> inline FractureResult compute_fracture(const Character& c,const P& moved,uint32_t serial,std::stop_token stop={}){
     FractureResult result;
     auto fractureParts=object_parts(c);
     result.supported=!fractureParts.empty();
     const bool geological=!c.Sculpt&&(c.Shape=="rock"||c.Shape=="boulder"||c.Shape=="pebbles"||c.Shape=="chaos-rock");
     auto origin=world_point(moved,{}),bx=world_point(moved,{1,0,0})-origin,by=world_point(moved,{0,1,0})-origin,bz=world_point(moved,{0,0,1})-origin;
     uint32_t fractureSeed=serial*2654435761u;for(unsigned char byte:c.Id)fractureSeed=(fractureSeed^byte)*16777619u;
-    for(auto part:fractureParts){foliage_fragment_fallback(part.mesh,c);for(auto& v:part.mesh.vertices){v.position=world_point(moved,v.position);v.normal=(by.cross(bz)*v.normal.x+bz.cross(bx)*v.normal.y+bx.cross(by)*v.normal.z).unit();}auto pieces=geological?fracture_rock(part.mesh,part.color,part.emissive,fractureSeed++):std::vector<FracturePiece>{};if(pieces.empty())pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){result.supported=false;break;}result.pieces.insert(result.pieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
+    for(auto part:fractureParts){foliage_fragment_fallback(part.mesh,c);for(auto& v:part.mesh.vertices){v.position=world_point(moved,v.position);v.normal=(by.cross(bz)*v.normal.x+bz.cross(bx)*v.normal.y+bx.cross(by)*v.normal.z).unit();}auto pieces=geological?fracture_rock(part.mesh,part.color,part.emissive,fractureSeed++,nullptr,stop):std::vector<FracturePiece>{};if(pieces.empty()&&stop.stop_requested()){result.supported=false;break;}if(pieces.empty())pieces=fracture_mesh(std::move(part.mesh),part.color,part.emissive);if(pieces.empty()){result.supported=false;break;}result.pieces.insert(result.pieces.end(),std::make_move_iterator(pieces.begin()),std::make_move_iterator(pieces.end()));}
     result.seed=fractureSeed;
     return result;
 }
@@ -213,14 +213,14 @@ class AdventurePlayer {
         preTried_.clear();preTopUpAt_=-1;
         top_up_prefracture(true);
     }
-    // Rolling break-ahead. Up to STARLIGHT_PREFRACTURE_MAX (default 12) breakables are fractured on background workers at any time:
+    // Rolling break-ahead. Up to STARLIGHT_PREFRACTURE_MAX (default 256) breakables are fractured on background workers at any time:
     // the ones inside the player's attack cone first, then the nearest to the player. As results are used, further breakables
     // are queued, so a rock hit later in a long fight is still ready and the gameplay thread does not stall for a fracture.
     void top_up_prefracture(bool initial=false){
         if(!rulesEnabled_)return;
         const bool rolling=repair_prefracture();
         if(!rolling&&!initial)return; // previous behaviour: one batch when the session starts
-        static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return std::numeric_limits<size_t>::max();}(); // every breakable object is prepared while the scene loads; a cap exists only as a test switch
+        static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return size_t(256);}(); // up to 256 breakables are prepared while the scene loads (every breakable of an ordinary scene); in a larger scene the rest follow as these are used, so memory does not grow with the breakable count
         if(limit==0)return;
         const size_t cap=rolling?limit:std::min<size_t>(limit,4);
         size_t held=0;{std::lock_guard lock(preMutex_);held=preFractures_.size();}
@@ -265,7 +265,7 @@ class AdventurePlayer {
                     }
                     FractureResult result;std::string failure;
                     const double preStart=starlight_diag::events_enabled()?starlight_diag::evnow():0;
-                    try{result=compute_fracture(entry->source,entry->pose,entry->serial);}catch(const std::exception& error){result={};failure=std::string("fracture computation threw: ")+error.what();}catch(...){result={};failure="fracture computation threw an unknown error";}
+                    try{result=compute_fracture(entry->source,entry->pose,entry->serial,stop);}catch(const std::exception& error){result={};failure=std::string("fracture computation threw: ")+error.what();}catch(...){result={};failure="fracture computation threw an unknown error";}
                     if(failure.empty()&&(!result.supported||result.pieces.empty()))failure="the object's geometry produced no fracture pieces";
                     const double preFractured=preStart>0?starlight_diag::evnow():0;
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
@@ -990,10 +990,11 @@ class AdventurePlayer {
             lastDestruction.fractureMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-destructionStart).count();
             if(fractureSupported){
                 {
+                    bool bodyFailureReported=false; // a full physics world must not leave the break half done: the piece still drops, without a body
                     for(auto piece:physicalPieces){
                         Fragment f;f.position=piece.center;f.rotation=fracture.rotation;auto outward=(piece.center-center).unit();f.velocity=outward*2+Vec3{0,3,0};f.radius=piece.radius;f.restitution=c.Restitution;f.part=std::move(piece.part);for(const auto& vertex:f.part->mesh.vertices){auto p=vertex.position;f.localBounds.low={std::min(f.localBounds.low.x,p.x),std::min(f.localBounds.low.y,p.y),std::min(f.localBounds.low.z,p.z)};f.localBounds.high={std::max(f.localBounds.high.x,p.x),std::max(f.localBounds.high.y,p.y),std::max(f.localBounds.high.z,p.z)};}
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
-                        if(controller_){if(!(piece.hull&&piece.hullDensity==c.Density))++runtime_bypass().hullBuiltAtBreak;const auto hullStart=std::chrono::steady_clock::now();auto motion=controller_->body_motion(c.Id,piece.center);f.velocity=f.velocity+motion.first;f.body=controller_->add_debris(f.part->mesh,f.position,f.velocity,c.Density,c.Friction,c.Restitution,motion.second+Vec3{outward.z,1,-outward.x},piece.hull&&piece.hullDensity==c.Density?piece.hull:DebrisHull{},fracture.rotation);lastDestruction.hullMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-hullStart).count();}
+                        if(controller_){if(!(piece.hull&&piece.hullDensity==c.Density))++runtime_bypass().hullBuiltAtBreak;const auto hullStart=std::chrono::steady_clock::now();auto motion=controller_->body_motion(c.Id,piece.center);f.velocity=f.velocity+motion.first;try{f.body=controller_->add_debris(f.part->mesh,f.position,f.velocity,c.Density,c.Friction,c.Restitution,motion.second+Vec3{outward.z,1,-outward.x},piece.hull&&piece.hullDensity==c.Density?piece.hull:DebrisHull{},fracture.rotation);}catch(const std::exception& error){f.body=UINT32_MAX;if(!bodyFailureReported){bodyFailureReported=true;std::fprintf(stderr,"break: a fragment of %s has no physics body and falls as a plain particle: %s\n",c.Name.c_str(),error.what());}}lastDestruction.hullMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-hullStart).count();}
 #endif
                         f.serial=++fragmentSerial_;fragments_.push_back(std::move(f));
                     }

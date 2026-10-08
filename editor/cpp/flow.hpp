@@ -68,7 +68,9 @@ struct FlowObstacleMask {
     void finish();
     // Takes whole objects (numbered in add() order) out of a finished layer without rebuilding it: their triangles leave every cell list and
     // block mask, the column extents are recomputed where they stood, and the revisions change so memoised answers are dropped. The
-    // per-cell vertical extents and the occupancy table are left as they were, which can only make a query take its slower exact path.
+    // per-cell vertical extents and the occupancy table are left as they were, which can only make a query take its slower exact path,
+    // until more than half of the triangle records are dead: then the survivors are renumbered and the layer is finished again.
+    // That moves triangle indices, so it is for layers nobody holds a Mark of (not the heavy layer that truncate() works on).
     void remove_objects(const std::vector<unsigned>& objects);
     void rasterize_columns(const ColumnTriangle& triangle,int cellX0,int cellX1,int cellZ0,int cellZ1);
     // A point in the accumulated geometry. truncate() removes everything added after it (the mask must be re-finished), so
@@ -77,6 +79,12 @@ struct FlowObstacleMask {
     Mark mark() const { return {triangles.size(),objectCount,low,high}; }
     void truncate(const Mark&);
 };
+// A layer that may be edited in place: the one given when nothing else holds it, otherwise a private copy, so an edit can
+// never reach another holder of the pointer (a copy of a TerrainFlow shares its layers).
+inline std::shared_ptr<const FlowObstacleMask> editable_obstacle_layer(const std::shared_ptr<const FlowObstacleMask>& layer){
+    if(layer.use_count()==1)return layer;
+    return std::make_shared<FlowObstacleMask>(*layer); // created non-const, so the caller may cast the constness away to edit it
+}
 // Sample the same cell-centred surface continuously in both physics paths.
 // Dry cells stay dry; neighbouring liquid types are not silently mixed.
 template<class Sample> inline std::pair<double,double> sample_liquid(double x,double z,Sample sample){
@@ -159,13 +167,13 @@ class TerrainFlow {
     void set_obstacles(FlowObstacleMask mask);
     bool has_obstacles()const{return obstacles_.has_value();}
     template<class Edit> void amend_obstacles(Edit&& edit){settle_async();if(obstacles_)edit(*obstacles_);}
-    // Highest liquid surface (bed + depth) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
+    // Highest liquid surface (as drawn: displaced by submerged solids, plus the wave height) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
     // that is horizontally outside these cells, or entirely above their surface, cannot change what the liquid does.
     std::vector<double> liquid_top_cells(int margin)const{
         std::vector<double> top(N*N,-1e9);
         for(int z=0;z<N;++z)for(int x=0;x<N;++x){
             const double depth=std::max(water[z*N+x],lava[z*N+x]);if(depth<=1e-5)continue;
-            const double surfaceHeight=bed_[z*N+x]+depth;
+            const double surfaceHeight=surface(z*N+x,depth)+waves_[z*N+x]; // the drawn surface: raised over submerged solids and moved by the waves
             for(int dz=-margin;dz<=margin;++dz)for(int dx=-margin;dx<=margin;++dx){int xx=x+dx,zz=z+dz;if(xx>=0&&xx<N&&zz>=0&&zz<N)top[zz*N+xx]=std::max(top[zz*N+xx],surfaceHeight);}
         }
         return top;

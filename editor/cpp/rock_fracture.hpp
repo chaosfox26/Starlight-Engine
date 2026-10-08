@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <exception>
 #include <future>
+#include <stop_token>
 #include <thread>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -83,6 +84,8 @@ template<class Fn> inline void rock_fracture_parallel_for(size_t count,size_t la
         if(slots.fetch_sub(1)<=0){slots.fetch_add(1);break;}
         try{helpers.push_back(std::async(std::launch::async,[&]{
 #ifdef _WIN32
+            // The task runs on a shared pool thread that outlives it, so the priority goes back when the task ends.
+            struct PriorityRestore{int previous=GetThreadPriority(GetCurrentThread());~PriorityRestore(){if(previous!=THREAD_PRIORITY_ERROR_RETURN)SetThreadPriority(GetCurrentThread(),previous);}} restore;
             SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
 #endif
             drain();}));}catch(...){slots.fetch_add(1);break;}
@@ -95,7 +98,7 @@ template<class Fn> inline void rock_fracture_parallel_for(size_t count,size_t la
 // Closed geological chunks retain the source exterior instead of reducing a
 // detailed rock to independent thin triangle shells. No changes to authored
 // primitive, imported or unsupported-shell fracture behavior.
-inline std::vector<FracturePiece> fracture_rock(Mesh source,Vec3 tint,bool emissive=false,uint32_t seed=8241,std::string* failure=nullptr){
+inline std::vector<FracturePiece> fracture_rock(Mesh source,Vec3 tint,bool emissive=false,uint32_t seed=8241,std::string* failure=nullptr,std::stop_token stop={}){
     auto fail=[&](const std::string& reason){if(failure)*failure=reason;return std::vector<FracturePiece>{};};
     if(source.indices.empty()||source.indices.size()>80000||!orient_fracture_mesh(source))return fail("Unsupported source topology or size");
     // Pebble clusters contain independent closed rocks. Partition those before
@@ -155,6 +158,7 @@ inline std::vector<FracturePiece> fracture_rock(Mesh source,Vec3 tint,bool emiss
             size_t piece=0;int slot=0;double acceptance=.55;int tried=0,accepted=0;
             const size_t lanes=size_t(std::max(0,rock_fracture_helper_slots().load()))+1;
             for(;;){
+                if(stop.stop_requested())return fail("Stopped");
                 // Resolve solids strictly in order from the cached attempts; stop at the first attempt that is not computed yet.
                 int attemptSlot=-1;
                 while(piece<count){
@@ -200,6 +204,7 @@ inline std::vector<FracturePiece> fracture_rock(Mesh source,Vec3 tint,bool emiss
                 }
                 for(auto& job:jobs)streamAt(size_t(job.slot));
                 rock_fracture_parallel_for(jobs.size(),lanes,[&](size_t i){
+                    if(stop.stop_requested())return;
                     jobs[i].result=attempt(pieces[jobs[i].piece],streams[size_t(jobs[i].slot)]);
                 });
                 for(auto& job:jobs){++tried;if(job.result.ok)++accepted;cache[job.piece][job.slot]=std::move(job.result);}
