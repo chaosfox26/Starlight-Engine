@@ -51,4 +51,38 @@ static void mesh_reduce_checks(const auto& require){
     const Mesh rock=rock_surface(.62,4,8241,RockForm::Outcrop);
     require(reduce_mesh(rock,1.0).indices==rock.indices,"Mesh reduction: keeping everything changes nothing");
     require(reduce_mesh(rock,.67).indices==reduce_mesh(rock,.67).indices,"Mesh reduction: the same input always gives the same result");
-}
+    // Smooth reduction (reduce_mesh_smooth): the normals are recomputed for a mesh that really lost triangles, and agree with the surface.
+    for(const auto& f:std::vector<Form>{{"outcrop rock",RockForm::Outcrop,4,.62,8241},{"boulder",RockForm::Boulder,4,1.05,9173},{"crystal",RockForm::Crystal,4,.85,15317},{"pebble",RockForm::Pebble,3,.62,8241}}){
+        const Mesh full=rock_surface(f.height,f.subdivisions,f.seed,f.form);
+        for(double keep:{.67,.33}){
+            const Mesh smooth=reduce_mesh_smooth(full,keep),plain=reduce_mesh(full,keep);
+            const std::string label=std::string("Mesh reduction: ")+f.name+" at "+(keep>.5?"67%":"33%")+" ";
+            static std::deque<std::string> names;
+            auto name=[&](const char* tail){names.push_back(label+tail);return names.back().c_str();};
+            require(smooth.indices==plain.indices&&smooth.vertices.size()==plain.vertices.size(),name("smooth reduction removes exactly the same triangles"));
+            std::vector<Vec3> sum(smooth.vertices.size());
+            for(size_t i=0;i<smooth.indices.size();i+=3){const auto& a=smooth.vertices[smooth.indices[i]].position;const auto n=(smooth.vertices[smooth.indices[i+1]].position-a).cross(smooth.vertices[smooth.indices[i+2]].position-a);for(int k=0;k<3;++k)sum[smooth.indices[i+k]]=sum[smooth.indices[i+k]]+n;}
+            bool unit=true,fromFaces=true,facing=true;
+            for(size_t i=0;i<smooth.vertices.size();++i){
+                const Vec3 n=smooth.vertices[i].normal;
+                unit=unit&&std::abs(n.length()-1)<1e-9;
+                fromFaces=fromFaces&&(n-sum[i].unit()).length()<1e-9;
+                double best=1e9;Vec3 original{};   // the full mesh's analytic normal at the nearest original vertex: the new normal must point the same way
+                for(const auto& v:full.vertices){double d=(v.position-smooth.vertices[i].position).length();if(d<best){best=d;original=v.normal;}}
+                facing=facing&&n.dot(original)>.3;
+            }
+            require(unit,name("normals are unit length"));
+            require(fromFaces,name("normals are the sum of the surrounding face normals"));
+            require(facing,name("normals point the same way as the original surface (within about 70 degrees, the sharp crystal edges included)"));
+        }
+    }
+    {   // not reduced: the analytic normals are kept as they are
+        const Mesh smallRock=rock_surface(1,1,1),sameRock=reduce_mesh_smooth(smallRock,.5);
+        bool same=sameRock.vertices.size()==smallRock.vertices.size();
+        for(size_t i=0;same&&i<smallRock.vertices.size();++i)same=(sameRock.vertices[i].normal-smallRock.vertices[i].normal).length()==0;
+        require(same,"Mesh reduction: a mesh that is not reduced keeps its own normals");
+        const Mesh whole=rock_surface(.62,4,8241,RockForm::Outcrop),kept=reduce_mesh_smooth(whole,1.0);
+        bool keptNormals=kept.vertices.size()==whole.vertices.size();
+        for(size_t i=0;keptNormals&&i<whole.vertices.size();++i)keptNormals=(kept.vertices[i].normal-whole.vertices[i].normal).length()==0;
+        require(keptNormals,"Mesh reduction: keeping everything keeps the analytic normals");
+    }}
