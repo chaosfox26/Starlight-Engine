@@ -607,6 +607,30 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
             fs::create_directories(o.root / "sets" / ".staging-123-1");
             put(o.root / "sets" / ".staging-123-1" / "x.dll", "x");
             { gr::Store s(o); require(!fs::exists(o.root / "sets" / ".staging-123-1"), "GFX interrupted staging folders are swept at the next start"); }
+            {
+                // DEP-07: staging that belongs to another live process is that process's operation in progress.
+                std::wstring command = L"ping.exe -n 60 127.0.0.1";
+                STARTUPINFOW startup{};
+                startup.cb = sizeof(startup);
+                PROCESS_INFORMATION child{};
+                const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &child);
+                require(started, "GFX DEP-07 the check could start a long-running child process");
+                if (started) {
+                    const auto live = o.root / "sets" / (".staging-" + std::to_string(child.dwProcessId) + "-1");
+                    const auto own = o.root / "sets" / (".staging-" + std::to_string(GetCurrentProcessId()) + "-1");
+                    for (auto* dir : {&live, &own}) { fs::create_directories(*dir); put(*dir / "x.dll", "x"); }
+                    { gr::Store s(o); }
+                    const bool liveKept = fs::exists(live / "x.dll");
+                    const bool ownSwept = !fs::exists(own);
+                    TerminateProcess(child.hProcess, 0);
+                    WaitForSingleObject(child.hProcess, 5000);
+                    CloseHandle(child.hThread);
+                    CloseHandle(child.hProcess);
+                    require(liveKept, "GFX DEP-07 a sweep leaves another live process's staging folder alone");
+                    require(ownSwept, "GFX DEP-07 a sweep still removes leftover staging that carries this process's own id");
+                    { gr::Store s(o); require(!fs::exists(live), "GFX DEP-07 staging of a process that has exited is swept"); }
+                }
+            }
         }
     }
 
