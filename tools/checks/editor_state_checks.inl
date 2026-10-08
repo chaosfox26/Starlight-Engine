@@ -41,6 +41,27 @@ static void editor_state_checks(const auto& require,const fs::path& folder){
         require(rules_naming_objects(scene,{object("gem1","key","brass")}).empty(),"Editor audit 11: a rule is not reported while another key object still carries its key");
     }
     {
+        // Editor audit 4: the recovery copy sits beside the scene under a fixed name, is the only file the autosave touches, and never replaces the scene.
+        SceneData scene;scene.Name="saved";
+        const auto file=work/"recover.starscene";
+        save_scene(scene,file);
+        const auto savedHash=hash_file(file);
+        require(autosave_path(file)==fs::path(file.wstring()+L".autosave")&&autosave_path(file)!=file&&autosave_path(file).parent_path()==file.parent_path(),"Editor audit 4: the autosave is named <scene>.autosave in the scene's folder");
+        bool refused=false;try{(void)autosave_path(fs::path());}catch(const std::exception&){refused=true;}
+        require(refused,"Editor audit 4: a scene with no file name gets no autosave path");
+        scene.Name="edited, not saved";
+        write_autosave(scene,file);
+        require(hash_file(file)==savedHash,"Editor audit 4: writing an autosave leaves the scene file byte-identical");
+        require(fs::exists(autosave_path(file))&&SceneData::decode(read_file(autosave_path(file))).Name=="edited, not saved","Editor audit 4: the autosave holds the unsaved edits");
+        scene.Name="edited again";write_autosave(scene,file);
+        require(SceneData::decode(read_file(autosave_path(file))).Name=="edited again"&&hash_file(file)==savedHash,"Editor audit 4: a later autosave replaces only the earlier autosave");
+        std::vector<std::string> names;for(const auto& entry:fs::directory_iterator(work))names.push_back(entry.path().filename().string());
+        require(std::count(names.begin(),names.end(),std::string("recover.starscene.autosave"))==1&&std::none_of(names.begin(),names.end(),[](const std::string& name){return name.ends_with(".lock")||name.ends_with(".tmp");}),"Editor audit 4: an autosave leaves no lock or temporary file behind");
+        remove_autosave(file);
+        require(!fs::exists(autosave_path(file))&&hash_file(file)==savedHash,"Editor audit 4: removing the autosave leaves the scene");
+        remove_autosave(work/"never-existed.starscene");
+    }
+    {
         // Editor audit 5: the windowed executable runs a command instead of opening a window for every command flag the interface documents.
         std::set<std::string> advertised;
         const std::regex flag("--[a-z][a-z-]*");

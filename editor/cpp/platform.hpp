@@ -44,6 +44,11 @@ struct MissingAssetsError : std::runtime_error {
     MissingAssetsError(const std::string &message, std::vector<std::string> missing) : std::runtime_error(message), ids(std::move(missing)) {}
 };
 std::string save_scene(const SceneData &, const fs::path &, const std::optional<std::string> &expected = {}, bool allowMissingAssets = false);
+// Crash recovery copy of an open scene: always "<scene file name>.autosave" in the scene's own folder, never the scene itself. write_autosave replaces only that file;
+// remove_autosave deletes only that file (the editor calls it after a successful normal Save). Neither touches the scene file.
+fs::path autosave_path(const fs::path &scene);
+void write_autosave(const SceneData &, const fs::path &scene);
+void remove_autosave(const fs::path &scene) noexcept;
 // `hash`, when given, receives the hash of the exact bytes that were decoded (not of a second read of the file).
 SceneData load_scene(const fs::path &, std::string *hash = nullptr);
 json export_playable_game(const SceneData &, const fs::path &destination, const fs::path &runtime);

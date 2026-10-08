@@ -249,6 +249,20 @@ std::string save_scene(const SceneData &scene, const fs::path &path, const std::
     atomic_write(path, encoded, true, expected);
     return hash_bytes(encoded);
 }
+fs::path autosave_path(const fs::path &scene) {
+    if (scene.empty() || !scene.has_filename()) throw std::runtime_error("An autosave needs the scene's file name");
+    return fs::path(scene.wstring() + L".autosave");
+}
+void write_autosave(const SceneData &scene, const fs::path &file) {
+    atomic_write(autosave_path(file), scene.encode());
+}
+void remove_autosave(const fs::path &scene) noexcept {
+    try {
+        std::error_code ignored;
+        fs::remove(autosave_path(scene), ignored);
+    } catch (...) {
+    }
+}
 SceneData load_scene(const fs::path &path, std::string *hash) {
     // A portable bundle (exported scene or game) carries its engine assets in an "assets" folder beside the scene; the library reads from there too.
     EngineAssets::discover_near(fs::absolute(path).parent_path());
