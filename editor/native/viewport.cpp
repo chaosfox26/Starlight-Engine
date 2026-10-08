@@ -390,13 +390,15 @@ static uint64_t mesh_history_hash(const Mesh& mesh){uint64_t hash=14695981039346
 static uint64_t mesh_identity(const Mesh& mesh){const uint64_t geometry=mesh_geometry_hash(mesh),history=mesh_history_hash(mesh);return (history?geometry^(history+0x9e3779b97f4a7c15ull+(geometry<<6)+(geometry>>2)):geometry)&0x7fffffffffffffffull;}
 using SceneClock=std::chrono::steady_clock;
 static double sceneMs(SceneClock::time_point a,SceneClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();}
+// Scene parts, resident instances and telegraphs each take one constant-buffer draw slot per frame, and the background fill takes one more; draws past kMaxInstances would be dropped silently.
+static void require_draw_slots(size_t sceneParts,size_t instances,size_t telegraphs){if(sceneParts+instances+telegraphs>=kMaxInstances)throw std::runtime_error("Scene parts, instances and telegraphs exceed native draw capacity");}
 static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta,uint64_t deltaToken){
  try{
   if(!handle||!bytes||length<8)throw std::runtime_error("Missing viewport scene");
   auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
   const auto sceneBegin=SceneClock::now();const uint64_t uploadsBefore=reinterpret_cast<Viewport*>(handle)->uploads;auto lap=sceneBegin;double hashMs=0,boundsMs=0;uint64_t vertexTotal=0;
   Reader r{bytes,(size_t)length};auto version=r.get<uint32_t>();if(delta){if(version!=0x43564c53)throw std::runtime_error("Unsupported viewport delta version");auto token=r.get<uint64_t>();if(!token||token!=v.baseToken||token!=deltaToken||v.baseCount>v.parts.size())throw std::runtime_error("Viewport delta does not match the resident base scene");version=0x42564c53;}else if(version!=0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53&&version!=0x38564c53&&version!=0x39564c53&&version!=0x41564c53&&version!=0x42564c53)throw std::runtime_error("Unsupported viewport scene version");
-  auto count=r.get<uint32_t>();if((delta?v.baseCount:0)+size_t(count)>=kMaxInstances)throw std::runtime_error("Scene exceeds native draw capacity");
+  auto count=r.get<uint32_t>();require_draw_slots((delta?v.baseCount:0)+size_t(count),v.instanceParts.size(),v.telegraphs.size());
   std::vector<SpotLight> localLights;if(!delta&&version>=0x32564c53){auto lightCount=r.get<uint32_t>();if(lightCount>32)throw std::runtime_error("Too many lights");localLights=r.array<SpotLight>(lightCount);}
   float hour=15,cycle=0,dayLength=180,density=.018f;std::vector<XMFLOAT4> smoke;std::vector<float> sourceTypes;if(!delta&&version>=0x35564c53){hour=r.get<float>();cycle=r.get<float>();dayLength=r.get<float>();density=r.get<float>();if(!std::isfinite(hour)||!std::isfinite(cycle)||!std::isfinite(dayLength)||!std::isfinite(density)||hour<0||hour>24||dayLength<10||density<0||density>.3f)throw std::runtime_error("Invalid atmosphere");auto n=r.get<uint32_t>();if(n>16)throw std::runtime_error("Too many smoke volumes");for(uint32_t i=0;i<n;++i){auto source=r.get<XMFLOAT4>();float type=version>=0x42564c53?r.get<float>():1.f;if(!std::isfinite(source.x)||!std::isfinite(source.y)||!std::isfinite(source.z)||!std::isfinite(source.w)||source.w<=0||!std::isfinite(type)||(type!=0&&type!=1))throw std::runtime_error("Invalid fog emitter");smoke.push_back(source);sourceTypes.push_back(type);}}
   int rtTier=delta?int(v.rt.requested):0,rtBounces=3,rtFreeze=0;if(!delta&&version>=0x36564c53){rtTier=r.get<int>();rtBounces=r.get<int>();rtFreeze=r.get<int>();if(rtTier<0||rtTier>4||rtBounces<2||rtBounces>4||rtFreeze<0||rtFreeze>1)throw std::runtime_error("Invalid raytracing settings");}
@@ -571,7 +573,7 @@ API int sl_instances(void* handle,const uint8_t* bytes,int count){
  try{
   if(!handle||count<0||(count&&!bytes))throw std::runtime_error("Invalid instance list");
   auto& v=*static_cast<Viewport*>(handle);
-  if(v.parts.size()+size_t(count)>=kMaxInstances)throw std::runtime_error("Instances exceed native draw capacity");
+  require_draw_slots(v.parts.size(),size_t(count),v.telegraphs.size());
   std::vector<Part> next;next.reserve(count);
   for(int i=0;i<count;++i){
    InstanceWire w;memcpy(&w,bytes+size_t(i)*sizeof(InstanceWire),sizeof(w));
@@ -628,7 +630,7 @@ API int sl_scene_remove(void* handle,const uint64_t* keys,int count){
 API int sl_telegraphs(void* handle,const float* data,int count){
  try{
   if(!handle || count<0 || count>4096 || (count && !data))throw std::runtime_error("Invalid GPU telegraph instances");
-  auto& v=*static_cast<Viewport*>(handle);std::vector<Viewport::TelegraphInstance> next(count);
+  auto& v=*static_cast<Viewport*>(handle);require_draw_slots(v.parts.size(),v.instanceParts.size(),size_t(count));std::vector<Viewport::TelegraphInstance> next(count);
   static_assert(sizeof(Viewport::TelegraphInstance)==11*sizeof(float));
   if(count)memcpy(next.data(),data,size_t(count)*sizeof(Viewport::TelegraphInstance));
   for(const auto& e:next)for(int i=0;i<11;++i)if(!std::isfinite(reinterpret_cast<const float*>(&e)[i]))throw std::runtime_error("Non-finite GPU telegraph");
