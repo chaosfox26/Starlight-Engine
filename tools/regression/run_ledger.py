@@ -195,6 +195,7 @@ def self_test():
         ('crash after its checks', dict(base, completed=False, success=None, error='suite did not finish; last passed check: b', checks=['a', 'X: 1', 'X: 2', 'X: 3', 'b']), 'VERIFIED'),
         ('suite stopped on another check', dict(base, success=False, error='Y: other', checks=['a']), 'NOT-CHECKED'),
         ('suite failed elsewhere after its checks', dict(base, success=False, error='Y: other', checks=['a', 'X: 1', 'X: 2', 'X: 3']), 'VERIFIED'),
+        ('filtered run without its checks', dict(base, success=False, error='filtered run (STARLIGHT_CHECK_GROUPS): not a full pass', checks=['a']), 'NOT-CHECKED'),
         ('suite could not start', dict(base, started=False, completed=False, success=None, checks=[], skippedReason='no exe'), 'SKIPPED'),
     ]
     bad = 0
@@ -315,7 +316,7 @@ def main():
         suite['started'] = True
         try:
             proc = subprocess.run(command['argv'], cwd=command['cwd'], capture_output=True, text=True,
-                                  timeout=min(args.timeout, command['timeoutSeconds']), env=dict(os.environ, **command['env']))
+                                  timeout=min(args.timeout, command['timeoutSeconds']), env={k: v for k, v in dict(os.environ, **command['env']).items() if k != 'STARLIGHT_CHECK_GROUPS'})
             suite['exitCode'] = proc.returncode
             suite['stdoutTail'] = proc.stdout[-400:]
             suite['stderrTail'] = proc.stderr[-400:]
@@ -325,7 +326,9 @@ def main():
             try:
                 data = json.load(open(result_json, encoding='utf-8'))
                 suite['completed'] = True
-                suite['success'] = bool(data.get('success'))
+                suite['success'] = bool(data.get('success')) and not data.get('filtered')
+                if data.get('filtered'):
+                    suite['error'] = 'filtered run (STARLIGHT_CHECK_GROUPS): not a full pass'
                 suite['error'] = data.get('error')
                 suite['checks'] = data.get('checks', [])
                 suite['schema'] = data.get('schema')
