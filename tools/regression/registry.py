@@ -188,7 +188,7 @@ def check_ledger(ledger_path=None, registry=None):
 def undercounted(ledger, repo=None):
     """Ledger tests whose minChecks is below the number of check-name literals that carry their token in the core suite sources. A run that stops after minChecks
     matching checks reads VERIFIED, so a minimum below what the author wrote leaves the remaining checks unprotected. Names built in a loop make the real count higher
-    than the literal count, never lower, so this can only under-report."""
+    than the literal count, never lower, so this can only under-report. Names on a require(false, ...) line run only when something already went wrong and are not counted."""
     folder = os.path.join(repo or REPO_ROOT, 'tools', 'checks')
     text = ''
     for name in sorted(os.listdir(folder)):
@@ -198,7 +198,7 @@ def undercounted(ledger, repo=None):
     found = []
     for entry in ledger['entries']:
         for test in entry['tests']:
-            have = len(re.findall('"' + re.escape(test['token']), text))
+            have = len(re.findall(r'(?<!require\(false,)"' + re.escape(test['token']), text))   # require(false,...) only runs on a failure branch
             if have > test.get('minChecks', 1):
                 found.append('ledger entry %s: minChecks is %d but the sources hold %d checks named %s' % (entry['id'], test.get('minChecks', 1), have, test['token']))
     return found

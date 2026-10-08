@@ -91,7 +91,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "HULL-BOUND:",
-     "minChecks": 6
+     "minChecks": 12
     }
    ],
    "testStrength": "WEAK: dense spheres measure 0.46% against the 0.5% bound, so no input available reached the changed branch. The checks guard the bound property but did not fail on the old code. An injected-bound or adversarial input is still needed.",
@@ -333,7 +333,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "EL-05:",
-     "minChecks": 7
+     "minChecks": 6
     }
    ],
    "testStrength": "Strong for the error path: with an injected update failure the next step advances exactly one tick identical to a control world; with the reset removed that check fails (verified). The real Jolt capacity error was not produced. NOT covered: the accumulator limit for ordinary slow frames (owner decision) and the CharacterStep double advance (EL-13).",
