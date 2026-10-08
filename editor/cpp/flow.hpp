@@ -167,13 +167,13 @@ class TerrainFlow {
     void set_obstacles(FlowObstacleMask mask);
     bool has_obstacles()const{return obstacles_.has_value();}
     template<class Edit> void amend_obstacles(Edit&& edit){settle_async();if(obstacles_)edit(*obstacles_);}
-    // Highest liquid surface (as drawn: displaced by submerged solids, plus the wave height) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
+    // Highest liquid surface (as drawn: displaced by submerged solids, plus the wave height; never below bed plus depth) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
     // that is horizontally outside these cells, or entirely above their surface, cannot change what the liquid does.
     std::vector<double> liquid_top_cells(int margin)const{
         std::vector<double> top(N*N,-1e9);
         for(int z=0;z<N;++z)for(int x=0;x<N;++x){
             const double depth=std::max(water[z*N+x],lava[z*N+x]);if(depth<=1e-5)continue;
-            const double surfaceHeight=surface(z*N+x,depth)+waves_[z*N+x]; // the drawn surface: raised over submerged solids and moved by the waves
+            const double surfaceHeight=std::max(bed_[z*N+x]+depth,surface(z*N+x,depth)+waves_[z*N+x]); // the drawn surface (raised over submerged solids, moved by the waves), never below the still level, so a wave trough does not take a cell out of the filter
             for(int dz=-margin;dz<=margin;++dz)for(int dx=-margin;dx<=margin;++dx){int xx=x+dx,zz=z+dz;if(xx>=0&&xx<N&&zz>=0&&zz<N)top[zz*N+xx]=std::max(top[zz*N+xx],surfaceHeight);}
         }
         return top;

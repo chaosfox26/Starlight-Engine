@@ -17,13 +17,17 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(wet>100&&exact,"07#1: In calm water the liquid top of every wet cell is its drawn surface, including the rise over a submerged solid");
         lake->impulse(5,5,1.5);for(int i=0;i<6;++i)lake->step(.02);
         const auto rippled=lake->liquid_top_cells(0);
-        bool within=true,crest=false;
+        const auto drawn=lake->snapshot();bool within=true,crest=false,notBelowStill=true,trough=false;
         for(int i=0;i<TerrainFlow::N*TerrainFlow::N;++i){
             const double depth=std::max(lake->water[i],lake->lava[i]);if(depth<=1e-5)continue;
             const double wave=rippled[i]-lake->surface(i,depth);
-            within&=std::abs(wave)<=.3+1e-9;crest|=std::abs(wave)>1e-6;
+            within&=std::abs(wave)<=.3+1e-9;crest|=wave>1e-6;
+            notBelowStill&=rippled[i]>=depth-1e-12; // flat terrain: bed + depth is just the depth
+            trough|=lake->surface(i,depth)<=depth+1e-12&&std::abs(rippled[i]-depth)<1e-12&&drawn.cells[i].first<depth-1e-6&&drawn.cells[i].second>0; // the snapshot holds each cell's drawn height
         }
-        require(within&&crest,"07#1: Waves raise and lower the liquid top by no more than the 0.3 m wave limit");
+        require(within&&crest,"07#1: Waves raise the liquid top by no more than the 0.3 m wave limit");
+        require(notBelowStill,"07#1: A wave trough never takes the liquid top below the still level, so objects stay in the wet-object filter");
+        require(trough,"07#1: The rippled lake has troughs where the drawn surface is below the still level and the filter still uses the still level");
     }
     {   // 07#5: editing a layer that another holder shares must not change what that holder sees.
         auto make=[](double x){Character c;c.Id="shared-rock";c.Shape="chaos-rock";c.X=x;c.Y=.5;c.Width=c.Height=c.Depth=c.Size=1.2;auto layer=std::make_shared<FlowObstacleMask>();layer->add(object_mesh(c),c);layer->finish();return std::shared_ptr<const FlowObstacleMask>(layer);};
