@@ -51,6 +51,13 @@ template<class Require> void physics_fracture_audit_checks(Require require){
         auto object=compute_fracture(rock,rock,7,stopped.get_token());
         require(!object.supported&&object.pieces.empty(),"03#4: A stopped object fracture is reported as unsupported with no pieces, not completed another way");
     }
+    {   // 03#3: a scene with very many breakables does not hold a prepared fracture for every one of them at once.
+        auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=40;
+        for(int i=0;i<300;++i){Character crate;crate.Shape="cube";crate.Id="held-crate-"+std::to_string(i);crate.X=-30+(i%20)*3.;crate.Z=-30+(i/20)*3.;crate.Width=.5;crate.Height=.5;crate.Depth=.5;crate.DestructionHealth=10;scene->Characters.push_back(crate);}
+        auto player=std::make_unique<AdventurePlayer>();player->start(*scene);
+        require(player->fracture_progress().total==256,"03#3: Break-ahead holds at most 256 prepared breakables at once, the nearest first");
+        player->start(*scene);
+    }
     {   // 03#2: a physics world that cannot take the rubble must not leave a break half done.
         auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=0;
         Character stone;stone.Shape="boulder";stone.Id="full-world-boulder";stone.Size=2;stone.Z=-3;stone.Color="#555D67";stone.DestructionHealth=10;

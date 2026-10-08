@@ -213,14 +213,14 @@ class AdventurePlayer {
         preTried_.clear();preTopUpAt_=-1;
         top_up_prefracture(true);
     }
-    // Rolling break-ahead. Up to STARLIGHT_PREFRACTURE_MAX (default 12) breakables are fractured on background workers at any time:
+    // Rolling break-ahead. Up to STARLIGHT_PREFRACTURE_MAX (default 256) breakables are fractured on background workers at any time:
     // the ones inside the player's attack cone first, then the nearest to the player. As results are used, further breakables
     // are queued, so a rock hit later in a long fight is still ready and the gameplay thread does not stall for a fracture.
     void top_up_prefracture(bool initial=false){
         if(!rulesEnabled_)return;
         const bool rolling=repair_prefracture();
         if(!rolling&&!initial)return; // previous behaviour: one batch when the session starts
-        static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return std::numeric_limits<size_t>::max();}(); // every breakable object is prepared while the scene loads; a cap exists only as a test switch
+        static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return size_t(256);}(); // up to 256 breakables are prepared while the scene loads (every breakable of an ordinary scene); in a larger scene the rest follow as these are used, so memory does not grow with the breakable count
         if(limit==0)return;
         const size_t cap=rolling?limit:std::min<size_t>(limit,4);
         size_t held=0;{std::lock_guard lock(preMutex_);held=preFractures_.size();}
