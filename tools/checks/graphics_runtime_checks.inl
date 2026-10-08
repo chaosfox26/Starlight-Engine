@@ -358,6 +358,52 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(refused == 2, "GFX manifest integers outside the 32-bit range are refused instead of wrapping to a small number");
     }
     {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
+        auto m = gr::parse_manifest(gr::read_text(pkgs / "sl-2.13.0" / "set.json"));
+        auto j = nlohmann::json::parse(gr::manifest_to_json(m));
+        auto wrapSchema = j; wrapSchema["schema"] = 4294967297ull;
+        auto wrapApi = j; wrapApi["components"][0]["api_major"] = 4294967297ull;
+        int refused = 0;
+        for (auto* b : {&wrapSchema, &wrapApi}) try { gr::validate_manifest(gr::parse_manifest(b->dump())); } catch (const gr::GrError&) { ++refused; }
+        require(refused == 2, "GFX manifest integers outside the 32-bit range are refused instead of wrapping to a small number");
+    }
+    {
+        const auto kp = gr::testing::generate_test_keypair();
+        gr::TrustStore trust;
+        trust.keys["test-1"] = kp.publicBlob;
+        gr::Catalog c;
+        c.serial = 5;
+        c.entries = {entry_for(pkgs, "sl-2.13.0", true)};
+        auto payload = nlohmann::json::parse(gr::testing::catalog_payload_json(c));
+        auto negative = payload; negative["serial"] = -1;
+        auto wrapped = payload; wrapped["sets"][0]["api_major"] = 4294967297ull;
+        auto fractional = payload; fractional["serial"] = 5.5;
+        int refused = 0;
+        for (auto* b : {&negative, &wrapped, &fractional}) if (!gr::verify_catalog(gr::testing::sign_catalog_payload(kp, "test-1", b->dump()), trust).ok) ++refused;
+        require(refused == 3, "GFX a signed catalog with a negative, fractional or out-of-range number is refused instead of wrapping");
+    }
+    {
         const auto kp = gr::testing::generate_test_keypair();
         const auto other = gr::testing::generate_test_keypair();
         gr::TrustStore trust;
