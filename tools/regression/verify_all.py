@@ -104,7 +104,7 @@ def plan(args, stamp):
     steps = [('ledger', [sys.executable, os.path.join(HERE, 'run_ledger.py'), '--repo', args.repo, '--build-dir', args.build_dir, '--results', args.results], args.repo, 3000,
               {} if args.gpu else {'STARLIGHT_SKIP_GPU_CHECKS': '1'})]
     if args.python:
-        steps.append(('python', ['ctest', '-C', 'Release', '--test-dir', os.path.dirname(args.build_dir.rstrip('\\/')), '-R', 'py-', '--timeout', '600'], args.repo, 1200, {}))
+        steps.append(('python', ['ctest', '-C', 'Release', '--test-dir', os.path.dirname(args.build_dir.rstrip('\\/')), '-R', 'py-', '--no-tests=error', '--timeout', '600'], args.repo, 1200, {}))
     if args.gpu:
         packet = os.path.join(args.repo, 'editor', 'checks', 'denoise', 'regression', 'chaos-rt.packet')
         gpu = os.path.join(args.results, 'verify-' + stamp)
