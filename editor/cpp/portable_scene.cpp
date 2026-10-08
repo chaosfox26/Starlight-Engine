@@ -82,6 +82,24 @@ void verify_exported_content(const fs::path &folder) {
     if (bundled || (absolute.filename() == L"content" && fs::exists(absolute.parent_path() / L"game-manifest.json")))
         throw std::runtime_error("manifest.json is missing from the exported content, so it cannot be verified; export the game again");
 }
+void verify_game_files(const fs::path &folder) {
+    // A plain scene run has no game-manifest.json and is not checked; an exported game must still hold exactly the runtime files it was exported with.
+    const auto manifestPath = folder / L"game-manifest.json";
+    if (!fs::exists(manifestPath)) return;
+    const auto manifest = json::parse(read_file(manifestPath));
+    if (!manifest.is_object() || !manifest.contains("files") || !manifest.at("files").is_array())
+        throw std::runtime_error("game-manifest.json is damaged, so the game files cannot be checked; export the game again");
+    for (const auto &entry : manifest.at("files")) {
+        const auto name = entry.at("path").get<std::string>();
+        const auto relative = fs::u8path(name);
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() || std::any_of(relative.begin(), relative.end(), [](const fs::path &part) { return part == L".."; }))
+            throw std::runtime_error("game-manifest.json lists an invalid file path: " + name);
+        const auto path = folder / relative;
+        if (!fs::is_regular_file(path)) throw std::runtime_error("Game file is missing: " + name + ". Reinstall or export the game again.");
+        if (_stricmp(hash_file(path).c_str(), entry.at("sha256").get<std::string>().c_str()))
+            throw std::runtime_error("Game file was changed since export: " + name + ". Reinstall or export the game again.");
+    }
+}
 json export_scene_selection(const SceneData &scene, const std::vector<std::string>& ids, const fs::path &destination) {
     if (ids.empty()) throw std::runtime_error("Select objects to export first");
     auto unique = ids;

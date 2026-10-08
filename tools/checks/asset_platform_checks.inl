@@ -70,6 +70,26 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         require(loose,"A-06-5: A scene that is not part of an export still opens without a manifest");
     }
     {
+        // Player integrity: the runtime files named in game-manifest.json must be present and match their recorded hashes.
+        const auto game=dir/"game-files";fs::create_directories(game/"licenses");
+        atomic_write(game/"Starlight.NativePlayer.exe","player bytes");atomic_write(game/"licenses"/"notice.txt","notice");
+        const auto manifestText=[&](const std::string& playerHash){return json{{"format","starlight-playable-game"},{"version",1},{"files",json::array({{{"path","Starlight.NativePlayer.exe"},{"sha256",playerHash}},{{"path","licenses/notice.txt"},{"sha256",hash_file(game/"licenses"/"notice.txt")}}})}}.dump(2);};
+        const auto refusal=[&]{std::string why;try{verify_game_files(game);}catch(const std::exception& e){why=e.what();}return why;};
+        bool plainRun=true;try{verify_game_files(game);}catch(const std::exception&){plainRun=false;}
+        require(plainRun,"A folder with no game-manifest.json is not checked");
+        atomic_write(game/"game-manifest.json",manifestText(hash_file(game/"Starlight.NativePlayer.exe")));
+        require(refusal().empty(),"An intact exported game passes the startup file check");
+        atomic_write(game/"Starlight.NativePlayer.exe","tampered");
+        require(refusal().find("changed since export: Starlight.NativePlayer.exe")!=std::string::npos,"A runtime file whose hash differs is refused");
+        atomic_write(game/"Starlight.NativePlayer.exe","player bytes");fs::remove(game/"licenses"/"notice.txt");
+        require(refusal().find("missing: licenses/notice.txt")!=std::string::npos,"A runtime file that is missing is refused");
+        atomic_write(game/"licenses"/"notice.txt","notice");
+        atomic_write(game/"game-manifest.json",manifestText(hash_file(game/"Starlight.NativePlayer.exe")));
+        require(refusal().empty(),"The game file check passes again once the files match");
+        atomic_write(game/"game-manifest.json",json{{"files",json::array({{{"path","..\\outside.dll"},{"sha256","00"}}})}}.dump());
+        require(refusal().find("invalid file path")!=std::string::npos,"A manifest path that leaves the game folder is refused");
+    }
+    {
         // A-06-12: a JPEG ending in a run of 0xFF bytes read one byte past its end.
         const std::string ends{"\xff\xd8\xff\xe0\x00\x02\xff\xff\xff\xff",10};
         std::string why;try{(void)describe_texture(ends);}catch(const std::exception& e){why=e.what();}

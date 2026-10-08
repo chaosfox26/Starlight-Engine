@@ -169,6 +169,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
             else if(std::wstring_view(argv[i])==L"--gameplay-check"){if(++i>=argc)throw std::runtime_error("Gameplay report path missing");gameplayCheckOutput=argv[i];}
             else scenePath=argv[i];
         }LocalFree(argv);
+        try{verify_game_files(fs::path(executable).parent_path());}catch(const std::exception& e){
+            if(!validate && smokeOutput.empty() && combatCheckOutput.empty() && gameplayCheckOutput.empty())MessageBoxW(nullptr,wide(std::string("Starlight cannot start. ")+e.what()).c_str(),L"Starlight",MB_OK|MB_ICONERROR);
+            throw;
+        }
         Player player;player.combatCheckOutput=combatCheckOutput;player.smokeOutput=smokeOutput;player.smokeDeadline=GetTickCount64()+20000;player.scenePath=scenePath;
         if(validate){verify_exported_content(scenePath.parent_path());player.authored=load_scene(scenePath);player.gameplay.start(player.authored);CoUninitialize();return 0;}
         WNDCLASSW cls{};cls.hInstance=instance;cls.lpszClassName=L"StarlightGamePlayer";cls.lpfnWndProc=Player::proc;cls.hCursor=LoadCursor(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&cls);
