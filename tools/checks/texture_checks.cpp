@@ -112,7 +112,7 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool hugeIndexCount = false; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool hugeIndexCount = false; bool wideTimes = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -134,6 +134,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<float> times{ 0.f, 1.f };
     if (spec.badTimes == 1) times[0] = std::nanf("");
     if (spec.badTimes == 2) times = { 1.f, 0.f };
+    if (spec.wideTimes) times = { 0.f, 1.f, 0.f, 0.f };
     std::vector<float> rot = spec.cubic ? std::vector<float>{ 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,.7071f,.7071f, 0,0,0,0 } : std::vector<float>{ 0,0,0,1, 0,0,.7071f,.7071f };
     std::vector<uint8_t> bin;
     const size_t offs[9] = { addBlob(bin, pos), addBlob(bin, nrm), addBlob(bin, uv), addBlob(bin, joints), addBlob(bin, weights), addBlob(bin, indices), addBlob(bin, ibm), addBlob(bin, times), addBlob(bin, rot) };
@@ -142,7 +143,7 @@ std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     const size_t declared = bin.size();
     const struct { int component; size_t count; const char* type; } acc[9] = {
         { 5126, 4, "VEC3" }, { 5126, 4, "VEC3" }, { 5126, 4, "VEC2" }, { 5121, 4, "VEC4" }, { 5126, 4, "VEC4" },
-        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
+        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
     std::string views, accessors;
     for (int i = 0; i < 9; ++i) {
         views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";
@@ -930,6 +931,21 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(sparse(76, validated, got) && validated == cgltf_result_success, "sparse interleaved fixture validates and unpacks");
             require(got[0] == 1.f && got[3] == 10.f && got[4] == 11.f && got[5] == 12.f && got[6] == 13.f && got[7] == 14.f && got[8] == 15.f, "R7: sparse values are read tightly packed, not at the interleaved base stride");
             require(sparse(200, validated, got) && validated == cgltf_result_data_too_short, "DEP-01: a sparse index view outside its real buffer is rejected before any read");
+        }
+        GlbSpec wideSpec; wideSpec.wideTimes = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(wideSpec)), nullptr, "wide-times.glb", scratch);
+        show("GLB whose keyframe times accessor is VEC2", e);
+        require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-1: a keyframe times accessor that is not SCALAR is rejected");
+        {
+            const auto bytes = makeSparseGlb(76);
+            cgltf_options opts{}; cgltf_data* d = nullptr;
+            bool ok = cgltf_parse(&opts, bytes.data(), bytes.size(), &d) == cgltf_result_success && cgltf_load_buffers(&opts, d, nullptr) == cgltf_result_success && cgltf_validate(d) == cgltf_result_success;
+            std::vector<float> out(12, -1.f);
+            ok = ok && cgltf_accessor_unpack_floats(&d->accessors[0], out.data(), 3) == 3;
+            bool untouched = true;
+            for (size_t i = 3; i < out.size(); ++i) untouched = untouched && out[i] == -1.f;
+            if (d) cgltf_free(d);
+            require(ok && untouched, "SKN-1: sparse values are never written past the float count the caller asked for");
         }
         GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
