@@ -43,8 +43,9 @@ static json preset(const fs::path&path,const json&approved) {
         fs::path backup=path;backup+=version==1?L".v1.backup":L".reconcile.backup";
         if(fs::exists(backup)&&read(backup)!=original)backup+=L"."+std::to_wstring(GetTickCount64());
         if(!fs::exists(backup))fs::copy_file(path,backup);
-        fs::path temp=path;temp+=L".migrating";write(temp,p);
-        if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))throw std::runtime_error("Could not save reconciled preset; backup preserved");
+        fs::path temp=path;temp+=L"."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetTickCount64())+L".migrating";
+        try{write(temp,p);}catch(...){std::error_code ignored;fs::remove(temp,ignored);throw;}
+        if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::error_code ignored;fs::remove(temp,ignored);throw std::runtime_error("Could not save reconciled preset; backup preserved");}
         json report={{"status","reconciled"},{"fromVersion",version},{"toVersion",2},{"changes",changes},{"backup",u8text(backup)},{"registrySource",registry.at("sourceSha256")}};
         write(reconciliation,report);fs::path migration=path;migration+=L".migration.json";write(migration,report);
     } else if(fs::exists(reconciliation)) {
