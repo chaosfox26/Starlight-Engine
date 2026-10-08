@@ -23,7 +23,7 @@ def words(path):
 
 def groups_of(core_checks):
     text = open(core_checks, encoding='utf-8', errors='replace').read()
-    return re.findall(r'RUN_GROUP\((\w+),', text)
+    return re.findall(r'^\s*RUN_GROUP\((\w+),', text, re.M)   # a call, not the #define line
 
 
 def changed_files(repo, base):
@@ -34,10 +34,32 @@ def changed_files(repo, base):
     return sorted({l.strip() for l in (out + '\n' + tracked).splitlines() if l.strip()})
 
 
-def rank(repo, files, groups):
+def body_words(checks_dir, group):
+    """Words of a group's function when no <group>.inl exists because several groups share one file: from its definition to the next *_checks function."""
+    start = re.compile(r'void\s+' + re.escape(group) + r'\s*\(')
+    for name in sorted(os.listdir(checks_dir)):
+        if not name.endswith('.inl'):
+            continue
+        text = open(os.path.join(checks_dir, name), encoding='utf-8', errors='replace').read()
+        m = start.search(text)
+        if m:
+            end = re.compile(r'template\s*<[^>]*>\s*void\s+\w+_checks\s*\(').search(text, m.end())
+            return {w for w in WORD.findall(text[m.start():end.start() if end else len(text)]) if IDENT.search(w)}
+    return set()
+
+
+def group_word_sets(repo, groups):
     checks_dir = os.path.join(repo, 'tools', 'checks')
-    group_words = {g: words(os.path.join(checks_dir, g + '.inl')) for g in groups}
-    group_words = {g: w for g, w in group_words.items() if w}
+    return {g: words(os.path.join(checks_dir, g + '.inl')) or body_words(checks_dir, g) for g in groups}
+
+
+def unranked(repo, groups):
+    """Groups no source could be found for, so a change can never select them."""
+    return sorted(g for g, w in group_word_sets(repo, groups).items() if not w)
+
+
+def rank(repo, files, groups):
+    group_words = {g: w for g, w in group_word_sets(repo, groups).items() if w}
     spread = {}
     for w in set().union(*group_words.values()) if group_words else ():
         spread[w] = sum(1 for gw in group_words.values() if w in gw)
@@ -67,16 +89,27 @@ def self_test():
     with tempfile.TemporaryDirectory() as root:
         checks = os.path.join(root, 'tools', 'checks')
         os.makedirs(checks)
-        open(os.path.join(checks, 'core_checks.cpp'), 'w').write('RUN_GROUP(alpha_checks, a());' + chr(10) + 'RUN_GROUP(beta_checks, b());' + chr(10))
+        open(os.path.join(checks, 'core_checks.cpp'), 'w').write('#define RUN_GROUP(name, ...) do { } while (0)' + chr(10) + '    RUN_GROUP(alpha_checks, a());' + chr(10) + 'RUN_GROUP(beta_checks, b());' + chr(10)
+                                                                 + 'RUN_GROUP(gamma_checks, c());' + chr(10) + 'RUN_GROUP(delta_checks, d());' + chr(10) + 'RUN_GROUP(ghost_checks, g());' + chr(10))
         open(os.path.join(checks, 'alpha_checks.inl'), 'w').write('void alpha_checks(){ spawn_widget_pool(); widget_count(); }')
         open(os.path.join(checks, 'beta_checks.inl'), 'w').write('void beta_checks(){ read_save_file(); widget_count(); }')
+        open(os.path.join(checks, 'shared_checks.inl'), 'w').write('template<class R> void gamma_checks(R r){ load_gamma_tree(); widget_count(); }' + chr(10)
+                                                                   + 'template<class R> void delta_checks(R r){ build_delta_rope(); widget_count(); }')
         open(os.path.join(root, 'engine.cpp'), 'w').write('int spawn_widget_pool(){ return widget_count(); }')
         open(os.path.join(root, 'shared.cpp'), 'w').write('int widget_count(){ return 1; }')
         open(os.path.join(root, 'unrelated.cpp'), 'w').write('int something_else(){ return 0; }')
+        open(os.path.join(root, 'gamma.cpp'), 'w').write('int load_gamma_tree(){ return 1; }')
+        open(os.path.join(root, 'delta.cpp'), 'w').write('int build_delta_rope(){ return 1; }')
         groups = groups_of(os.path.join(checks, 'core_checks.cpp'))
+        for label, good in (('the RUN_GROUP macro definition is not a group', 'name' not in groups and len(groups) == 5),
+                            ('a group with no source file is reported as unranked', unranked(root, groups) == ['ghost_checks'])):
+            ok = ok and good
+            print('  %s  %s -> %s' % ('ok  ' if good else 'FAIL', label, groups))
         for label, files, want in (('a distinctive name picks its group', ['engine.cpp'], ['alpha_checks']),
                                    ('a name used by every check file picks nothing', ['shared.cpp'], []),
                                    ('an unrelated file picks nothing', ['unrelated.cpp'], []),
+                                   ('a group whose function sits in a shared file is ranked by its own body', ['gamma.cpp'], ['gamma_checks']),
+                                   ('the next group in the same shared file is kept apart', ['delta.cpp'], ['delta_checks']),
                                    ('a changed check file selects its own group', ['tools/checks/beta_checks.inl'], ['beta_checks'])):
             got = [g for g, _ in rank(root, files, groups)[0]]
             good = got[:len(want)] == want and (want or not got)
@@ -105,6 +138,9 @@ def main():
     files = a.files if a.files else changed_files(a.repo, a.base)
     ranked, why = rank(a.repo, files, groups)
     print('%d changed files, %d check groups' % (len(files), len(groups)))
+    missing = unranked(a.repo, groups)
+    if missing:
+        print('not ranked (no check source found, so never suggested): ' + ', '.join(missing))
     if not ranked:
         print('run everything: no changed file shares a distinctive name with any check group (not a sign that the change is safe)')
         return 1
