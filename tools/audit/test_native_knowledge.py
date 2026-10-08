@@ -1,4 +1,5 @@
 """Preserve evidence interpretation while replacing the Python implementation."""
+import os
 from pathlib import Path
 import unittest
 import tempfile
@@ -7,7 +8,7 @@ import knowledge_report as baseline
 import feature_evidence
 
 ROOT=Path(__file__).resolve().parents[2]
-PROGRAM=ROOT/'out/classic/Release/Starlight.NativeKnowledge.exe'
+PROGRAM=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')/'Starlight.NativeKnowledge.exe'
 
 
 class NativeKnowledgeTests(unittest.TestCase):

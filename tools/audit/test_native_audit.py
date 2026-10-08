@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
-RUNTIME=ROOT/'out/classic/Release'
+RUNTIME=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')
 
 class NativeAudit(unittest.TestCase):
     def test_prebuilt_runtime_outcomes(self):

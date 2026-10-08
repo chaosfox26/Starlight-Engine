@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
-PROGRAM=ROOT/'out/classic/Release/Starlight.NativeAnalysis.exe'
+PROGRAM=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')/'Starlight.NativeAnalysis.exe'
 
 class NativeAnalysis(unittest.TestCase):
     def test_standalone_and_output_safety(self):

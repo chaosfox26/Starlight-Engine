@@ -1,13 +1,14 @@
 """Run established cleanup acceptance cases against the native implementation."""
 import functools
 import itertools
+import os
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 import artifact_cleanup
 import test_artifact_cleanup
 
-PROGRAM = Path(__file__).resolve().parents[2]/'out/classic/Release/Starlight.NativeCleanup.exe'
+PROGRAM = Path(os.environ.get('STARLIGHT_BUILD_DIR') or Path(__file__).resolve().parents[2]/'out/classic/Release')/'Starlight.NativeCleanup.exe'
 
 
 class NativeCleanupTests(test_artifact_cleanup.CleanupTests):

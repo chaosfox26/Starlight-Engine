@@ -1,5 +1,6 @@
 """Native report parity, malformed input and evidence-preservation checks."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -7,7 +8,7 @@ import unittest
 import deep_analysis as reference
 
 ROOT=Path(__file__).resolve().parents[2]
-PROGRAM=ROOT/'out/classic/Release/Starlight.NativeReports.exe'
+PROGRAM=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')/'Starlight.NativeReports.exe'
 
 class NativeReports(unittest.TestCase):
     def test_reports_and_rejection(self):
