@@ -17,6 +17,7 @@
 #include "../../deep/engine/sun_shadows.h"
 #include "../../deep/engine/point_shadows.h"
 #include "../../deep/engine/grass_deformation.h"
+#include "../../deep/engine/clip_box.h"
 
 struct Reader {
  const uint8_t* p; size_t left;
@@ -180,6 +181,10 @@ struct Viewport {
   lights.weather=weather;for(size_t i=0;i<64;++i){lights.weatherLow[i]=weatherLow[i];lights.weatherHigh[i]=weatherHigh[i];}
   float storm=weather.y;lights.lightDir.w*=1-.72f*storm;
   lights.ambient.x*=1-.32f*storm;lights.ambient.y*=1-.30f*storm;lights.ambient.z*=1-.24f*storm;
+  // Off by default (STARLIGHT_VIEW_CULL=1): parts whose bounds lie outside the view skip the scene passes only. Shadows, rays and motion history keep them; the 10% margin covers jitter.
+  static const bool viewCull=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_VIEW_CULL",value,8)&&value[0]=='1';}();
+  XMFLOAT4X4 viewClip{};if(viewCull)XMStoreFloat4x4(&viewClip,d.viewProjNoJit*XMMatrixScaling(.9f,.9f,1.f));
+  const auto viewCulled=[&](const Part& part,float kind,const XMMATRIX& transform){if(!viewCull||GrassDeformation::accepts(kind))return false;auto low=part.shadowLow,high=part.shadowHigh;if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}XMFLOAT4X4 clip;XMStoreFloat4x4(&clip,transform*XMLoadFloat4x4(&viewClip));return ClipBox::outside(&low.x,&high.x,&clip._11);};
   struct LiquidDraw {const GpuMesh* mesh;XMMATRIX world;XMFLOAT3 color;float emissive;uint64_t key;float distance=0;};std::vector<LiquidDraw> liquids,solids;std::vector<SunShadows::Item> casters;
   size_t partIndex=0;for(const auto& p:parts){auto grassKey=GrassDeformation::identity(p.motionKey,partIndex++);if(p.effect==4)continue;
    float x=p.x,z=p.z,yaw=0;double remaining=seconds*p.speed;
@@ -225,7 +230,7 @@ struct Viewport {
    if(!d.editorRaytracing&&GrassDeformation::accepts(kind))rendered=&grass.draw(d,grassKey,transform,time);
    if(kind>6.8&&kind<7.5)liquids.push_back({&p.gpu,transform,color,p.emissive,p.motionKey});else{
         static const int fragDiag=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_DIAG_FRAGMENTS",value,8)?atoi(value):0;}();const bool fragment=(p.meshKey>>62)==3; /* diagnostic: 1 hides fragments from the scene pass, 2 from the shadow pass, 3 both */
-    if(!(fragment&&(fragDiag&1))){XMFLOAT3 middle{(p.shadowLow.x+p.shadowHigh.x)*.5f,(p.shadowLow.y+p.shadowHigh.y)*.5f,(p.shadowLow.z+p.shadowHigh.z)*.5f};XMFLOAT3 center;XMStoreFloat3(&center,XMVector3TransformCoord(XMLoadFloat3(&middle),transform));const float dx=center.x-d.camWorld.x,dy=center.y-d.camWorld.y,dz=center.z-d.camWorld.z;solids.push_back({rendered,transform,color,p.emissive,p.motionKey,dx*dx+dy*dy+dz*dz});}
+    if(!(fragment&&(fragDiag&1))&&!viewCulled(p,kind,transform)){XMFLOAT3 middle{(p.shadowLow.x+p.shadowHigh.x)*.5f,(p.shadowLow.y+p.shadowHigh.y)*.5f,(p.shadowLow.z+p.shadowHigh.z)*.5f};XMFLOAT3 center;XMStoreFloat3(&center,XMVector3TransformCoord(XMLoadFloat3(&middle),transform));const float dx=center.x-d.camWorld.x,dy=center.y-d.camWorld.y,dz=center.z-d.camWorld.z;solids.push_back({rendered,transform,color,p.emissive,p.motionKey,dx*dx+dy*dy+dz*dz});}
     if((kind<6.8f&&p.emissive<=0)||(kind>9.5f&&kind<11.5f)){
      auto low=p.shadowLow,high=p.shadowHigh;
      if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}

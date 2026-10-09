@@ -58,6 +58,7 @@ using namespace starlight::editor;
 #include "decode_fuzz_checks.inl"
 #include "history_stroke_checks.inl"
 #include "contact_index_checks.inl"
+#include "clip_box_checks.inl"
 #include "mesh_reduce_checks.inl"
 #include "terrain_brush_checks.inl"
 #include "lightning_seed_checks.inl"
@@ -157,6 +158,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(preset_validate_checks, preset_validate_checks(require,folder));
         RUN_GROUP(decode_fuzz_checks, decode_fuzz_checks(require,folder));
         RUN_GROUP(contact_index_checks, contact_index_checks(require));
+        RUN_GROUP(clip_box_checks, clip_box_checks(require));
         RUN_GROUP(mesh_reduce_checks, mesh_reduce_checks(require));
         RUN_GROUP(terrain_brush_checks, terrain_brush_checks(require));
         RUN_GROUP(lightning_seed_checks, lightning_seed_checks(require));
