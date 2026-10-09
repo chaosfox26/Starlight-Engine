@@ -52,4 +52,13 @@ static void render_device_checks(const auto& require){
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         require(text.find("const size_t allocBytes = std::max<size_t>(256, bytes);") != std::string::npos && text.find("acquireBuffer(allocBytes,D3D12_RESOURCE_STATE_COMMON)") != std::string::npos, "createDefaultBuffer(0) allocates the same 256 byte minimum that acquireBuffer uses");
     }
+    {
+        // Refused draws go through one helper that counts them and logs at most once per second; the header is read for these pins as above.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        size_t helperCalls = 0, counterBumps = 0;
+        for (size_t at = text.find("noteInstanceDrop();"); at != std::string::npos; at = text.find("noteInstanceDrop();", at + 1)) ++helperCalls;
+        for (size_t at = text.find("++instDropped;"); at != std::string::npos; at = text.find("++instDropped;", at + 1)) ++counterBumps;
+        require(text.find("void noteInstanceDrop() {") != std::string::npos && text.find("now - instDropLogTick >= 1000") != std::string::npos && helperCalls == 2 && counterBumps == 1, "The instance cap logs refused draws at most once per second, from both refusal sites");
+    }
 }

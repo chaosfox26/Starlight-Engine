@@ -801,6 +801,7 @@ struct RenderDevice {
     UINT   frame = 0;
     UINT   instCursor = 0;
     uint64_t instDropped = 0;   // draws refused because the per-frame constant buffer was full (cumulative; must stay 0)
+    uint64_t instDropLogTick = 0;   // GetTickCount64 of the last instance cap log line (at most one per second)
     UINT64 fenceVal = 0;
     HANDLE fenceEvent = nullptr;
 
@@ -1780,9 +1781,15 @@ struct RenderDevice {
         cmd->SetGraphicsRootConstantBufferView(1, cbSlotGpu() + (UINT64)kMaxInstances * kCbStride);
     }
 
+    // Counts a draw the instance cap refuses. The log line is rate limited, so an overflowing scene reports it without flooding the log.
+    void noteInstanceDrop() {
+        ++instDropped;
+        const uint64_t now = GetTickCount64();
+        if (now - instDropLogTick >= 1000) { instDropLogTick = now; logLine("instance cap " + std::to_string(kMaxInstances) + " reached: draws dropped so far " + std::to_string(instDropped)); }
+    }
     // Two-step drawing for the depth pre-pass: stage the per-draw constants once, then issue the same draw in both passes.
     UINT stageMesh(const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) { ++instDropped; return UINT_MAX; }
+        if (instCursor >= kMaxInstances) { noteInstanceDrop(); return UINT_MAX; }
         UINT inst = instCursor++;
         writeInstance(inst, model, color, emissive, rough, metal, false);
         return inst;
@@ -1797,7 +1804,7 @@ struct RenderDevice {
     }
 
     void drawMesh(const GpuMesh& m, const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) { ++instDropped; return; }
+        if (instCursor >= kMaxInstances) { noteInstanceDrop(); return; }
         UINT inst = instCursor++;
         triDraw += m.indexCount / 3;
         writeInstance(inst, model, color, emissive, rough, metal, false);
