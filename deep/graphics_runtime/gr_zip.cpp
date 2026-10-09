@@ -98,21 +98,21 @@ const char* stored(Bits& b, std::string& out, std::uint64_t limit) {
 }
 
 const char* fixed(Bits& b, std::string& out, std::uint64_t limit) {
-    static Huff lc, dc;
-    static bool built = false;
-    if (!built) {
+    // A function-local static initialised by a lambda is built once and safely when two threads inflate their first fixed block together (audit GR-7).
+    static const std::pair<Huff, Huff> tables = [] {
+        std::pair<Huff, Huff> t;
         short l[288];
         int s = 0;
         for (; s < 144; ++s) l[s] = 8;
         for (; s < 256; ++s) l[s] = 9;
         for (; s < 280; ++s) l[s] = 7;
         for (; s < 288; ++s) l[s] = 8;
-        construct(lc, l, 288);
+        construct(t.first, l, 288);
         for (s = 0; s < 30; ++s) l[s] = 5;
-        construct(dc, l, 30);
-        built = true;
-    }
-    return codes(b, out, limit, lc, dc);
+        construct(t.second, l, 30);
+        return t;
+    }();
+    return codes(b, out, limit, tables.first, tables.second);
 }
 
 const char* dynamic(Bits& b, std::string& out, std::uint64_t limit) {
