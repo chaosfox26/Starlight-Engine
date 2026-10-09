@@ -898,7 +898,7 @@ int visible_ui_checks(const fs::path& output) {
         step("Asset browser fullscreen",[&]{command(BrowseAssets);},[&]{return fullScreen && IsWindowVisible(libraryPanel);});
         command(CloseAssets);
         step("Windowed live telemetry restored",[&]{command(FullScreen);},[&]{return !fullScreen && telemetryVisible();});
-        step("Ray-traced scene before resize",[&]{scene.RaytracingEnabled=true;scene.RaytracingQuality=3;scene.RayReconstructionEnabled=false;renderer->scene(scene);},[&]{return true;});
+        step("Ray-traced scene before resize",[&]{scene.RaytracingEnabled=true;scene.RaytracingQuality=3;scene.RayReconstructionEnabled=false;renderer->scene(scene);},[&]{return renderer->status().tier>0;});
         for(int cycle=0;cycle<3;cycle++){
             step("Ray-traced fullscreen resize",[&]{command(FullScreen);},[&]{return fullScreen && telemetryVisible();});
             step("Ray-traced windowed resize",[&]{command(FullScreen);},[&]{return !fullScreen && telemetryVisible();});
