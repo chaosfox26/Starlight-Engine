@@ -270,7 +270,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     }
     if(GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_GRASS_CONTACTS",nullptr,0)){
       if(tier)throw std::runtime_error("Grass contact validation requires native raster");
-      sl_freeze(context,0);grassEvidence=grass_gpu_checks(context,bytes);sl_freeze(context,animated?0:1);
+      // The check needs the dedicated one-instance grass fixture; any other packet (verify_all passes an ordinary scene) is swapped for the built-in one, then restored.
+      uint32_t magic=0;if(bytes.size()>=4)memcpy(&magic,bytes.data(),4);std::vector<unsigned char> grassPacket;
+      if(magic!=0x34564c53){grassPacket=grass_fixture_packet();if(!sl_scene(context,grassPacket.data(),int(grassPacket.size())))throw std::runtime_error(sl_error());}
+      sl_freeze(context,0);grassEvidence=grass_gpu_checks(context,grassPacket.empty()?bytes:grassPacket);sl_freeze(context,animated?0:1);
+      if(!grassPacket.empty()){if(!sl_scene(context,bytes.data(),int(bytes.size())))throw std::runtime_error(sl_error());sl_camera(context,camera[0],camera[1],camera[2],camera[3],camera[4],camera[5]);}
     }
     wchar_t grassBodySetting[256]{};
     if(GetEnvironmentVariableW(L"STARLIGHT_BENCH_GRASS_BODY",grassBodySetting,256)){

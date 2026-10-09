@@ -1,3 +1,27 @@
+// The dedicated one-instance v4 fixture the check below needs: one patch of 100 blades (seven rings of three columns plus a tip, the shape the engine's
+// grass uses) tagged with the GPU grass vertex kind, with its exact triangle list. verify_all passes an ordinary scene packet, so the check builds this itself.
+static std::vector<unsigned char> grass_fixture_packet(){
+ struct Vertex{float p[3],n[3],c[3],kind;};std::vector<Vertex> vertices;std::vector<uint32_t> indices;
+ uint32_t state=8241;auto next=[&]{state^=state<<13;state^=state>>17;state^=state<<5;return double(state&0xffffff)/16777216.;};constexpr double pi=3.14159265358979323846;const int rings=7;
+ for(int blade=0;blade<100;++blade){
+  double angle=next()*pi*2,radius=std::sqrt(next())*.48,x=std::cos(angle)*radius,z=std::sin(angle)*radius,height=.18+next()*.42,lean=(next()-.5)*.22,turn=next()*pi*2,variation=next();
+  double side[3]{std::cos(turn),0,-std::sin(turn)},forward[3]{std::sin(turn),0,std::cos(turn)};uint32_t base=uint32_t(vertices.size());
+  for(int ring=0;ring<rings;++ring){double t=ring/double(rings),width=.004*(1-t)+.018*std::sin(pi*std::pow(t,.65));double centre[3]{x+lean*t*t+forward[0]*height*.15*t*t*t,height*t,z+forward[2]*height*.15*t*t*t};
+   for(int column=0;column<3;++column){double u=column*.5,across=(u*2-1)*width,out=column==1?width*.28:0;vertices.push_back({{float(centre[0]+side[0]*across+forward[0]*out),float(centre[1]),float(centre[2]+side[2]*across+forward[2]*out)},{0,0,0},{float(u),float(t),float(variation)},1.36f});}}
+  vertices.push_back({{float(x+lean+forward[0]*height*.15),float(height),float(z+forward[2]*height*.15)},{0,0,0},{.5f,1,float(variation)},1.36f});
+  for(int ring=0;ring<rings-1;++ring)for(int column=0;column<2;++column){uint32_t a=base+ring*3+column,b=a+1,c=a+3,d=c+1;indices.insert(indices.end(),{a,c,b,b,c,d});}
+  uint32_t last=base+(rings-1)*3,tip=base+rings*3;indices.insert(indices.end(),{last,tip,last+1,last+1,tip,last+2});
+ }
+ for(size_t t=0;t<indices.size();t+=3){auto &a=vertices[indices[t]],&b=vertices[indices[t+1]],&c=vertices[indices[t+2]];float x=b.p[0]-a.p[0],y=b.p[1]-a.p[1],z=b.p[2]-a.p[2],u=c.p[0]-a.p[0],v=c.p[1]-a.p[1],w=c.p[2]-a.p[2],n[3]{y*w-z*v,z*u-x*w,x*v-y*u};for(int k=0;k<3;++k)for(int j=0;j<3;++j)vertices[indices[t+k]].n[j]+=n[j];}
+ for(auto& vertex:vertices){float length=std::sqrt(vertex.n[0]*vertex.n[0]+vertex.n[1]*vertex.n[1]+vertex.n[2]*vertex.n[2]);for(float& value:vertex.n)value=length>0?value/length:0;}
+ std::vector<unsigned char> packet;auto put=[&](const void* data,size_t size){auto bytes=static_cast<const unsigned char*>(data);packet.insert(packet.end(),bytes,bytes+size);};
+ auto putU32=[&](uint32_t value){put(&value,4);};auto putF=[&](float value){put(&value,4);};
+ putU32(0x34564c53);putU32(1);putU32(0);
+ putF(0);putU32(0);putF(0);putF(.2f);putF(.6f);putF(.2f);putF(0);putF(0);putF(1);putF(0);putU32(0);
+ const float identity[16]{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};put(identity,sizeof(identity));
+ putU32(uint32_t(vertices.size()));put(vertices.data(),vertices.size()*sizeof(Vertex));putU32(uint32_t(indices.size()));put(indices.data(),indices.size()*4);
+ return packet;
+}
 // Validate actual GPU readback, including the damped trajectory, rather than
 // accepting two different screenshots as proof of correct interaction.
 static json grass_gpu_checks(void* context,const std::vector<unsigned char>& packet){
