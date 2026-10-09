@@ -10,7 +10,7 @@ namespace starlight::preset {
 namespace fs=std::filesystem;
 using json=nlohmann::json;
 inline std::string u8text(const fs::path&p){auto s=p.u8string();return std::string(s.begin(),s.end());}
-inline void write(const fs::path&p,const json&j){std::ofstream f(p);if(!f || !(f<<j.dump(2)))throw std::runtime_error("Cannot write "+u8text(p));f.close();if(f.fail())throw std::runtime_error("Cannot write "+u8text(p));}
+inline void write(const fs::path&p,const json&j){std::ofstream f(p);if(!f || !(f<<j.dump(2,' ',false,json::error_handler_t::replace)))throw std::runtime_error("Cannot write "+u8text(p));f.close();if(f.fail())throw std::runtime_error("Cannot write "+u8text(p));}
 inline void keys(const json&j,const std::set<std::string>&allowed){if(!j.is_object())throw std::runtime_error("Expected settings object");for(auto i=j.begin();i!=j.end();++i)if(!allowed.count(i.key()))throw std::runtime_error("Unknown setting: "+i.key()+". No safe migration is registered.");}
 inline void validate(const json&p){
     keys(p,{"schemaVersion","name","settings"});if(p.at("schemaVersion")!=2)throw std::runtime_error("Unsupported preset version");

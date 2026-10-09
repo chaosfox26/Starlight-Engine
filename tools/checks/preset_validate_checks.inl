@@ -22,4 +22,12 @@ static void preset_validate_checks(const auto& require,const fs::path& folder){
     bool failed=false;
     try{starlight::preset::write(folder/L"no-such-folder"/L"preset.json",preset(600,60000));}catch(const std::runtime_error&){failed=true;}
     require(failed,"CORE-03: a preset that cannot be written is reported, not ignored");
+
+    const fs::path dir=folder/L"launcher-preset-checks";
+    fs::create_directories(dir);
+
+    const fs::path ansi=dir/L"ansi-error.json";
+    bool wrote=true;
+    try{starlight::preset::write(ansi,nlohmann::json{{"error","Cannot copy café settings"}});}catch(const std::exception&){wrote=false;}
+    require(wrote&&fs::exists(ansi),"LAUNCH-2: an error message holding non-UTF-8 text is still written as the launch error file");
 }
