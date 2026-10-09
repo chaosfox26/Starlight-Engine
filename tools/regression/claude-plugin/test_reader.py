@@ -105,7 +105,7 @@ import hashlib
 COMMIT = 'a' * 40
 
 
-def compare(change_repo=None, change_bin=None, dot_git='dir'):
+def compare(change_repo=None, change_bin=None, dot_git='dir', recorded=COMMIT):
     with tempfile.TemporaryDirectory() as root:
         repo, build, res = (os.path.join(root, n) for n in ('repo', 'build', 'res'))
         for d in (repo, build, res):
@@ -132,7 +132,7 @@ def compare(change_repo=None, change_bin=None, dot_git='dir'):
         if change_bin:
             change_bin(build)
         d = copy.deepcopy(GOOD)
-        d['identity']['gitHead'] = COMMIT
+        d['identity']['gitHead'] = recorded
         d['identity']['binaries'][CORE]['sha256'] = hashlib.sha256(body).hexdigest()
         with open(os.path.join(res, 'latest.json'), 'w') as f:
             json.dump(d, f)
@@ -152,6 +152,7 @@ cmp_cases = [
     ('binary rebuilt since the run', {'change_bin': lambda b: open(os.path.join(b, CORE), 'wb').write(b'other')}, 1, 'differ from the tested ones'),
     ('binary missing now', {'change_bin': lambda b: os.remove(os.path.join(b, CORE))}, 1, 'not in'),
     ('no readable checkout', {'dot_git': 'none'}, 1, 'could not be read'),
+    ('results record no commit, not confirmed', {'recorded': ''}, 1, 'NOT confirmed'),
 ]
 for name, kw, code, text in cmp_cases:
     got, out = compare(**kw)
