@@ -1,5 +1,6 @@
 // A top-level acceleration structure may be refitted only when every instance slot still names the geometry key it was built with (a reordered or replaced instance list must rebuild).
 #include "../../deep/engine/rt_refit.h"
+#include "source_text.hpp"
 static void rt_refit_checks(const auto& require){
     struct Item {uint64_t key;};
     const std::vector<Item> built={{1},{2},{3}};
@@ -8,4 +9,5 @@ static void rt_refit_checks(const auto& require){
     require(!same_instance_keys(built,std::vector<Item>{{1},{2}}),"rt refit rejects a changed instance count");
     require(!same_instance_keys(built,std::vector<Item>{{1},{2},{4}}),"rt refit rejects a replaced geometry key");
     require(same_instance_keys(std::vector<Item>{},std::vector<Item>{}),"rt refit accepts two empty instance lists");
+    require(source_occurrences("deep/engine/dxr.h","same_instance_keys(previousItems,items)")==1,"rt refit: the DXR top-level build refits only when same_instance_keys holds for the last build");
 }
