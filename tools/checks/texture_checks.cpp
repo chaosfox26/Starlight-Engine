@@ -1198,6 +1198,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(wideSpec)), nullptr, "wide-times.glb", scratch);
         show("GLB whose keyframe times accessor is VEC2", e);
         require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-1: a keyframe times accessor that is not SCALAR is rejected");
+        GlbSpec noViewKeySpec; noViewKeySpec.noViewKeys = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewKeySpec)), nullptr, "no-view-keys.glb", scratch);
+        show("GLB whose keyframe accessors have no buffer view and 5 million elements", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-5: keyframe accessors without a buffer view cannot ask for millions of zero keys");
         {
             const auto bytes = makeSparseGlb(76);
             cgltf_options opts{}; cgltf_data* d = nullptr;
