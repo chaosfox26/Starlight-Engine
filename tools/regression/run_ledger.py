@@ -66,10 +66,12 @@ def archive_report(results_dir, report):
     return path
 
 def git(repo, *args):
+    """Output of a git command, or '' when it fails (git can print a word such as HEAD to stdout and still exit with an error)."""
     try:
-        return subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60).stdout.strip()
+        run = subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60)
     except Exception:
         return ''
+    return run.stdout.strip() if run.returncode == 0 else ''
 
 def child_environment(extra):
     return {k: v for k, v in dict(os.environ, **extra).items() if k != 'STARLIGHT_CHECK_GROUPS'}
@@ -346,6 +348,18 @@ def self_test():
         print('  %s history keeps every run and never replaces one' % ('ok ' if kept and refused and json.load(open(one))['marker'] == 'full run' else 'BAD'))
         bad += not (kept and refused and json.load(open(one))['marker'] == 'full run')
     with tempfile.TemporaryDirectory() as tree:
+        build = os.path.join(tree, 'build', 'Release')
+        os.makedirs(build)
+        open(os.path.join(build, 'Starlight.NativeCoreChecks.exe'), 'w').write('x')
+        repo = os.path.join(tree, 'repo')
+        os.makedirs(os.path.join(repo, 'tools', 'checks'))
+        subprocess.run(['git', '-C', repo, 'init', '-q'], creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), '--repo', repo, '--build-dir', build, '--results', os.path.join(tree, 'results'),
+                              '--ledger', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ledger.json')], capture_output=True, text=True, timeout=300)
+        ok = run.returncode == 2 and 'REFUSING TO RUN' in run.stdout and not os.path.exists(os.path.join(tree, 'results', 'latest.json'))
+        print('  %s a checkout git cannot read the HEAD of is refused, not recorded as a clean build' % ('ok ' if ok else 'BAD'))
+        bad += not ok
+    with tempfile.TemporaryDirectory() as tree:
         build = os.path.join(tree, 'Release')
         os.makedirs(build)
         before = configured_from(build)
@@ -412,6 +426,9 @@ def main():
         'dirtyTrackedFiles': len([l for l in git(args.repo, 'status', '--porcelain', '--untracked-files=no').splitlines() if l.strip()]),
         'binaries': {},
     }
+    if not identity['gitHead']:
+        print('REFUSING TO RUN: git cannot read the HEAD of %s, so the build identity cannot say which sources it was built from' % args.repo)
+        return 2
     if identity['dirtyTrackedFiles']:
         identity['dirtyDiffSha256'] = dirty_digest(args.repo)
     for name in registered['binaries']:
