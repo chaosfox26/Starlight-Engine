@@ -20,6 +20,12 @@ static void preset_validate_checks(const auto& require,const fs::path& folder){
     require(refused(600,4294967297LL),"CORE-04: a duration that would wrap to 1 when narrowed to int is refused");
     require(refused(2147483648LL,60000)&&refused(600,2147483648LL),"CORE-04: INT_MAX + 1 is refused instead of wrapping negative");
     require(refused(0,60000)&&refused(600,-1),"CORE-04: zero and negative values are still refused");
+    auto refusedQuality=[&](const char* quality){
+        auto p=preset(600,60000);p["settings"]["quality"]=quality;
+        try{starlight::preset::validate(p);}catch(const std::runtime_error&){return true;}
+        return false;
+    };
+    for(const char* quality:{"native","quality","balanced","performance","ultraperf"})require(!refusedQuality(quality),"QUALITY: every quality name the engine's mode table knows (kStdModes, including ultraperf) is accepted by a preset");
     const fs::path file=folder/L"preset-write.json";
     starlight::preset::write(file,preset(600,60000));
     std::ifstream in(file);
