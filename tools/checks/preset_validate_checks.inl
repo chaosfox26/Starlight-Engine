@@ -47,6 +47,33 @@ static void preset_validate_checks(const auto& require,const fs::path& folder){
         require(read,"LAUNCH-1: brackets inside text do not count as nesting");
     }
 
+    const std::string v1="{\"schemaVersion\":1,\"name\":\"old\",\"settings\":{\"resolution\":[1280,720],\"displayMode\":\"windowed\",\"frameLimit\":600,\"durationMs\":1000,\"upscaler\":\"off\",\"quality\":\"native\",\"frameGeneration\":false,\"vsync\":false,\"culling\":true,\"foreground\":false}}";
+    auto migrated=[&](const fs::path& file){
+        try{return launcher_preset_checks::preset(file,nlohmann::json::object()).at("schemaVersion")==2;}catch(const std::exception&){return false;}
+    };
+    {
+        const fs::path file=dir/L"torn-backup.startest";put(file,v1);
+        fs::path backup=file;backup+=L".v1.backup";put(backup,"{\"schemaVersion\":1,\"na");
+        const bool ok=migrated(file);
+        int extra=0;for(auto& e:fs::directory_iterator(dir))if(e.path().filename().wstring().rfind(L"torn-backup.startest.v1.backup.",0)==0)++extra;
+        require(ok&&extra==1,"LAUNCH-3: a torn backup from an earlier killed run does not block the launch; a new backup is written beside it");
+    }
+    {
+        const fs::path file=dir/L"torn-report.startest";put(file,v1);
+        require(migrated(file),"LAUNCH-3: setup migrates the preset");
+        fs::path report=file;report+=L".reconciliation.json";put(report,"{torn");
+        require(migrated(file),"LAUNCH-3: a torn reconciliation report does not block a clean preset");
+        put(report,"[]");
+        require(migrated(file),"LAUNCH-3: a reconciliation report that is not an object does not block a clean preset");
+    }
+    {
+        const fs::path file=dir/L"unwritable-report.startest";put(file,v1);
+        fs::path report=file;report+=L".reconciliation.json";fs::create_directories(report);
+        require(migrated(file),"LAUNCH-3: a report that cannot be written does not fail a launch whose preset is already migrated");
+        std::ifstream in(file);
+        require(nlohmann::json::parse(in).at("schemaVersion")==2,"LAUNCH-3: the preset was migrated even though its report could not be written");
+    }
+
     const fs::path ansi=dir/L"ansi-error.json";
     bool wrote=true;
     try{starlight::preset::write(ansi,nlohmann::json{{"error","Cannot copy café settings"}});}catch(const std::exception&){wrote=false;}

@@ -41,16 +41,17 @@ static json preset(const fs::path&path,const json&approved) {
     try{validate(p);}catch(const std::exception&e){try{write(reconciliation,{{"status","invalid-value"},{"error",e.what()},{"originalPreserved",true}});}catch(const std::exception&){}throw;}   // a failed report write must not hide the validation error that explains the problem
     if(p!=original) {
         fs::path backup=path;backup+=version==1?L".v1.backup":L".reconcile.backup";
-        if(fs::exists(backup)&&read(backup)!=original)backup+=L"."+std::to_wstring(GetTickCount64());
+        if(fs::exists(backup)){bool same=false;try{same=starlight::preset::read_limited(backup)==original;}catch(const std::exception&){}   // a torn or unreadable backup counts as different (audit LAUNCH-3)
+            if(!same)backup+=L"."+std::to_wstring(GetTickCount64());}
         if(!fs::exists(backup))fs::copy_file(path,backup);
         fs::path temp=path;temp+=L"."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(GetTickCount64())+L".migrating";
         try{write(temp,p);}catch(...){std::error_code ignored;fs::remove(temp,ignored);throw;}
         if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::error_code ignored;fs::remove(temp,ignored);throw std::runtime_error("Could not save reconciled preset; backup preserved");}
         json report={{"status","reconciled"},{"fromVersion",version},{"toVersion",2},{"changes",changes},{"backup",u8text(backup)},{"registrySource",registry.at("sourceSha256")}};
-        write(reconciliation,report);fs::path migration=path;migration+=L".migration.json";write(migration,report);
+        try{write(reconciliation,report);fs::path migration=path;migration+=L".migration.json";write(migration,report);}catch(const std::exception&){}   // the preset is already migrated; a report that cannot be written must not fail the launch (audit LAUNCH-3)
     } else if(fs::exists(reconciliation)) {
-        // Clear obsolete pending suggestions after a user manually resolves them.
-        auto report=read(reconciliation);if(report.value("status","")=="needs-confirmation"||report.value("status","")=="invalid-value")write(reconciliation,{{"status","valid"},{"originalPreserved",true}});
+        // Clear obsolete pending suggestions after a user manually resolves them; an unreadable report is left alone.
+        try{auto report=starlight::preset::read_limited(reconciliation);if(report.value("status","")=="needs-confirmation"||report.value("status","")=="invalid-value")write(reconciliation,{{"status","valid"},{"originalPreserved",true}});}catch(const std::exception&){}
     }
     return p;
 }
