@@ -48,5 +48,21 @@ static void core_contract_lead_checks(const auto& require){
         require(reports>0&&delivered.size()>=2,"Break-ahead pieces that finish while the game is running are reported for preloading");
         require(!player.take_prefractured_parts(batch),"Nothing is reported again until another break-ahead result changes");
     }
+    {
+        // Starting another scene drops the break-ahead results of the last one; the next report must say so (an empty answer), or the renderer keeps the old rubble.
+        SceneData first;first.Game.emplace();first.Game->SpawnX=0;first.Game->SpawnY=1.7;first.Game->SpawnZ=12;first.Game->Collision=true;
+        Character rock;rock.Id="lead-rock-old";rock.Name=rock.Id;rock.Shape="boulder";rock.X=0;rock.Y=.7;rock.Z=0;rock.Size=1.2;rock.KeepAboveFloor=false;rock.Dynamic=false;first.Characters.push_back(rock);
+        AdventurePlayer player;player.start(first);
+        std::atomic<double> fraction{0};player.prepare_geometry(fraction);player.prepare_collision(fraction);
+        std::vector<std::shared_ptr<const MeshPart>> batch;
+        AdventurePlayer::FractureProgress progress;
+        for(int poll=0;poll<12000;++poll){progress=player.fracture_progress();if(progress.settled())break;std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+        require(progress.prepared==1,"The break-ahead rock finishes before the scene is left");
+        require(player.take_prefractured_parts(batch)&&!batch.empty(),"The finished rock is reported before the scene is left");
+        SceneData second=first;second.Characters.clear();
+        player.start(second);
+        require(player.take_prefractured_parts(batch)&&batch.empty(),"Starting another scene reports that the previous scene's break-ahead parts are gone");
+        require(!player.take_prefractured_parts(batch),"The empty answer is reported once");
+    }
 #endif
 }
