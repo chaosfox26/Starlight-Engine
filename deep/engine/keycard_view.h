@@ -176,15 +176,15 @@ inline void reportSkippedContent(const KeyCard& card, host_readiness::Readiness&
     ready.markDegraded(ready.require("key card content", "objects this host cannot draw", cardFile, host_readiness::Need::Optional), detail);
 }
 
-// Every path string in the key card interface is UTF-8, whatever the console code page.
+// Every path string in the key card interface is UTF-8, whatever the console code page. std::filesystem::path(std::string) would read the bytes in the ANSI code page instead.
 inline std::filesystem::path pathFromUtf8(const std::string& text) {
-    return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+    const auto* first = reinterpret_cast<const char8_t*>(text.data());
+    return std::filesystem::path(std::u8string(first, first + text.size()));
+}
 inline std::string pathToUtf8(const std::filesystem::path& path) {
     const std::u8string text = path.u8string();
     return std::string(reinterpret_cast<const char*>(text.data()), text.size());
-// Every path in this API is UTF-8. std::filesystem::path(std::string) would read the bytes in the ANSI code page instead.
-    const auto* first = reinterpret_cast<const char8_t*>(text.data());
-    return std::filesystem::path(std::u8string(first, first + text.size()));
+}
 inline std::string resolveCardPath(const std::string& requested, const std::string& moduleFolder, const std::string& fileName, std::string& error) {
     namespace fs = std::filesystem;
     std::error_code ignored;
