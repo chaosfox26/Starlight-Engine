@@ -19,7 +19,12 @@ template<class Require> void key_card_checks(Require require,const fs::path& fol
     require(first.Characters[0].Sculpt->content_revision()==first.Characters[1].Sculpt->content_revision(),"Both instances of one asset share one geometry key");
     auto edited=first;edited.Characters[0].Sculpt->Positions[0]+=.01;edited.Characters[0].Sculpt->touch();
     require(edited.Characters[0].Sculpt->content_revision()!=first.Characters[0].Sculpt->content_revision(),"An edit gives the edited geometry a new identity");
-    require(first.Characters[1].Sculpt->content_revision()==second.Characters[1].Sculpt->content_revision(),"Editing one copy does not change the identity of the stored asset");
+    const auto originalAsset=document.at("Characters")[0].at("Sculpt").at("Asset").get<std::string>();
+    const auto editedAsset=store_sculpt(*edited.Characters[0].Sculpt);
+    require(EngineAssets::valid_id(AssetKind::Sculpt,editedAsset)&&editedAsset!=originalAsset,"Storing an edited copy gives it a new asset id");
+    EngineAssets::verify_on_disk(originalAsset);
+    const auto again=SceneData::decode(text);
+    require(again.Characters[0].Sculpt->Positions==tree.Sculpt->Positions&&again.Characters[0].Sculpt->Revision==first.Characters[0].Sculpt->Revision,"Editing one copy does not change the stored original asset or its identity");
 
     const auto bundle=work/"bundle";
     export_portable_scene(scene,bundle);
@@ -69,13 +74,13 @@ template<class Require> void key_card_checks(Require require,const fs::path& fol
         EngineAssets::ScopedRoot library(work/"retry-library");
         const auto id=store_sculpt(*tree.Sculpt);
         auto file=EngineAssets::file_for(id);
-        auto bytes=read_file(file);bytes[bytes.size()-9]^=0x33;atomic_write(file,bytes);
+        auto bytes=read_file(file);const auto intact=bytes;bytes[bytes.size()-9]^=0x33;atomic_write(file,bytes);
         bool damaged=false;try{EngineAssets::verify_on_disk(id);}catch(const AssetMissing&){damaged=true;}
         require(damaged,"A damaged library file is detected on disk");
         EngineAssets::ScopedRoot fresh(work/"retry-library");
         store_sculpt(*tree.Sculpt);
         EngineAssets::verify_on_disk(id);
-        require(true,"Storing an asset over a damaged file repairs it");
+        require(read_file(file)==intact,"Storing an asset over a damaged file repairs it");
     }
     // ASSET-2: a damaged copy in a higher-priority root must not hide an intact copy in a later root.
     {
