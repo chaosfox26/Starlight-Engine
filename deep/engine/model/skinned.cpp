@@ -176,6 +176,12 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     if (r != cgltf_result_success) return fail(GltfResultCode(r), std::string("glTF parse failed: ") + GltfResultName(r));
     GltfPtr owner(parsed);
     cgltf_data* data = parsed;
+    for (cgltf_size b = 0; b < data->buffers_count; ++b) {   // cgltf allocates byteLength before it decodes a base64 buffer, so a tiny URI could ask for gigabytes
+        const char* uri = data->buffers[b].uri;
+        const char* comma = uri && std::strncmp(uri, "data:", 5) == 0 ? std::strchr(uri, ',') : nullptr;
+        if (comma && std::strlen(comma + 1) / 4 * 3 + 2 < data->buffers[b].size)
+            return fail(LoadCode::Malformed, "glTF buffer " + std::to_string(b) + " declares " + std::to_string(data->buffers[b].size) + " bytes but its data URI holds fewer");
+    }
     r = cgltf_load_buffers(&opt, data, "");
     if (r != cgltf_result_success)
         return fail(GltfResultCode(r), std::string("glTF buffers could not be loaded: ") + GltfResultName(r) +

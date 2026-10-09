@@ -982,6 +982,13 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             e = model::loadSkinnedFromMemory(ByteView(damaged), nullptr, "damaged-nest.glb", scratch);
             require(e.failed() && !scratch.loaded && std::chrono::duration<double>(std::chrono::steady_clock::now() - damagedStart).count() < 2.0, "GLB fuzz: deep nesting behind a damaged quote is still refused quickly");
         }
+        {   // GLB fuzz finding: cgltf allocates a buffer's declared byteLength before decoding its base64 text, so a tiny data URI could demand gigabytes
+            const auto uri = glbfuzz::makeDataUriGlb();
+            require(model::loadSkinnedFromMemory(ByteView(uri), nullptr, "uri.glb", scratch).ok(), "GLB fuzz: the data URI fixture loads");
+            e = model::loadSkinnedFromMemory(ByteView(editJson(uri, "\"byteLength\":60,\"uri\"", "\"byteLength\":9000000000000,\"uri\"")), nullptr, "uri-bomb.glb", scratch);
+            show("GLB whose data URI claims 9 TB", e);
+            require(e.code == LoadCode::Malformed && e.message.find("data URI holds fewer") != std::string::npos, "GLB fuzz: a data URI buffer cannot claim more bytes than its text holds");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
