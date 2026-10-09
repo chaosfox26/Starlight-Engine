@@ -94,10 +94,14 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<float> pos{ 0,0,0, 1,0,0, 1,1,0, 0,1,0 };
     if (spec.nanPosition) pos[0] = std::numeric_limits<float>::quiet_NaN();
     std::vector<float> nrm{ 0,0,1, 0,0,1, 0,0,1, 0,0,1 };
+    if (spec.zeroNormal) std::fill(nrm.begin(), nrm.end(), 0.f);
     std::vector<float> uv{ 0,0, 1,0, 1,1, 0,1 };
     std::vector<uint8_t> joints{ 0,0,0,0, uint8_t(spec.badJoint ? 7 : 1),0,0,0, 0,1,0,0, 1,0,0,0 };
     std::vector<float> weights{ 1,0,0,0, 1,0,0,0, 0.5f,0.5f,0,0, 1,0,0,0 };
+    if (spec.negativeWeight) { weights[8] = 1.5f; weights[9] = -0.5f; }
+    if (spec.zeroWeight) weights[12] = weights[13] = weights[14] = weights[15] = 0.f;
     std::vector<uint16_t> indices{ 0,1,2, 0,2,uint16_t(spec.badIndex ? 9 : 3) };
+    if (spec.hugeTotal) indices.assign(4000002, 0);
     std::vector<float> ibm{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,-1,0,1 };
     std::vector<float> times{ 0.f, 1.f };
     if (spec.badTimes == 1) times[0] = std::nanf("");
@@ -114,7 +118,7 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     const size_t declared = bin.size();
     const struct { int component; size_t count; const char* type; } acc[9] = {
         { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC2" }, { 5121, spec.noViewVerts ? 5000000u : 4u, "VEC4" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC4" },
-        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, spec.badIbmType ? "VEC4" : "MAT4" }, { 5126, spec.noViewKeys ? 5000000u : spec.emptyChannel ? 0u : 2u, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.noViewKeys ? 5000000u : spec.emptyChannel ? 0u : spec.cubic ? 6u : 2u, "VEC4" } };
+        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : spec.hugeTotal ? 4000002ull : 6ull, "SCALAR" }, { 5126, 2, spec.badIbmType ? "VEC4" : "MAT4" }, { 5126, spec.noViewKeys ? 5000000u : spec.emptyChannel ? 0u : 2u, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.noViewKeys ? 5000000u : spec.emptyChannel ? 0u : spec.cubic ? 6u : 2u, "VEC4" } };
     std::string views, accessors;
     for (int i = 0; i < 9; ++i) {
         views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";

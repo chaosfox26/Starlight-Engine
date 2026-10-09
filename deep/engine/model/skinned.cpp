@@ -161,6 +161,7 @@ bool BufferArithmeticWraps(const cgltf_data* data) {
 // cgltf's tokenizer takes time quadratic in the nesting depth of the JSON, so a few hundred kilobytes of brackets would stall the load for minutes. Real glTF nests a dozen levels at most.
 // Brackets are counted everywhere, string literals included: a damaged quote can desynchronise a scanner that tracks strings while the tokenizer still walks the nesting. Only a string holding hundreds of unmatched brackets is refused by mistake.
 constexpr size_t kMaxJsonDepth = 256;
+constexpr size_t kMaxVerticesAndIndices = 8000000;   // all primitives of one model together
 bool JsonNestsTooDeep(ByteView glb) {
     size_t begin = 0, end = glb.size;
     if (glb.size >= 20 && std::memcmp(glb.data, "glTF", 4) == 0) {
@@ -255,6 +256,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     }
 
     cgltf_size dataLessElements = 0;
+    cgltf_size zeroSumWeights = 0;
     bool first = true;
     auto grow = [&](float x, float y, float z) {
         if (first) { out.bbMin = out.bbMax = XMFLOAT3(x, y, z); first = false; return; }
@@ -306,6 +308,8 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             }
             const cgltf_size triangleIndices = prim->indices ? prim->indices->count : pos->count;
             if (prim->type == cgltf_primitive_type_triangles && triangleIndices % 3 != 0) return bad(LoadCode::Malformed, pi, "index count " + std::to_string(triangleIndices) + " is not a multiple of 3");
+            const cgltf_size expandedIndices = prim->type == cgltf_primitive_type_triangles ? triangleIndices : triangleIndices >= 3 ? 3 * (triangleIndices - 2) : 0;
+            if (out.verts.size() + pos->count + out.indices.size() + expandedIndices > kMaxVerticesAndIndices) return bad(LoadCode::TooLarge, pi, "vertices and indices together exceed " + std::to_string(kMaxVerticesAndIndices) + " across the model's primitives");
             Submesh sm; sm.node = nodeName;
             if (prim->material) {
                 sm.material = prim->material->name ? prim->material->name : "";
@@ -328,13 +332,16 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 const bool finite = std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]) && std::isfinite(nn[0]) && std::isfinite(nn[1]) && std::isfinite(nn[2]) &&
                                     std::isfinite(t[0]) && std::isfinite(t[1]) && std::isfinite(w[0]) && std::isfinite(w[1]) && std::isfinite(w[2]) && std::isfinite(w[3]);
                 if (!finite) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a non-finite position, normal, UV or weight");
-                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
+                if (w[0] < 0.0f || w[1] < 0.0f || w[2] < 0.0f || w[3] < 0.0f) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a negative WEIGHTS_0 value");
+                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ++zeroSumWeights; ws = 1.0f; w[0] = 1.0f; }
                 if (jn) for (int k = 0; k < 4; ++k)
                     if (w[k] > 0.0f && j[k] >= out.joints.size())
                         return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
                 XMFLOAT3 fp, fn;
                 XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
-                XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
+                XMVECTOR nv = XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn));
+                if (XMVectorGetX(XMVector3LengthSq(nv)) == 0.0f) nv = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);   // a zero NORMAL has no direction; use the up normal a glb without NORMAL gets, so its tangent is not zero either
+                XMStoreFloat3(&fn, nv);
                 SkinVertex sv{};
                 sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
                 sv.u = t[0]; sv.v = t[1];
@@ -423,6 +430,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         for (int k = 0; k < 5; ++k)
             if (skippedPrimitives[k]) out.warnings += (out.warnings.empty() ? "primitives not drawn (only triangles, strips and fans are loaded): " : ", ") + std::to_string(skippedPrimitives[k]) + " " + kinds[k];
     }
+    if (zeroSumWeights) out.warnings += (out.warnings.empty() ? "" : "; ") + std::string("WEIGHTS_0 sums to zero on ") + std::to_string(zeroSumWeights) + " vertices; those vertices are bound fully to joint slot 0";
     if (out.verts.empty() || out.indices.empty()) return fail(LoadCode::NoGeometry, "no textured triangle geometry (needs triangle primitives with POSITION and TEXCOORD_0)" + (out.warnings.empty() ? std::string() : "; " + out.warnings));
 
     if (atlasUv) {
