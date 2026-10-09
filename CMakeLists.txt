@@ -119,6 +119,7 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(py-${py_test} PROPERTIES DISABLED TRUE LABELS known-failing)
  endforeach()
  add_test(NAME py-test_prepare_graphics_validation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/packaging/test_prepare_graphics_validation.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/packaging")
+ add_test(NAME py-stage-native-preview COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/packaging/test_stage_native_preview.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/packaging")
  add_test(NAME py-test_verify_no_managed COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/checks/test_verify_no_managed.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
  set_tests_properties(py-test_verify_no_managed PROPERTIES DISABLED TRUE LABELS known-failing)
  # The regression tooling decides what counts as VERIFIED, so its own self-tests are gated too.
