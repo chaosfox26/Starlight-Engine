@@ -137,6 +137,46 @@ void WriteAtlas(SkinnedModel& m, ByteView atlas) {
     m.atlasUV = true;
 }
 
+bool SumOverflows(cgltf_size a, cgltf_size b) { return a > SIZE_MAX - b; }
+bool ProductOverflows(cgltf_size a, cgltf_size b) { return b && a > SIZE_MAX / b; }
+
+// cgltf_validate adds and multiplies these untrusted numbers without checking for wrap-around, so an offset, stride or count that wraps slips past its range tests and the vertex readers then run off the buffer.
+bool BufferArithmeticWraps(const cgltf_data* data) {
+    for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+        if (SumOverflows(data->buffer_views[i].offset, data->buffer_views[i].size)) return true;
+    for (cgltf_size i = 0; i < data->accessors_count; ++i) {
+        const cgltf_accessor& a = data->accessors[i];
+        const cgltf_size element = cgltf_calc_size(a.type, a.component_type);
+        if (a.buffer_view && a.count) {
+            if (ProductOverflows(a.stride, a.count - 1) || SumOverflows(a.offset, a.stride * (a.count - 1)) || SumOverflows(a.offset + a.stride * (a.count - 1), element)) return true;
+        }
+        if (a.is_sparse) {
+            const cgltf_size indexSize = cgltf_component_size(a.sparse.indices_component_type);
+            if (ProductOverflows(indexSize, a.sparse.count) || SumOverflows(a.sparse.indices_byte_offset, indexSize * a.sparse.count) ||
+                ProductOverflows(element, a.sparse.count) || SumOverflows(a.sparse.values_byte_offset, element * a.sparse.count)) return true;
+        }
+    }
+    return false;
+}
+// cgltf's tokenizer takes time quadratic in the nesting depth of the JSON, so a few hundred kilobytes of brackets would stall the load for minutes. Real glTF nests a dozen levels at most.
+// Brackets are counted everywhere, string literals included: a damaged quote can desynchronise a scanner that tracks strings while the tokenizer still walks the nesting. Only a string holding hundreds of unmatched brackets is refused by mistake.
+constexpr size_t kMaxJsonDepth = 256;
+bool JsonNestsTooDeep(ByteView glb) {
+    size_t begin = 0, end = glb.size;
+    if (glb.size >= 20 && std::memcmp(glb.data, "glTF", 4) == 0) {
+        uint32_t length;
+        std::memcpy(&length, glb.data + 12, sizeof(length));
+        begin = 20;
+        end = length > glb.size - begin ? glb.size : begin + length;
+    }
+    size_t depth = 0;
+    for (size_t i = begin; i < end; ++i) {
+        const uint8_t c = glb.data[i];
+        if (c == '[' || c == '{') { if (++depth > kMaxJsonDepth) return true; }
+        else if ((c == ']' || c == '}') && depth) --depth;
+    }
+    return false;
+}
 LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
     out = SkinnedModel();
     out.source = label;
@@ -148,6 +188,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     if (glb.size == 0) return fail(LoadCode::Truncated, "GLB is empty");
     if (!glb.data) return fail(LoadCode::InvalidArgument, "GLB pointer is null");
 
+    if (JsonNestsTooDeep(glb)) return fail(LoadCode::Malformed, "the JSON nests deeper than " + std::to_string(kMaxJsonDepth) + " levels");
     cgltf_options opt{};
     opt.file.read = &RefuseExternalRead;
     opt.file.release = &IgnoreExternalRelease;
@@ -156,10 +197,17 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     if (r != cgltf_result_success) return fail(GltfResultCode(r), std::string("glTF parse failed: ") + GltfResultName(r));
     GltfPtr owner(parsed);
     cgltf_data* data = parsed;
+    for (cgltf_size b = 0; b < data->buffers_count; ++b) {   // cgltf allocates byteLength before it decodes a base64 buffer, so a tiny URI could ask for gigabytes
+        const char* uri = data->buffers[b].uri;
+        const char* comma = uri && std::strncmp(uri, "data:", 5) == 0 ? std::strchr(uri, ',') : nullptr;
+        if (comma && std::strlen(comma + 1) / 4 * 3 + 2 < data->buffers[b].size)
+            return fail(LoadCode::Malformed, "glTF buffer " + std::to_string(b) + " declares " + std::to_string(data->buffers[b].size) + " bytes but its data URI holds fewer");
+    }
     r = cgltf_load_buffers(&opt, data, "");
     if (r != cgltf_result_success)
         return fail(GltfResultCode(r), std::string("glTF buffers could not be loaded: ") + GltfResultName(r) +
                     (r == cgltf_result_io_error || r == cgltf_result_file_not_found ? " (external buffer files cannot be resolved from memory)" : ""));
+    if (BufferArithmeticWraps(data)) return fail(LoadCode::Malformed, "an accessor or buffer view has an offset, stride or count so large that its size wraps around");
     r = cgltf_validate(data);
     if (r != cgltf_result_success)
         return fail(r == cgltf_result_data_too_short ? LoadCode::Malformed : GltfResultCode(r),
@@ -209,7 +257,9 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         if (!node->mesh) return true;
         float world[16]; cgltf_node_transform_world(node, world);
         XMMATRIX W = node->skin ? XMMatrixIdentity() : FromGltf(world);
-        XMMATRIX Wn = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+        XMVECTOR determinant;
+        XMMATRIX inverse = XMMatrixInverse(&determinant, W);
+        XMMATRIX Wn = XMVectorGetX(determinant) == 0.0f || XMMatrixIsInfinite(inverse) || XMMatrixIsNaN(inverse) ? W : XMMatrixTranspose(inverse);   // a zero scale has no inverse; its normals fall back to the matrix itself instead of NaN
         std::string nodeName = node->name ? node->name : "";
         auto bad = [&](LoadCode code, cgltf_size pi, const std::string& what) {
             geometryError = makeLoadError(code, label, "node '" + nodeName + "' primitive " + std::to_string(pi) + ": " + what);
@@ -260,13 +310,13 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 const bool finite = std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]) && std::isfinite(nn[0]) && std::isfinite(nn[1]) && std::isfinite(nn[2]) &&
                                     std::isfinite(t[0]) && std::isfinite(t[1]) && std::isfinite(w[0]) && std::isfinite(w[1]) && std::isfinite(w[2]) && std::isfinite(w[3]);
                 if (!finite) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a non-finite position, normal, UV or weight");
+                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
                 if (jn) for (int k = 0; k < 4; ++k)
                     if (w[k] > 0.0f && j[k] >= out.joints.size())
                         return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
                 XMFLOAT3 fp, fn;
                 XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
                 XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
-                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
                 SkinVertex sv{};
                 sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
                 sv.u = t[0]; sv.v = t[1];
@@ -308,6 +358,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             const cgltf_animation_channel& ch = an.channels[ci];
             auto it = jointOf.find(ch.target_node);
             if (it == jointOf.end() || !ch.sampler || !ch.sampler->input || !ch.sampler->output) continue;
+            if (ch.sampler->input->count == 0) continue;
             Channel k; k.joint = it->second;
             int comps = 0;
             if (ch.target_path == cgltf_animation_path_type_translation) { k.path = 0; comps = 3; }
@@ -342,6 +393,12 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         WriteAtlas(out, *atlasUv);
     }
     GenerateTangents(out);
+    for (size_t v = 0; v < out.verts.size(); ++v) {
+        const SkinVertex& sv = out.verts[v];
+        const float all[] = { sv.px, sv.py, sv.pz, sv.nx, sv.ny, sv.nz, sv.tx, sv.ty, sv.tz, sv.tw, sv.u, sv.v, sv.w[0], sv.w[1], sv.w[2], sv.w[3] };
+        for (float f : all)
+            if (!std::isfinite(f)) return fail(LoadCode::Malformed, "vertex " + std::to_string(v) + " is not finite after the node transforms and tangent generation");
+    }
     out.loaded = true;
     return LoadError();
 }

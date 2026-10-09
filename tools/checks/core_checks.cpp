@@ -46,6 +46,7 @@ using namespace starlight::editor;
 #include "obstacle_removal_checks.inl"
 #include "liquid_terrain_audit_checks.inl"
 #include "glb_index_budget_checks.inl"
+#include "glb_fuzz_checks.inl"
 #include "id_remap_checks.inl"
 #include "editor_state_checks.inl"
 #include "migration_path_checks.inl"
@@ -130,6 +131,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(obstacle_removal_checks, obstacle_removal_checks(require));
         RUN_GROUP(liquid_terrain_audit_checks, liquid_terrain_audit_checks(require));
         RUN_GROUP(glb_index_budget_checks, glb_index_budget_checks(require,folder));
+        RUN_GROUP(glb_fuzz_checks, glb_fuzz_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path()));
         RUN_GROUP(id_remap_checks, id_remap_checks(require));
         RUN_GROUP(editor_state_checks, editor_state_checks(require,folder));
         RUN_GROUP(history_stroke_checks, history_stroke_checks(require));
