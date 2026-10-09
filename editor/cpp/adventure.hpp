@@ -170,6 +170,8 @@ class AdventurePlayer {
     mutable SpatialIndex solidIndex_;
     std::unordered_map<std::string,uint32_t> solidSlot_;
     bool spatialEnabled_=repair_switch("STARLIGHT_FIX_SPATIAL");
+    // SLOPE-1: STARLIGHT_ACTOR_STEP_PER_SUBSTEP=1 applies the 5 cm heightmap step limit to each sub-step instead of to the whole frame move, so the slope an actor can climb no longer depends on the frame rate. Unset, the frame-wide limit stays.
+    bool actorStepPerSubstep_=[]{char v[8]{};return GetEnvironmentVariableA("STARLIGHT_ACTOR_STEP_PER_SUBSTEP",v,8)&&v[0]=='1';}();
 #ifdef STARLIGHT_CHARACTER_CONTROLLER
     std::unique_ptr<AdventureController> controller_;
 #endif
@@ -791,7 +793,7 @@ class AdventurePlayer {
                         }
                     }else{
                         if(launched && axis==2 && increment.y<0 && bounds.low.y+next.y<=floor){allowed.y=floor-bounds.low.y;landed=true;break;}
-                        if(!launched && terrain_ && std::abs(floor-terrain_->height_at(c.X,c.Z))>.05){actor.steering.stop();break;}
+                        if(!launched && terrain_ && std::abs(floor-(actorStepPerSubstep_?terrain_->height_at(c.X+allowed.x,c.Z+allowed.z):terrain_->height_at(c.X,c.Z)))>.05){actor.steering.stop();break;}
                     }
                     if(obstructed(next)){actor.steering.stop();if(launched && axis==2){landed=increment.y<0;actor.launchVelocity.y=0;}break;}
                     allowed=next;
