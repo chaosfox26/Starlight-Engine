@@ -130,7 +130,7 @@ std::string Resolution::to_json() const {
         j["families"].push_back({{"family", f.family}, {"category", f.category}, {"set", f.setId}, {"version", f.version}, {"release", f.release},
                                  {"source", f.source}, {"locked", f.locked}, {"ota_allowed", f.otaAllowed}, {"fallback", f.fallback},
                                  {"note", f.note}, {"components", f.componentIds}, {"directory", utf8(f.dir)}});
-    return j.dump(2);
+    return j.dump(2, ' ', false, json::error_handler_t::replace);
 }
 
 Store::Store(StoreOptions options) : options_(std::move(options)) {
@@ -192,7 +192,7 @@ void Store::load() {
 void Store::save(State next) {
     next.serial = state_.serial + 1;
     if (next.events.size() > 20) next.events.erase(next.events.begin(), next.events.end() - 20);
-    atomic_replace_file(options_.root / "state.json", state_to_json(next).dump(2), options_.fault, "state", true);
+    atomic_replace_file(options_.root / "state.json", state_to_json(next).dump(2, ' ', false, json::error_handler_t::replace), options_.fault, "state", true);
     state_ = std::move(next);
 }
 
@@ -839,7 +839,7 @@ std::string Store::status_json(const std::optional<Catalog>& cat, const EngineAp
         }
         j["categories"][rf.category.empty() ? "upscaling" : rf.category].push_back(std::move(fj));
     }
-    return j.dump(2);
+    return j.dump(2, ' ', false, json::error_handler_t::replace);
 }
 
 }

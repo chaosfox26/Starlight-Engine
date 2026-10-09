@@ -732,6 +732,22 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto out = work / "report.json";
         require(gr::save_report(rep, out).ok && gr::read_text(out) == rep.json && !gr::save_report(rep, out).ok, "GFX the report is saved locally and never overwrites");
         require(gr::redact_text("a@b.co 10.0.0.1 \\\\server\\share\\x") == "<email> <ip> <path>", "GFX redaction removes addresses and paths");
+        gr::ReportInput odd;
+        odd.description = std::string(3999, 'a') + "\xE2\x82\xAC";
+        odd.diagnostics = "log line \xE9 from an ANSI file ";
+        while (odd.diagnostics.size() < 20000) odd.diagnostics += "word ";
+        odd.diagnostics += "\xE2\x82\xAC";
+        odd.includeDiagnostics = true;
+        bool oddOk = false;
+        try { auto r2 = gr::build_report(s.resolve(), odd); nlohmann::json::parse(r2.json); oddOk = r2.diagnosticsIncluded; } catch (const std::exception&) {}
+        require(oddOk, "GFX a report with a cut multi-byte character or non-UTF-8 diagnostics is still produced as valid JSON");
+        gr::Store f(opts("store-report-ansi"));
+        f.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        f.activate("plain", "plain-1.1.0", api);
+        f.begin_launch();
+        bool reasonOk = false;
+        try { reasonOk = f.report_launch_failure("failed \xE9 ANSI text").ok; } catch (const std::exception&) {}
+        require(reasonOk && f.state().sets.at("plain-1.1.0").bad && gr::Store(opts("store-report-ansi")).state().sets.at("plain-1.1.0").bad && !f.status_json(std::nullopt, api).empty() && !f.resolve().to_json().empty(), "GFX a non-UTF-8 failure reason is still saved and reported");
     }
 
     {

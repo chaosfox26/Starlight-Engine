@@ -150,6 +150,12 @@ std::string redact_text(std::string_view in) {
     return s;
 }
 
+static std::string utf8_prefix(std::string_view s, std::size_t n) {
+    if (s.size() <= n) return std::string(s);
+    while (n > 0 && (static_cast<unsigned char>(s[n]) & 0xC0) == 0x80) --n;
+    return std::string(s.substr(0, n));
+}
+
 Report build_report(const Resolution& res, const ReportInput& in) {
     json j{{"schema", 1}, {"components", json::array()}};
     for (auto& f : res.families)
@@ -158,14 +164,14 @@ Report build_report(const Resolution& res, const ReportInput& in) {
     bool codeOk = code.size() <= 64;
     for (unsigned char c : code) if (!(std::isalnum(c) || c == '_' || c == '-' || c == '.')) codeOk = false;
     j["failure_code"] = codeOk ? code : "invalid-code";
-    auto desc = in.description.substr(0, 4000);
+    auto desc = utf8_prefix(in.description, 4000);
     j["description"] = desc;
     Report r;
     if (in.includeDiagnostics) {
-        j["diagnostics"] = redact_text(in.diagnostics.substr(0, 20000));
+        j["diagnostics"] = redact_text(utf8_prefix(in.diagnostics, 20000));
         r.diagnosticsIncluded = true;
     }
-    r.json = j.dump(2);
+    r.json = j.dump(2, ' ', false, json::error_handler_t::replace);
     std::string p = "PROBLEM REPORT PREVIEW (nothing has been sent; it is only saved if you choose to save it)\n\nComponents and versions:\n";
     for (auto& c : j["components"]) p += "  " + c["family"].get<std::string>() + ": " + c["version"].get<std::string>() + " (set " + c["set"].get<std::string>() + ", " + c["source"].get<std::string>() + (c["locked"].get<bool>() ? ", locked" : "") + ")\n";
     p += "\nFailure code: " + j["failure_code"].get<std::string>() + "\n\nYour description:\n" + desc + "\n";
