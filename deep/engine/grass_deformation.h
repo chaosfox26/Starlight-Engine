@@ -119,8 +119,10 @@ struct GrassDeformation {
   contacts=next;
   {std::vector<ContactIndex::Box> boxes;boxes.reserve(contacts.size());for(const auto& b:contacts)boxes.push_back({b.low.x,b.low.y,b.low.z,b.high.x,b.high.y,b.high.z});contactIndex.build(std::move(boxes));}
  }
+ // A frame aborted after draw() but before end() leaves entries queued; drop them so they cannot outlive their map nodes.
+ void discard(){for(auto& p:pending)if(p.constants.settings[0])p.entry->fresh=true;pending.clear();pendingEntries.clear();}
  void begin(RenderDevice& d,float time){
-  entryCursor=0;
+  discard();entryCursor=0;
   if(entries.empty())return;
   if(!contacts.empty())memcpy(bodyMapped+size_t(d.slot)*bodyCapacity*sizeof(Body),contacts.data(),contacts.size()*sizeof(Body));
   if(hasTime&&time<previousTime)reset();
@@ -196,5 +198,5 @@ struct GrassDeformation {
   // bodies. Keep the conservative bound tied to actual possible contacts.
   auto& entry=entries.at(key);entry.shadowReach=std::max(entry.shadowReach,.16f+.8f*count);return entry.shadowReach;
  }
- void retain(RenderDevice& d,const std::set<uint64_t>& active){for(auto it=entries.begin();it!=entries.end();){if(!active.count(it->first)){staged.add(it->second);it=entries.erase(it);}else++it;}commit(d);for(auto it=topologies.begin();it!=topologies.end();)if(it->second.expired())it=topologies.erase(it);else++it;}
+ void retain(RenderDevice& d,const std::set<uint64_t>& active){discard();for(auto it=entries.begin();it!=entries.end();){if(!active.count(it->first)){staged.add(it->second);it=entries.erase(it);}else++it;}commit(d);for(auto it=topologies.begin();it!=topologies.end();)if(it->second.expired())it=topologies.erase(it);else++it;}
 };
