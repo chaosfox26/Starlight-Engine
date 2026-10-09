@@ -42,7 +42,7 @@ json verify_portable_scene(const fs::path &folder) {
         manifest.at("scene") != "scene.starscene") throw std::runtime_error("Unsupported portable scene manifest");
     auto contained = [&](const std::string &name) {
         auto relative = fs::path(wide(name));
-        if (relative.is_absolute() || relative.has_root_name() || relative.empty())
+        if (relative.is_absolute() || relative.has_root_name() || relative.empty() || name.find(':') != std::string::npos)
             throw std::runtime_error("Invalid portable scene path");
         auto path = fs::canonical(root / relative);
         auto within = path.lexically_relative(root);

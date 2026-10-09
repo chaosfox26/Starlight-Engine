@@ -64,6 +64,7 @@ using namespace starlight::editor;
 #include "graphics_runtime_checks.inl"
 #include "club_schema_checks.inl"
 #include "asset_root_checks.inl"
+#include "asset_store_fuzz_checks.inl"
 #include "active_scene_guard_checks.inl"
 #include "environment_effects.hpp"
 #include "render_split_checks.inl"
@@ -151,6 +152,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(club_schema_checks, club_schema_checks(require,folder));
         RUN_GROUP(model_asset_checks, model_asset_checks(require,folder));
         RUN_GROUP(asset_root_checks, asset_root_checks(require,folder));
+        RUN_GROUP(asset_store_fuzz_checks, asset_store_fuzz_checks(require,folder));
         RUN_GROUP(render_split_checks, render_split_checks(require));
         RUN_GROUP(fracture_pose_checks, fracture_pose_checks(require));
         RUN_GROUP(ray_tree_checks, ray_tree_checks(require));

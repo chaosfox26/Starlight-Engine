@@ -689,6 +689,7 @@ AssetReadiness check_asset_ready(const std::string &id) {
         } else if (id.starts_with("terrain-")) {
             TerrainData terrain;
             load_terrain_geometry(id, terrain);
+            terrain.validate();
             result.detail = "terrain loaded";
         } else
             throw AssetMissing("Unknown engine asset id: " + id);
