@@ -51,7 +51,8 @@ json verify_portable_scene(const fs::path &folder) {
         return path;
     };
     auto scenePath = contained("scene.starscene");
-    if (hash_file(scenePath) != manifest.at("sceneSha256").get<std::string>())
+    const auto sceneText = read_file(scenePath);
+    if (hash_bytes(sceneText) != manifest.at("sceneSha256").get<std::string>())
         throw std::runtime_error("Portable scene changed since export");
     const auto &assets = manifest.at("assets");
     if (!assets.is_array()) throw std::runtime_error("Expected portable asset list");
@@ -63,7 +64,6 @@ json verify_portable_scene(const fs::path &folder) {
         verified.push_back(path);
     }
     EngineAssets::ScopedRoot bundleLibrary(root / L"assets");
-    auto sceneText = read_file(scenePath);
     for (const auto &id : EngineAssets::referenced_ids(json::parse(sceneText))) {
         // canonical() throws for a file that is not in the folder, so an absent asset is refused with the manifest message before it is resolved.
         const auto name = "assets/" + id + ".slasset";
