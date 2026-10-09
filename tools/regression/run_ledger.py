@@ -81,6 +81,12 @@ def apply_result(suite, data):
     suite['checks'] = data.get('checks', [])
     suite['schema'] = data.get('schema')
 
+def settle_exit(suite):
+    """A result.json that says success is not a pass when the process then crashed, hung or was killed at exit."""
+    if suite['completed'] and (suite.get('timedOut') or suite.get('exitCode') not in (None, 0)):
+        suite['success'] = False
+        suite['error'] = suite['error'] or ('timed out after the result was written' if suite.get('timedOut') else 'process exited with code %s after the result was written' % suite['exitCode'])
+
 def evaluate_test(test, suite):
     """State of one ledger test given what the suite did. suite keys: started, completed, success, error, checks (names of passed checks), skippedReason."""
     token = test['token']
@@ -252,6 +258,15 @@ def self_test():
         flag = 'ok ' if got == want else 'BAD'
         bad += got != want
         print('  %s %-42s expected %-14s got %s' % (flag, name, want, got))
+    exited = dict(base, exitCode=0, timedOut=False)
+    settle_exit(exited)
+    crashed = dict(base, exitCode=-1073741819, timedOut=False)
+    settle_exit(crashed)
+    hung = dict(base, exitCode=None, timedOut=True)
+    settle_exit(hung)
+    ok = exited['success'] is True and crashed['success'] is False and 'exited with code' in crashed['error'] and hung['success'] is False and 'timed out' in hung['error']
+    print('  %s a result.json written before a crash or timeout is not a pass' % ('ok ' if ok else 'BAD'))
+    bad += not ok
     notes = transitions_for([{'id': 'X', 'state': 'VERIFIED', 'tests': [{'reason': 'r'}]}], {'X': 'NOT-CHECKED'})
     print('  %s coverage restored notice: %s' % ('ok ' if notes and notes[0].startswith('COVERAGE RESTORED') else 'BAD', notes))
     bad += not (notes and notes[0].startswith('COVERAGE RESTORED'))
@@ -427,6 +442,7 @@ def main():
             suite['error'] = 'suite did not finish; last passed check: %s' % (suite['checks'][-1] if suite['checks'] else 'none')
         else:
             suite['error'] = 'suite did not finish and left no progress log'
+        settle_exit(suite)
 
     entries = []
     for entry in ledger['entries']:
