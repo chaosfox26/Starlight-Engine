@@ -105,6 +105,12 @@ void renew_object_ids(std::vector<Character>& objects) {
         if (auto target = renamed.find(object.LightningTargetId); !object.LightningTargetId.empty() && target != renamed.end()) object.LightningTargetId = target->second;
     }
 }
+void drop_unresolved_links(std::vector<Character>& objects, const std::unordered_set<std::string>& present) {
+    for (auto& object : objects) {
+        if (!object.JointTargetId.empty() && !present.contains(object.JointTargetId)) { object.JointKind = 0; object.JointTargetId.clear(); }
+        if (!object.LightningTargetId.empty() && !present.contains(object.LightningTargetId)) object.LightningTargetId.clear();
+    }
+}
 std::vector<std::string> rules_naming_objects(const SceneData& scene, const std::unordered_set<std::string>& ids) {
     std::vector<std::string> names;
     for (const auto& rule : scene.Rules) {

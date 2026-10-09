@@ -27,4 +27,24 @@ static void editor_wave2_checks(const auto& require,const fs::path& folder){
     std::cout.rdbuf(old);
     require(code==1&&fs::is_regular_file(result),"EDIT-3: a command-line failure whose message holds bytes that are not UTF-8 still writes the JSON error report and exits 1");
     require(json::parse(read_file(result)).value("success",true)==false,"EDIT-3: that report says success is false");
+    {
+        // EDIT-5: a joint or lightning link to an object that is not coming along is dropped instead of stopping Play later.
+        SceneData linked;
+        Character anchor;anchor.Shape="rock";anchor.Name="anchor";
+        Character bob;bob.Shape="rock";bob.Name="bob";bob.Dynamic=true;bob.JointKind=1;bob.JointTargetId=anchor.Id;
+        Character bolt;bolt.Shape="chaos-lightning";bolt.Name="bolt";bolt.LightningTargetId=anchor.Id;
+        linked.Characters={anchor,bob,bolt};
+        auto kept=std::vector<Character>{bob,bolt};
+        drop_unresolved_links(kept,{anchor.Id,bob.Id,bolt.Id});
+        require(kept[0].JointKind==1&&kept[0].JointTargetId==anchor.Id&&kept[1].LightningTargetId==anchor.Id,"EDIT-5: links to objects that are present are kept");
+        drop_unresolved_links(kept,{bob.Id,bolt.Id});
+        require(kept[0].JointKind==0&&kept[0].JointTargetId.empty()&&kept[1].LightningTargetId.empty(),"EDIT-5: links to objects that are absent are cleared");
+        const auto both=folder/("w2-selection-both-"+new_id()), alone=folder/("w2-selection-alone-"+new_id());
+        export_scene_selection(linked,{anchor.Id,bob.Id},both);
+        export_scene_selection(linked,{bob.Id,bolt.Id},alone);
+        const auto withTarget=load_scene(both/"scene.starscene"), withoutTarget=load_scene(alone/"scene.starscene");
+        auto find=[](const SceneData& s,const std::string& name)->const Character&{for(const auto& c:s.Characters)if(c.Name==name)return c;throw std::runtime_error("missing "+name);};
+        require(find(withTarget,"bob").JointTargetId==anchor.Id&&find(withTarget,"bob").JointKind==1,"EDIT-5: an exported selection keeps a joint whose target is in the selection");
+        require(find(withoutTarget,"bob").JointTargetId.empty()&&find(withoutTarget,"bob").JointKind==0&&find(withoutTarget,"bolt").LightningTargetId.empty(),"EDIT-5: an exported selection drops joint and lightning links to objects it does not contain");
+    }
 }

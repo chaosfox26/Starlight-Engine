@@ -1,6 +1,7 @@
 #include "platform.hpp"
 #include "assets.hpp"
 #include "engine_assets.hpp"
+#include "object_template.hpp"
 #include <cstring>
 namespace starlight::editor {
 json export_portable_scene(const SceneData &source, const fs::path &destination) {
@@ -93,6 +94,7 @@ json export_scene_selection(const SceneData &scene, const std::vector<std::strin
     for (const auto &object : scene.Characters)
         if (std::binary_search(unique.begin(), unique.end(), object.Id)) selected.Characters.push_back(object);
     if (selected.Characters.size() != ids.size()) throw std::runtime_error("Selected object no longer exists");
+    drop_unresolved_links(selected.Characters, std::unordered_set<std::string>(ids.begin(), ids.end()));
     return export_portable_scene(selected, destination);
 }
 std::optional<size_t> repair_scene_models(SceneData &scene,

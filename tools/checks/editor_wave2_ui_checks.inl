@@ -49,4 +49,17 @@
     try { message(WM_COMMAND, MAKEWPARAM(0, STN_DBLCLK), reinterpret_cast<LPARAM>(view)); } catch (const std::exception&) { doubleClickThrew = true; }
     playing = false;
     check("EDIT-4: the 3D view's double-click notification is not run as an editing command while playing", !doubleClickThrew);
+    // EDIT-5: Paste drops joint and lightning links to objects that are not in the scene it pastes into.
+    fixture();
+    {
+        Character joined; joined.Shape = "rock"; joined.Name = "joined"; joined.Dynamic = true; joined.JointKind = 1; joined.JointTargetId = "object-from-another-scene";
+        Character kept; kept.Shape = "rock"; kept.Name = "kept"; kept.Dynamic = true; kept.JointKind = 1; kept.JointTargetId = scene.Characters[0].Id;
+        copiedObjects = {joined, kept};
+        command(PasteObjects);
+        const auto &pastedJoined = scene.Characters[scene.Characters.size() - 2], &pastedKept = scene.Characters.back();
+        check("EDIT-5: pasting drops a joint to an object that is not in this scene", pastedJoined.Name == "joined" && pastedJoined.JointKind == 0 && pastedJoined.JointTargetId.empty());
+        check("EDIT-5: pasting keeps a joint to an object that is in this scene", pastedKept.Name == "kept" && pastedKept.JointKind == 1 && pastedKept.JointTargetId == scene.Characters[0].Id);
+        copiedObjects.clear();
+    }
+    fixture();
 }
