@@ -80,7 +80,7 @@ inline void trackedFree(void* p) noexcept {
 // ---- fixtures (moved unchanged from texture_checks.cpp) ----
 inline void putLE(std::vector<uint8_t>& v, uint32_t x) { v.push_back(uint8_t(x)); v.push_back(uint8_t(x >> 8)); v.push_back(uint8_t(x >> 16)); v.push_back(uint8_t(x >> 24)); }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; int armature = 0; int extraMode = -1; bool hugeIndexCount = false; bool wideTimes = false; bool emptyChannel = false; bool noViewVerts = false; bool negativeWeight = false, zeroWeight = false, zeroNormal = false; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; int armature = 0; int extraMode = -1; bool hugeIndexCount = false; bool wideTimes = false; bool emptyChannel = false; bool noViewVerts = false; bool negativeWeight = false, zeroWeight = false, zeroNormal = false, hugeTotal = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -101,6 +101,7 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     if (spec.negativeWeight) { weights[8] = 1.5f; weights[9] = -0.5f; }
     if (spec.zeroWeight) weights[12] = weights[13] = weights[14] = weights[15] = 0.f;
     std::vector<uint16_t> indices{ 0,1,2, 0,2,uint16_t(spec.badIndex ? 9 : 3) };
+    if (spec.hugeTotal) indices.assign(4000002, 0);
     std::vector<float> ibm{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,-1,0,1 };
     std::vector<float> times{ 0.f, 1.f };
     if (spec.badTimes == 1) times[0] = std::nanf("");
@@ -117,7 +118,7 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     const size_t declared = bin.size();
     const struct { int component; size_t count; const char* type; } acc[9] = {
         { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC3" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC2" }, { 5121, spec.noViewVerts ? 5000000u : 4u, "VEC4" }, { 5126, spec.noViewVerts ? 5000000u : 4u, "VEC4" },
-        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, spec.emptyChannel ? 0u : 2u, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.emptyChannel ? 0u : spec.cubic ? 6u : 2u, "VEC4" } };
+        { spec.hugeIndexCount ? 5125 : 5123, spec.hugeIndexCount ? 4611686018427387905ull : spec.hugeTotal ? 4000002ull : 6ull, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, spec.emptyChannel ? 0u : 2u, spec.wideTimes ? "VEC2" : "SCALAR" }, { 5126, spec.emptyChannel ? 0u : spec.cubic ? 6u : 2u, "VEC4" } };
     std::string views, accessors;
     for (int i = 0; i < 9; ++i) {
         views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";

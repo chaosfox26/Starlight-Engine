@@ -1226,6 +1226,12 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(zeroSpec)), nullptr, "zero-weight.glb", scratch).ok() && scratch.loaded && scratch.verts[3].w[0] == 1.f && scratch.warnings.find("WEIGHTS_0") != std::string::npos, "SKN-5: weights that sum to zero keep the joint-0 fallback and are reported in the warnings");
         GlbSpec zeroNrmSpec; zeroNrmSpec.zeroNormal = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(zeroNrmSpec)), nullptr, "zero-normal.glb", scratch).ok() && [&] { for (const auto& v : scratch.verts) { const float n2 = v.nx * v.nx + v.ny * v.ny + v.nz * v.nz, t2 = v.tx * v.tx + v.ty * v.ty + v.tz * v.tz; if (!(std::fabs(n2 - 1.f) < 1e-3f && std::fabs(t2 - 1.f) < 1e-3f)) return false; } return true; }(), "SKN-6: a zero NORMAL is replaced with a unit normal and every tangent stays unit length");
+        GlbSpec underSpec; underSpec.hugeTotal = true;
+        require(model::loadSkinnedFromMemory(ByteView(makeGlb(underSpec)), nullptr, "under-cap.glb", scratch).ok() && scratch.loaded, "SKN-7: a model with about 4 million indices in one primitive is still accepted");
+        GlbSpec totalSpec; totalSpec.hugeTotal = true; totalSpec.primitives = 2;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(totalSpec)), nullptr, "over-cap.glb", scratch);
+        show("GLB whose two primitives together hold about 8 million vertices and indices", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-7: vertices and indices together are capped at 8 million across all primitives");
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
         manySpec.primitives = 31;
