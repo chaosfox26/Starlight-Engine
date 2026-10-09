@@ -6,6 +6,7 @@
 #include "platform.hpp"
 #include "scene.hpp"
 #include <cmath>
+#include <stdexcept>
 
 namespace ed = starlight::editor;
 
@@ -23,6 +24,7 @@ void store(float (&out)[3], const ed::Vec3& v) {
     out[0] = float(v.x);
     out[1] = float(v.y);
     out[2] = float(-v.z);
+    if (!std::isfinite(out[0]) || !std::isfinite(out[1]) || !std::isfinite(out[2])) throw std::runtime_error("an object lies beyond the range the host can draw");
 }
 
 float finite(double value, float fallback) { return std::isfinite(value) ? float(value) : fallback; }
