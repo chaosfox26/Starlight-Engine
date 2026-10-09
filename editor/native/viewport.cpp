@@ -327,7 +327,7 @@ API int sl_fog_source_types(void* handle,const float* data,int count){
  try{if(!handle||count<0||count>16||(count&&!data))throw std::runtime_error("Invalid fog source types");auto& v=*static_cast<Viewport*>(handle);if(size_t(count)!=v.smoke.size())throw std::runtime_error("Fog source type count mismatch");std::vector<float> types;for(int i=0;i<count;++i){if(data[i]!=0&&data[i]!=1)throw std::runtime_error("Invalid fog source type");types.push_back(data[i]);}v.atmosphere.sourceTypes=std::move(types);return 1;}catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_fog_terrain(void* handle,const float* heights){
- try{if(!handle||!heights)throw std::runtime_error("Invalid fog terrain");auto& a=static_cast<Viewport*>(handle)->atmosphere;for(int i=0;i<4096;++i){if(!std::isfinite(heights[i]))throw std::runtime_error("Nonfinite fog terrain");a.terrainHeights[i]=heights[i];}return 1;}catch(const std::exception& e){failure=e.what();return 0;}
+ try{if(!handle||!heights)throw std::runtime_error("Invalid fog terrain");auto& a=static_cast<Viewport*>(handle)->atmosphere;for(int i=0;i<4096;++i)if(!std::isfinite(heights[i]))throw std::runtime_error("Nonfinite fog terrain");for(int i=0;i<4096;++i)a.terrainHeights[i]=heights[i];return 1;}catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_fog_obstacles(void* handle,const float* data,int count){
  try{if(!handle||count<0||count>128||(count&&!data))throw std::runtime_error("Invalid fog obstacles");auto& v=*static_cast<Viewport*>(handle);std::vector<XMFLOAT4> low,high,velocity;
