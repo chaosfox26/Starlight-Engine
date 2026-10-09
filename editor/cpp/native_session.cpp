@@ -82,7 +82,10 @@ NativeSession::NativeSession(HWND window, int w, int h)
     thread_ = std::jthread([this](std::stop_token stop) { run(stop); });
 }
 NativeSession::~NativeSession() {
-    thread_.request_stop();
+    {
+        std::lock_guard lock(mutex_);
+        thread_.request_stop();
+    }
     condition_.notify_all();
     if (thread_.joinable())
         thread_.join();
@@ -135,7 +138,7 @@ void NativeSession::gameplay_overlays(std::vector<MeshPart> parts,bool probeMoti
         same=sameVector(a.color,b.color) && a.emissive==b.emissive && a.mesh.indices==b.mesh.indices && a.mesh.vertices.size()==b.mesh.vertices.size();
         for(size_t j=0;same && j<a.mesh.vertices.size();++j){
             const auto& x=a.mesh.vertices[j];const auto& y=b.mesh.vertices[j];
-            same=sameVector(x.position,y.position) && sameVector(x.normal,y.normal) && sameVector(x.color,y.color) && x.kind==y.kind;
+            same=sameVector(x.position,y.position) && sameVector(x.normal,y.normal) && sameVector(x.color,y.color) && x.kind==y.kind && x.motionIdentity==y.motionIdentity;
         }
     }
     if(same)return;
@@ -175,7 +178,7 @@ void NativeSession::runtime_objects(std::vector<Character> objects){
     const bool same=objects.size()==runtimeObjects_.size()&&std::equal(objects.begin(),objects.end(),runtimeObjects_.begin(),[](const Character& a,const Character& b){
         return a.Id==b.Id&&a.X==b.X&&a.Y==b.Y&&a.Z==b.Z&&a.PhysicsRotation==b.PhysicsRotation&&a.JointRuntimePoints==b.JointRuntimePoints;});
     if(same)return;
-    runtimeObjects_=std::move(objects);runtimeObjectsDirty_=!runtimeObjects_.empty();
+    runtimeObjects_=std::move(objects);runtimeObjectsDirty_=true; // an emptied list must reach the render thread too, or the last poses would be re-applied on the next runtime update or reset
 }
 void NativeSession::playback_options(bool repeat, std::string follow) {
     std::lock_guard lock(mutex_);
