@@ -29,7 +29,7 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     int argc=0; auto argv=CommandLineToArgvW((L"project "+std::wstring(command)).c_str(),&argc);
     device.benchMs=0; UINT width=0,height=0; std::wstring display;
     for(int i=1;i+1<argc;++i) {
-        if(std::wstring(argv[i])==L"--report") { std::wstring p=argv[++i]; device.reportPath=std::string(p.begin(),p.end()); }
+        if(std::wstring(argv[i])==L"--report") { std::wstring p=argv[++i]; device.reportPath=utf8FromWide(p); }
         else if(std::wstring(argv[i])==L"--bench") device.benchMs=std::stoull(argv[++i]);
     }
     for(int i=1;i<argc;++i) {

@@ -98,21 +98,21 @@ const char* stored(Bits& b, std::string& out, std::uint64_t limit) {
 }
 
 const char* fixed(Bits& b, std::string& out, std::uint64_t limit) {
-    static Huff lc, dc;
-    static bool built = false;
-    if (!built) {
+    // A function-local static initialised by a lambda is built once and safely when two threads inflate their first fixed block together (audit GR-7).
+    static const std::pair<Huff, Huff> tables = [] {
+        std::pair<Huff, Huff> t;
         short l[288];
         int s = 0;
         for (; s < 144; ++s) l[s] = 8;
         for (; s < 256; ++s) l[s] = 9;
         for (; s < 280; ++s) l[s] = 7;
         for (; s < 288; ++s) l[s] = 8;
-        construct(lc, l, 288);
+        construct(t.first, l, 288);
         for (s = 0; s < 30; ++s) l[s] = 5;
-        construct(dc, l, 30);
-        built = true;
-    }
-    return codes(b, out, limit, lc, dc);
+        construct(t.second, l, 30);
+        return t;
+    }();
+    return codes(b, out, limit, tables.first, tables.second);
 }
 
 const char* dynamic(Bits& b, std::string& out, std::uint64_t limit) {
@@ -262,6 +262,8 @@ Result extract_zip_bytes(std::string_view zip, const fs::path& dest, const ZipLi
     fs::create_directories(dest.parent_path(), ec);
     if (!fs::create_directory(dest, ec)) return Result::fail("Cannot create extraction folder");
     auto abort = [&](const std::string& m) { std::error_code e2; fs::remove_all(dest, e2); return fail(m); };
+    // A throw from a path conversion or an allocation must not leave the partly extracted folder behind (audit GR-6).
+    struct Cleanup { const fs::path& dir; bool armed = true; ~Cleanup() { if (armed) { std::error_code e2; fs::remove_all(dir, e2); } } } cleanup{dest};
     std::uint64_t written = 0;
     for (auto& e : entries) {
         auto target = dest / from_utf8(e.dir ? e.name.substr(0, e.name.size() - 1) : e.name);
@@ -289,6 +291,7 @@ Result extract_zip_bytes(std::string_view zip, const fs::path& dest, const ZipLi
         f.close();
         if (!f) return abort("cannot write " + e.name);
     }
+    cleanup.armed = false;
     return Result::good();
 }
 

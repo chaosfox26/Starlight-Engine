@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../../deep/engine/utf8_file.h"
 static void file_io_checks(const auto& require,const fs::path& folder){
     const fs::path dir=folder/"file-io-checks";fs::create_directories(dir);
     auto expected=[&](size_t size){std::string bytes(size,'\0');uint32_t state=0x9e3779b9u+uint32_t(size);for(auto& c:bytes){state=state*1664525u+1013904223u;c=char(state>>24);}return bytes;};
@@ -35,4 +36,12 @@ static void file_io_checks(const auto& require,const fs::path& folder){
     bool rereadFails=false;try{(void)hash_file(savedPath);}catch(const std::exception&){rereadFails=true;}
     if(saver!=INVALID_HANDLE_VALUE){UnlockFile(saver,0,0,0xFFFFFFFFu,0);CloseHandle(saver);}
     require(lockedWhole&&rereadFails,"ED-10: While another handle locks the saved file, re-reading it to hash it fails, which is why the hash is now returned by the save itself");
+    // DEEP-1: a report path outside the ANSI code page (Cyrillic and CJK folder names) must be written where it was asked for.
+    const std::wstring wideName=L"report-ж中.json";
+    const auto reportFolder=dir/L"ж中-folder";fs::create_directories(reportFolder);
+    const std::string reportPath=utf8FromWide((reportFolder/wideName).wstring());
+    FILE* report=nullptr;
+    const bool opened=fopenUtf8(&report,reportPath,L"w")==0&&report;
+    if(opened){fputs("{}",report);fclose(report);}
+    require(utf8FromWide(wideName)=="report-\xD0\xB6\xE4\xB8\xAD.json"&&opened&&fs::exists(reportFolder/wideName)&&fs::file_size(reportFolder/wideName)==2,"DEEP-1: A --report path with characters outside the ANSI code page is converted to UTF-8 and opened at exactly that path");
 }

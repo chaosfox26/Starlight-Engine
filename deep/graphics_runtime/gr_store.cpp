@@ -130,7 +130,7 @@ std::string Resolution::to_json() const {
         j["families"].push_back({{"family", f.family}, {"category", f.category}, {"set", f.setId}, {"version", f.version}, {"release", f.release},
                                  {"source", f.source}, {"locked", f.locked}, {"ota_allowed", f.otaAllowed}, {"fallback", f.fallback},
                                  {"note", f.note}, {"components", f.componentIds}, {"directory", utf8(f.dir)}});
-    return j.dump(2);
+    return j.dump(2, ' ', false, json::error_handler_t::replace);
 }
 
 Store::Store(StoreOptions options) : options_(std::move(options)) {
@@ -175,24 +175,57 @@ void Store::sweep() {
     for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) fs::remove(options_.root / n, ec);
 }
 
+// Damaged state copies kept by load() so a reset never destroys the evidence (audit GR-3).
+static std::vector<std::string> kept_damaged_state(const fs::path& root) {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (auto& e : fs::directory_iterator(root, ec)) {
+        auto name = utf8(e.path().filename());
+        if (name.rfind("state.json", 0) == 0 && name.find(".corrupt-") != std::string::npos) out.push_back(name);
+    }
+    return out;
+}
+
 void Store::load() {
     auto main = options_.root / "state.json", bak = options_.root / "state.json.bak";
     std::error_code ec;
+    std::vector<fs::path> unparseable;
+    std::string unreadable;
     for (auto* p : {&main, &bak}) {
         if (!fs::is_regular_file(*p, ec)) continue;
+        std::string text;
+        bool read = false;
+        for (int attempt = 0; attempt < 5 && !read; ++attempt) {
+            try { text = read_text(*p); read = true; } catch (const GrError&) { Sleep(30); }
+        }
+        if (!read) { unreadable += (unreadable.empty() ? "" : ", ") + utf8(p->filename()); continue; }
         try {
-            state_ = state_from_json(json::parse(read_text(*p)));
+            state_ = state_from_json(json::parse(text));
             if (p == &bak) state_.events.push_back("State file was damaged; restored the previous copy.");
+            else if (!unreadable.empty()) state_.events.push_back("A state file could not be read; used the previous copy.");
             return;
-        } catch (const std::exception&) {}
+        } catch (const std::exception&) { unparseable.push_back(*p); }
     }
     state_ = State{};
+    std::string kept;
+    for (auto& p : unparseable) {
+        auto to = p;
+        for (unsigned long long n = GetTickCount64();; ++n) {
+            to = p;
+            to += L".corrupt-" + std::to_wstring(n);
+            if (!fs::exists(to, ec)) break;
+        }
+        fs::rename(p, to, ec);
+        if (!ec) kept += (kept.empty() ? "" : ", ") + utf8(to.filename());
+    }
+    if (!unparseable.empty() || !unreadable.empty())
+        state_.events.push_back("The state files could not be used, so locks, revoked sets and the catalog serial were reset." + (kept.empty() ? std::string() : " Damaged copies kept as " + kept + ".") + " Review before pruning.");
 }
 
 void Store::save(State next) {
     next.serial = state_.serial + 1;
     if (next.events.size() > 20) next.events.erase(next.events.begin(), next.events.end() - 20);
-    atomic_replace_file(options_.root / "state.json", state_to_json(next).dump(2), options_.fault, "state", true);
+    atomic_replace_file(options_.root / "state.json", state_to_json(next).dump(2, ' ', false, json::error_handler_t::replace), options_.fault, "state", true);
     state_ = std::move(next);
 }
 
@@ -351,15 +384,23 @@ void Store::revert_pending(State& s, const std::string& family, const std::strin
 Result Store::confirm_good() {
     State s = state_;
     std::vector<std::string> done;
+    // A set is only promoted when it is the one resolve() really picks now (audit GR-1); the CLI runs this in another process, so loaded_ cannot be used.
+    const auto res = resolve();
     for (auto& [name, f] : s.families) {
+        const auto* rf = res.find(name);
+        const bool resolvedAs = rf && !rf->setId.empty();
         if (f.pending && f.pending->boots >= 1 && f.lock.empty()) {
-            if (auto base = baseline(name, f); base != f.pending->set) f.previous = base;
-            f.active = f.pending->set;
-            f.lastKnownGood = f.active;
-            done.push_back(name + " now runs " + f.active);
-            f.pending.reset();
+            if (resolvedAs && rf->source == "trial" && rf->setId == f.pending->set) {
+                if (auto base = baseline(name, f); base != f.pending->set) f.previous = base;
+                f.active = f.pending->set;
+                f.lastKnownGood = f.active;
+                done.push_back(name + " now runs " + f.active);
+                f.pending.reset();
+            } else {
+                revert_pending(s, name, "the trial set could not be used at launch");
+            }
         } else if (!f.active.empty() && f.lastKnownGood != f.active && f.lock.empty() && !f.pending) {
-            f.lastKnownGood = f.active;
+            if (resolvedAs && rf->source == "active" && rf->setId == f.active) f.lastKnownGood = f.active;
         }
     }
     save(std::move(s));
@@ -779,6 +820,11 @@ Inventory Store::inventory() const {
     for (auto& e : fs::directory_iterator(options_.root / "sets", ec)) {
         if (!e.is_directory()) continue;
         auto name = utf8(e.path().filename());
+        if (name.rfind(".staging-", 0) == 0) {
+            // Staging that a live process is still filling is never listed for removal (audit GR-4); this process's own staging is also in progress, since sweep() already removed the leftovers at start.
+            const unsigned long pid = std::strtoul(name.c_str() + 9, nullptr, 10);
+            if (pid && (pid == GetCurrentProcessId() || process_alive(pid))) { inv.keep.push_back(name); inv.reason[name] = "staging in progress"; continue; }
+        }
         if (!fs::exists(e.path() / "set.json")) { inv.keep.push_back(name); inv.reason[name] = "not a Starlight set folder; never touched"; continue; }
         if (why.count(name)) { inv.keep.push_back(name); inv.reason[name] = why[name]; }
         else if (!state_.sets.count(name)) { inv.removable.push_back(name); inv.reason[name] = "unrecorded folder left by an interrupted stage"; }
@@ -788,6 +834,7 @@ Inventory Store::inventory() const {
 }
 
 Result Store::prune(bool confirm) {
+    if (auto kept = kept_damaged_state(options_.root); !kept.empty()) return Result::fail("Prune refused: a damaged state file was kept (" + join(kept, ", ") + "), so installed sets may look unrecorded. Review it first.");
     auto inv = inventory();
     if (!confirm) return Result::fail("Dry run: " + std::to_string(inv.removable.size()) + " set folder(s) could be removed (" + join(inv.removable, ", ") + "). Run with --confirm to remove them.");
     State s = state_;
@@ -831,7 +878,7 @@ std::string Store::status_json(const std::optional<Catalog>& cat, const EngineAp
         }
         j["categories"][rf.category.empty() ? "upscaling" : rf.category].push_back(std::move(fj));
     }
-    return j.dump(2);
+    return j.dump(2, ' ', false, json::error_handler_t::replace);
 }
 
 }

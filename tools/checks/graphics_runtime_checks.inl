@@ -171,6 +171,7 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(reject("dup id", [](auto& x) { x.components[1].id = x.components[0].id; }), "GFX manifest rejects duplicate component ids");
         require(reject("no signer", [](auto& x) { x.components[0].signer.clear(); }), "GFX manifest rejects a missing signer");
         require(reject("bad version", [](auto& x) { x.components[0].version = "x"; }), "GFX manifest rejects a bad component version");
+        require(reject("id trailing dot", [](auto& x) { x.set_id = "plain-1.1."; }) && reject("id device", [](auto& x) { x.set_id = "con"; }) && reject("id device ext", [](auto& x) { x.set_id = "nul.1"; }) && reject("id com", [](auto& x) { x.set_id = "com1"; }), "GFX manifest rejects a set id that Windows would rename as a folder (trailing dot or device name)");
         require(reject("intel dev", [](auto& x) { x.components[0].vendor = "intel"; x.components[0].version = "3.0.95"; }), "GFX manifest rejects an Intel development build (patch 90 or higher)");
         require(reject("self requires", [](auto& x) { x.components[0].requires_.push_back(rq(x.components[0].id, "")); }), "GFX manifest rejects a component requiring itself");
         require(reject("bad origin", [](auto& x) { x.components[0].requires_.push_back(rq("other.thing", "", "rumour")); }), "GFX manifest labels every rule as vendor or Starlight policy");
@@ -250,6 +251,11 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
             require(!cr.first.ok && !fs::exists(cr.second), "GFX zip refuses a checksum mismatch and removes the partial folder");
             auto n = ze_store("n.txt", "content"); n.localName = "other.txt";
             require(!extract("names", make_zip({n})).first.ok, "GFX zip refuses local and central names that differ");
+            const auto oddDest = work / "zip-odd-name";
+            fs::remove_all(oddDest);
+            bool oddOk = false;
+            try { oddOk = gr::extract_zip_bytes(make_zip({ze_store("first.txt", "1"), ze_store("odd\xE9.txt", "2")}), oddDest).ok; } catch (const std::exception&) {}
+            require(!oddOk && !fs::exists(oddDest), "GFX zip leaves no partly extracted folder when an entry name cannot be converted");
         }
         {
             ZE bomb; bomb.name = "zeros.bin"; bomb.method = 8; bomb.data = zeros_deflate(); bomb.usize = 1 << 20;
@@ -624,6 +630,35 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
     }
 
     {
+        gr::Store s(opts("store-confirm-unusable"));
+        s.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        s.activate("plain", "plain-1.1.0", api);
+        s.begin_launch(); s.confirm_good();
+        s.stage_folder(pkgs / "plain-1.2.0-exp", gr::StageTrust::Local);
+        s.activate("plain", "plain-1.2.0-exp", api);
+        fs::remove(s.set_dir("plain-1.2.0-exp") / "bin" / "test.plain.core.dll");
+        auto launch = s.begin_launch();
+        require(launch.find("plain")->source == "active" && launch.find("plain")->version == "1.1.0", "GFX a trial set that cannot be used at launch falls back to the active set");
+        s.confirm_good();
+        const auto& f = s.state().families.at("plain");
+        require(f.active == "plain-1.1.0" && f.lastKnownGood == "plain-1.1.0" && f.previous == "plain-1.0.0" && !f.pending && s.state().sets.at("plain-1.2.0-exp").bad,
+                "GFX confirming a launch never promotes a trial set that could not be used; it is marked bad and the old sets stay");
+
+        gr::Store t(opts("store-confirm-active"));
+        t.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        t.activate("plain", "plain-1.1.0", api);
+        t.begin_launch(); t.confirm_good();
+        t.stage_folder(pkgs / "plain-1.2.0-exp", gr::StageTrust::Local);
+        t.activate("plain", "plain-1.2.0-exp", api);
+        t.begin_launch(); t.confirm_good();
+        t.activate("plain", "plain-1.1.0", api);
+        require(t.state().families.at("plain").active == "plain-1.1.0" && t.state().families.at("plain").lastKnownGood == "plain-1.2.0-exp", "GFX fixture: the active set differs from the last known good set");
+        fs::remove(t.set_dir("plain-1.1.0") / "bin" / "test.plain.core.dll");
+        t.begin_launch(); t.confirm_good();
+        require(t.state().families.at("plain").active == "plain-1.1.0" && t.state().families.at("plain").lastKnownGood == "plain-1.2.0-exp", "GFX confirming a launch never makes an unusable active set the last known good set");
+    }
+
+    {
         auto o = opts("store-lock");
         gr::Store s(o);
         s.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
@@ -831,7 +866,23 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
             { gr::Store s(o); require(s.state().updateMode == "manual", "GFX a truncated state file is restored from the backup copy"); }
             put(st, "garbage");
             put(o.root / "state.json.bak", "garbage");
+            fs::create_directories(o.root / "sets" / "recorded-before-damage");
+            put(o.root / "sets" / "recorded-before-damage" / "set.json", "{}");
             { gr::Store s(o); require(s.state().updateMode == "unset" && s.resolve().find("sl")->version == "2.12.0", "GFX with no readable state the bundled set still runs"); }
+            {
+                std::string kept;
+                for (auto& e : fs::directory_iterator(o.root)) { auto n = gr::utf8(e.path().filename()); if (n.find(".corrupt-") != std::string::npos) kept += n + ";"; }
+                gr::Store s(o);
+                require(!fs::exists(st) && contains(kept, "state.json.corrupt-") && contains(kept, "state.json.bak.corrupt-"), "GFX two unreadable state files are kept under new names and never overwritten");
+                auto pr = s.prune(true);
+                require(!pr.ok && contains(pr.message, "refused") && fs::exists(o.root / "sets" / "recorded-before-damage" / "set.json"), "GFX prune refuses while a damaged state file is kept");
+                put(o.root / "state.json", "garbage");
+                put(o.root / "state.json.bak", "garbage");
+                gr::Store s2(o);
+                bool noted = false;
+                for (auto& ev : s2.state().events) if (contains(ev, "could not be used")) noted = true;
+                require(noted, "GFX losing both state files leaves a visible event");
+            }
             fs::remove(st);
             put(o.root / "state.json.tmp", "half");
             { gr::Store s(o); require(!fs::exists(o.root / "state.json.tmp"), "GFX an interrupted temp file is swept at the next start"); }
@@ -900,6 +951,10 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto w = gr::write_export(planRr2, dest);
         require(w.ok && fs::exists(dest / "bin" / "nvidia.ngx.dlss-d.dll") && fs::exists(dest / "licenses" / "nvidia.ngx.dlss-d.txt"), "GFX the export is written with licence files");
         require(!gr::write_export(planRr2, dest).ok, "GFX an export never overwrites an existing folder");
+        auto dest2 = work / "export-out2";
+        put(work / "export-out2.staging" / "mine.txt", "not ours");
+        auto w2 = gr::write_export(planRr2, dest2);
+        require(w2.ok && fs::exists(dest2 / "bin" / "nvidia.ngx.dlss-d.dll") && gr::read_text(work / "export-out2.staging" / "mine.txt") == "not ours", "GFX an export never deletes an unrelated folder named like its staging folder");
         auto planFsr = gr::plan_export(s, {"fsr-sr"});
         require(!planFsr.ok && planFsr.missing.size() == 2, "GFX missing AMD components are listed individually");
         put(s.set_dir("dlss-rr-310.7") / "bin" / "nvidia.ngx.dlss-d.dll", "tampered");
@@ -934,6 +989,22 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto out = work / "report.json";
         require(gr::save_report(rep, out).ok && gr::read_text(out) == rep.json && !gr::save_report(rep, out).ok, "GFX the report is saved locally and never overwrites");
         require(gr::redact_text("a@b.co 10.0.0.1 \\\\server\\share\\x") == "<email> <ip> <path>", "GFX redaction removes addresses and paths");
+        gr::ReportInput odd;
+        odd.description = std::string(3999, 'a') + "\xE2\x82\xAC";
+        odd.diagnostics = "log line \xE9 from an ANSI file ";
+        while (odd.diagnostics.size() < 20000) odd.diagnostics += "word ";
+        odd.diagnostics += "\xE2\x82\xAC";
+        odd.includeDiagnostics = true;
+        bool oddOk = false;
+        try { auto r2 = gr::build_report(s.resolve(), odd); nlohmann::json::parse(r2.json); oddOk = r2.diagnosticsIncluded; } catch (const std::exception&) {}
+        require(oddOk, "GFX a report with a cut multi-byte character or non-UTF-8 diagnostics is still produced as valid JSON");
+        gr::Store f(opts("store-report-ansi"));
+        f.stage_folder(pkgs / "plain-1.1.0", gr::StageTrust::Local);
+        f.activate("plain", "plain-1.1.0", api);
+        f.begin_launch();
+        bool reasonOk = false;
+        try { reasonOk = f.report_launch_failure("failed \xE9 ANSI text").ok; } catch (const std::exception&) {}
+        require(reasonOk && f.state().sets.at("plain-1.1.0").bad && gr::Store(opts("store-report-ansi")).state().sets.at("plain-1.1.0").bad && !f.status_json(std::nullopt, api).empty() && !f.resolve().to_json().empty(), "GFX a non-UTF-8 failure reason is still saved and reported");
     }
 
     {
@@ -956,6 +1027,29 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto done = s.prune(true);
         require(done.ok && !fs::exists(o.root / "sets" / "plain-1.2.0-exp") && fs::exists(o.root / "sets" / "plain-1.1.0") && fs::exists(o.root / "sets" / "user-notes" / "readme.txt"), "GFX confirmed prune removes only unreferenced Starlight sets and never other content");
         require(fs::exists(bundled / "plain-1.0.0" / "set.json") && s.resolve().find("plain")->version == "1.1.0", "GFX prune never removes pinned, active or bundled sets");
+
+        std::wstring command = L"ping.exe -n 60 127.0.0.1";
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION child{};
+        const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &child);
+        require(started, "GFX GR-4 the check could start a long-running child process");
+        if (started) {
+            const auto live = o.root / "sets" / (".staging-" + std::to_string(child.dwProcessId) + "-1");
+            const auto dead = o.root / "sets" / ".staging-2000000000-1";
+            for (auto* dir : {&live, &dead}) { fs::create_directories(*dir); put(*dir / "set.json", "{}"); }
+            auto inv2 = s.inventory();
+            auto pr = s.prune(true);
+            const bool liveKept = fs::exists(live / "set.json") && std::find(inv2.keep.begin(), inv2.keep.end(), live.filename().string()) != inv2.keep.end();
+            const bool deadRemoved = !fs::exists(dead);
+            TerminateProcess(child.hProcess, 0);
+            WaitForSingleObject(child.hProcess, 5000);
+            CloseHandle(child.hThread);
+            CloseHandle(child.hProcess);
+            fs::remove_all(live);
+            require(liveKept, "GFX prune and the inventory leave another live process's staging folder alone");
+            require(pr.ok && deadRemoved, "GFX prune still removes a staging folder whose process is gone");
+        }
     }
 
     {
@@ -1005,6 +1099,16 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(run({"status", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}, &out) == 0 && nlohmann::json::parse(out).at("categories").at("upscaling")[0].contains("candidates"), "GFX CLI status shows channel candidates from a verified catalog");
         require(run({"status", "--catalog", gr::utf8(work / "catalog.json")}, &out, &err) == 0 && !err.empty(), "GFX CLI ignores a catalog it cannot verify and says so");
         require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}) == 0, "GFX CLI checks a catalog");
+        {
+            auto upper = hexOf(kp.publicBlob);
+            for (auto& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+            put(work / "pub-upper.hex", upper + "\n");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-upper.hex")}) == 0, "GFX CLI accepts an upper-case hexadecimal public key file");
+            put(work / "pub-spaced.hex", hexOf(kp.publicBlob).insert(10, " "));
+            put(work / "pub-odd.hex", hexOf(kp.publicBlob) + "a");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-spaced.hex")}, &out, &err) != 0 && contains(err, "hexadecimal"), "GFX CLI reports a public key file with a stray character");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-odd.hex")}, &out, &err) != 0 && contains(err, "hexadecimal"), "GFX CLI reports a public key file with an odd number of digits");
+        }
         require(run({"auto-update", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}) == 2, "GFX CLI auto-update needs a local package folder and never downloads");
         require(run({"export-plan", "streamline"}, &out) == 0 && contains(out, "licence") && run({"export-plan", "fsr-sr"}) == 1 && run({"export-plan", "nonsense"}) == 1, "GFX CLI export plan lists files and refuses incomplete or unknown requests");
         require(run({"report-preview", "--code", "x-1", "--description", "It broke."}, &out) == 0 && contains(out, "It broke.") && contains(out, "no system inventory"), "GFX CLI report preview prints the full report");
