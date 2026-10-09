@@ -20,6 +20,17 @@ Clone with `git clone --recurse-submodules <repository>` or initialize dependenc
 
 The native build requires the external Windows/Visual Studio/DXC/Python toolchain and the NGX SDK described in README.md and CMakeLists.txt. Git is not a replacement for those dependencies or for large local assets and audit captures. The normal installed editor lives under `out/classic/Release`; that generated output is not tracked. Rebuild it from the checkpoint before claiming installed binaries match source.
 
+## Checked from a fresh clone (8 October 2026)
+
+A clone of the repair branch with Jolt initialised and `-DSTARLIGHT_NGX_SDK=<ngx-sdk folder>` configures and builds every Release target (Ninja Multi-Config, Visual Studio dev environment). What else a new machine needs:
+
+- The NGX SDK is not in git: pass its folder with `-DSTARLIGHT_NGX_SDK`; configure stops without it.
+- Jolt is a submodule; `git submodule update --init` is required before configuring.
+- `.gitattributes` keeps `*.starscene` as LF. Without it, `core.autocrlf=true` rewrites the starter cards and the core suite fails its canonical-form checks.
+- The Python audit tests look for the built programs in `out/classic/Release`, so build there (`python Build-Native.py --config Release --build-dir out/classic`) or they report that the programs are not built.
+- Keep the checkout path short. The adventure-export check writes content-addressed files about 165 characters below its output folder and fails with Windows' 260-character path limit when the checkout is deeply nested.
+- GPU harnesses (session, render) need a working D3D12 device and a free GPU.
+
 ## Initial checkpoint evidence
 
 The 24 September full GUI audit passed all 13 stages, including 924 core checks. A 26 September file-integrity review confirmed all 173 indexed source files unchanged. Two environment-related failures in the 25 September audit were rerun successfully on 26 September. This Git setup changes tracking and documentation, not gameplay, and does not rerun or close all gameplay acceptance gates.
