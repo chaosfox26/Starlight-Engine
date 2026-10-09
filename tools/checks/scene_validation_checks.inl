@@ -65,4 +65,20 @@ static void scene_validation_checks(const auto& require){
         const auto kept=SceneData::decode(file.dump()).Characters[0];
         require(kept.GrappleMode==2&&kept.CombatTeam==7&&kept.CombatControlEffect==3,"SCENE-3: Valid whole numbers still load");
     }
+    // SCENE-4: combat and gameplay settings survive a save and reopen even when health is 0 or the role is None.
+    {
+        Character actor;actor.Id="later-enemy";actor.Name="later";actor.Shape="cube";
+        actor.CombatTeam=5;actor.CombatSightRange=80;actor.CombatAutoAttack=true;actor.CombatPursuit=true;actor.CombatControlEffect=3;actor.GameplayKey="vault-key";
+        SceneData saved;saved.Characters={actor};
+        const auto back=SceneData::decode(saved.encode()).Characters[0];
+        require(back.CombatHealth==0&&back.CombatTeam==5&&back.CombatSightRange==80&&back.CombatAutoAttack&&back.CombatPursuit&&back.CombatControlEffect==3,"SCENE-4: Combat settings set on an object with health 0 survive save and reopen");
+        require(back.GameplayRole=="none"&&back.GameplayKey=="vault-key","SCENE-4: A key name typed while the role is None survives save and reopen");
+        SceneData plain;plain.Characters={a};
+        const auto file=nlohmann::json::parse(plain.encode())["Characters"][0];
+        require(!file.contains("CombatTeam")&&!file.contains("CombatSightRange")&&!file.contains("CombatAutoAttack")&&!file.contains("CombatPursuit")&&!file.contains("CombatControlEffect")&&!file.contains("GameplayKey")&&!file.contains("GameplayRole"),"SCENE-4: An object with default settings still writes none of these fields");
+        Character fighter=a;fighter.Id="fighter";fighter.CombatHealth=50;
+        SceneData armed;armed.Characters={fighter};
+        const auto fighterFile=nlohmann::json::parse(armed.encode())["Characters"][0];
+        require(fighterFile.contains("CombatHealth")&&fighterFile.contains("CombatTeam")&&fighterFile.contains("CombatSightRange"),"SCENE-4: An object with health still writes the full combat block");
+    }
 }

@@ -388,8 +388,16 @@ void to_json(json &j, const Character &v) {
     j["Breakable"] = v.Breakable;
     j["DestructionHealth"] = v.DestructionHealth;
     if(v.GrappleMode)j["GrappleMode"]=v.GrappleMode;
-    if(v.CombatHealth>0){j["CombatHealth"]=v.CombatHealth;j["CombatSightRange"]=v.CombatSightRange;j["CombatTeam"]=v.CombatTeam;j["CombatBoss"]=v.CombatBoss;j["CombatAutoAttack"]=v.CombatAutoAttack;j["CombatPursuit"]=v.CombatPursuit;j["CombatControlEffect"]=v.CombatControlEffect;}
+    const bool armed=v.CombatHealth>0;
+    if(armed)j["CombatHealth"]=v.CombatHealth;
+    if(armed||v.CombatSightRange!=60.)j["CombatSightRange"]=v.CombatSightRange;
+    if(armed||v.CombatTeam!=2)j["CombatTeam"]=v.CombatTeam;
+    if(armed)j["CombatBoss"]=v.CombatBoss;
+    if(armed||v.CombatAutoAttack)j["CombatAutoAttack"]=v.CombatAutoAttack;
+    if(armed||v.CombatPursuit)j["CombatPursuit"]=v.CombatPursuit;
+    if(armed||v.CombatControlEffect!=-1)j["CombatControlEffect"]=v.CombatControlEffect;
     if(v.GameplayRole!="none"){j["GameplayRole"]=v.GameplayRole;j["GameplayKey"]=v.GameplayKey;}
+    else if(!v.GameplayKey.empty())j["GameplayKey"]=v.GameplayKey;
     j["Name"] = v.Name;
     j["Asset"] = v.Asset;
     j["Shape"] = v.Shape ? json(*v.Shape) : json(nullptr);
