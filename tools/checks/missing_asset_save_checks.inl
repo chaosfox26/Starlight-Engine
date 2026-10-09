@@ -91,5 +91,14 @@ static void missing_asset_save_checks(const auto& require){
         std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
         require(failure.find("Unsupported editor operation: moev")!=std::string::npos,"CLI audit 3: An unknown operation is reported as unsupported, not as a missing id");
     }
+    {
+        // CLI audit 4: the sha256 in a report names the bytes that were written and the bytes inspected.
+        const auto folder=work/"sha-report";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        SceneData empty;save_scene(empty,target);
+        atomic_write(folder/"request.json",json{{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({json{{"op","shape"},{"shape","cube"}}})}}.dump());
+        const auto report=apply_commands(folder/"request.json");
+        require(report.at("sha256")==hash_file(target)&&inspect_scene(target).at("sha256")==hash_file(target),"CLI audit 4: The reported sha256 names the bytes written and the bytes inspected");
+    }
     fs::remove_all(work);
 }
