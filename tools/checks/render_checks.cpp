@@ -302,6 +302,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       if(!std::equal(before,before+6,after))throw ValidationFailure("Invalid light update changed active shadows");
       if(!sl_scene(context,bytes.data(),int(bytes.size())))throw std::runtime_error(sl_error());
     }
+    if(GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE",nullptr,0)>0){
+      wchar_t requested[32]{};GetEnvironmentVariableW(L"STARLIGHT_SHADOW_RESOLUTION",requested,32);
+      if(!requested[0])throw std::runtime_error("STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE needs STARLIGHT_SHADOW_RESOLUTION set");
+      wchar_t sunShadows[2]{};
+      if(GetEnvironmentVariableW(L"STARLIGHT_SUN_SHADOWS",sunShadows,2)&&sunShadows[0]==L'0')throw std::runtime_error("STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE needs sun shadows on: STARLIGHT_SUN_SHADOWS must not be 0");
+      if(!sl_shadow_settings(context,0)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
+      if(!sl_shadow_settings(context,2)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
+      uint64_t sun[4]{};sl_sun_shadow_stats(context,sun);
+      if(sun[0]!=uint64_t(_wtoi(requested))||sun[3]!=1)throw ValidationFailure("Shadow resolution override was lost after shadows were turned off and on: resolution="+std::to_string(sun[0])+" enabled="+std::to_string(sun[3]));
+    }
     bool shadowSettingsValidated=GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_SHADOW_SETTINGS",nullptr,0)>0;
     if(shadowSettingsValidated){
       uint64_t sunBytes[4]{},localBytes[4]{};
