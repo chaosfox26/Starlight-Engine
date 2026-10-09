@@ -1014,6 +1014,16 @@ static int checks_main(int argc, char **argv) {
         require(hit && std::abs(hit->distance - 2) < 1e-12 && hit->normal.y > 0,
                 "Nearest triangle picking and facing normal");
         require(!mesh_hit(tri, sculpt, {2, 2, 2}, {0, -1, 0}), "Ray outside triangle rejected");
+        {   // A far triangle whose ray solution overflows to NaN must not replace the real hit nearer the origin (fleet17 finding x-mesh-1).
+            Mesh overflow;
+            overflow.vertices = {{{0, 0, 0}}, {{0, 0, 1}}, {{1, 0, 0}}, {{1e200, 1e200, 1e200}}, {{1e200, 1e200, 1e200 + 1e190}}, {{1e200 + 1e190, 1e200, 1e200}}};
+            overflow.indices = {0, 1, 2, 3, 4, 5};
+            const auto found = mesh_hit(overflow, sculpt, {.2, 2, .2}, {0, -1, 0});
+            require(found && std::abs(found->distance - 2) < 1e-12 && std::isfinite(found->normal.length()), "A non-finite ray solution is not a hit and does not hide the nearest one");
+            const auto accel = build_mesh_accel(overflow);
+            const auto fast = mesh_hit(overflow, *accel, sculpt, {.2, 2, .2}, {0, -1, 0});
+            require(fast && std::abs(fast->distance - 2) < 1e-12, "The bounding-volume test agrees on a non-finite ray solution");
+        }
         sculpt.Sculpt = prepare_sculpt(tri);
         require(sculpt.Sculpt->Indices.size() == 12288, "Sculpt subdivision preserves six-pass limit");
         auto before = *sculpt.Sculpt;
