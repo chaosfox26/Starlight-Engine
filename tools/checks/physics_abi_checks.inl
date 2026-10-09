@@ -81,6 +81,9 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    require(slp_character_start(terrainWorld,.3f,nan,0,0)==0&&std::string(slp_error()).find("Invalid character start")!=std::string::npos,"TERR CHAR-1: A character start at a non-finite position is refused");
+    require(slp_character_start(terrainWorld,nan,0,0,0)==0&&slp_character_start(terrainWorld,0.f,0,0,0)==0&&slp_character_start(terrainWorld,3.f,0,0,0)==0,"TERR CHAR-1: A character start with a non-finite, zero or oversized radius is refused");
+    require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: The controller started before the refused starts still steps after them");
     slp_destroy(terrainWorld);
     slp_destroy(world);
 }

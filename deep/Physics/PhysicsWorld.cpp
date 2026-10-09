@@ -125,6 +125,7 @@ public:
  ~PhysicsWorld(){for(auto& tile:tiles)if(tile.pending.valid())tile.pending.wait();}
  void ClearProps(){for(auto& cable:cables)for(auto& constraint:cable.constraints)world.RemoveConstraint(constraint);cables.clear();for(auto& joint:joints)world.RemoveConstraint(joint.constraint);joints.clear();character=nullptr;auto& api=world.GetBodyInterface();for(auto id:allProps){api.RemoveBody(id);api.DestroyBody(id);}bodies.clear();previousBodies.clear();allProps.clear();liquidCurrents.clear();characterCurrent=characterCurrentDrift=Vec3::sZero();characterLiquidHeight=characterLiquidDensity=0;contacts.touching.clear();accumulator=0;ticks=0;}
  void StartCharacter(float radius,Vec3 feet){
+  if(!std::isfinite(radius) || radius<=0 || radius>2 || !std::isfinite(feet.GetX()+feet.GetY()+feet.GetZ()))throw std::runtime_error("Invalid character start");
   characterJumps=0;
   characterRadius=radius;characterHeight=1.8f;characterCarry=Vec3::sZero();characterCurrent=characterCurrentDrift=Vec3::sZero();
   // Terrain cooking is completed once at controller creation, never by sleeping.
