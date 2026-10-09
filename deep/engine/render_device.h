@@ -1613,7 +1613,7 @@ struct RenderDevice {
         }
 
         // skinned characters: palette skinning in the VS, textured PBR in the PS. Back faces are
-        // culled (closed bodies; the sheer skirt is double-sided by geometry in the GLB).
+        // not culled (CullMode NONE, as in the main pipeline above).
         {
             D3D12_INPUT_ELEMENT_DESC skinLayout[] = {
                 { "POSITION",     0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },

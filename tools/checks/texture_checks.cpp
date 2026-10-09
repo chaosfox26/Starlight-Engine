@@ -1240,6 +1240,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             const std::string text(header.begin(), header.end());
             require(text.find("static const UINT kBktVariants = 8, kBktMaxSubs = 32;") != std::string::npos, "CORE-12: the instance bucket table keeps 8 variants and 32 submesh slots, 30 of them for a model's own primitives");
             require(text.find("std::string why = \"SerializeRootSignature\";") != std::string::npos, "a failed root signature serialize reports the driver's error blob text");
+            require(text.find("Back faces are\n        // not culled (CullMode NONE, as in the main pipeline above).") != std::string::npos && text.find("Back faces are\n        // culled") == std::string::npos, "the skinned pipeline comment says back faces are not culled, matching its CullMode NONE");
         }
         GlbSpec stepSpec; stepSpec.step = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
