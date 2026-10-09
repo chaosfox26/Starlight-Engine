@@ -37,7 +37,7 @@ compiler = sorted((vs / 'VC/Tools/MSVC').glob('*/bin/Hostx64/x64/cl.exe'))[-1]
 rc = sorted((Path(os.environ['ProgramFiles(x86)']) / 'Windows Kits/10/bin').glob('*/x64/rc.exe'))[-1]
 branding=('starlight-setup-nebula-v1.png','starlight-glass-icon-v1.png','starlight-editor.ico')
 missing=[name for name in branding if not (root/'design/branding'/name).is_file()]
-if missing: raise SystemExit('Launcher branding resources missing from design/branding (nothing built; these files are not tracked in git): '+', '.join(missing))
+if missing: raise SystemExit('Launcher branding resources missing from design/branding (nothing built): '+', '.join(missing)+'. Restore tracked files with git checkout; starlight-setup-nebula-v1.png is not tracked in git, so copy it in by hand.')
 resource = build / 'setup.rc'
 resource.write_text('103 RCDATA \"'+(root/'design/branding/starlight-setup-nebula-v1.png').as_posix()+'\"\n102 RCDATA \"' + (root/'design/branding/starlight-glass-icon-v1.png').as_posix() + '\"\n101 ICON "' + (root / 'design/branding/starlight-editor.ico').as_posix() + '"\n')
 stub = build / 'Starlight-Setup-stub.exe'

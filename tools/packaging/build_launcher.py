@@ -16,7 +16,7 @@ rc=shutil.which('rc.exe',path=env.get('PATH',env.get('Path','')))
 if not rc: rc=str(sorted((Path(os.environ['ProgramFiles(x86)'])/'Windows Kits/10/bin').glob('*/x64/rc.exe'))[-1])
 branding=('starlight-setup-nebula-v1.png','starlight-glass-icon-v1.png','starlight-editor.ico')
 missing=[name for name in branding if not (root/'design/branding'/name).is_file()]
-if missing: raise SystemExit('Launcher branding resources missing from design/branding (nothing built; these files are not tracked in git): '+', '.join(missing))
+if missing: raise SystemExit('Launcher branding resources missing from design/branding (nothing built): '+', '.join(missing)+'. Restore tracked files with git checkout; starlight-setup-nebula-v1.png is not tracked in git, so copy it in by hand.')
 resource=out/'launcher.rc'
 resource.write_text('103 RCDATA \"'+(root/'design/branding/starlight-setup-nebula-v1.png').as_posix()+'\"\n102 RCDATA \"'+(root/'design/branding/starlight-glass-icon-v1.png').as_posix()+'\"\n101 ICON "'+(root/'design/branding/starlight-editor.ico').as_posix()+'"\n',encoding='utf-8')
 with (out/'build.log').open('w') as log:
