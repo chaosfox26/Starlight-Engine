@@ -38,8 +38,8 @@ void playback_command(int id)
         // Every scene starts through the same preparation: loading screen, cache warm-up, collision, break-ahead fracture, upload.
         loading.emplace();loading->show(window,view);loading->update(0,"Starting your scene");statusBeforeInstall=renderer->status();
         renderer->playback(false);
-        questTracker.reset();adventure.emplace();adventure->start(scene);
-        lastPreparation=prepare_scene(*adventure,*loading);
+        questTracker.reset();adventure.emplace();
+        try{adventure->start(scene);lastPreparation=prepare_scene(*adventure,*loading);}catch(...){adventure.reset();throw;}
         if(lastPreparation.stopped()){ // never reveal a scene that did not finish preparing
             loading->update(loading->fraction(),"Loading did not finish: "+lastPreparation.reason);
             const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();adventure.reset();adventureHint.clear();
