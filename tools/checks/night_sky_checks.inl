@@ -1,5 +1,10 @@
 // Native captures exercise the directional catalogue through the real sky
 // pipeline, including chart boundaries, resolution and camera motion.
+// sl_shot writes a 54-byte BMP header followed by pixel rows, whatever the file name says.
+static bool shot_has_light(const std::filesystem::path& path){
+ std::ifstream file(path,std::ios::binary);std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)),{});
+ return bytes.size()>54&&std::any_of(bytes.begin()+54,bytes.end(),[](unsigned char b){return b!=0;});
+}
 static json night_sky_checks(void* context,const std::filesystem::path& directory){
  std::filesystem::create_directories(directory);json rows=json::array();
  auto skyPacket=[](float hour){std::vector<unsigned char> bytes;auto put=[&](auto value){auto* p=reinterpret_cast<const unsigned char*>(&value);bytes.insert(bytes.end(),p,p+sizeof(value));};put(uint32_t(0x35564c53));put(uint32_t(0));put(uint32_t(0));put(hour);put(0.f);put(180.f);put(0.f);put(uint32_t(0));return bytes;};
@@ -10,6 +15,7 @@ static json night_sky_checks(void* context,const std::filesystem::path& director
   // sl_shot queues the next frame; consume it before changing the scene.
   auto shot=directory/(std::string(name)+".png");{std::error_code stale;std::filesystem::remove(shot,stale);}sl_shot(context,shot.c_str());
   if(!sl_frame(context,0,13)||!std::filesystem::exists(shot)||std::filesystem::file_size(shot)==0)throw ValidationFailure("Night sky capture did not finish");
+  if(!shot_has_light(shot))throw ValidationFailure(std::string("Night sky capture is all black: ")+name);
   rows.push_back({{"name",name},{"image",shot.generic_string()},{"gpuMs",sl_gpu_ms(context)},{"hour",hour},{"renderWidth",sl_render_width(context)}});
  };
  capture("night-forward",24,0,.35f,1);capture("night-stable",24,0,.35f,1);
