@@ -1754,7 +1754,7 @@ struct RenderDevice {
         SceneCB s{};
         if (fur) {
             s.fur0 = XMFLOAT4(fur->length, fur->softness, fur->stiffness, fur->sheen);
-            s.fur1 = XMFLOAT4(fur->sway, STARLIGHT_FUR_STRANDSPERMETER * fur->density, (float)shells, (float)(lastTick % 100000) * 0.001f);
+            s.fur1 = XMFLOAT4(fur->sway, STARLIGHT_FUR_STRANDSPERMETER * fur->density, (float)shells, furSwayClock(lastTick));
         }
         XMStoreFloat4x4(&s.mvp, XMMatrixMultiply(model, viewProj));
         XMStoreFloat4x4(&s.model, model);
