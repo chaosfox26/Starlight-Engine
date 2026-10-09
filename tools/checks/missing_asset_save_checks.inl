@@ -48,5 +48,57 @@ static void missing_asset_save_checks(const auto& require){
         require(run(json::object())&&load_scene(target).Characters.empty(),"Editor audit 9: By default 'add' does not find a model that sits beside the request file");
         require(!run({{"correctedAdd",true}})&&load_scene(target).Characters.size()==1,"Editor audit 9: correctedAdd resolves the model against the request file's folder");
     }
+    {
+        // CLI audit 1: verifyAssets:false waives only the cast's library check; it must not let a batch save over a model an object names.
+        const auto folder=work/"cast-waiver";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        save_scene(scene,target,{},true);
+        auto run=[&](json operation,json extra=json::object()){
+            json request={{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({operation})}};
+            for(auto& [key,value]:extra.items())request[key]=value;
+            atomic_write(folder/"request.json",request.dump());
+            std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+            return failure;
+        };
+        const json clearCast{{"op","set-block"},{"block","Cast"},{"value",nullptr},{"verifyAssets",false}};
+        const auto refusedCast=run(clearCast);
+        require(refusedCast.find("not in the asset library")!=std::string::npos&&load_scene(target).Characters[0].Name=="Ghost","CLI audit 1: verifyAssets:false on a cast does not let a batch save over a model an object names");
+        require(run(clearCast,{{"allowMissingAssets",true}}).empty()&&load_scene(target).Cast.Models.empty(),"CLI audit 1: allowMissingAssets still saves the same batch");
+    }
+    {
+        // CLI audit 2: a null scalar in a follow op is refused like any other wrong-typed value; only housing and beam treat null as removal.
+        const auto folder=work/"follow-null";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        Character spot;spot.Name="Spot";spot.Shape="light";
+        SceneData lit;lit.Characters={spot};save_scene(lit,target);
+        auto run=[&](json operation){
+            json request={{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({operation})}};
+            atomic_write(folder/"request.json",request.dump());
+            std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+            return failure;
+        };
+        const auto nulled=run(json{{"op","follow"},{"id",spot.Id},{"lag",nullptr}});
+        require(!nulled.empty()&&!load_scene(target).Characters[0].Follow,"CLI audit 2: A null lag in a follow op is refused and nothing is written");
+        require(run(json{{"op","follow"},{"id",spot.Id},{"lag",4}}).empty()&&load_scene(target).Characters[0].Follow->Lag==4,"CLI audit 2: A numeric lag in a follow op is applied");
+        require(run(json{{"op","follow"},{"id",spot.Id},{"housing",nullptr}}).empty()&&!load_scene(target).Characters[0].Follow->Housing,"CLI audit 2: A null housing in a follow op removes the housing");
+    }
+    {
+        // CLI audit 3: an unknown operation is reported as unsupported even when it carries no object id.
+        const auto folder=work/"unknown-op";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        SceneData empty;save_scene(empty,target);
+        atomic_write(folder/"request.json",json{{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({json{{"op","moev"},{"name","x"}}})}}.dump());
+        std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+        require(failure.find("Unsupported editor operation: moev")!=std::string::npos,"CLI audit 3: An unknown operation is reported as unsupported, not as a missing id");
+    }
+    {
+        // CLI audit 4: the sha256 in a report names the bytes that were written and the bytes inspected.
+        const auto folder=work/"sha-report";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        SceneData empty;save_scene(empty,target);
+        atomic_write(folder/"request.json",json{{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({json{{"op","shape"},{"shape","cube"}}})}}.dump());
+        const auto report=apply_commands(folder/"request.json");
+        require(report.at("sha256")==hash_file(target)&&inspect_scene(target).at("sha256")==hash_file(target),"CLI audit 4: The reported sha256 names the bytes written and the bytes inspected");
+    }
     fs::remove_all(work);
 }

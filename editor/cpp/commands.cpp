@@ -84,7 +84,8 @@ json describe_commands() {
 }
 json inspect_scene(const fs::path &input) {
     auto p = fs::absolute(input).lexically_normal();
-    auto scene = load_scene(p);
+    std::string sha;
+    auto scene = load_scene(p, &sha);
     json assets = json::array();
     size_t missing = 0;
     for (const auto &object : scene.Characters) {
@@ -105,7 +106,7 @@ json inspect_scene(const fs::path &input) {
         }
         assets.push_back(std::move(entry));
     }
-    json result{{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", hash_file(p)}, {"scene", scene},
+    json result{{"success", true}, {"scenePath", utf8(p.wstring())}, {"sha256", sha}, {"scene", scene},
         {"assets",assets},{"missingAssetCount",missing},{"assetCheckScope","Library presence and file integrity only; geometry and runtime correctness are not certified"}};
     if (!scene.Cast.Models.empty()) {
         json castAssets = json::array();
@@ -136,6 +137,7 @@ json apply_commands(const fs::path &file) {
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
     bool allowMissingAssets = request.value("allowMissingAssets", false);
+    bool castCheckWaived = false;
     const bool correctedAdd = request.value("correctedAdd", false);
     std::vector<std::string> staleRules;
     for (const auto &op : operations) {
@@ -268,7 +270,7 @@ json apply_commands(const fs::path &file) {
             } else if (block == "Cast") {
                 scene.Cast = clear ? SceneCast{} : value.get<SceneCast>();
                 scene.Cast.validate();
-                if (!op.value("verifyAssets", true)) allowMissingAssets = true;
+                if (!op.value("verifyAssets", true)) castCheckWaived = true;
                 if (op.value("verifyAssets", true)) {
                     EngineAssets::discover_near(path.parent_path());
                     const auto missing = cast_missing_assets(scene);
@@ -314,6 +316,9 @@ json apply_commands(const fs::path &file) {
             scene.Characters.push_back(std::move(c));
             continue;
         }
+        static const std::set<std::string> identified{"replace-model", "transform", "follow", "configure", "move", "route", "rename", "remove"};
+        if (!identified.contains(kind))
+            throw std::runtime_error("Unsupported editor operation: " + kind);
         auto &c = find(scene, op);
         if (kind == "replace-model") {
             keys(op, {"op", "id", "asset"});
@@ -349,7 +354,12 @@ json apply_commands(const fs::path &file) {
                 for (const auto &[from, to] : std::initializer_list<std::pair<const char *, const char *>>{
                          {"target", "Target"}, {"offsetX", "OffsetX"}, {"offsetZ", "OffsetZ"}, {"lag", "Lag"}, {"wobble", "Wobble"},
                          {"poolRadius", "PoolRadius"}, {"housing", "Housing"}, {"beam", "Beam"}})
-                    if (op.contains(from)) patch[to] = op.at(from);
+                    if (op.contains(from)) {
+                        // Only housing and beam treat null as removal; for a scalar, merge-patch would drop the key and silently restore its default.
+                        if (op.at(from).is_null() && std::string_view(to) != "Housing" && std::string_view(to) != "Beam")
+                            throw std::runtime_error(std::string("Follow setting ") + from + " must not be null");
+                        patch[to] = op.at(from);
+                    }
                 current.merge_patch(patch);
                 c.Follow = current.get<LightFollow>();
             }
@@ -384,17 +394,26 @@ json apply_commands(const fs::path &file) {
             auto removed=std::vector<Character>{c};auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
             for (auto &name : rules_naming_objects(scene, removed)) if (std::find(staleRules.begin(), staleRules.end(), name) == staleRules.end()) staleRules.push_back(std::move(name));
             for(auto& object:scene.Characters)if(object.JointTargetId==removedId){object.JointKind=0;object.JointTargetId.clear();}for(auto& object:scene.Characters)if(object.LightningTargetId==removedId)object.LightningTargetId.clear();
-        } else
-            throw std::runtime_error("Unsupported editor operation: " + kind);
+        }
     }
     scene.validate();
-    save_scene(scene, path, expected, allowMissingAssets);
+    std::string written;
+    try {
+        written = save_scene(scene, path, expected, allowMissingAssets);
+    } catch (const MissingAssetsError &problem) {
+        // A waived cast check may save over missing cast assets only; a model that an object names still refuses the save.
+        const bool objectMissing = std::any_of(scene.Characters.begin(), scene.Characters.end(), [&](const Character &c) {
+            return !c.Shape && !c.Sculpt && std::find(problem.ids.begin(), problem.ids.end(), c.Asset) != problem.ids.end();
+        });
+        if (!castCheckWaived || objectMissing) throw;
+        written = save_scene(scene, path, expected, true);
+    }
     json characters = json::array();
     for (const auto &c : scene.Characters)
         characters.push_back({{"Id", c.Id}, {"Name", c.Name}});
     json report{{"success", true},
                 {"scenePath", utf8(path.wstring())},
-                {"sha256", hash_file(path)},
+                {"sha256", written},
                 {"characters", characters},
                 {"note", "Scene saved with backup. No engine code or preset changed."}};
     if (!staleRules.empty()) report["rulesNamingRemovedObjects"] = staleRules;
