@@ -305,6 +305,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     if(GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE",nullptr,0)>0){
       wchar_t requested[32]{};GetEnvironmentVariableW(L"STARLIGHT_SHADOW_RESOLUTION",requested,32);
       if(!requested[0])throw std::runtime_error("STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE needs STARLIGHT_SHADOW_RESOLUTION set");
+      wchar_t sunShadows[2]{};
+      if(GetEnvironmentVariableW(L"STARLIGHT_SUN_SHADOWS",sunShadows,2)&&sunShadows[0]==L'0')throw std::runtime_error("STARLIGHT_VALIDATE_SHADOW_RESOLUTION_OVERRIDE needs sun shadows on: STARLIGHT_SUN_SHADOWS must not be 0");
       if(!sl_shadow_settings(context,0)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
       if(!sl_shadow_settings(context,2)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
       uint64_t sun[4]{};sl_sun_shadow_stats(context,sun);
