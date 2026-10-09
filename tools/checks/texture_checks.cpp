@@ -1198,6 +1198,14 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(wideSpec)), nullptr, "wide-times.glb", scratch);
         show("GLB whose keyframe times accessor is VEC2", e);
         require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-1: a keyframe times accessor that is not SCALAR is rejected");
+        GlbSpec noViewKeySpec; noViewKeySpec.noViewKeys = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewKeySpec)), nullptr, "no-view-keys.glb", scratch);
+        show("GLB whose keyframe accessors have no buffer view and 5 million elements", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-5: keyframe accessors without a buffer view cannot ask for millions of zero keys");
+        GlbSpec badIbm; badIbm.badIbmType = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(badIbm)), nullptr, "ibm-vec4.glb", scratch);
+        show("GLB whose inverse bind matrices are VEC4", e);
+        require(e.code == LoadCode::SkeletonInvalid && !scratch.loaded, "SKN-7: inverse bind matrices that are not MAT4 are SkeletonInvalid instead of partly identity");
         {
             const auto bytes = makeSparseGlb(76);
             cgltf_options opts{}; cgltf_data* d = nullptr;
@@ -1243,6 +1251,15 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             };
             require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
             require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
+        }
+        {   // SKN-6: a non-finite query time must give the defined first-key pose, not read past the keyframe arrays. The fixture clip loops, so +infinity reaches fmod and becomes NaN.
+            model::SkinnedModel posed; XMFLOAT4X4 rest[2], notANumber[2], infinite[2];
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb()), nullptr, "query-time.glb", posed).ok() && posed.clips[0].loop && posed.clips[0].duration > 0, "SKN-6: the fixture clip loops with a positive duration");
+            model::evalPose(posed, 0, 0.f, -1, 0.f, 0.f, rest, nullptr);
+            model::evalPose(posed, 0, std::nanf(""), -1, 0.f, 0.f, notANumber, nullptr);
+            model::evalPose(posed, 0, std::numeric_limits<float>::infinity(), -1, 0.f, 0.f, infinite, nullptr);
+            require(std::memcmp(rest, notANumber, sizeof(rest)) == 0, "SKN-6: a NaN query time holds the first key");
+            require(std::memcmp(rest, infinite, sizeof(rest)) == 0, "SKN-6: an infinite query time on a looping clip holds the first key");
         }
         for (int bad : { 1, 2, 3, 4 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
