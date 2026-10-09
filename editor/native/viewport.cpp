@@ -17,6 +17,8 @@
 #include "../../deep/engine/sun_shadows.h"
 #include "../../deep/engine/point_shadows.h"
 #include "../../deep/engine/grass_deformation.h"
+#include "../../deep/engine/clip_box.h"
+#include "../../deep/engine/mesh_mix.h"
 
 struct Reader {
  const uint8_t* p; size_t left;
@@ -168,9 +170,8 @@ struct Viewport {
  double drawSegments[5]{};
  void draw(){
  using DrawClock=std::chrono::steady_clock;const auto segT0=DrawClock::now();
- const size_t ownParts=parts.size();
-  parts.insert(parts.end(),instanceParts.begin(),instanceParts.end());
-  struct RestoreParts{std::vector<Part>& list;size_t count;~RestoreParts(){list.resize(count);}} restoreParts{parts,ownParts};
+ // Scene parts, then resident instances, visited in place: copying every instance Part into parts each frame cost reference counts for nothing.
+  std::vector<const Part*> allParts;allParts.reserve(parts.size()+instanceParts.size());for(const auto& p:parts)allParts.push_back(&p);for(const auto& p:instanceParts)allParts.push_back(&p);
   auto& d=*renderer;surfaces.bind(d);currentVertices.clear();rtItems.clear();atmosphere.fires.clear();atmosphere.dust.clear();if(!externalFogObstacles){atmosphere.obstacleLow.clear();atmosphere.obstacleHigh.clear();atmosphere.obstacleVelocity.clear();}
   float time=visualTime();
   grass.begin(d,time);
@@ -180,8 +181,12 @@ struct Viewport {
   lights.weather=weather;for(size_t i=0;i<64;++i){lights.weatherLow[i]=weatherLow[i];lights.weatherHigh[i]=weatherHigh[i];}
   float storm=weather.y;lights.lightDir.w*=1-.72f*storm;
   lights.ambient.x*=1-.32f*storm;lights.ambient.y*=1-.30f*storm;lights.ambient.z*=1-.24f*storm;
+  // Off by default (STARLIGHT_VIEW_CULL=1): parts whose bounds lie outside the view skip the scene passes only. Shadows, rays and motion history keep them; the 10% margin covers jitter.
+  static const bool viewCull=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_VIEW_CULL",value,8)&&value[0]=='1';}();
+  XMFLOAT4X4 viewClip{};if(viewCull)XMStoreFloat4x4(&viewClip,d.viewProjNoJit*XMMatrixScaling(.9f,.9f,1.f));
+  const auto viewCulled=[&](const Part& part,float kind,const XMMATRIX& transform){if(!viewCull||GrassDeformation::accepts(kind))return false;auto low=part.shadowLow,high=part.shadowHigh;if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}XMFLOAT4X4 clip;XMStoreFloat4x4(&clip,transform*XMLoadFloat4x4(&viewClip));return ClipBox::outside(&low.x,&high.x,&clip._11);};
   struct LiquidDraw {const GpuMesh* mesh;XMMATRIX world;XMFLOAT3 color;float emissive;uint64_t key;float distance=0;};std::vector<LiquidDraw> liquids,solids;std::vector<SunShadows::Item> casters;
-  size_t partIndex=0;for(const auto& p:parts){auto grassKey=GrassDeformation::identity(p.motionKey,partIndex++);if(p.effect==4)continue;
+  size_t partIndex=0;for(const Part* partPointer:allParts){const Part& p=*partPointer;auto grassKey=GrassDeformation::identity(p.motionKey,partIndex++);if(p.effect==4)continue;
    float x=p.x,z=p.z,yaw=0;double remaining=seconds*p.speed;
    for(const auto& q:p.route){double dx=q.x-x,dz=q.y-z,len=sqrt(dx*dx+dz*dz);if(len>1e-8)yaw=(float)atan2(dx,dz);if(len>remaining&&len>0){x+=(float)(dx*remaining/len);z+=(float)(dz*remaining/len);break;}remaining-=len;x=q.x;z=q.y;}
    if(seconds<=0)yaw=0;
@@ -215,7 +220,8 @@ struct Viewport {
    if(gpuGrassPart&&!p.vertexIdentities.empty()){
     // Rest positions never change, so the per-frame history rewrite (hundreds of thousands of hash inserts) is done once per part.
     auto& recorded=staticRecorded[p.vertexIdentities.front()];
-    uint64_t fingerprint=p.source->verts.size();{const size_t n=p.source->verts.size();for(size_t k:{size_t(0),n/3,n/2,n-1}){const auto& q=p.source->verts[k];uint32_t bits[3];memcpy(bits,&q.px,4);memcpy(bits+1,&q.py,4);memcpy(bits+2,&q.pz,4);for(uint32_t b:bits)fingerprint=(fingerprint^b)*1099511628211ull;}}
+    // The content key is mixed in, so a Mesh address reused by other content is recorded again.
+    uint64_t fingerprint=(p.source->verts.size()^p.meshKey)*1099511628211ull;{const size_t n=p.source->verts.size();for(size_t k:{size_t(0),n/3,n/2,n-1}){const auto& q=p.source->verts[k];uint32_t bits[3];memcpy(bits,&q.px,4);memcpy(bits+1,&q.py,4);memcpy(bits+2,&q.pz,4);for(uint32_t b:bits)fingerprint=(fingerprint^b)*1099511628211ull;}}
     if(recorded.first!=p.source.get()||recorded.second!=fingerprint){recorded={p.source.get(),fingerprint};
      for(size_t i=0;i<p.vertexIdentities.size();++i)if(auto id=p.vertexIdentities[i]){const auto& point=p.source->verts[i];staticVertices.set(id,{point.px,point.py,point.pz});}}
    }
@@ -225,7 +231,7 @@ struct Viewport {
    if(!d.editorRaytracing&&GrassDeformation::accepts(kind))rendered=&grass.draw(d,grassKey,transform,time);
    if(kind>6.8&&kind<7.5)liquids.push_back({&p.gpu,transform,color,p.emissive,p.motionKey});else{
         static const int fragDiag=[]{char value[8]{};return GetEnvironmentVariableA("STARLIGHT_DIAG_FRAGMENTS",value,8)?atoi(value):0;}();const bool fragment=(p.meshKey>>62)==3; /* diagnostic: 1 hides fragments from the scene pass, 2 from the shadow pass, 3 both */
-    if(!(fragment&&(fragDiag&1))){XMFLOAT3 middle{(p.shadowLow.x+p.shadowHigh.x)*.5f,(p.shadowLow.y+p.shadowHigh.y)*.5f,(p.shadowLow.z+p.shadowHigh.z)*.5f};XMFLOAT3 center;XMStoreFloat3(&center,XMVector3TransformCoord(XMLoadFloat3(&middle),transform));const float dx=center.x-d.camWorld.x,dy=center.y-d.camWorld.y,dz=center.z-d.camWorld.z;solids.push_back({rendered,transform,color,p.emissive,p.motionKey,dx*dx+dy*dy+dz*dz});}
+    if(!(fragment&&(fragDiag&1))&&!viewCulled(p,kind,transform)){XMFLOAT3 middle{(p.shadowLow.x+p.shadowHigh.x)*.5f,(p.shadowLow.y+p.shadowHigh.y)*.5f,(p.shadowLow.z+p.shadowHigh.z)*.5f};XMFLOAT3 center;XMStoreFloat3(&center,XMVector3TransformCoord(XMLoadFloat3(&middle),transform));const float dx=center.x-d.camWorld.x,dy=center.y-d.camWorld.y,dz=center.z-d.camWorld.z;solids.push_back({rendered,transform,color,p.emissive,p.motionKey,dx*dx+dy*dy+dz*dz});}
     if((kind<6.8f&&p.emissive<=0)||(kind>9.5f&&kind<11.5f)){
      auto low=p.shadowLow,high=p.shadowHigh;
      if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}
@@ -335,7 +341,7 @@ API int sl_fog_obstacles(void* handle,const float* data,int count){
  v.externalFogObstacles=true;v.atmosphere.obstacleLow=std::move(low);v.atmosphere.obstacleHigh=std::move(high);v.atmosphere.obstacleVelocity=std::move(velocity);return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
-API void sl_environment_reset(void* handle){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();}
+API void sl_environment_reset(void* handle){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();v.staticVertices.clear();v.staticRecorded.clear();}
 API int sl_surface_weather(void* handle,float moisture,float rain,float windX,float windZ,const float* boxes,int count){
  try{
   if(!handle||!std::isfinite(moisture)||moisture<0||moisture>1||!std::isfinite(rain)||rain<0||rain>1||!std::isfinite(windX)||!std::isfinite(windZ)||std::abs(windX)>20||std::abs(windZ)>20||count<0||count>64||(count&&!boxes))throw std::runtime_error("Invalid surface weather");
@@ -390,8 +396,8 @@ API int sl_resize(void* handle,int width,int height){
 }
 static_assert(offsetof(Vertex,previousX)==10*sizeof(float));
 static void attach_history(Vertex& vertex,const VertexHistory::Slot* previous){if(previous&&memcmp(&previous->x,&vertex.px,3*sizeof(float))!=0){vertex.previousX=previous->x;vertex.previousY=previous->y;vertex.previousZ=previous->z;vertex.hasPrevious=1;}}
-static uint64_t mesh_geometry_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;auto mix=[&](const void* bytes,size_t count){auto ptr=(const uint8_t*)bytes;for(size_t j=0;j<count;j++){hash^=ptr[j];hash*=1099511628211ull;}};for(const auto& vertex:mesh.verts)mix(&vertex,offsetof(Vertex,previousX));mix(mesh.indices.data(),mesh.indices.size()*sizeof(uint32_t));return hash;}
-static uint64_t mesh_history_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;bool any=false;auto mix=[&](const void* bytes,size_t count){auto ptr=(const uint8_t*)bytes;for(size_t j=0;j<count;j++){hash^=ptr[j];hash*=1099511628211ull;}};for(size_t i=0;i<mesh.verts.size();++i){const auto& vertex=mesh.verts[i];if(vertex.hasPrevious>0){const uint64_t index=i;mix(&index,sizeof(index));mix(&vertex.previousX,4*sizeof(float));any=true;}}return any?hash|1:0;}
+static uint64_t mesh_geometry_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;auto mix=[&](const void* bytes,size_t count){hash=mesh_mix_bytes(hash,bytes,count);};for(const auto& vertex:mesh.verts)mix(&vertex,offsetof(Vertex,previousX));mix(mesh.indices.data(),mesh.indices.size()*sizeof(uint32_t));return hash;}
+static uint64_t mesh_history_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;bool any=false;auto mix=[&](const void* bytes,size_t count){hash=mesh_mix_bytes(hash,bytes,count);};for(size_t i=0;i<mesh.verts.size();++i){const auto& vertex=mesh.verts[i];if(vertex.hasPrevious>0){const uint64_t index=i;mix(&index,sizeof(index));mix(&vertex.previousX,4*sizeof(float));any=true;}}return any?hash|1:0;}
 static uint64_t mesh_identity(const Mesh& mesh){const uint64_t geometry=mesh_geometry_hash(mesh),history=mesh_history_hash(mesh);return (history?geometry^(history+0x9e3779b97f4a7c15ull+(geometry<<6)+(geometry>>2)):geometry)&0x7fffffffffffffffull;}
 using SceneClock=std::chrono::steady_clock;
 static double sceneMs(SceneClock::time_point a,SceneClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();}
@@ -454,9 +460,10 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
   std::unordered_set<uint64_t> nextKeys;nextKeys.reserve(next.size()+(delta?v.baseCount:0));for(const auto& p:next)nextKeys.insert(p.meshKey);if(delta)for(size_t i=0;i<v.baseCount;++i)nextKeys.insert(v.parts[i].meshKey);
   bool removed=false;for(const auto& old:v.parts)if(!old.streaming && !nextKeys.count(old.meshKey))removed=true;
   if(removed){if(!rasterOnly)v.rt.retireGeometry(d);v.rtItems.clear();}
-  for(auto& old:cache)if(!nextKeys.count(old.first)){
-   auto original=std::find_if(v.parts.begin(),v.parts.end(),[&](const Part& p){return p.meshKey==old.first;});
-   if(original!=v.parts.end() && original->streaming)v.streams.push_back({old.second,d.fenceVal,starlight_resource_desc(old.second.vb).Width,starlight_resource_desc(old.second.ib).Width});
+  std::unordered_map<uint64_t,bool> streamingByKey;bool indexed=false; // first part per key decides, as the search this replaces did; built only when something is retired
+  for(auto& old:cache)if(!nextKeys.count(old.first)){if(!indexed){indexed=true;for(const auto& p:v.parts)streamingByKey.emplace(p.meshKey,p.streaming);}
+   auto original=streamingByKey.find(old.first);
+   if(original!=streamingByKey.end() && original->second)v.streams.push_back({old.second,d.fenceVal,starlight_resource_desc(old.second.vb).Width,starlight_resource_desc(old.second.ib).Width});
    else v.retiredResident.push_back({old.second,d.fenceVal});
   }
   if(delta){v.parts.erase(v.parts.begin()+v.baseCount,v.parts.end());for(auto& p:next)v.parts.push_back(std::move(p));}else{v.parts=std::move(next);v.baseCount=0;v.baseToken=0;}
