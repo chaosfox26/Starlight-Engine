@@ -137,6 +137,27 @@ void WriteAtlas(SkinnedModel& m, ByteView atlas) {
     m.atlasUV = true;
 }
 
+bool SumOverflows(cgltf_size a, cgltf_size b) { return a > SIZE_MAX - b; }
+bool ProductOverflows(cgltf_size a, cgltf_size b) { return b && a > SIZE_MAX / b; }
+
+// cgltf_validate adds and multiplies these untrusted numbers without checking for wrap-around, so an offset, stride or count that wraps slips past its range tests and the vertex readers then run off the buffer.
+bool BufferArithmeticWraps(const cgltf_data* data) {
+    for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+        if (SumOverflows(data->buffer_views[i].offset, data->buffer_views[i].size)) return true;
+    for (cgltf_size i = 0; i < data->accessors_count; ++i) {
+        const cgltf_accessor& a = data->accessors[i];
+        const cgltf_size element = cgltf_calc_size(a.type, a.component_type);
+        if (a.buffer_view && a.count) {
+            if (ProductOverflows(a.stride, a.count - 1) || SumOverflows(a.offset, a.stride * (a.count - 1)) || SumOverflows(a.offset + a.stride * (a.count - 1), element)) return true;
+        }
+        if (a.is_sparse) {
+            const cgltf_size indexSize = cgltf_component_size(a.sparse.indices_component_type);
+            if (ProductOverflows(indexSize, a.sparse.count) || SumOverflows(a.sparse.indices_byte_offset, indexSize * a.sparse.count) ||
+                ProductOverflows(element, a.sparse.count) || SumOverflows(a.sparse.values_byte_offset, element * a.sparse.count)) return true;
+        }
+    }
+    return false;
+}
 // cgltf's tokenizer takes time quadratic in the nesting depth of the JSON, so a few hundred kilobytes of brackets would stall the load for minutes. Real glTF nests a dozen levels at most.
 // Brackets are counted everywhere, string literals included: a damaged quote can desynchronise a scanner that tracks strings while the tokenizer still walks the nesting. Only a string holding hundreds of unmatched brackets is refused by mistake.
 constexpr size_t kMaxJsonDepth = 256;
@@ -186,6 +207,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     if (r != cgltf_result_success)
         return fail(GltfResultCode(r), std::string("glTF buffers could not be loaded: ") + GltfResultName(r) +
                     (r == cgltf_result_io_error || r == cgltf_result_file_not_found ? " (external buffer files cannot be resolved from memory)" : ""));
+    if (BufferArithmeticWraps(data)) return fail(LoadCode::Malformed, "an accessor or buffer view has an offset, stride or count so large that its size wraps around");
     r = cgltf_validate(data);
     if (r != cgltf_result_success)
         return fail(r == cgltf_result_data_too_short ? LoadCode::Malformed : GltfResultCode(r),

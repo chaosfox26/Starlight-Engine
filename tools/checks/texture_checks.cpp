@@ -999,6 +999,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB whose node transform overflows", e);
             require(e.code == LoadCode::Malformed && !scratch.loaded, "GLB fuzz: vertices that overflow to infinity under the node transform are Malformed");
         }
+        {   // GLB fuzz finding: a byteStride near 2^63 wrapped cgltf's accessor size arithmetic, so validation passed and the vertex reader ran off the buffer (access violation)
+            e = model::loadSkinnedFromMemory(ByteView(editJson(glbfuzz::makeDataUriGlb(), "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24}", "{\"byteStride\":9223372036854775807,\"buffer\":0,\"byteOffset\":36,\"byteLength\":24}")), nullptr, "stride-wrap.glb", scratch);
+            show("GLB whose byteStride wraps the accessor range", e);
+            require(e.code == LoadCode::Malformed && e.message.find("wraps around") != std::string::npos && !scratch.loaded, "GLB fuzz: a byteStride that wraps the accessor size arithmetic is Malformed instead of reading outside the buffer");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
