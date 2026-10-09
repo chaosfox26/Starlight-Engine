@@ -253,6 +253,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     }
 
     cgltf_size dataLessElements = 0;
+    cgltf_size zeroSumWeights = 0;
     bool first = true;
     auto grow = [&](float x, float y, float z) {
         if (first) { out.bbMin = out.bbMax = XMFLOAT3(x, y, z); first = false; return; }
@@ -326,7 +327,8 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 const bool finite = std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]) && std::isfinite(nn[0]) && std::isfinite(nn[1]) && std::isfinite(nn[2]) &&
                                     std::isfinite(t[0]) && std::isfinite(t[1]) && std::isfinite(w[0]) && std::isfinite(w[1]) && std::isfinite(w[2]) && std::isfinite(w[3]);
                 if (!finite) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a non-finite position, normal, UV or weight");
-                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
+                if (w[0] < 0.0f || w[1] < 0.0f || w[2] < 0.0f || w[3] < 0.0f) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a negative WEIGHTS_0 value");
+                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ++zeroSumWeights; ws = 1.0f; w[0] = 1.0f; }
                 if (jn) for (int k = 0; k < 4; ++k)
                     if (w[k] > 0.0f && j[k] >= out.joints.size())
                         return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
@@ -416,6 +418,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         for (int k = 0; k < 5; ++k)
             if (skippedPrimitives[k]) out.warnings += (out.warnings.empty() ? "primitives not drawn (only triangles, strips and fans are loaded): " : ", ") + std::to_string(skippedPrimitives[k]) + " " + kinds[k];
     }
+    if (zeroSumWeights) out.warnings += (out.warnings.empty() ? "" : "; ") + std::string("WEIGHTS_0 sums to zero on ") + std::to_string(zeroSumWeights) + " vertices; those vertices are bound fully to joint slot 0";
     if (out.verts.empty() || out.indices.empty()) return fail(LoadCode::NoGeometry, "no textured triangle geometry (needs triangle primitives with POSITION and TEXCOORD_0)" + (out.warnings.empty() ? std::string() : "; " + out.warnings));
 
     if (atlasUv) {

@@ -1218,6 +1218,12 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
         show("GLB whose index count wraps the size check", e);
         require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-2: an accessor count that wraps the 64-bit size check is rejected instead of read");
+        GlbSpec negSpec; negSpec.negativeWeight = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(negSpec)), nullptr, "negative-weight.glb", scratch);
+        show("GLB with a negative WEIGHTS_0 value", e);
+        require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-5: a negative WEIGHTS_0 value is Malformed");
+        GlbSpec zeroSpec; zeroSpec.zeroWeight = true;
+        require(model::loadSkinnedFromMemory(ByteView(makeGlb(zeroSpec)), nullptr, "zero-weight.glb", scratch).ok() && scratch.loaded && scratch.verts[3].w[0] == 1.f && scratch.warnings.find("WEIGHTS_0") != std::string::npos, "SKN-5: weights that sum to zero keep the joint-0 fallback and are reported in the warnings");
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
         manySpec.primitives = 31;

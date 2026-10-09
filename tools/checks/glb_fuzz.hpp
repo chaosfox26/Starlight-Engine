@@ -80,7 +80,7 @@ inline void trackedFree(void* p) noexcept {
 // ---- fixtures (moved unchanged from texture_checks.cpp) ----
 inline void putLE(std::vector<uint8_t>& v, uint32_t x) { v.push_back(uint8_t(x)); v.push_back(uint8_t(x >> 8)); v.push_back(uint8_t(x >> 16)); v.push_back(uint8_t(x >> 24)); }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; int armature = 0; int extraMode = -1; bool hugeIndexCount = false; bool wideTimes = false; bool emptyChannel = false; bool noViewVerts = false; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; int armature = 0; int extraMode = -1; bool hugeIndexCount = false; bool wideTimes = false; bool emptyChannel = false; bool noViewVerts = false; bool negativeWeight = false, zeroWeight = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -97,6 +97,8 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<float> uv{ 0,0, 1,0, 1,1, 0,1 };
     std::vector<uint8_t> joints{ 0,0,0,0, uint8_t(spec.badJoint ? 7 : 1),0,0,0, 0,1,0,0, 1,0,0,0 };
     std::vector<float> weights{ 1,0,0,0, 1,0,0,0, 0.5f,0.5f,0,0, 1,0,0,0 };
+    if (spec.negativeWeight) { weights[8] = 1.5f; weights[9] = -0.5f; }
+    if (spec.zeroWeight) weights[12] = weights[13] = weights[14] = weights[15] = 0.f;
     std::vector<uint16_t> indices{ 0,1,2, 0,2,uint16_t(spec.badIndex ? 9 : 3) };
     std::vector<float> ibm{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,-1,0,1 };
     std::vector<float> times{ 0.f, 1.f };
