@@ -46,4 +46,26 @@ static void render_device_checks(const auto& require){
             require(std::fabs(std::sin(1.7*f)-std::sin(1.7*t))<1e-3&&std::fabs(std::cos(1.3*f)-std::cos(1.3*t))<1e-3,"RND-S1: The fur sway clock matches the unwrapped clock, so the fur does not jump every 100 s");
         }
     }
+    {
+        // RND-2: the header is read from the source tree next to this file, so these pins follow the code they describe.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        require(text.find("outputFailed = true;") != std::string::npos && text.find("outputFailed = false;") != std::string::npos, "RND-2: A native resize records a failed rollback and clears the record when a resize succeeds");
+        require(text.find("if (outputFailed) {") != std::string::npos, "RND-2: The next frame after a failed rollback is refused instead of drawing with null targets");
+    }
+    {
+        // The header is read again for the buffer pins: an empty default buffer gets the same 256 byte floor that acquireBuffer applies.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        require(text.find("const size_t allocBytes = std::max<size_t>(256, bytes);") != std::string::npos && text.find("acquireBuffer(allocBytes,D3D12_RESOURCE_STATE_COPY_DEST)") != std::string::npos, "createDefaultBuffer(0) allocates the same 256 byte minimum that acquireBuffer uses");
+    }
+    {
+        // Refused draws go through one helper that counts them and logs at most once per second; the header is read for these pins as above.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        size_t helperCalls = 0, counterBumps = 0;
+        for (size_t at = text.find("noteInstanceDrop();"); at != std::string::npos; at = text.find("noteInstanceDrop();", at + 1)) ++helperCalls;
+        for (size_t at = text.find("++instDropped;"); at != std::string::npos; at = text.find("++instDropped;", at + 1)) ++counterBumps;
+        require(text.find("void noteInstanceDrop() {") != std::string::npos && text.find("now - instDropLogTick >= 1000") != std::string::npos && helperCalls == 2 && counterBumps == 1, "The instance cap logs refused draws at most once per second, from both refusal sites");
+    }
 }

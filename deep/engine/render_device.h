@@ -606,6 +606,8 @@ struct RenderDevice {
     UINT64 slotFence[kFrameCount] = {};                    // fence value that retires each slot's last submission
     UINT   slot = 0;                                        // = frameIndex % kFrameCount
     bool   warnedBbIndex = false;                          // one-shot: log if the swapchain ever returns an out-of-range backbuffer index (Streamline proxy swapchain, #35)
+    bool   outputFailed = false;                           // RND-2: a native resize and its rollback both failed, so the swapchain is at the new size while the targets are null; frames are refused until a resize succeeds
+    bool   warnedOutputFailed = false;                     // one-shot log line for that refusal
     int    inflight = 3;                                    // --inflight 1..3
     HANDLE frameLatencyWaitable = nullptr;                  // DXGI frame-latency waitable: waited at frame TOP so present() runs async (CPU records N+1 while GPU+present handle N)
     uint32_t stallCount = 0;                                // frames where the CPU had to wait for a slot (report)
@@ -808,6 +810,7 @@ struct RenderDevice {
     UINT   frame = 0;
     UINT   instCursor = 0;
     uint64_t instDropped = 0;   // draws refused because the per-frame constant buffer was full (cumulative; must stay 0)
+    uint64_t instDropLogTick = 0;   // GetTickCount64 of the last instance cap log line (at most one per second)
     UINT64 fenceVal = 0;
     HANDLE fenceEvent = nullptr;
 
@@ -917,19 +920,20 @@ struct RenderDevice {
     }
 
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* src, size_t bytes, D3D12_RESOURCE_STATES finalState) {
+        const size_t allocBytes = std::max<size_t>(256, bytes);   // same 256 byte floor acquireBuffer applies; an empty upload used to fail with a zero-width resource
         D3D12_HEAP_PROPERTIES hpDefault{}; hpDefault.Type = D3D12_HEAP_TYPE_DEFAULT;
         D3D12_HEAP_PROPERTIES hpUpload{};  hpUpload.Type = D3D12_HEAP_TYPE_UPLOAD;
         D3D12_RESOURCE_DESC bd{};
-        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = bytes; bd.Height = 1;
+        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = allocBytes; bd.Height = 1;
         bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1;
         bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-        auto def=acquireBuffer(bytes,D3D12_RESOURCE_STATE_COPY_DEST);
+        auto def=acquireBuffer(allocBytes,D3D12_RESOURCE_STATE_COPY_DEST);
         UploadStorage up;
         size_t best = uploadPool.size();
         for (size_t i = 0; i < uploadPool.size(); ++i) {
             const auto width = starlight_resource_desc(uploadPool[i].resource).Width;
-            if (width >= bytes && (best == uploadPool.size() || width < starlight_resource_desc(uploadPool[best].resource).Width)) best = i;
+            if (width >= allocBytes && (best == uploadPool.size() || width < starlight_resource_desc(uploadPool[best].resource).Width)) best = i;
         }
         if (best != uploadPool.size()) {
             uploadPoolBytes -= uploadStorageBytes(uploadPool[best].resource.Get());
@@ -949,7 +953,7 @@ struct RenderDevice {
         }
         memcpy(up.mapped, src, bytes);
 
-        cmd->CopyBufferRegion(def.Get(), 0, up.resource.Get(), 0, bytes);
+        cmd->CopyBufferRegion(def.Get(), 0, up.resource.Get(), 0, allocBytes);
         D3D12_RESOURCE_BARRIER br{}; br.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         br.Transition.pResource = def.Get(); br.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;   // promoted by the copy above
         br.Transition.StateAfter = finalState; br.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -1160,12 +1164,13 @@ struct RenderDevice {
                 if (FAILED(swap->ResizeBuffers(kFrameCount, oldW, oldH, desc.Format, desc.Flags))) throw std::runtime_error("ResizeBuffers rollback");
                 ups->resizeOutput(oldW,oldH);
                 createBackbufferViews();
-            } catch (...) { logLine("resize rollback failed"); }
+            } catch (...) { outputFailed = true; logLine("resize rollback failed"); }
             throw;
         }
         auditOutput.Reset();
         if (auditOffscreen) setAuditOffscreen(true);
         lastFrameStart=0;
+        outputFailed = false; warnedOutputFailed = false;
     }
 
     void createBackbufferViews() {
@@ -1791,9 +1796,15 @@ struct RenderDevice {
         cmd->SetGraphicsRootConstantBufferView(1, cbSlotGpu() + (UINT64)kMaxInstances * kCbStride);
     }
 
+    // Counts a draw the instance cap refuses. The log line is rate limited, so an overflowing scene reports it without flooding the log.
+    void noteInstanceDrop() {
+        ++instDropped;
+        const uint64_t now = GetTickCount64();
+        if (now - instDropLogTick >= 1000) { instDropLogTick = now; logLine("instance cap " + std::to_string(kMaxInstances) + " reached: draws dropped so far " + std::to_string(instDropped)); }
+    }
     // Two-step drawing for the depth pre-pass: stage the per-draw constants once, then issue the same draw in both passes.
     UINT stageMesh(const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) { ++instDropped; return UINT_MAX; }
+        if (instCursor >= kMaxInstances) { noteInstanceDrop(); return UINT_MAX; }
         UINT inst = instCursor++;
         writeInstance(inst, model, color, emissive, rough, metal, false);
         return inst;
@@ -1808,7 +1819,7 @@ struct RenderDevice {
     }
 
     void drawMesh(const GpuMesh& m, const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
-        if (instCursor >= kMaxInstances) { ++instDropped; return; }
+        if (instCursor >= kMaxInstances) { noteInstanceDrop(); return; }
         UINT inst = instCursor++;
         triDraw += m.indexCount / 3;
         writeInstance(inst, model, color, emissive, rough, metal, false);
@@ -2119,6 +2130,10 @@ struct RenderDevice {
     bool hostCamera=false;XMFLOAT3 hostEye{0,3,8},hostTarget{0,0,0};float hostFovDegrees=50.0f,hostNear=0.1f,hostFar=400.0f;
     double stageMarks[10]{};double inflightWaitMs=0,signalMs=0;uint32_t passFrameId[3]{};   // diagnostic: stage timestamps, tail timers, and the frame each GPU pass slot was submitted for   // diagnostic: timingNow() at the main stages of the last frame
     void renderEmpty(HWND hwnd) {
+        if (outputFailed) {   // RND-2: the targets are null after a failed resize rollback; refuse the frame instead of drawing with them
+            if (!warnedOutputFailed) { warnedOutputFailed = true; logLine("frame refused: the native output is unusable after a failed resize and its rollback; the next sl_resize rebuilds it"); }
+            throw std::runtime_error("Native output is unusable after a failed resize; resize the viewport to rebuild it");
+        }
         (void)hwnd;stageMarks[0]=timingNow();
         struct FrameTail{RenderDevice* d;uint32_t id;~FrameTail(){d->stageMarks[9]=timingNow();if(starlight_diag::events_enabled()){starlight_diag::evlog("rf.end",id,1000*(d->stageMarks[9]-d->stageMarks[0]),1000*(d->stageMarks[9]-d->stageMarks[7]));starlight_diag::evlog("rf.tail",d->signalMs,d->inflightWaitMs,1000*(d->stageMarks[9]-d->stageMarks[8]));starlight_diag::evlog("tri",double(d->triDraw),double(d->triPrepass),double(d->triShadow));}}} frameTail{this,frameIndex};
         starlight_diag::evlog("rf.begin",frameIndex,slot);
