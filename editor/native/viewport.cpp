@@ -623,14 +623,16 @@ API int sl_scene_remove(void* handle,const uint64_t* keys,int count){
   for(auto& p:removed)if(p.streaming&&p.gpu.vb&&p.gpu.ib){const UINT64 vbWidth=starlight_resource_desc(p.gpu.vb).Width,ibWidth=starlight_resource_desc(p.gpu.ib).Width;v.streams.push_back({std::move(p.gpu),d.fenceVal,vbWidth,ibWidth});}
   const bool rasterOnly=v.rt.active==0&&!v.rt.tlasBuilt&&v.rt.cache.empty();
   const int removeBranch=(retire||grassRemoved)?(rasterOnly?0:1):2;
+  {std::set<uint64_t> grassKeys;bool grassChanged=false;
+   for(size_t i=0;i<v.parts.size();++i){const auto& p=v.parts[i];if(!GrassDeformation::accepts(p.source->verts.front().kind))continue;const auto key=GrassDeformation::identity(p.motionKey,i);grassKeys.insert(key);auto old=v.grass.entries.find(key);grassChanged|=old==v.grass.entries.end()||old->second.meshKey!=p.meshKey;}
+   // Removing a part moves every later part to a new index, and grass without a motion key is keyed by its index, so the grass entries follow the compacted list.
+   if(grassChanged){if(!v.grass.bodyRing)v.grass.bodies(d,{});Viewport::SideScope grassSide(v);grassSide.begin();for(size_t i=0;i<v.parts.size();++i){const auto& p=v.parts[i];if(GrassDeformation::accepts(p.source->verts.front().kind))v.grass.prepare(d,GrassDeformation::identity(p.motionKey,i),p.meshKey,*p.source,p.gpu);}grassSide.submit();}
+   bool grassStale=false;for(const auto& entry:v.grass.entries)grassStale|=!grassKeys.count(entry.first);
+   if(grassChanged||grassStale)v.grass.retain(d,grassKeys);
+  }
   if(retire||grassRemoved){
    std::unordered_set<uint64_t> deferred;
    for(auto& p:removed)if(!p.streaming&&!live.count(p.meshKey)&&deferred.insert(p.meshKey).second)v.retiredResident.push_back({std::move(p.gpu),d.fenceVal});
-   if(grassRemoved){
-    std::set<uint64_t> grassKeys;
-    for(size_t i=0;i<v.parts.size();++i){const auto& p=v.parts[i];if(GrassDeformation::accepts(p.source->verts.front().kind))grassKeys.insert(GrassDeformation::identity(p.motionKey,i));}
-    v.grass.retain(d,grassKeys);
-   }
    if(retire&&!rasterOnly)v.rt.retireGeometry(d);
    v.rtItems.clear();recycle_retired_resident(v,false);
   }

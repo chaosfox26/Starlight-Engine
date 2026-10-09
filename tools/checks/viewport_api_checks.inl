@@ -449,3 +449,31 @@ static void viewport_telegraph_order_checks(const auto &require) {
     require(afterCount == 62 && afterBytes == before, "VWP-9: A rejected telegraph list leaves the cached effect templates in place");
     require(framed, "VWP-9: Frames render after a rejected telegraph list");
 }
+
+// VWP-10: removing a base part that comes before grass keeps that grass drawable; grass without a motion key is keyed by its index, so removal re-keys it.
+static void viewport_grass_removal_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport grass removal checks")) return;
+    const auto &api = session.api;
+    const auto sceneBase = api.get<int (*)(void *, const uint8_t *, int, uint64_t)>("sl_scene_base");
+    const auto sceneRemove = api.get<int (*)(void *, const uint64_t *, int)>("sl_scene_remove");
+    const auto grassStats = api.get<int (*)(void *, uint64_t *)>("sl_grass_stats");
+    require(sceneBase && sceneRemove && grassStats, "VWP-10: The viewport module exports the scene removal and grass calls");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-10: A viewport is created");
+    // The first part has a motion key and is removed; the grass part has none, so its identity is its index and moves to 0.
+    const auto base = vwp_scene({{5, 0.f, 0}, {0, 1.36f, 1}});
+    const uint64_t removed[1]{5};
+    const bool installed = sceneBase(viewport, base.data(), int(base.size()), 7) == 1;
+    const bool firstFrame = installed && api.frame(viewport, 0, 13) == 1;
+    const bool removedOk = firstFrame && sceneRemove(viewport, removed, 1) == 1;
+    const bool framed = removedOk && api.frame(viewport, 0, 13) == 1;
+    const std::string why = framed || !removedOk ? "" : api.error();
+    uint64_t grass[4]{};
+    const bool stats = grassStats(viewport, grass) == 1;
+    api.destroy(viewport);
+    if (!why.empty()) std::cout << "viewport grass removal checks: frame failed with: " << why << std::endl;
+    require(installed && firstFrame, "VWP-10: A base scene with a grass part installs and renders");
+    require(removedOk, "VWP-10: A base part in front of grass is removed");
+    require(framed && stats && grass[0] == 1, "VWP-10: Grass that moved to a new index still renders after the removal");
+}
