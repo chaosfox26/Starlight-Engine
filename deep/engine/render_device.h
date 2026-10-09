@@ -1164,6 +1164,7 @@ struct RenderDevice {
             // RND-2: applyMode leaves the old scene targets in place when it fails, so going back to the old output size restores a consistent device.
             try {
                 w=oldW; h=oldH;
+                for (auto& target : targets) target.Reset();   // createBackbufferViews may already hold the new-size buffers, and ResizeBuffers refuses while any reference is alive
                 if (FAILED(swap->ResizeBuffers(kFrameCount, oldW, oldH, desc.Format, desc.Flags))) throw std::runtime_error("ResizeBuffers rollback");
                 ups->resizeOutput(oldW,oldH);
                 createBackbufferViews();

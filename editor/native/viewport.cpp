@@ -391,7 +391,15 @@ API int sl_resize(void* handle,int width,int height){
   if(!starlight::valid_render_size(width,height))throw std::runtime_error(starlight::renderSizeError);
   auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
   if(!v.resizeStale&&d.w==(UINT)width&&d.h==(UINT)height)return 1;
-  v.resizeStale=true;d.resizeNativeOutput(width,height,true);v.surfaces.resize(d);v.rt.resize(d);v.post.resize(d);v.atmosphere.linearOutput=v.post.scene;v.atmosphere.resize(d);v.resizeStale=false;return 1;
+  const UINT oldW=d.w,oldH=d.h;bool deviceResized=false;
+  auto dependents=[&]{v.surfaces.resize(d);v.rt.resize(d);v.post.resize(d);v.atmosphere.linearOutput=v.post.scene;v.atmosphere.resize(d);v.resizeStale=false;};
+  try{v.resizeStale=true;d.resizeNativeOutput(width,height,true);deviceResized=true;dependents();}
+  catch(...){
+   // RND-2: the device is already at the new size when a dependent step fails, so its scene targets are new while every dependent still points at the old ones; rebuild all of them at the previous size, and refuse frames if that fails too
+   if(deviceResized){try{d.resizeNativeOutput(oldW,oldH,true);dependents();}catch(...){d.outputFailed=true;}}
+   throw;
+  }
+  return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
 static_assert(offsetof(Vertex,previousX)==10*sizeof(float));
