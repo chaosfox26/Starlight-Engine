@@ -5,6 +5,7 @@
 #include <d3d12.h>
 #include "d3d12_descriptors.h"
 #include "event_log.h"
+#include "utf8_file.h"
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
@@ -1946,7 +1947,7 @@ struct RenderDevice {
             logLine(row);
         }
         js += "]}\n";
-        if (!reportPath.empty()) { FILE* f = nullptr; if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(js.c_str(), f); fclose(f); } }
+        if (!reportPath.empty()) { FILE* f = nullptr; if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(js.c_str(), f); fclose(f); } }
         logLine("=== MT-PROOF done ===");
     }
 
@@ -2017,7 +2018,7 @@ struct RenderDevice {
             m6,
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
-        if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
+        if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
         else logLine("report: cannot write " + reportPath);
     }
     std::function<void()> editorDraw;
