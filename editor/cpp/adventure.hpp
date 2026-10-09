@@ -1421,7 +1421,9 @@ class AdventurePlayer {
             std::vector<std::string> supports;
             for(const auto& object:playScene_.Characters){const auto& b=interactionBounds_.at(object.Id);
                 if(position.x>=b.low.x && position.x<=b.high.x && position.z>=b.low.z && position.z<=b.high.z && std::abs(position.y-1.7-b.high.y)<.15)supports.push_back(object.Id);}
-            for(const auto& id:supports)rules_.emit("stand-on-object",id,playScene_);
+            auto kept=rules_.message; // emit() clears the message first; keep the one the area rules (or an earlier object) produced this frame
+            for(const auto& id:supports){rules_.emit("stand-on-object",id,playScene_);if(!rules_.message.empty())kept=rules_.message;}
+            rules_.message=kept;
         }
         finished=rules_.finished;
     }}

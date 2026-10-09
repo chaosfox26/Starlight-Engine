@@ -165,6 +165,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(object_destruction_checks, object_destruction_checks(require,folder));
         RUN_GROUP(terrain_destruction_checks, terrain_destruction_checks(require,folder));
         RUN_GROUP(physics_fracture_audit_checks, physics_fracture_audit_checks(require));
+        if (groups_filtered()) RUN_GROUP(character_controller_checks, character_controller_checks(require,folder)); // a full pass runs it later, in its usual place
 #endif
         if (groups_filtered()) {
             std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";
