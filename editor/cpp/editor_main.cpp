@@ -2176,6 +2176,7 @@ struct Editor {
                 candidate.RotationX = number("rx"); candidate.RotationY = number("ry");
                 candidate.RotationZ = number("rz"); candidate.Color = text(inputs.at("color"));
                 candidate.Surface = integer("surface"); candidate.KeepAboveFloor = checked("floor");
+                if (candidate.Surface != 12 && candidate.Surface != 13) candidate.Foliage.reset();
                 candidate.validate();
                 snap_object(scene, candidate, false, false, false);
             } else if (id == ApplyBody) {
