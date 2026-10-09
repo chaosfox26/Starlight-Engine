@@ -629,7 +629,23 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
             { gr::Store s(o); require(s.state().updateMode == "manual", "GFX a truncated state file is restored from the backup copy"); }
             put(st, "garbage");
             put(o.root / "state.json.bak", "garbage");
+            fs::create_directories(o.root / "sets" / "recorded-before-damage");
+            put(o.root / "sets" / "recorded-before-damage" / "set.json", "{}");
             { gr::Store s(o); require(s.state().updateMode == "unset" && s.resolve().find("sl")->version == "2.12.0", "GFX with no readable state the bundled set still runs"); }
+            {
+                std::string kept;
+                for (auto& e : fs::directory_iterator(o.root)) { auto n = gr::utf8(e.path().filename()); if (n.find(".corrupt-") != std::string::npos) kept += n + ";"; }
+                gr::Store s(o);
+                require(!fs::exists(st) && contains(kept, "state.json.corrupt-") && contains(kept, "state.json.bak.corrupt-"), "GFX two unreadable state files are kept under new names and never overwritten");
+                auto pr = s.prune(true);
+                require(!pr.ok && contains(pr.message, "refused") && fs::exists(o.root / "sets" / "recorded-before-damage" / "set.json"), "GFX prune refuses while a damaged state file is kept");
+                put(o.root / "state.json", "garbage");
+                put(o.root / "state.json.bak", "garbage");
+                gr::Store s2(o);
+                bool noted = false;
+                for (auto& ev : s2.state().events) if (contains(ev, "could not be used")) noted = true;
+                require(noted, "GFX losing both state files leaves a visible event");
+            }
             fs::remove(st);
             put(o.root / "state.json.tmp", "half");
             { gr::Store s(o); require(!fs::exists(o.root / "state.json.tmp"), "GFX an interrupted temp file is swept at the next start"); }

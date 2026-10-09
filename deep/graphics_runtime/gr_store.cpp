@@ -175,18 +175,51 @@ void Store::sweep() {
     for (auto n : {L"state.json.tmp", L"state.json.bak.tmp"}) fs::remove(options_.root / n, ec);
 }
 
+// Damaged state copies kept by load() so a reset never destroys the evidence (audit GR-3).
+static std::vector<std::string> kept_damaged_state(const fs::path& root) {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (auto& e : fs::directory_iterator(root, ec)) {
+        auto name = utf8(e.path().filename());
+        if (name.rfind("state.json", 0) == 0 && name.find(".corrupt-") != std::string::npos) out.push_back(name);
+    }
+    return out;
+}
+
 void Store::load() {
     auto main = options_.root / "state.json", bak = options_.root / "state.json.bak";
     std::error_code ec;
+    std::vector<fs::path> unparseable;
+    std::string unreadable;
     for (auto* p : {&main, &bak}) {
         if (!fs::is_regular_file(*p, ec)) continue;
+        std::string text;
+        bool read = false;
+        for (int attempt = 0; attempt < 5 && !read; ++attempt) {
+            try { text = read_text(*p); read = true; } catch (const GrError&) { Sleep(30); }
+        }
+        if (!read) { unreadable += (unreadable.empty() ? "" : ", ") + utf8(p->filename()); continue; }
         try {
-            state_ = state_from_json(json::parse(read_text(*p)));
+            state_ = state_from_json(json::parse(text));
             if (p == &bak) state_.events.push_back("State file was damaged; restored the previous copy.");
+            else if (!unreadable.empty()) state_.events.push_back("A state file could not be read; used the previous copy.");
             return;
-        } catch (const std::exception&) {}
+        } catch (const std::exception&) { unparseable.push_back(*p); }
     }
     state_ = State{};
+    std::string kept;
+    for (auto& p : unparseable) {
+        auto to = p;
+        for (unsigned long long n = GetTickCount64();; ++n) {
+            to = p;
+            to += L".corrupt-" + std::to_wstring(n);
+            if (!fs::exists(to, ec)) break;
+        }
+        fs::rename(p, to, ec);
+        if (!ec) kept += (kept.empty() ? "" : ", ") + utf8(to.filename());
+    }
+    if (!unparseable.empty() || !unreadable.empty())
+        state_.events.push_back("The state files could not be used, so locks, revoked sets and the catalog serial were reset." + (kept.empty() ? std::string() : " Damaged copies kept as " + kept + ".") + " Review before pruning.");
 }
 
 void Store::save(State next) {
@@ -796,6 +829,7 @@ Inventory Store::inventory() const {
 }
 
 Result Store::prune(bool confirm) {
+    if (auto kept = kept_damaged_state(options_.root); !kept.empty()) return Result::fail("Prune refused: a damaged state file was kept (" + join(kept, ", ") + "), so installed sets may look unrecorded. Review it first.");
     auto inv = inventory();
     if (!confirm) return Result::fail("Dry run: " + std::to_string(inv.removable.size()) + " set folder(s) could be removed (" + join(inv.removable, ", ") + "). Run with --confirm to remove them.");
     State s = state_;
