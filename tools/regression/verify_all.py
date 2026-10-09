@@ -8,6 +8,7 @@ Steps (fixed commands, never taken from a packet or from the results):
   python   ctest -R py-: the registered Python audit-tool tests            (--python)
   denoise  Starlight.NativeDenoiseChecks.exe on the recorded packet        (--gpu; uses the GPU)
   fallback Starlight.NativeFallbackChecks.exe on the recorded packet       (--gpu; uses the GPU)
+  render-* Starlight.NativeRenderChecks.exe, one step per VALIDATE_* switch in tools/checks/render_checks.cpp (--gpu; uses the GPU)
 Everything runs windowless and, on Windows, at idle priority. GPU steps are off unless asked for, so a run while someone is gaming does not touch the GPU.
 A step that did not run is reported NOT RUN, never PASS. Exit code: 0 every requested step passed and the ledger is all VERIFIED; 1 something failed or is not
 verified; 2 a requested step could not run. The summary is written to <results>/verify-<time>.json (new file each time)."""
@@ -19,6 +20,18 @@ import registry
 FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 SOURCE_SUFFIXES = ('.cpp', '.c', '.cc', '.h', '.hpp', '.inl', '.inc')
 SOURCE_FOLDERS = ('editor/', 'deep/', 'tools/checks/')
+# (step name, environment switch read by render_checks.cpp, width, height). Each switch runs in its own process; the night sky block needs the native 1440p raster.
+RENDER_VALIDATIONS = (
+    ('night-sky', 'STARLIGHT_VALIDATE_NIGHT_SKY', 2560, 1440),
+    ('grass-contacts', 'STARLIGHT_VALIDATE_GRASS_CONTACTS', 1280, 720),
+    ('local-shadow-lifecycle', 'STARLIGHT_VALIDATE_LOCAL_SHADOW_LIFECYCLE', 1280, 720),
+    ('shadow-settings', 'STARLIGHT_VALIDATE_SHADOW_SETTINGS', 1280, 720),
+    ('glow-settings', 'STARLIGHT_VALIDATE_GLOW_SETTINGS', 1280, 720),
+    ('resize', 'STARLIGHT_VALIDATE_RESIZE', 1280, 720),
+    ('surface-textures', 'STARLIGHT_VALIDATE_SURFACE_TEXTURES', 1280, 720),
+    ('soot', 'STARLIGHT_VALIDATE_SOOT', 1280, 720),
+    ('fog', 'STARLIGHT_VALIDATE_FOG', 1280, 720),
+)
 
 
 def run_step(name, argv, cwd, timeout, env=None):
@@ -129,6 +142,9 @@ def plan(args, stamp):
                                   '--build-dir', os.path.dirname(args.build_dir.rstrip('\\/')), '--config', 'Release'], args.build_dir, 1800, {}))
         steps.append(('fallback', [os.path.join(args.build_dir, 'Starlight.NativeFallbackChecks.exe'), '--build-dir', os.path.dirname(args.build_dir.rstrip('\\/')),
                                    '--packet', packet, '--output', os.path.join(gpu, 'fallback'), '--config', 'Release'], args.build_dir, 1800, {}))
+        for name, switch, width, height in RENDER_VALIDATIONS:
+            steps.append(('render-' + name, [os.path.join(args.build_dir, 'Starlight.NativeRenderChecks.exe'), packet, os.path.join(gpu, 'render-' + name + '.json'),
+                                             os.path.join(gpu, 'render-' + name + '.bmp'), str(width), str(height), '0', 'headless', '4', '0'], args.build_dir, 1200, {switch: '1'}))
     return steps
 
 
@@ -206,7 +222,13 @@ def self_test():
     check('without --gpu the ledger step switches the GPU device checks off', plan(A, 't')[0][4] == {'STARLIGHT_SKIP_GPU_CHECKS': '1'})
     A.gpu = A.python = True
     check('with --gpu the ledger step leaves them on', plan(A, 't')[0][4] == {})
-    check('GPU and Python steps are planned when asked', [s[0] for s in plan(A, 't')] == ['ledger', 'python', 'denoise', 'fallback'])
+    check('GPU and Python steps are planned when asked', [s[0] for s in plan(A, 't')] == ['ledger', 'python', 'denoise', 'fallback'] + ['render-' + name for name, _, _, _ in RENDER_VALIDATIONS])
+    render = {s[0]: s for s in plan(A, 't') if s[0].startswith('render-')}
+    check('each render validation switch is its own GPU step that sets only that switch', all(render['render-' + name][4] == {switch: '1'} for name, switch, _, _ in RENDER_VALIDATIONS))
+    check('the night sky validation runs at the native 1440p contract', render['render-night-sky'][1][4:6] == ['2560', '1440'])
+    A.gpu = A.python = False
+    check('render validation steps are not planned without --gpu', [s[0] for s in plan(A, 't')] == ['ledger'])
+    A.gpu = A.python = True
     python_step = [s for s in plan(A, 't') if s[0] == 'python'][0]
     check('the Python step makes ctest fail when no py- test is registered', '--no-tests=error' in python_step[1])
     with tempfile.TemporaryDirectory() as empty:
@@ -234,10 +256,12 @@ def main():
     os.makedirs(args.results, exist_ok=True)
     stamp = time.strftime('%Y%m%d-%H%M%S')
     records = []
-    stale = stale_reason(args.repo, args.build_dir, ('Starlight.NativeCoreChecks', 'Starlight.NativeDenoiseChecks', 'Starlight.NativeFallbackChecks') if args.gpu else ('Starlight.NativeCoreChecks',))
+    stale = stale_reason(args.repo, args.build_dir, ('Starlight.NativeCoreChecks', 'Starlight.NativeDenoiseChecks', 'Starlight.NativeFallbackChecks', 'Starlight.NativeRenderChecks') if args.gpu else ('Starlight.NativeCoreChecks',))
     if stale:
         print('NOT RUN: ' + stale)
         records.append({'step': 'build', 'outcome': 'NOT RUN', 'reason': stale})
+    if args.gpu and not stale:
+        os.makedirs(os.path.join(args.results, 'verify-' + stamp), exist_ok=True)
     for name, argv, cwd, timeout, env in ([] if stale else plan(args, stamp)):
         print('running %s ...' % name, flush=True)
         record = run_step(name, argv, cwd, timeout, env)
@@ -251,7 +275,7 @@ def main():
     code = summarize(records)
     summary = {'schema': 'starlight-verify-all-1', 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'repo': args.repo, 'buildDir': args.build_dir,
                'requested': {'python': args.python, 'gpu': args.gpu}, 'exitCode': code, 'steps': records,
-               'notTracked': [] if args.python and args.gpu else [n for n, on in (('python tests', args.python), ('denoise and fallback GPU checks', args.gpu)) if not on]}
+               'notTracked': [] if args.python and args.gpu else [n for n, on in (('python tests', args.python), ('denoise and fallback GPU checks', args.gpu), ('render validation checks', args.gpu)) if not on]}
     path = os.path.join(args.results, 'verify-%s.json' % stamp)
     with open(path, 'x', encoding='utf-8') as f:
         json.dump(summary, f, indent=1)
