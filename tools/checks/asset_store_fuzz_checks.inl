@@ -407,4 +407,32 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         require(wrong==0,"Fuzz: the player's start-up check refuses a damaged, forged or hostile game manifest, including entries that name a data stream or a device");
         fs::remove_all(game);
     }
+
+    {
+        // The root registry and a library marker are read on every lookup. A damaged copy of either (cut off at any length, or with any single bit flipped) is reported as AssetMissing or read as valid, never a crash or another kind of failure.
+        const auto registryDir=work/"registry-fuzz";fs::remove_all(registryDir);fs::create_directories(registryDir);
+        const auto registryFile=registryDir/"asset-roots.json";
+        EngineAssets::ScopedRegistry registry(registryFile);
+        const auto libraryDir=registryDir/"library";
+        EngineAssets::initialize_root(libraryDir,true,"fuzz");
+        const auto blobId=EngineAssets::put(AssetKind::Blob,"registry fuzz payload");
+        const auto registryGood=read_file(registryFile);
+        const auto markerFile=libraryDir/"library.json";
+        const auto markerGood=read_file(markerFile);
+        size_t wrong=0;
+        auto damagedRun=[&](const std::string& text,const fs::path& file){
+            atomic_write(file,text);EngineAssets::drop_memory_cache();
+            const auto r=outcome([&]{(void)EngineAssets::registered_roots();(void)EngineAssets::root();(void)EngineAssets::describe_roots();(void)EngineAssets::marker_problem(libraryDir);(void)EngineAssets::get(AssetKind::Blob,blobId);});
+            if(r!=Result::Accepted&&r!=Result::AssetMissingError)++wrong;
+        };
+        for(size_t keep=0;keep<registryGood.size();++keep)damagedRun(registryGood.substr(0,keep),registryFile);
+        for(size_t byte=0;byte<registryGood.size();++byte)for(int bit=0;bit<8;++bit){auto damaged=registryGood;damaged[byte]=char(damaged[byte]^(1<<bit));damagedRun(damaged,registryFile);}
+        atomic_write(registryFile,registryGood);
+        for(size_t keep=0;keep<markerGood.size();++keep)damagedRun(markerGood.substr(0,keep),markerFile);
+        for(size_t byte=0;byte<markerGood.size();++byte)for(int bit=0;bit<8;++bit){auto damaged=markerGood;damaged[byte]=char(damaged[byte]^(1<<bit));damagedRun(damaged,markerFile);}
+        atomic_write(markerFile,markerGood);
+        require(wrong==0,"Fuzz: a damaged asset root registry or library marker (cut off, or any single bit flipped) is reported as an unusable library, never a crash or another failure");
+        EngineAssets::drop_memory_cache();
+        require(outcome([&]{(void)EngineAssets::get(AssetKind::Blob,blobId);})==Result::Accepted&&EngineAssets::registered_roots().size()==1,"Fuzz: restoring the registry and marker brings the library back");
+    }
 }
