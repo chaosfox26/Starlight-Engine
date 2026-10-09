@@ -1,5 +1,10 @@
 // Test preset values are range-checked before they are narrowed, and a preset file is written through a checked stream (audit CORE-03, CORE-04).
 #include "../../deep/src/preset_validate.hpp"
+namespace launcher_preset_checks {
+namespace fs=std::filesystem;using json=nlohmann::json;
+using starlight::preset::u8text;using starlight::preset::write;using starlight::preset::keys;using starlight::preset::validate;
+#include "../../deep/src/preset_reconciliation.inc"
+}
 static void preset_validate_checks(const auto& require,const fs::path& folder){
     auto preset=[](const nlohmann::json& frameLimit,const nlohmann::json& durationMs){
         return nlohmann::json{{"schemaVersion",2},{"name","check"},{"settings",{{"resolution",{1280,720}},{"displayMode","windowed"},{"frameLimit",frameLimit},{"durationMs",durationMs},{"upscaler","off"},{"quality","native"},{"frameGeneration",false},{"vsync",false},{"culling",true},{"foreground",false}}}};
@@ -25,6 +30,22 @@ static void preset_validate_checks(const auto& require,const fs::path& folder){
 
     const fs::path dir=folder/L"launcher-preset-checks";
     fs::create_directories(dir);
+    auto put=[](const fs::path& p,const std::string& text){std::ofstream f(p,std::ios::binary);f<<text;};
+    auto refusedPreset=[&](const std::string& text){
+        const fs::path file=dir/L"deep.startest";put(file,text);
+        try{launcher_preset_checks::preset(file,nlohmann::json::object());}catch(const std::runtime_error&){return true;}
+        return false;
+    };
+    const std::string nested(5000,'[');
+    require(refusedPreset("{\"schemaVersion\":2,\"name\":"+nested+std::string(5000,']')+",\"settings\":{}}"),"LAUNCH-1: a preset nested thousands of levels deep is refused instead of overflowing the stack");
+    require(refusedPreset("{\"schemaVersion\":2,\"name\":"+nested+",\"settings\":{}}"),"LAUNCH-1: an unterminated deeply nested preset is refused");
+    require(refusedPreset("{\"schemaVersion\":2,\"name\":\""+std::string(1100000,'x')+"\",\"settings\":{}}"),"LAUNCH-1: a preset over one mebibyte is refused");
+    require(refusedPreset("{\"schemaVersion\":2,\"name\":5,\"settings\":{\"resolution\":[1280,720],\"displayMode\":\"windowed\",\"frameLimit\":600,\"durationMs\":1000,\"upscaler\":\"off\",\"quality\":\"native\",\"frameGeneration\":false,\"vsync\":false,\"culling\":true,\"foreground\":false}}"),"LAUNCH-1: a preset whose name is not text is refused");
+    {
+        const fs::path file=dir/L"brackets-in-text.json";put(file,"{\"a\":\"[[[[[[[[[[[[[[[[[[[[ \\\" {{{{{{{{{{\"}");
+        bool read=true;try{read=starlight::preset::read_limited(file).at("a").is_string();}catch(const std::exception&){read=false;}
+        require(read,"LAUNCH-1: brackets inside text do not count as nesting");
+    }
 
     const fs::path ansi=dir/L"ansi-error.json";
     bool wrote=true;

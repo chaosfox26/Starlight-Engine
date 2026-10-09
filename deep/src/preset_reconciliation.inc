@@ -8,7 +8,7 @@ static int distance(const std::string&a,const std::string&b) {
     for(size_t i=0;i<a.size();++i){int diagonal=row[0];row[0]=(int)i+1;for(size_t j=0;j<b.size();++j){int old=row[j+1];row[j+1]=std::min({row[j+1]+1,row[j]+1,diagonal+(a[i]!=b[j])});diagonal=old;}}return row.back();
 }
 static json preset(const fs::path&path,const json&approved) {
-    json original=read(path),p=original,registry=json::parse(kSettingsRegistry);
+    json original=starlight::preset::read_limited(path),p=original,registry=json::parse(kSettingsRegistry);
     keys(p,{"schemaVersion","name","settings"});if(p.at("schemaVersion")!=1&&p.at("schemaVersion")!=2)throw std::runtime_error("Unsupported preset version; original preserved");int version=p.at("schemaVersion").get<int>();
     if(version!=1&&version!=2)throw std::runtime_error("Unsupported preset version; original preserved");
     if(!p.at("settings").is_object())throw std::runtime_error("Settings must be an object");
