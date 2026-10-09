@@ -31,6 +31,8 @@ std::string hash_file(const fs::path &);
 std::string hash_bytes(std::string_view);
 void atomic_write(const fs::path &, std::string_view, bool backup = false,
                   const std::optional<std::string> &expected = {});
+// After a save's ReplaceFileW fails: if the old file was already renamed to `backup` and `path` is now missing, move it back; throws, naming `temp` (the new data), when that is not possible.
+void restore_replaced_file(const fs::path &path, const std::wstring &backup, const fs::path &temp);
 fs::path application_data();
 void diagnostic(std::string_view, std::string_view) noexcept;
 std::vector<fs::path> file_dialog(HWND owner, std::string_view purpose,

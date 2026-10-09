@@ -1,5 +1,6 @@
 // Asset, file-writing and platform robustness checks from the 2026-10-08 audit (06 assets/platform, 10 security).
 #include "../../deep/engine/event_log.h"
+#include "source_text.hpp"
 static void asset_platform_checks(const auto& require,const fs::path& folder){
     const fs::path dir=folder/"asset-platform-checks";std::error_code cleared;fs::remove_all(dir,cleared);fs::create_directories(dir);
     {
@@ -37,6 +38,21 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         fs::create_directories(dir/"blocked.txt.lock");
         std::string why;try{atomic_write(dir/"blocked.txt","x");}catch(const std::exception& e){why=e.what();}
         require(why.find("Windows error")!=std::string::npos&&why.find("busy")==std::string::npos,"A-06-10: A lock that cannot be created for another reason reports the Windows error instead of 'busy'");
+    }
+    {
+        // A-06-6: ReplaceFileW can fail after it moved the old file to its backup name, which used to leave the saved path empty. The failure itself (errors 1176 and 1177) cannot be provoked on demand,
+        // so the rollback is checked on its own, and the save's failure path is pinned to call it.
+        const auto saved=dir/"rollback.txt",temp=dir/"rollback.txt.new.tmp";const auto backup=(saved.wstring()+L".old.bak");
+        atomic_write(temp,"new data");atomic_write(fs::path(backup),"old data");
+        restore_replaced_file(saved,backup,temp);
+        require(fs::exists(saved)&&read_file(saved)=="old data"&&!fs::exists(backup)&&fs::exists(temp),"A-06-6: A save that failed after the old file was renamed puts the old file back and keeps the new data");
+        atomic_write(fs::path(backup),"leftover");
+        restore_replaced_file(saved,backup,temp);
+        require(read_file(saved)=="old data"&&read_file(fs::path(backup))=="leftover","A-06-6: A path that still holds a file is never overwritten by the backup");
+        fs::remove(saved);fs::remove(fs::path(backup));
+        std::string why;try{restore_replaced_file(saved,backup,temp);}catch(const std::exception& e){why=e.what();}
+        require(why.find(utf8(temp.wstring()))!=std::string::npos&&!fs::exists(saved),"A-06-6: When the old file cannot be put back the error names where the new data is");
+        require(source_occurrences("editor/cpp/platform.cpp","restore_replaced_file(p, previous, temp)")==1,"A-06-6: The failure path of a save calls the rollback");
     }
     {
         // A-06-4: a file that is a symlink (or any file with a reparse attribute) was dropped from the asset browser without a trace.

@@ -133,6 +133,13 @@ std::string hash_bytes(std::string_view data) {
         out << std::setw(2) << int(b);
     return out.str();
 }
+void restore_replaced_file(const fs::path &p, const std::wstring &previous, const fs::path &temp) {
+    // ReplaceFileW can fail after it has already renamed the old file to the backup name (errors 1176/1177). Put it back so the path is never left empty,
+    // and keep the temporary file (the only copy of the new data) if that is not possible.
+    std::error_code ec;
+    if (!previous.empty() && !fs::exists(p, ec) && !ec && !MoveFileExW(previous.c_str(), p.c_str(), MOVEFILE_WRITE_THROUGH))
+        throw std::runtime_error("Cannot commit file; " + utf8(p.wstring()) + " was moved to " + utf8(previous) + " and the new data is in " + utf8(temp.wstring()));
+}
 void atomic_write(const fs::path &path, std::string_view data, bool backup,
                   const std::optional<std::string> &expected) {
     // Staging folders and unique temporary suffixes can exceed MAX_PATH even
@@ -198,11 +205,8 @@ void atomic_write(const fs::path &path, std::string_view data, bool backup,
             prune_backups(p);
         } else commit([&]{return MoveFileExW(temp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);});
     } catch (...) {
-        // ReplaceFileW can fail after it has already renamed the old file to the backup name (errors 1176/1177). Put it back so the path is never left empty,
-        // and keep the temporary file (the only copy of the new data) if that is not possible.
+        restore_replaced_file(p, previous, temp);
         std::error_code ec;
-        if (!previous.empty() && !fs::exists(p, ec) && !ec && !MoveFileExW(previous.c_str(), p.c_str(), MOVEFILE_WRITE_THROUGH))
-            throw std::runtime_error("Cannot commit file; " + utf8(p.wstring()) + " was moved to " + utf8(previous) + " and the new data is in " + utf8(temp.wstring()));
         fs::remove(temp, ec);
         throw;
     }
