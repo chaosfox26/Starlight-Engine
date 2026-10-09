@@ -39,4 +39,11 @@ static void render_device_checks(const auto& require){
         require(report_text::format("%s","").empty()&&report_text::format("plain")=="plain","RND-6: Empty and plain formats work");
         require(report_text::escape(std::string("a\nb\tc\"d\\e\x01"))=="a\\u000ab\\u0009c\\\"d\\\\e\\u0001","RND-6: Control characters, quotes and backslashes are escaped");
     }
+    {
+        for(uint64_t ms:{0ull,99999ull,100000ull,100001ull,250000ull,3600000ull,86400000ull}){
+            const double t=ms*0.001;
+            const float f=furSwayClock(ms);
+            require(std::fabs(std::sin(1.7*f)-std::sin(1.7*t))<1e-3&&std::fabs(std::cos(1.3*f)-std::cos(1.3*t))<1e-3,"RND-S1: The fur sway clock matches the unwrapped clock, so the fur does not jump every 100 s");
+        }
+    }
 }

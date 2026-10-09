@@ -1764,7 +1764,7 @@ struct RenderDevice {
         SceneCB s{};
         if (fur) {
             s.fur0 = XMFLOAT4(fur->length, fur->softness, fur->stiffness, fur->sheen);
-            s.fur1 = XMFLOAT4(fur->sway, STARLIGHT_FUR_STRANDSPERMETER * fur->density, (float)shells, (float)(lastTick % 100000) * 0.001f);
+            s.fur1 = XMFLOAT4(fur->sway, STARLIGHT_FUR_STRANDSPERMETER * fur->density, (float)shells, furSwayClock(lastTick));
         }
         XMStoreFloat4x4(&s.mvp, XMMatrixMultiply(model, viewProj));
         XMStoreFloat4x4(&s.model, model);
@@ -1933,16 +1933,16 @@ struct RenderDevice {
         auto put32 = [&](int at, uint32_t v) { hdr[at] = (uint8_t)v; hdr[at + 1] = (uint8_t)(v >> 8); hdr[at + 2] = (uint8_t)(v >> 16); hdr[at + 3] = (uint8_t)(v >> 24); };
         put32(2, fileBytes); put32(10, 54); put32(14, 40); put32(18, w); put32(22, h);
         hdr[26] = 1; hdr[28] = 24; put32(34, imgBytes);
-        fwrite(hdr, 1, 54, fo);
+        bool wrote = fwrite(hdr, 1, 54, fo) == 54;
         std::vector<uint8_t> row(rowBytes, 0);
         for (UINT y = 0; y < h; ++y) {                       // BMP is bottom-up, BGR
             const uint8_t* srcRow = p + (size_t)(h - 1 - y) * fp.Footprint.RowPitch;
             for (UINT x = 0; x < w; ++x) { row[x * 3] = srcRow[x * 4 + 2]; row[x * 3 + 1] = srcRow[x * 4 + 1]; row[x * 3 + 2] = srcRow[x * 4]; }
-            fwrite(row.data(), 1, rowBytes, fo);
+            wrote = wrote && fwrite(row.data(), 1, rowBytes, fo) == rowBytes;
         }
-        fclose(fo);
+        wrote = fclose(fo) == 0 && wrote;
         readback->Unmap(0, nullptr);
-        logLine("shot: wrote backbuffer BMP");
+        logLine(wrote ? "shot: wrote backbuffer BMP" : "shot: write failed (the BMP is incomplete)");
     }
 
     // ---- latency reduction: one of Reflex (DLSS path) / XeLL (XeSS path) / Anti-Lag 2 (any path, AMD driver) ----
@@ -2099,7 +2099,12 @@ struct RenderDevice {
             m6.c_str(),
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
-        if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf.c_str(), f); fclose(f); logLine("report written: " + reportPath); }
+        if (fopenUtf8(&f, reportPath, L"w") == 0 && f) {
+            const bool wrote = fputs(buf.c_str(), f) >= 0;
+            const bool closed = fclose(f) == 0;
+            if (wrote && closed) logLine("report written: " + reportPath);
+            else logLine("report: write failed, " + reportPath + " is incomplete");
+        }
         else logLine("report: cannot write " + reportPath);
     }
     std::function<void()> editorDraw;

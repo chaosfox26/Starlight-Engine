@@ -27,3 +27,10 @@ inline void pruneSmooth(std::unordered_map<uint64_t, SmoothXf>& map, uint32_t fr
         if (uint32_t(frame - it->second.seen) > kSmoothMaxAgeFrames) it = map.erase(it); else ++it;
     }
 }
+
+// Fur sway clock in seconds. The sway is sin(1.7 t) and cos(1.3 t), whose common period is 20*pi, so wrapping there
+// keeps every sway value equal to the unwrapped clock. Any other wrap point makes the fur jump.
+inline float furSwayClock(uint64_t tickMs) {
+    constexpr double kSwayPeriod = 20.0 * 3.14159265358979323846;
+    return (float)std::fmod(tickMs * 0.001, kSwayPeriod);
+}
