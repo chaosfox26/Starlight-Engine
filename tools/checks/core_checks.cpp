@@ -153,7 +153,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(editor_state_checks, editor_state_checks(require,folder));
         RUN_GROUP(editor_wave2_checks, editor_wave2_checks(require,folder));
         RUN_GROUP(history_stroke_checks, history_stroke_checks(require));
-        RUN_GROUP(migration_path_checks, migration_path_checks(require));
+        RUN_GROUP(migration_path_checks, migration_path_checks(require,folder));
         RUN_GROUP(preset_validate_checks, preset_validate_checks(require,folder));
         RUN_GROUP(decode_fuzz_checks, decode_fuzz_checks(require,folder));
         RUN_GROUP(contact_index_checks, contact_index_checks(require));

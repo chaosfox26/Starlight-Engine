@@ -360,6 +360,8 @@ json archive_original(const fs::path& in, const std::string& original, const std
     const std::string rel = o.relative.empty() ? sha.substr(0, 12) + "-" + utf8(in.filename().wstring()) : confined_relative(o.relative);
     const auto target = o.archive / L"files" / from_utf8(rel);
     const auto manifestPath = o.archive / L"manifest.json";
+    refuse_links_under(o.archive, target);
+    refuse_links_under(o.archive, manifestPath);
     auto manifest = load_manifest(manifestPath);
     for (const auto& e : manifest.at("entries"))
         if (e.value("archive", "") == rel && lower(e.value("sha256", "")) != sha)
@@ -1016,6 +1018,8 @@ int run_convert_all(const fs::path& inventoryPath, Options o, const fs::path& st
         local.relative = rel;
         json report;
         try {
+            refuse_links_under(stage, target);
+            refuse_links_under(stage, target.parent_path() / L"assets");
             if (sha_of(read_file(source)) != lower(f.at("sha256").get<std::string>())) {
                 report = {{"result", "FAIL"}, {"error", "file changed since the inventory was made"}};
             } else report = convert_file(source, target, local);

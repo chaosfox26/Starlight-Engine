@@ -12,4 +12,15 @@ inline const std::string& confined_relative(const std::string& text) {
         throw std::runtime_error("Inventory path is not a plain relative path under the output folder: " + text);
     return text;
 }
+// A batch output must not reach outside the stage or the archive through a junction or symbolic link (audit DEP-08). Every part of the path below the
+// root that exists must be a plain file or folder. The root itself is chosen by the person and is not checked.
+inline void refuse_links_under(const fs::path& root, const fs::path& target) {
+    fs::path part = root;
+    for (const auto& piece : target.lexically_relative(root)) {
+        part /= piece;
+        const auto attributes = GetFileAttributesW(part.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES) return;
+        if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) throw std::runtime_error("Output path passes through a link or junction: " + utf8(part.wstring()));
+    }
+}
 }
