@@ -778,6 +778,7 @@ struct RenderDevice {
     XMFLOAT3          camWorld{ 0,0,0 };
     std::unordered_map<uint64_t, SmoothXf> smooth;
     uint64_t          lastTick = 0;
+    double            lastDtClock = 0;
     uint64_t          startTick = 0;
 
     // --shot <file.bmp>: backbuffer readback after shotAtMs
@@ -2028,7 +2029,8 @@ struct RenderDevice {
         if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}stageMarks[1]=timingNow();
         paceFrame();stageMarks[2]=timingNow();
         uint64_t now = GetTickCount64();
-        float dt = lastTick ? (now-lastTick)*0.001f : 0.016f; lastTick=now;
+        const double dtClock = timingNow();   // RND-5: GetTickCount64 only moves every 10-16 ms, so the frame delta comes from the performance counter
+        float dt = lastDtClock > 0 ? (float)(dtClock - lastDtClock) : 0.016f; lastTick=now; lastDtClock=dtClock;
         const float nearZ=hostCamera?hostNear:0.1f, farZ=hostCamera?hostFar:400.0f, fovY=XMConvertToRadians(hostCamera?hostFovDegrees:50.0f);
         XMVECTOR eye=editorCameraDistance>0?XMLoadFloat3(&editorEye):(hostCamera?XMLoadFloat3(&hostEye):XMVectorSet(0,3,8,0)), ctr=editorCameraDistance>0?XMLoadFloat3(&editorTarget):(hostCamera?XMLoadFloat3(&hostTarget):XMVectorZero());
         XMMATRIX view=editorCameraDistance>0?XMMatrixLookAtRH(eye, ctr, XMLoadFloat3(&editorUp)):XMMatrixLookAtLH(eye, ctr, XMVectorSet(0,1,0,0));
