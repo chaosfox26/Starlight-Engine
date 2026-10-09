@@ -1566,6 +1566,7 @@ class AdventurePlayer {
 #endif
         jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
         spatial_.fresh=false;
+        for(const auto& object:playScene_.Characters)if(!object.Route.empty())interactionBounds_[object.Id]=posed_bounds(object);
         presentationVelocity_={};
         // Without collision there is no controller to land a launch, so the arc is flown here: up at 6 m/s, back to launch height when the vertical speed reaches -6 m/s.
         if(launchAirborne_){controlVelocity_.y-=9.81*dt;velocity.x=controlVelocity_.x;velocity.z=controlVelocity_.z;if(controlVelocity_.y<=-6){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}}
