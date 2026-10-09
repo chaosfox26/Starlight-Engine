@@ -466,7 +466,7 @@ static LRESULT CALLBACK project_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PT
     }
     catch (const std::exception &ex)
     {
-        SetWindowTextW(e.projectMessage, wide(ex.what()).c_str());
+        SetWindowTextW(e.projectMessage, wide_lossy(ex.what()).c_str());
         diagnostic("project dialog", ex.what());
         e.project_buttons();
     }

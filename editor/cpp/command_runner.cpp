@@ -109,7 +109,7 @@ int starlight::editor::run_commands(int argc, wchar_t **argv) {
         code = 1;
     }
     try {
-        auto text = report.dump(2);
+        auto text = report.dump(2, ' ', false, json::error_handler_t::replace);
         if (!result.empty())
             atomic_write(result, text);
         std::cout << text << '\n';

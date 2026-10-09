@@ -25,6 +25,8 @@ struct Handle {
     explicit operator bool() const { return value && value != INVALID_HANDLE_VALUE; }
 };
 std::wstring wide(std::string_view);
+// For text shown while reporting an error: never throws. Text that is not valid UTF-8 (an ANSI-code-page path in a filesystem_error, raw bytes in a parse error) is read in the ANSI code page.
+std::wstring wide_lossy(std::string_view);
 std::string utf8(std::wstring_view);
 std::string read_file(const fs::path &);
 // Same, but refuses a file larger than `maxBytes` before allocating anything for it.

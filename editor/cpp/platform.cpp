@@ -61,6 +61,20 @@ std::wstring wide(std::string_view s) {
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), int(s.size()), out.data(), n);
     return out;
 }
+std::wstring wide_lossy(std::string_view s) {
+    if (s.empty())
+        return {};
+    for (const UINT page : {UINT(CP_UTF8), UINT(CP_ACP)}) {
+        const DWORD flags = page == CP_UTF8 ? MB_ERR_INVALID_CHARS : 0;
+        int n = MultiByteToWideChar(page, flags, s.data(), int(s.size()), nullptr, 0);
+        if (!n)
+            continue;
+        std::wstring out(n, 0);
+        MultiByteToWideChar(page, flags, s.data(), int(s.size()), out.data(), n);
+        return out;
+    }
+    return L"(message cannot be shown)";
+}
 std::string utf8(std::wstring_view s) {
     if (s.empty())
         return {};
@@ -242,7 +256,7 @@ void diagnostic(std::string_view operation, std::string_view message) noexcept {
     try {
         auto p = application_data() / L"Diagnostics" / L"NativeEditor" / (wide(new_id()) + L".json");
         atomic_write(
-            p, json{{"operation", operation}, {"message", message}, {"pid", GetCurrentProcessId()}}.dump(2));
+            p, json{{"operation", operation}, {"message", message}, {"pid", GetCurrentProcessId()}}.dump(2, ' ', false, json::error_handler_t::replace));
     } catch (...) {
     }
 }

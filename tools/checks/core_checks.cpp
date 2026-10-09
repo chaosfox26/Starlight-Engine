@@ -52,6 +52,7 @@ using namespace starlight::editor;
 #include "glb_fuzz_checks.inl"
 #include "id_remap_checks.inl"
 #include "editor_state_checks.inl"
+#include "editor_wave2_checks.inl"
 #include "migration_path_checks.inl"
 #include "preset_validate_checks.inl"
 #include "decode_fuzz_checks.inl"
@@ -150,6 +151,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(glb_fuzz_checks, glb_fuzz_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path()));
         RUN_GROUP(id_remap_checks, id_remap_checks(require));
         RUN_GROUP(editor_state_checks, editor_state_checks(require,folder));
+        RUN_GROUP(editor_wave2_checks, editor_wave2_checks(require,folder));
         RUN_GROUP(history_stroke_checks, history_stroke_checks(require));
         RUN_GROUP(migration_path_checks, migration_path_checks(require));
         RUN_GROUP(preset_validate_checks, preset_validate_checks(require,folder));

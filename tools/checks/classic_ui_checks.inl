@@ -32,6 +32,13 @@ int ui_checks(const fs::path& output) {
         progress("functional checks", int(report["checks"].size()), 0);
         writeProgress(output.string()+".progress.json",report);
     };
+    if(GetEnvironmentVariableW(L"STARLIGHT_UI_WAVE2_ONLY",nullptr,0)) {
+        report["scope"]="editor wave-2 audit checks on an isolated fixture scene";
+        #include "editor_wave2_ui_checks.inl"
+        check("isolated Windows input runtime shuts down cleanly",inputRuntime.finish());
+        report["pass"]=failures==0;atomic_write(output,report.dump(2));
+        dirty=false;SendMessageW(window,WM_CLOSE,0,0);return failures ? 1 : 0;
+    }
     if(GetEnvironmentVariableW(L"STARLIGHT_UI_RULES_ONLY",nullptr,0)) {
         report["scope"]="focused gameplay-rule authoring, save, Undo and Play checks";
         #include "gameplay_rule_ui_checks.inl"
@@ -357,6 +364,7 @@ int ui_checks(const fs::path& output) {
         MsgWaitForMultipleObjects(0, nullptr, FALSE, 10, QS_ALLINPUT);
     }
     check("renderer resumes after UI changes", renderer->status().frames >= parkedFrames + 2 && renderer->status().error.empty());
+    #include "editor_wave2_ui_checks.inl"
     check("isolated Windows input runtime shuts down cleanly", inputRuntime.finish());
     report["window_creation_trace"] = windowTrace.report();
     report["pass"] = failures == 0;

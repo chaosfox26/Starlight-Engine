@@ -460,7 +460,7 @@ struct Editor {
     // Messages that mean a person just did something: their errors are always shown, while a failure on any other message (timer, frame, paint) can repeat by itself and stays throttled (audit ED-06).
     static bool user_action(UINT m, LPARAM l = 0) {
         if (m == WM_KEYDOWN || m == WM_SYSKEYDOWN) return !(l & (LPARAM(1) << 30));   // a held key repeating is not a new action
-        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
+        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
     }
 
     static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -517,14 +517,14 @@ struct Editor {
                 self->camera();
                 return 0;
             }
-            if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN) {
+            if (m == WM_LBUTTONDOWN || m == WM_LBUTTONDBLCLK || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN) {   // a quick second click is another press, not a command (EDIT-4)
                 if (self->openMenu) {
                     self->toggle_menu(0);
                     return 0;
                 }
                 SetFocus(h);
                 SetCapture(h);
-                self->pointer_down(GET_X_LPARAM(l), GET_Y_LPARAM(l), m);
+                self->pointer_down(GET_X_LPARAM(l), GET_Y_LPARAM(l), m == WM_LBUTTONDBLCLK ? UINT(WM_LBUTTONDOWN) : m);
                 return 0;
             }
             if (m == WM_MOUSEMOVE) {
@@ -577,7 +577,7 @@ struct Editor {
             }
         } catch (const std::exception &e) {
             self->history.cancel(self->scene);
-            self->stroke = self->orbit = false;
+            self->stroke = self->orbit = self->boxSelecting = false;
             ReleaseCapture();
             self->report(e.what(), m, l);
         }
@@ -1341,12 +1341,12 @@ struct Editor {
         if (!errorThrottle.admit(text, std::chrono::steady_clock::now(), !userMessage)) return;
         diagnostic("native editor", text);
         std::fprintf(stderr,"EDITOR ERROR DIALOG: %.*s%c",int(text.size()),text.data(),10);
-        SetWindowTextW(status, wide(text).c_str());
+        SetWindowTextW(status, wide_lossy(text).c_str());
         static const bool quiet = [] { char v[8]{}; return GetEnvironmentVariableA("STARLIGHT_SUPPRESS_DIALOGS", v, 8) && v[0] == '1'; }(); // automated runs: report, do not block on a modal box
         if (!quiet && !errorDialogOpen) {
             errorDialogOpen = true;
             struct Reset { bool &flag; ~Reset() { flag = false; } } reset{errorDialogOpen};
-            MessageBoxW(window, wide(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
+            MessageBoxW(window, wide_lossy(text).c_str(), L"Starlight", MB_OK | MB_ICONERROR);
         }
     }
 
@@ -2495,6 +2495,11 @@ struct Editor {
             for (size_t i = 0; i < scene.Characters.size(); i++)
                 if (SendMessage(list, LB_GETSEL, i, 0) > 0)
                     selectionIds.insert(scene.Characters[i].Id);
+            if (selected >= 0 && selected < int(scene.Characters.size()) && !selectionIds.contains(scene.Characters[selected].Id)) {
+                selected = -1;   // the caret row was deselected: the object being edited must be one that is selected
+                for (size_t i = 0; i < scene.Characters.size(); i++)
+                    if (selectionIds.contains(scene.Characters[i].Id)) { selected = int(i); break; }
+            }
             inspector_fields();
             return;
         }
@@ -2658,7 +2663,7 @@ struct Editor {
             if(playing)throw std::runtime_error("Stop playing before creating a new scene");
             if (!discard())
                 return;
-            creationGuide.active=false;questTracker.hide();
+            reset_document_state();
             scene = id==NewQuestAdventure ? quest_template() : id==NewAdventure ? adventure_template() : SceneData{};
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             history.clear();
@@ -2684,12 +2689,13 @@ struct Editor {
             auto next = open_scene_data(files[0], repaired, &loading, &loadedHash);
             if (!next) return;
             open_with_context(files[0], "scene", [&] { render_scene(*next); });
+            reset_document_state();
             scene = std::move(*next);
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             filename = files[0];
             diskHash = loadedHash;
             history.clear();
-            selected = -1;
+            selected = -1; selectionIds.clear();
             dirty = repaired;
             refresh();
             const bool settled = settle_scene(loading, "Preparing " + utf8(files[0].filename().wstring()));
@@ -2725,7 +2731,7 @@ struct Editor {
             end_stroke();
             bool changed = id == Undo ? history.undo(scene) : history.redo(scene);
             if (changed) {
-                selected = -1;
+                selected = -1; selectionIds.clear();
                 dirty = true;
                 refresh();
             }
@@ -2913,6 +2919,7 @@ struct Editor {
     }
 
     void pointer_down(int x, int y, UINT message) {
+        if (stroke || orbit || boxSelecting) return;   // a second button pressed during a gesture is ignored, not a second gesture (EDIT-8)
         if(!carriedId.empty() && message==WM_LBUTTONDOWN)return;
         if(playing && adventure){last={x,y};adventureLook=message==WM_RBUTTONDOWN || message==WM_LBUTTONDOWN;return;}
         if(explorer && message==WM_RBUTTONDOWN){last={x,y};explorerLook=true;return;}
@@ -2951,7 +2958,7 @@ struct Editor {
                 return;
             int hit = pick(x, y);
             if (hit >= 0)
-                selected = hit;
+                select_hit(hit);
             for (size_t i = 0; i < scene.Characters.size(); i++)
                 SendMessage(list, LB_SETSEL,
                             selectionIds.contains(scene.Characters[i].Id) || int(i) == selected, i);
@@ -3074,6 +3081,18 @@ struct Editor {
         last = {x, y};
     }
 
+    // A click that picks an object makes it the one selection unless it is already part of the multi-selection (EDIT-2).
+    void select_hit(int hit) {
+        selected = hit;
+        if (!selectionIds.contains(scene.Characters[hit].Id))
+            selectionIds = {scene.Characters[hit].Id};
+    }
+    // What belongs to the scene that was open (a creation lesson, an armed pour) must not follow a different scene (EDIT-7).
+    void reset_document_state() {
+        creationGuide.active = false;
+        questTracker.hide();
+        pendingPour.reset();
+    }
     void begin_group() {
         dragOriginals.clear();
         if (!actor())
@@ -3113,6 +3132,12 @@ struct Editor {
             }
         refresh();
     }
+    // Default: every stroke snaps the selected object. STARLIGHT_SNAP_ONLY_MOVED=1: only strokes that move, turn or scale it do, not Terrain, Sculpt or Route strokes (EDIT-6).
+    bool stroke_snaps_selection() const {
+        char value[8]{};
+        const bool onlyMoved = GetEnvironmentVariableA("STARLIGHT_SNAP_ONLY_MOVED", value, 8) && value[0] == '1';
+        return !onlyMoved || (currentMode != "Terrain" && currentMode != "Sculpt" && currentMode != "Route");
+    }
     void end_stroke() {
         adventureLook=false;
         explorerLook=false;
@@ -3126,14 +3151,14 @@ struct Editor {
         if (stroke) {
             stroke = false;
             terrainStrokeSurface.reset();
-            if (auto c = actor()) {
+            if (auto c = stroke_snaps_selection() ? actor() : nullptr) {
                 if(rotationSnap && currentMode=="Rotate" && finishedAxis>=0){
                     double& angle=finishedAxis==0 ? c->RotationX : finishedAxis==1 ? c->RotationY : c->RotationZ;
                     angle=snap_increment(angle,rotationStep);
                 }
                 snap_object(scene, *c, gridSnap, objectSnap, groundSnap,gridStep);
             }
-            if (auto c = actor())
+            if (auto c = stroke_snaps_selection() ? actor() : nullptr)
                 move_group(scene, *c, dragOriginals);
             dragOriginals.clear();
             history.commit();
@@ -3169,7 +3194,7 @@ struct Editor {
                     launch_project(engine_path(), *project, preset->path);
                 if(projectWindow && IsWindowVisible(projectWindow)){project_form();SetWindowTextW(projectMessage,L"Settings checked successfully.");}else inspector_fields();
             } catch (const std::exception &e) {
-                if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
+                if(projectWindow && IsWindowVisible(projectWindow)){SetWindowTextW(projectMessage,wide_lossy(e.what()).c_str());project_buttons();diagnostic("project dialog",e.what());}else error(e.what());
             }
         }
         }
@@ -3213,11 +3238,11 @@ struct Editor {
                                 error(failure.what());
                             }
                             if (next) {
-                                creationGuide.active=false;questTracker.hide();
+                                reset_document_state();
                                 scene = std::move(*next);
                                 diskHash = hash;
                                 history.clear();
-                                selected = -1;
+                                selected = -1; selectionIds.clear();
                                 refresh();
                                 settle_scene(loading, "Preparing " + utf8(filename.filename().wstring()));
                             }
@@ -3518,6 +3543,7 @@ struct Editor {
                 }
                 return 0;
             }
+            if (LOWORD(w) == 0) return 0;   // controls without an id, such as the 3D view (STN_DBLCLK), are not commands
             if (HIWORD(w) == BN_CLICKED || HIWORD(w) == CBN_SELCHANGE || HIWORD(w) == LBN_SELCHANGE)
                 command(LOWORD(w));
             return 0;
@@ -3689,7 +3715,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 try { atomic_write(automatedReport, json{{"pass",false},{"error",e.what()},{"interrupted",true}}.dump(2)); }
                 catch (...) {}
             }
-        } else MessageBoxW(nullptr, wide(e.what()).c_str(), L"Starlight startup error", MB_OK | MB_ICONERROR);
+        } else MessageBoxW(nullptr, wide_lossy(e.what()).c_str(), L"Starlight startup error", MB_OK | MB_ICONERROR);
         result = 1;
     }
     CoUninitialize();
