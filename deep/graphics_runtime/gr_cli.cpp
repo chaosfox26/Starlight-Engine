@@ -33,8 +33,15 @@ std::vector<std::uint8_t> read_hex_file(const fs::path& p) {
     auto t = read_text(p);
     while (!t.empty() && std::isspace(static_cast<unsigned char>(t.back()))) t.pop_back();
     std::vector<std::uint8_t> out;
-    auto nib = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-    for (std::size_t i = 0; i + 1 < t.size(); i += 2) out.push_back(static_cast<std::uint8_t>(nib(t[i]) * 16 + nib(t[i + 1])));
+    // Strict like the catalog's own decoder: upper-case digits are accepted, anything else or an odd length is reported (audit GR-9).
+    auto nib = [](char c) -> int {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        throw GrError("The trusted key file must hold only hexadecimal digits");
+    };
+    if (t.size() % 2) throw GrError("The trusted key file must hold an even number of hexadecimal digits");
+    for (std::size_t i = 0; i < t.size(); i += 2) out.push_back(static_cast<std::uint8_t>(nib(t[i]) * 16 + nib(t[i + 1])));
     return out;
 }
 

@@ -868,6 +868,16 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(run({"status", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}, &out) == 0 && nlohmann::json::parse(out).at("categories").at("upscaling")[0].contains("candidates"), "GFX CLI status shows channel candidates from a verified catalog");
         require(run({"status", "--catalog", gr::utf8(work / "catalog.json")}, &out, &err) == 0 && !err.empty(), "GFX CLI ignores a catalog it cannot verify and says so");
         require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}) == 0, "GFX CLI checks a catalog");
+        {
+            auto upper = hexOf(kp.publicBlob);
+            for (auto& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+            put(work / "pub-upper.hex", upper + "\n");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-upper.hex")}) == 0, "GFX CLI accepts an upper-case hexadecimal public key file");
+            put(work / "pub-spaced.hex", hexOf(kp.publicBlob).insert(10, " "));
+            put(work / "pub-odd.hex", hexOf(kp.publicBlob) + "a");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-spaced.hex")}, &out, &err) != 0 && contains(err, "hexadecimal"), "GFX CLI reports a public key file with a stray character");
+            require(run({"check-catalog", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub-odd.hex")}, &out, &err) != 0 && contains(err, "hexadecimal"), "GFX CLI reports a public key file with an odd number of digits");
+        }
         require(run({"auto-update", "--catalog", gr::utf8(work / "catalog.json"), "--trust", "cli-key:" + gr::utf8(work / "pub.hex")}) == 2, "GFX CLI auto-update needs a local package folder and never downloads");
         require(run({"export-plan", "streamline"}, &out) == 0 && contains(out, "licence") && run({"export-plan", "fsr-sr"}) == 1 && run({"export-plan", "nonsense"}) == 1, "GFX CLI export plan lists files and refuses incomplete or unknown requests");
         require(run({"report-preview", "--code", "x-1", "--description", "It broke."}, &out) == 0 && contains(out, "It broke.") && contains(out, "no system inventory"), "GFX CLI report preview prints the full report");
