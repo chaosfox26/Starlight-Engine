@@ -466,8 +466,9 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
     std::string warning;
     bool haveAtlas = false;
     if (!atlasUvBin.empty()) {
-        if (readWholeFile(atlasUvBin, atlas).ok()) haveAtlas = true;
-        else warning = "atlas uv bin not found: " + atlasUvBin + "; keeping glb UVs";
+        const LoadError atlasFile = readWholeFile(atlasUvBin, atlas);
+        if (atlasFile.ok()) haveAtlas = true;
+        else warning = (atlasFile.code == LoadCode::NotFound ? "atlas uv bin not found: " + atlasUvBin : atlasFile.message) + "; keeping glb UVs";
     }
     const ByteView atlasView(atlas);
     e = loadSkinnedFromMemory(ByteView(glb), haveAtlas ? &atlasView : nullptr, glbPath, out);
