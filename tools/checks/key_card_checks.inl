@@ -77,6 +77,31 @@ template<class Require> void key_card_checks(Require require,const fs::path& fol
         EngineAssets::verify_on_disk(id);
         require(true,"Storing an asset over a damaged file repairs it");
     }
+    // ASSET-2: a damaged copy in a higher-priority root must not hide an intact copy in a later root.
+    {
+        std::string id;
+        {
+            EngineAssets::ScopedRoot source(work/"intact-source");
+            id=store_sculpt(*tree.Sculpt);
+        }
+        EngineAssets::ScopedRoot home(work/"damaged-home");EngineAssets::add_search_root(work/"intact-source");
+        atomic_write(EngineAssets::file_for(id),std::string{});
+        EngineAssets::drop_memory_cache();
+        require(fs::is_regular_file(EngineAssets::file_for(id))&&fs::file_size(EngineAssets::file_for(id))==0,"The primary library holds an empty copy of the asset");
+        const auto loaded=load_sculpt(id);
+        require(loaded.Positions==tree.Sculpt->Positions,"An intact copy in a later root is used when the primary copy is damaged");
+        EngineAssets::drop_memory_cache();
+        const auto bytes=EngineAssets::verified_file_bytes(id);
+        require(bytes==read_file(work/"intact-source"/starlight::editor::wide(id+".slasset")),"The verified file bytes come from the intact copy");
+        std::string missing="sculpt-"+std::string(64,'e');
+        bool reported=false;try{(void)EngineAssets::get(AssetKind::Sculpt,missing);}catch(const AssetMissing&){reported=true;}
+        require(reported,"An asset that no root holds is still reported missing");
+        atomic_write(work/"damaged-home"/starlight::editor::wide(id+".slasset"),std::string{});
+        fs::remove(work/"intact-source"/starlight::editor::wide(id+".slasset"));
+        EngineAssets::drop_memory_cache();
+        bool damaged=false;try{(void)EngineAssets::get(AssetKind::Sculpt,id);}catch(const AssetMissing& e){damaged=std::string(e.what()).find("not a Starlight asset")!=std::string::npos||std::string(e.what()).find("damaged")!=std::string::npos||std::string(e.what()).find("truncated")!=std::string::npos;}
+        require(damaged,"When every copy is damaged the damage is reported, not a plain missing asset");
+    }
 }
 
 template<class Require> void model_asset_checks(Require require,const fs::path& folder){
