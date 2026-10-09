@@ -251,6 +251,11 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
             require(!cr.first.ok && !fs::exists(cr.second), "GFX zip refuses a checksum mismatch and removes the partial folder");
             auto n = ze_store("n.txt", "content"); n.localName = "other.txt";
             require(!extract("names", make_zip({n})).first.ok, "GFX zip refuses local and central names that differ");
+            const auto oddDest = work / "zip-odd-name";
+            fs::remove_all(oddDest);
+            bool oddOk = false;
+            try { oddOk = gr::extract_zip_bytes(make_zip({ze_store("first.txt", "1"), ze_store("odd\xE9.txt", "2")}), oddDest).ok; } catch (const std::exception&) {}
+            require(!oddOk && !fs::exists(oddDest), "GFX zip leaves no partly extracted folder when an entry name cannot be converted");
         }
         {
             ZE bomb; bomb.name = "zeros.bin"; bomb.method = 8; bomb.data = zeros_deflate(); bomb.usize = 1 << 20;
