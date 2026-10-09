@@ -9,6 +9,7 @@
 
 #include "interactions.hpp"
 #include "mesh.hpp"
+#include "mesh_reduce.hpp"
 #include "music.hpp"
 
 #include "native_session.hpp"

@@ -86,7 +86,7 @@ struct SunShadows {
   auto handle=starlight_cpu_heap_start(dsv);
   for(UINT cascade=0;cascade<cascades;++cascade){
    d.cmd->ClearDepthStencilView(handle,D3D12_CLEAR_FLAG_DEPTH,1,0,0,nullptr);d.cmd->OMSetRenderTargets(0,nullptr,FALSE,&handle);
-   for(const auto& item:items){XMFLOAT4X4 constants[2];XMStoreFloat4x4(&constants[0],item.world);constants[1]=frame.sunShadow[cascade];d.cmd->SetGraphicsRoot32BitConstants(0,32,constants,0);d.cmd->IASetVertexBuffers(0,1,&item.mesh->vbv);d.cmd->IASetIndexBuffer(&item.mesh->ibv);d.cmd->DrawIndexedInstanced(item.mesh->indexCount,1,0,0,0);++draws;}
+   for(const auto& item:items){XMFLOAT4X4 constants[2];XMStoreFloat4x4(&constants[0],item.world);constants[1]=frame.sunShadow[cascade];d.cmd->SetGraphicsRoot32BitConstants(0,32,constants,0);d.cmd->IASetVertexBuffers(0,1,&item.mesh->vbv);d.cmd->IASetIndexBuffer(&item.mesh->ibv);d.cmd->DrawIndexedInstanced(item.mesh->indexCount,1,0,0,0);++draws;d.triShadow+=item.mesh->indexCount/3;}
    handle.ptr+=descriptorSize;
   }
   d.cmd->OMSetRenderTargets(0,nullptr,FALSE,nullptr);d.barrier(depth.Get(),D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

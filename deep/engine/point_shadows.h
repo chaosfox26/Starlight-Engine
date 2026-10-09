@@ -68,7 +68,7 @@ struct PointShadows {
    const auto eye=XMVectorSet(p.x,p.y,p.z,1);const auto projection=XMMatrixPerspectiveFovLH(XM_PIDIV2,1,nearPlane,p.w);
    for(UINT face=0;face<6;++face){const auto matrix=XMMatrixLookToLH(eye,XMLoadFloat3(&directions[face]),XMLoadFloat3(&ups[face]))*projection;
     d.cmd->ClearDepthStencilView(handle,D3D12_CLEAR_FLAG_DEPTH,1,0,0,nullptr);d.cmd->OMSetRenderTargets(0,nullptr,FALSE,&handle);
-    for(const auto& item:items){if(culling&&!visible(item,matrix)){++culled;continue;}XMFLOAT4X4 constants[2];XMStoreFloat4x4(&constants[0],item.world);XMStoreFloat4x4(&constants[1],matrix);d.cmd->SetGraphicsRoot32BitConstants(0,32,constants,0);d.cmd->IASetVertexBuffers(0,1,&item.mesh->vbv);d.cmd->IASetIndexBuffer(&item.mesh->ibv);d.cmd->DrawIndexedInstanced(item.mesh->indexCount,1,0,0,0);++draws;}
+    for(const auto& item:items){if(culling&&!visible(item,matrix)){++culled;continue;}XMFLOAT4X4 constants[2];XMStoreFloat4x4(&constants[0],item.world);XMStoreFloat4x4(&constants[1],matrix);d.cmd->SetGraphicsRoot32BitConstants(0,32,constants,0);d.cmd->IASetVertexBuffers(0,1,&item.mesh->vbv);d.cmd->IASetIndexBuffer(&item.mesh->ibv);d.cmd->DrawIndexedInstanced(item.mesh->indexCount,1,0,0,0);++draws;d.triShadow+=item.mesh->indexCount/3;}
     handle.ptr+=descriptorSize;
    }
    ++cube;

@@ -486,7 +486,7 @@ int visible_ui_checks(const fs::path& output) {
             const double simAtFire=adventure->seconds();const ULONGLONG wallAtFire=GetTickCount64();
             // The scripted player always fights the boss; breakable rocks lie in its line of fire and the run is invalid unless they break.
             stressHeading=plan.value("heading",0.);stressAimRocks=false;if(plan.contains("player")){stressHomeX=plan["player"].value("x",0.);stressHomeZ=plan["player"].value("z",0.);}stressPhaseA=plan.value("phaseA",25.);stressFireSim=simAtFire;mockStress=true;if(hasBoss)adventure->fire_button(true);
-            starlight_diag::evlog("STRESS.FIRE");const auto bypassFire=std::make_pair(bypass_counters().staticBounds.load(),bypass_counters().staticMeshes.load());
+            starlight_diag::evlog("STRESS.DETAIL",mesh_detail());starlight_diag::evlog("STRESS.FIRE");const auto bypassFire=std::make_pair(bypass_counters().staticBounds.load(),bypass_counters().staticMeshes.load());
             profileOn=true;
             const int minBeats=plan.value("beats",80),maxBeats=minBeats+plan.value("extraBeats",60);
             const std::uint64_t settleMs=plan.value("settleMs",35000);
