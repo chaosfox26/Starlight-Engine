@@ -54,5 +54,14 @@ static void scene_preparation_checks(const auto& require){
         SetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS",nullptr);
         require(!report.stopped()&&report.breakablesQueued==2&&report.breakablesPrepared==2,"04#6: An unparsable STARLIGHT_PREPARE_LIMIT_MS does not cut breakable preparation short at 1 ms");
     }
+    {
+        // A close request that arrived before preparation started (the player pumps messages while it reads the scene) still cancels that preparation.
+        auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=40;
+        auto player=std::make_unique<AdventurePlayer>();player->start(*scene);
+        preparation_cancel()=true;preparation_deferred_close().push_back(reinterpret_cast<HWND>(static_cast<uintptr_t>(0x5a5a)));
+        LoadingScreen screen;auto report=prepare_scene(*player,screen);
+        preparation_deferred_close().clear();preparation_cancel()=false;
+        require(report.cancelled&&report.stopped(),"A close request that arrived before preparation started cancels the preparation instead of being dropped");
+    }
 }
 
