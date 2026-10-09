@@ -72,4 +72,14 @@ static void gameplay_audit_checks(const auto& require){
         for(int i=0;i<120*15;++i)p.move(0,0,1./120.);
         require(p.scene().Characters[0].X>90,"GAME-5: A fast routed actor is not stranded once it lags more than twenty metres behind its route point");
     }
+    {
+        // GAME-6: a heightmap actor pushing uphill into a wall stays on the terrain.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;level.Terrain.emplace();
+        for(int z=0;z<TerrainData::N;z++)for(int x=0;x<TerrainData::N;x++)level.Terrain->Heights[z*TerrainData::N+x]=2+(x*TerrainData::Step-TerrainData::Half)*.1;
+        Character enemy;enemy.Shape="cube";enemy.Id="wall-pusher";enemy.X=-5;enemy.Y=1.5;enemy.CombatHealth=100;enemy.CombatPursuit=true;
+        Character wall;wall.Shape="cube";wall.X=-3.5;wall.Y=0;wall.Width=.2;wall.Depth=60;wall.Height=10;level.Characters={enemy,wall};
+        AdventurePlayer p;p.start(level);for(int i=0;i<600;i++)p.move(0,0,1./120.);
+        const auto& c=p.scene().Characters[0];
+        require(c.X<-3.5&&std::abs(c.Y-level.Terrain->height_at(c.X,c.Z))<.03,"GAME-6: An actor blocked by a wall on a slope does not climb off the terrain");
+    }
 }

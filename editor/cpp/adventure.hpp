@@ -776,7 +776,7 @@ class AdventurePlayer {
             };
             Vec3 allowed{};bool landed=false;const double mlA=starlight_diag::evnow();
             for(int axis=0;axis<3;axis++){
-                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,volumeTerrain&&!launched?delta.y-allowed.y:delta.y,0};
+                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,volumeTerrain&&!launched?delta.y-allowed.y:terrain_&&!launched?terrain_->height_at(c.X+allowed.x,c.Z+allowed.z)-terrain_->height_at(c.X,c.Z):delta.y,0};
                 int steps=std::max(1,int(std::ceil(portion.length()/.025)));auto increment=portion*(1./steps);
                 for(int i=0;i<steps;i++){
                     auto next=allowed+increment;double floor=terrain_?terrain_->height_at(c.X+next.x,c.Z+next.z):0;
