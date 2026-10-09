@@ -127,6 +127,20 @@ static void editor_state_checks(const auto& require,const fs::path& folder){
         const auto named=removeOne(lever.Id);
         require(named.contains("rulesNamingRemovedObjects")&&named["rulesNamingRemovedObjects"]==json::array({"Press the lever"}),"Editor audit 11: removing an object a rule names lists that rule in the --commands result");
     }
+    {
+        // Editor audit 8 follow-up: a failed Save while the window closes or Windows ends the session must keep the window open. An exception that leaves the window procedure lets DefWindowProc destroy the window, and the edits go with it.
+        const auto closing=source_span("editor/cpp/editor_main.cpp","case WM_CLOSE:","KillTimer(window, 1);");
+        const auto ending=source_span("editor/cpp/editor_main.cpp","case WM_QUERYENDSESSION:","case WM_CLOSE:");
+        require(closing.find("catch (const std::exception")!=std::string::npos,"Editor audit 8: a failed save while the window closes keeps the window and its edits");
+        require(ending.find("catch (const std::exception")!=std::string::npos,"Editor audit 8: a failed save while Windows ends the session keeps the session open");
+    }
+    {
+        // Editor audit 6 and 8 follow-up: the warnings about a missing or externally changed scene file must stay on the status line. The once-a-second watcher must not write them there, because the frame-rate line overwrites that text within half a second.
+        const auto watcher=source_span("editor/cpp/editor_main.cpp","watchTick = now;","diagnostic(\"scene watcher\"");
+        const auto line=source_span("editor/cpp/editor_main.cpp","if (telemetryTick && now - telemetryTick < 500) return;","SetWindowTextW(status, wide(out.str())");
+        require(!watcher.empty()&&watcher.find("SetWindowTextW(status")==std::string::npos,"Editor audit 8: the scene watcher leaves the status line to the one writer that keeps the warning visible");
+        require(line.find("watchMissing")!=std::string::npos&&line.find("watchChanged")!=std::string::npos,"Editor audit 8: the status line shows the missing-file and changed-file warnings while they apply");
+    }
     // The editor's delete handler shows the same list in its status line; this program cannot press Delete in the window.
     require(source_occurrences("editor/cpp/editor_main.cpp","rules_naming_objects(scene, removed)")==1&&source_occurrences("editor/cpp/editor_main.cpp","These gameplay rules still point at a deleted object")==1,"Editor audit 11: the editor's delete handler reports the rules left pointing at the deleted objects");
 }

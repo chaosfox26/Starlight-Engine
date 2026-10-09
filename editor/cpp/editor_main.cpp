@@ -406,6 +406,7 @@ struct Editor {
     ULONGLONG lastTick = GetTickCount64(), brushTick = 0, watchTick = 0;
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
+    bool watchChanged = false; // the scene changed on disk while it has unsaved edits: the status line says so while both hold
     bool watchMissing = false;        // the open scene file has disappeared: said once, not re-reported every second
     ULONGLONG autosaveTick = GetTickCount64();
     bool autosaveFailed = false;      // a failing autosave is logged once per streak, not every two minutes
@@ -3229,18 +3230,17 @@ struct Editor {
         if (dirty && !filename.empty() && !playing && !stroke && !loadingActive && now - autosaveTick >= 120000) autosave();
         if (!filename.empty() && !playing && !stroke && now - watchTick >= 1000) {
             watchTick = now;
+            if (!dirty) watchChanged = false;
             try {
                 std::error_code missing;
                 auto modified = fs::last_write_time(filename, missing);
-                if (missing && !watchMissing) SetWindowTextW(status, L"The scene file is no longer where it was opened from. Use Save As to keep your work.");
                 watchMissing = bool(missing);
                 if (!missing && (!watchedTime || *watchedTime != modified)) {
                     watchedTime = modified;
                     auto hash = hash_file(filename);
                     if (diskHash && hash != *diskHash) {
                         if (dirty)
-                            SetWindowTextW(status,
-                                           L"Scene changed outside the editor. Your unsaved edits are kept; use Save as to write them to a new file (Save would overwrite the other change).");
+                            watchChanged = true;
                         else {
                             LoadingScreen loading;
                             std::optional<SceneData> next;
@@ -3409,6 +3409,10 @@ struct Editor {
             std::ostringstream out;
             if (!s.error.empty())
                 out << s.error;
+            else if (watchMissing)
+                out << "The scene file is no longer where it was opened from. Use Save As to keep your work.";
+            else if (watchChanged && dirty)
+                out << "Scene changed outside the editor. Your unsaved edits are kept; use Save as to write them to a new file (Save would overwrite the other change).";
             else
                 out << "Native engine · "
                     << (telemetryTick && now > telemetryTick
@@ -3571,7 +3575,12 @@ struct Editor {
         case WM_QUERYENDSESSION:
             // Logoff, restart and shutdown never send WM_CLOSE: keep a recovery copy and ask before the session ends.
             if (dirty) autosave();
-            return discard() ? TRUE : FALSE;
+            try {
+                return discard() ? TRUE : FALSE;
+            } catch (const std::exception &e) {
+                report(e.what(), m, l); // a failed save keeps the session open; the error is shown
+                return FALSE;
+            }
         case WM_CLOSE:
             if (loadingActive) {
                 preparation_cancel() = true;
@@ -3579,8 +3588,13 @@ struct Editor {
                 if (std::find(waiting.begin(), waiting.end(), window) == waiting.end()) waiting.push_back(window);
                 return 0;
             }
-            if (!discard())
+            try {
+                if (!discard())
+                    return 0;
+            } catch (const std::exception &e) {
+                report(e.what(), m, l); // a failed save keeps the window and its edits; the error is shown
                 return 0;
+            }
             KillTimer(window, 1);
             gamePreview.reset();
             if(projectWindow){DestroyWindow(projectWindow);projectWindow=nullptr;}
