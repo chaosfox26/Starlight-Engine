@@ -347,6 +347,10 @@ def self_test():
         ok = first and second and len({clean, first, second}) == 3
         print('  %s two different uncommitted edits at one HEAD get different dirty digests' % ('ok ' if ok else 'BAD'))
         bad += not ok
+    with tempfile.TemporaryDirectory() as plain:
+        ok = dirty_digest(plain) == 'unavailable'
+        print('  %s a folder git cannot read gets an unavailable dirty digest, never the digest of empty output' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     with tempfile.TemporaryDirectory() as tree:
         build = os.path.join(tree, 'Release')
