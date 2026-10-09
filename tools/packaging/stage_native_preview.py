@@ -1,6 +1,7 @@
 """Assemble an internal integrated preview; release approval remains separate."""
 
 import hashlib
+import os
 import argparse
 
 import json
@@ -24,7 +25,12 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--runtime-directory', type=Path)
 parser.add_argument('--toolchain-directory', type=Path)
 parser.add_argument('--streamline-sdk', type=Path)
+parser.add_argument('--rr-dll', type=Path, default=Path(os.environ.get('STARLIGHT_RR_DLL', 'D:/Upscaler updates/nvngx_dlssd.dll')), help='nvngx_dlssd.dll to ship (env STARLIGHT_RR_DLL)')
+parser.add_argument('--rr-license', type=Path, default=Path(os.environ['STARLIGHT_RR_LICENSE']) if os.environ.get('STARLIGHT_RR_LICENSE') else root.parent/'GameProject/starlight-realms/native-dx12/third_party/sdk/streamline/external/ngx-sdk/license.txt', help='NVIDIA RTX SDK license text to ship (env STARLIGHT_RR_LICENSE)')
 args = parser.parse_args()
+for external in (args.rr_dll, args.rr_license):
+    if not external.is_file():
+        raise SystemExit('Missing external package input (nothing was staged): ' + str(external))
 if args.runtime_directory:
     config['runtimeDirectory'] = args.runtime_directory.resolve().relative_to(root).as_posix()
 runtime_source = root/config['runtimeDirectory']
@@ -78,9 +84,9 @@ for name in ('D3D12Core.dll', 'd3d12SDKLayers.dll', 'LICENSE.txt', 'distributabl
 
 # its exact SDK notice. Public redistribution review is still a release gate.
 
-rr=Path('D:/Upscaler updates/nvngx_dlssd.dll')
+rr=args.rr_dll
 
-rr_license=root.parent/'GameProject/starlight-realms/native-dx12/third_party/sdk/streamline/external/ngx-sdk/license.txt'
+rr_license=args.rr_license
 
 copy(rr,'runtime/Release/nvngx_dlssd.dll')
 
@@ -195,7 +201,6 @@ copy(root/'CMakeLists.txt','CMakeLists.txt')
 # Existing repository starter asset, for internal verification only.
 
 # Verify the owner's authorization against the exact packaged asset hashes.
-import os
 import re
 
 
