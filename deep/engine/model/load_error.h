@@ -74,6 +74,12 @@ inline LoadError makeLoadError(LoadCode code, const std::string& label, const st
     return e;
 }
 
+// Largest files read whole for each kind of model input: the limits of the engine asset store for models and textures (editor/cpp/engine_assets.cpp max_file_bytes),
+// and the blob limit for an atlas UV sidecar.
+inline constexpr uint64_t MaxModelFileBytes = uint64_t(512) << 20;
+inline constexpr uint64_t MaxTextureFileBytes = uint64_t(512) << 20;
+inline constexpr uint64_t MaxAtlasFileBytes = uint64_t(128) << 20;
+
 // A file larger than `maxBytes` (1 GiB by default, the same ceiling as the editor's read_file) is refused before any memory is allocated for it.
 inline LoadError readWholeFile(const std::string& path, std::vector<uint8_t>& bytes, uint64_t maxBytes = uint64_t(1) << 30) {
     bytes.clear();

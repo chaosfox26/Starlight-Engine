@@ -88,7 +88,7 @@ bool loadTextureDDS(const std::string& path, uint32_t maxRes, TexImage& out, std
     out = {}; err.clear();
     if (!maxRes) { err = "Texture resolution must be positive"; return false; }
     std::vector<uint8_t> bytes;
-    LoadError e = readWholeFile(path, bytes);
+    LoadError e = readWholeFile(path, bytes, MaxTextureFileBytes);
     if (e.ok()) e = loadTextureDDSFromMemory(ByteView(bytes), maxRes, path, out);
     if (e.failed()) { out = {}; err = e.message; return false; }
     return true;
@@ -1061,7 +1061,7 @@ bool loadTextureRGBA(const std::string& pngPath, uint32_t maxRes, const std::str
     out = TexImage(); err.clear();
     if (!maxRes) { err = "Texture resolution must be positive"; return false; }
     std::vector<uint8_t> bytes;
-    LoadError e = readWholeFile(pngPath, bytes);
+    LoadError e = readWholeFile(pngPath, bytes, MaxTextureFileBytes);
     if (e.ok()) {
         TextureLoadOptions options;
         options.maxRes = maxRes; options.label = pngPath; options.cacheDir = cacheDir;

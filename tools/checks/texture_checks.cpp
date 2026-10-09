@@ -1102,6 +1102,24 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         require(e.code == LoadCode::Truncated && a.mips.empty(), "truncated DDS span returns Truncated");
     }
     {
+        // Per-kind file limits: a file over its limit is refused by its size before any of it is read (512 MiB for a model or texture, 128 MiB for an atlas UV sidecar).
+        const fs::path huge = work / "over-limit.bin";
+        { std::ofstream(huge, std::ios::binary); }
+        fs::resize_file(huge, (uint64_t(512) << 20) + 1);
+        model::SkinnedModel refusedModel;
+        std::string refusedErr;
+        require(!model::loadSkinned(huge.string(), "", refusedModel, refusedErr) && refusedErr.find("not loaded whole") != std::string::npos && !refusedModel.loaded, "a GLB over 512 MiB is refused by its size before it is read");
+        model::TexImage refusedTexture;
+        require(!model::loadTextureDDS(huge.string(), 4096, refusedTexture, refusedErr) && refusedErr.find("not loaded whole") != std::string::npos, "a DDS over 512 MiB is refused by its size before it is read");
+        require(!model::loadTextureRGBA(huge.string(), 16, "", refusedTexture, refusedErr) && refusedErr.find("not loaded whole") != std::string::npos, "a PNG over 512 MiB is refused by its size before it is read");
+        fs::resize_file(huge, (uint64_t(128) << 20) + 1);
+        const fs::path glbWithHugeAtlas = work / "atlas-limit.glb";
+        writeBytes(glbWithHugeAtlas, makeGlb());
+        model::SkinnedModel hugeAtlasModel;
+        require(model::loadSkinned(glbWithHugeAtlas.string(), huge.string(), hugeAtlasModel, refusedErr) && hugeAtlasModel.loaded && !hugeAtlasModel.atlasUV && refusedErr.find("keeping glb UVs") != std::string::npos, "an atlas UV file over 128 MiB is not used; the GLB UVs are kept");
+        fs::remove(huge);
+    }
+    {
         const auto glb = makeGlb();
         const auto atlas = atlasBytes({ 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f });
         const ByteView atlasView(atlas);
