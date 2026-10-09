@@ -376,7 +376,10 @@ def current_build_lines(d, repo, build_dir):
     if head is None:
         lines.append('CURRENT BUILD: the checkout in %s could not be read (%s), so the recorded git commit is NOT confirmed.' % (data(repo, 120), data(why, 100)))
         stale = True
-    elif ident.get('gitHead') and head != ident.get('gitHead'):
+    elif not ident.get('gitHead'):
+        lines.append('CURRENT BUILD: these results record no git commit, so the checkout in %s is NOT confirmed as the tested build.' % data(repo, 120))
+        stale = True
+    elif head != ident.get('gitHead'):
         lines.append('CURRENT BUILD: STALE. The checkout is at %s but these results are for %s.' % (data(head[:12], 20), data(str(ident.get('gitHead'))[:12], 20)))
         stale = True
     else:
