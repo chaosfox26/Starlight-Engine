@@ -121,6 +121,33 @@ using glbfuzz::GlbSpec;
 using glbfuzz::makeGlb;
 using glbfuzz::makeSparseGlb;
 
+// Parses, loads the buffers of and validates a GLB held in memory. A fault while doing so (a read outside the memory) returns 1.
+static int guardedValidate(const uint8_t* bytes, size_t size, cgltf_result& validated) {
+    cgltf_options opts{}; cgltf_data* d = nullptr;
+    __try {
+        if (cgltf_parse(&opts, bytes, size, &d) != cgltf_result_success) return 2;
+        if (cgltf_load_buffers(&opts, d, nullptr) != cgltf_result_success) return 3;
+        validated = cgltf_validate(d);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 1; }
+    cgltf_free(d);
+    return 0;
+}
+
+// Places the GLB so that its last byte is the last byte before an inaccessible page: any read past the end of its binary buffer faults instead of returning stray bytes.
+int validateAtGuardPage(const std::vector<uint8_t>& glb, cgltf_result& validated) {
+    SYSTEM_INFO info; GetSystemInfo(&info);
+    const size_t page = info.dwPageSize, pages = (glb.size() + page - 1) / page;
+    uint8_t* base = static_cast<uint8_t*>(VirtualAlloc(nullptr, (pages + 1) * page, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    if (!base) return -1;
+    DWORD previous = 0;
+    VirtualProtect(base + pages * page, page, PAGE_NOACCESS, &previous);
+    uint8_t* at = base + pages * page - glb.size();
+    std::memcpy(at, glb.data(), glb.size());
+    const int result = guardedValidate(at, glb.size(), validated);
+    VirtualFree(base, 0, MEM_RELEASE);
+    return result;
+}
+
 std::vector<uint8_t> atlasBytes(const std::vector<float>& values) {
     std::vector<uint8_t> b(values.size() * 4);
     if (!values.empty()) std::memcpy(b.data(), values.data(), b.size());
@@ -1144,6 +1171,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(sparse(76, validated, got) && validated == cgltf_result_success, "sparse interleaved fixture validates and unpacks");
             require(got[0] == 1.f && got[3] == 10.f && got[4] == 11.f && got[5] == 12.f && got[6] == 13.f && got[7] == 14.f && got[8] == 15.f, "R7: sparse values are read tightly packed, not at the interleaved base stride");
             require(sparse(200, validated, got) && validated == cgltf_result_data_too_short, "DEP-01: a sparse index view outside its real buffer is rejected before any read");
+            validated = cgltf_result_success;
+            require(validateAtGuardPage(makeSparseGlb(76), validated) == 0 && validated == cgltf_result_success, "DEP-01: a sparse accessor inside its buffer validates with the GLB placed against a guard page");
+            validated = cgltf_result_success;
+            require(validateAtGuardPage(makeSparseGlb(200), validated) == 0 && validated == cgltf_result_data_too_short, "DEP-01: validation rejects a sparse index view outside its buffer without reading it (a read past the buffer faults on the guard page)");
         }
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
@@ -1151,11 +1182,30 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirtyone.glb", scratch);
         show("GLB with 31 drawable primitives", e);
         require(e.code == LoadCode::Unsupported, "CORE-12: a model with more primitives than the instance buckets hold is refused");
+        {   // The render device cannot be built into this program, so the bucket table's shape (8 variants, 32 submesh slots of which the last two are reserved) is pinned from its source line.
+            const auto header = readBytes(root / "deep/engine/render_device.h");
+            const std::string text(header.begin(), header.end());
+            require(text.find("static const UINT kBktVariants = 8, kBktMaxSubs = 32;") != std::string::npos, "CORE-12: the instance bucket table keeps 8 variants and 32 submesh slots, 30 of them for a model's own primitives");
+        }
         GlbSpec stepSpec; stepSpec.step = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
         require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "linear.glb", scratch).ok() && !scratch.clips[0].channels[0].step, "R3: LINEAR interpolation is not held");
-        for (int bad : { 1, 2 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
+        {
+            // Halfway between a key at 0 (no rotation) and a key at 1 (90 degrees about z): a held key keeps the first pose, a blended one is at 45 degrees. _11 of the child joint is the cosine of its rotation.
+            auto halfwayCos = [&](bool step) {
+                GlbSpec spec; spec.step = step;
+                model::SkinnedModel posed; XMFLOAT4X4 global[2];
+                if (!model::loadSkinnedFromMemory(ByteView(makeGlb(spec)), nullptr, "pose.glb", posed).ok() || posed.joints.size() != 2) return -2.f;
+                model::evalPose(posed, 0, 0.5f, -1, 0.f, 0.f, nullptr, global);
+                return global[1]._11;
+            };
+            require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
+            require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
+        }
+        for (int bad : { 1, 2, 3, 4 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
+        { GlbSpec nanSpec; nanSpec.nanKey = true; e = model::loadSkinnedFromMemory(ByteView(makeGlb(nanSpec)), nullptr, "nankey.glb", scratch);
+            require(e.code == LoadCode::Malformed, "R5: a keyframe value that is not finite is Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(matrixSpec)), nullptr, "matrix.glb", scratch).ok() && std::fabs(scratch.joints[1].t.y - 1.f) < 1e-5f && std::fabs(scratch.joints[1].s.x - 1.f) < 1e-5f, "R4: a joint given as a matrix keeps its translation");
         {   // GLB fuzz finding: bracket nesting made cgltf's tokenizer quadratic, so a 400 KB file stalled the load for minutes
@@ -1208,6 +1258,13 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB with an animation channel that has no keys", e);
             require(e.ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty() && modelProblem(scratch).empty(), "GLB fuzz: an animation channel with no keys is dropped instead of leaving the pose uninitialised");
         }
+        {   // translation (0,1,0) * rotation 90 degrees about z * scale (2,3,4)
+            GlbSpec trsSpec; trsSpec.matrixTrs = true;
+            const bool loaded = model::loadSkinnedFromMemory(ByteView(makeGlb(trsSpec)), nullptr, "matrix-trs.glb", scratch).ok();
+            const auto& j = scratch.joints[1];
+            require(loaded && std::fabs(j.t.x) < 1e-4f && std::fabs(j.t.y - 1.f) < 1e-4f && std::fabs(j.t.z) < 1e-4f, "R4: a matrix joint keeps its translation next to a rotation and a scale");
+            require(std::fabs(j.s.x - 2.f) < 1e-4f && std::fabs(j.s.y - 3.f) < 1e-4f && std::fabs(j.s.z - 4.f) < 1e-4f, "R4: a matrix joint keeps its scale");
+            require(std::fabs(j.r.x) < 1e-4f && std::fabs(j.r.y) < 1e-4f && std::fabs(j.r.z - 0.70710678f) < 1e-4f && std::fabs(j.r.w - 0.70710678f) < 1e-4f, "R4: a matrix joint keeps its rotation");
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

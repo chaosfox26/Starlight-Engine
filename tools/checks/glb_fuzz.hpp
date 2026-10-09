@@ -80,7 +80,7 @@ inline void trackedFree(void* p) noexcept {
 // ---- fixtures (moved unchanged from texture_checks.cpp) ----
 inline void putLE(std::vector<uint8_t>& v, uint32_t x) { v.push_back(uint8_t(x)); v.push_back(uint8_t(x >> 8)); v.push_back(uint8_t(x >> 16)); v.push_back(uint8_t(x >> 24)); }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; };
+struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; bool nanKey = false; bool matrixTrs = false; };
 
 template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
     while (bin.size() % 4) bin.push_back(0);
@@ -102,7 +102,10 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::vector<float> times{ 0.f, 1.f };
     if (spec.badTimes == 1) times[0] = std::nanf("");
     if (spec.badTimes == 2) times = { 1.f, 0.f };
+    if (spec.badTimes == 3) times = { 0.f, 0.f };
+    if (spec.badTimes == 4) times = { -1.f, 1.f };
     std::vector<float> rot = spec.cubic ? std::vector<float>{ 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,.7071f,.7071f, 0,0,0,0 } : std::vector<float>{ 0,0,0,1, 0,0,.7071f,.7071f };
+    if (spec.nanKey) rot[4] = std::nanf("");
     std::vector<uint8_t> bin;
     const size_t offs[9] = { addBlob(bin, pos), addBlob(bin, nrm), addBlob(bin, uv), addBlob(bin, joints), addBlob(bin, weights), addBlob(bin, indices), addBlob(bin, ibm), addBlob(bin, times), addBlob(bin, rot) };
     const size_t lens[9] = { pos.size() * 4, nrm.size() * 4, uv.size() * 4, joints.size(), weights.size() * 4, indices.size() * 2, ibm.size() * 4, times.size() * 4, rot.size() * 4 };
@@ -121,7 +124,7 @@ inline std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
     std::string json = "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" + std::to_string(declared) + "}],\"bufferViews\":[" + views + "],\"accessors\":[" + accessors + "],"
         "\"materials\":[{\"name\":\"fur\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.5,0.25,0.75,1]}}],"
         "\"meshes\":[{\"primitives\":[" + primitiveList + "]}],"
-        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
+        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixTrs ? "\"matrix\":[0,2,0,0,-3,0,0,0,0,0,4,0,0,1,0,1]" : spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
         "\"skins\":[{\"joints\":[1,2],\"inverseBindMatrices\":6}],"
         "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : spec.step ? "STEP" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
         "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
