@@ -615,6 +615,7 @@ struct RenderDevice {
     UINT bktCount()  const { return (UINT)models.size() * bktStride(); }
     UINT bktIndex(UINT cmIdx, UINT variant, UINT sub) const { return (cmIdx * kBktVariants + variant) * kBktMaxSubs + sub; }
     UINT   instEntryCursor = 0, instEntriesLast = 0, drawCallCount = 0, drawCallLast = 0;
+    uint64_t triDraw = 0, triPrepass = 0, triShadow = 0;   // event-log telemetry ("tri"): triangles submitted this frame by the colour draws, by issueMesh (depth pre-pass + equal pass, each mesh counted in both) and by the shadow passes
     std::unordered_map<uint64_t, XMFLOAT4X4> prevModelByKey, curModelByKey;       // per-character motion-vector history (uint64 key = hashed once; string-keyed didn't scale to 100k)
     static uint64_t keyHash(const std::string& k) { uint64_t h = 1469598103934665603ull; for (unsigned char c : k) { h ^= c; h *= 1099511628211ull; } return h; }
     static uint64_t eid(char ns, const std::string& id) { uint64_t h = 1469598103934665603ull; h ^= (unsigned char)ns; h *= 1099511628211ull; for (unsigned char c : id) { h ^= c; h *= 1099511628211ull; } return h; }
@@ -1734,6 +1735,7 @@ struct RenderDevice {
     }
     void issueMesh(UINT inst, const GpuMesh& m) {
         if (inst == UINT_MAX) return;
+        triPrepass += m.indexCount / 3;
         cmd->SetGraphicsRootConstantBufferView(0, cbSlotGpu() + (UINT64)inst * kCbStride);
         cmd->IASetVertexBuffers(0, 1, &m.vbv);
         cmd->IASetIndexBuffer(&m.ibv);
@@ -1743,6 +1745,7 @@ struct RenderDevice {
     void drawMesh(const GpuMesh& m, const XMMATRIX& model, const XMFLOAT3& color, float emissive, float rough = 0.6f, float metal = 0.0f) {
         if (instCursor >= kMaxInstances) { ++instDropped; return; }
         UINT inst = instCursor++;
+        triDraw += m.indexCount / 3;
         writeInstance(inst, model, color, emissive, rough, metal, false);
         cmd->SetGraphicsRootConstantBufferView(0, cbSlotGpu() + (UINT64)inst * kCbStride);
         cmd->IASetVertexBuffers(0, 1, &m.vbv);
@@ -1788,6 +1791,7 @@ struct RenderDevice {
             const TexSet& ts = cm.variants[variant];
             if (ts.ok) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)ts.table * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
             cmd->IASetVertexBuffers(0, 1, &mesh->vbv); cmd->IASetIndexBuffer(&mesh->ibv);
+            triDraw += uint64_t(idxCount / 3) * total;
             if (instancingOn) {
                 cmd->SetGraphicsRoot32BitConstant(5, baseIdx, 0);
                 cmd->DrawIndexedInstanced(idxCount, total, firstIdx, 0, 0);
@@ -2040,7 +2044,7 @@ struct RenderDevice {
     double stageMarks[10]{};double inflightWaitMs=0,signalMs=0;uint32_t passFrameId[3]{};   // diagnostic: stage timestamps, tail timers, and the frame each GPU pass slot was submitted for   // diagnostic: timingNow() at the main stages of the last frame
     void renderEmpty(HWND hwnd) {
         (void)hwnd;stageMarks[0]=timingNow();
-        struct FrameTail{RenderDevice* d;uint32_t id;~FrameTail(){d->stageMarks[9]=timingNow();if(starlight_diag::events_enabled()){starlight_diag::evlog("rf.end",id,1000*(d->stageMarks[9]-d->stageMarks[0]),1000*(d->stageMarks[9]-d->stageMarks[7]));starlight_diag::evlog("rf.tail",d->signalMs,d->inflightWaitMs,1000*(d->stageMarks[9]-d->stageMarks[8]));}}} frameTail{this,frameIndex};
+        struct FrameTail{RenderDevice* d;uint32_t id;~FrameTail(){d->stageMarks[9]=timingNow();if(starlight_diag::events_enabled()){starlight_diag::evlog("rf.end",id,1000*(d->stageMarks[9]-d->stageMarks[0]),1000*(d->stageMarks[9]-d->stageMarks[7]));starlight_diag::evlog("rf.tail",d->signalMs,d->inflightWaitMs,1000*(d->stageMarks[9]-d->stageMarks[8]));starlight_diag::evlog("tri",double(d->triDraw),double(d->triPrepass),double(d->triShadow));}}} frameTail{this,frameIndex};
         starlight_diag::evlog("rf.begin",frameIndex,slot);
         if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}stageMarks[1]=timingNow();
         paceFrame();stageMarks[2]=timingNow();
@@ -2092,7 +2096,7 @@ struct RenderDevice {
         }
         stageMarks[3]=timingNow();auto _recT0 = std::chrono::steady_clock::now();   // CPU record-timer start (single-thread draw submission cost)
         poseAccumMs = 0;                                  // per-frame evalPose accumulator (parallelizable portion)
-        instEntryCursor = 0; drawCallCount = 0; culled = 0; lodDrawn = 0; curModelByKey.clear(); items.clear();   // instancing: reset per-frame collect state
+        instEntryCursor = 0; drawCallCount = 0; triDraw = triPrepass = triShadow = 0; culled = 0; lodDrawn = 0; curModelByKey.clear(); items.clear();   // instancing: reset per-frame collect state
         instCursor = 0; skinCursor = (UINT)(models.size() * kFarPoses); skinnedDrawn = 0; furShellsDrawn = 0;   // reserve [0..F) palette slots for the shared far-pose pool
         if (srvHeap) { ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() }; cmd->SetDescriptorHeaps(1, heaps); }
 
