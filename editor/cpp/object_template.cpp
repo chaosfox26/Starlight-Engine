@@ -10,6 +10,14 @@ void self_contained(const Character& object) {
     if (!object.Shape && !object.Sculpt && object.Asset.empty())
         throw std::runtime_error("Reusable objects need a built-in shape, a sculpt or an imported model");
 }
+// Reads the object in place: copying a nested value recurses once per level, so a deeply nested file would overflow the stack.
+Character decode_object_value(const json& value) {
+    auto object = value.get<Character>();
+    self_contained(object);
+    if (!object.Shape && !object.Sculpt) (void)EngineAssets::get(AssetKind::Model, object.Asset);
+    object.Id = new_id();
+    return object;
+}
 }
 std::string encode_object_template(const Character& object) {
     self_contained(object);
@@ -28,11 +36,7 @@ Character decode_object_template(std::string_view bytes) {
     if (data.at("Format") != "starlight-object") throw std::runtime_error("Unsupported reusable object format");
     if (native_int(data.at("Version")) < 2) throw ConversionRequired("This reusable object uses the pre-key-card format. Convert it with Starlight.SceneMigration before using it.");
     if (native_int(data.at("Version")) != 2) throw std::runtime_error("Unsupported reusable object format");
-    auto object = data.at("Object").get<Character>();
-    self_contained(object);
-    if (!object.Shape && !object.Sculpt) (void)EngineAssets::get(AssetKind::Model, object.Asset);
-    object.Id = new_id();
-    return object;
+    return decode_object_value(data.at("Object"));
 }
 void save_object_template(const Character& object, const fs::path& path) {
     if (_wcsicmp(path.extension().c_str(), L".starobject")) throw std::runtime_error("Save reusable objects as .starobject files");
@@ -77,7 +81,7 @@ std::vector<Character> decode_object_group(std::string_view bytes) {
         throw std::runtime_error("Reusable groups require between 1 and 4096 objects");
     std::vector<Character> result;
     std::unordered_map<std::string,std::string> ids;
-    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty()&&!ids.emplace(old,decoded.Id).second)throw std::runtime_error("Reusable group repeats an object identity");result.push_back(std::move(decoded));}
+    for(const auto& object:objects){auto decoded=decode_object_value(object);auto old=object.value("Id",std::string{});if(!old.empty()&&!ids.emplace(old,decoded.Id).second)throw std::runtime_error("Reusable group repeats an object identity");result.push_back(std::move(decoded));}
     for(auto& object:result)if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Reusable group lightning target is missing");object.LightningTargetId=target->second;}
 
     for(auto& object:result)if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Reusable group joint target is missing");object.JointTargetId=target->second;}
