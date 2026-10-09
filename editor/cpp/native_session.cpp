@@ -92,9 +92,9 @@ uint64_t NativeSession::scene(SceneData s,bool runtimeUpdate) {
     uint64_t generation=0;
     {
         std::lock_guard lock(mutex_);
+        pendingRuntime_=pending_.has_value()?pendingRuntime_&&runtimeUpdate:runtimeUpdate; // a queued full load stays a full load when a runtime update replaces its scene (NS-1)
         pending_ = std::move(s);
         generation=++sceneGeneration_;
-        pendingRuntime_=runtimeUpdate;
         if(!runtimeUpdate){playerBody_.reset();liquidSnapshot_.reset();debrisPoses_.clear();collisionObjects_.clear();runtimeObjects_.clear();runtimeObjectsDirty_=false;}
     }
     condition_.notify_one();

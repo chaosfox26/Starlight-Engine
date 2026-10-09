@@ -200,7 +200,7 @@ class ObjectCache {
         }
         const uint64_t geometryKey=geometry_key(c),transform=pose_transform_key(pose);
         Bounds result;
-        if(remember&&lookup(c,geometryKey,transform,result))return result;
+        if(remember&&lookup(c,geometryKey,transform,result,&pose))return result;
         misses_.fetch_add(1,std::memory_order_relaxed);
         const auto geometry=geometry_for(c,geometryKey);
         // The box of a transformed mesh is the box of its transformed convex-hull vertices (see hull_points).
@@ -307,7 +307,7 @@ class ObjectCache {
         if(starlight_diag::events_enabled())(g.hull.empty()?bounds_profile().fullWalk:bounds_profile().hullUsed).fetch_add(1,std::memory_order_relaxed);
         return g.hull.empty()?nullptr:&g.hull;
     }
-    bool lookup(const Character& c,uint64_t geometryKey,uint64_t transform,Bounds& out){
+    bool lookup(const Character& c,uint64_t geometryKey,uint64_t transform,Bounds& out,const ObjectPose* pose=nullptr){
         LockScope prof(0);
         std::shared_lock lock(mutex_);
         prof.acquired();
@@ -317,7 +317,7 @@ class ObjectCache {
         hits_.fetch_add(1,std::memory_order_relaxed);
         out=found->second->bounds;
         lock.unlock();
-        if(verify_&&(clock_.load(std::memory_order_relaxed)&63)==0)check_bounds(c,out);
+        if(verify_&&(clock_.load(std::memory_order_relaxed)&63)==0)check_bounds(c,out,pose);
         return true;
     }
     void store(const std::string& id,uint64_t geometryKey,uint64_t transform,const Bounds& result){
@@ -418,9 +418,16 @@ class ObjectCache {
             evictedGeometries_.fetch_add(1,std::memory_order_relaxed);
         }
     }
-    void check_bounds(const Character& c,const Bounds& cached){
+    void check_bounds(const Character& c,const Bounds& cached,const ObjectPose* pose){
         struct Scope{Scope(){in_object_cache()=true;}~Scope(){in_object_cache()=false;}} scope;
-        const Bounds fresh=object_bounds_raw(c);
+        Bounds fresh;
+        if(pose){ // a hit stored by bounds_at is for that pose, not for the object's authored spot (OC-1)
+            for(const auto& v:object_mesh(c).vertices){
+                auto p=world_point(*pose,v.position);
+                fresh.low={std::min(fresh.low.x,p.x),std::min(fresh.low.y,p.y),std::min(fresh.low.z,p.z)};
+                fresh.high={std::max(fresh.high.x,p.x),std::max(fresh.high.y,p.y),std::max(fresh.high.z,p.z)};
+            }
+        }else fresh=object_bounds_raw(c);
         if(std::memcmp(&fresh,&cached,sizeof(Bounds))!=0)throw std::runtime_error("Object cache returned stale bounds for "+c.Id);
     }
     void check_geometry(const Character& c,const Geometry& cached){

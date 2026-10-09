@@ -266,6 +266,15 @@ template<class Require> void pose_bounds_checks(Require require){
         if(a.has_value()!=b.has_value()||(a&&std::memcmp(&*a,&*b,sizeof(MeshHit))!=0))++hitDifferent;if(a)++hits;
     }
     require(hits>100&&hitDifferent==0,"Ray hits through a pose are bit-identical to hits through the copied, posed Character");
+    {   // STARLIGHT_CACHE_VERIFY compares a hit stored for a route pose with that pose, not with the object's authored spot (OC-1)
+        char previous[8]{};const bool had=GetEnvironmentVariableA("STARLIGHT_CACHE_VERIFY",previous,8)>0;
+        SetEnvironmentVariableA("STARLIGHT_CACHE_VERIFY","1");
+        bool threw=false;
+        try{ObjectCache verified;Character walker;walker.Id="pose-verify";walker.Shape="boulder";walker.Size=1.3;walker.Route={{4,0},{4,6}};const ObjectPose pose=route_pose_of(walker,2.5);for(int k=0;k<400;++k)(void)verified.bounds_at(walker,pose);}
+        catch(const std::exception&){threw=true;}
+        SetEnvironmentVariableA("STARLIGHT_CACHE_VERIFY",had?previous:nullptr);
+        require(!threw,"Verify mode does not report correct pose bounds as stale");
+    }
     cache.clear();
 }
 

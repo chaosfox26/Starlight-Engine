@@ -99,5 +99,13 @@ template<class Require> void render_split_checks(Require require){
         require(object_parts(a).size() == p1->size(), "object_parts copies the shared parts");
         auto mesh = object_mesh(a);
         require(!mesh.vertices.empty(), "object_mesh still merges the parts");
+        Character bark=make_effect_character("cube",0,0,0,true);bark.Surface=12;bark.Foliage=FoliageMaterial{};
+        Character leaf;leaf.Shape.reset();leaf.Surface=13;leaf.Dynamic=true;leaf.Foliage=FoliageMaterial{};
+        SculptMesh sculpt;sculpt.Positions={0,0,0,.1,0,0,0,.2,0,0,0,.002};sculpt.Indices={0,2,1,0,1,3,0,3,2,1,2,3};sculpt.MaterialCoordinates={0,0,.37,1,0,.37,0,1,.37,0,0,.37};leaf.Sculpt=sculpt;
+        bool barkKind=true,leafKind=true;size_t seen=0;
+        for(const auto& part:resident_body(bark)->parts)for(const auto& v:part->mesh.vertices){barkKind&=v.kind==-40.f;++seen;}
+        for(const auto& part:resident_body(leaf)->parts)for(const auto& v:part->mesh.vertices){leafKind&=v.kind==-41.f;++seen;}
+        require(seen>0&&barkKind&&leafKind,"a Dynamic Bark or Leaf body drawn as a resident instance carries the foliage vertex tags (-40/-41), not the fire/dust volume kinds 12/13 (RS-1)");
+        require(shared_parts(bark)->front().mesh.vertices.front().kind==12.f,"the shared authored geometry keeps kind 12 for the CPU side");
     }
 }
