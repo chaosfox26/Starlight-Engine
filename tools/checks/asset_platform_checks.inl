@@ -56,6 +56,10 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         require(source_occurrences("editor/cpp/platform.cpp","restore_replaced_file(p, previous, temp)")==1,"A-06-6: The failure path of a save calls the rollback");
     }
     {
+        // Portable verification used to hash the scene in one read and decode it from a second read, so a rewrite in between passed the check.
+        require(source_occurrences("editor/cpp/portable_scene.cpp","hash_bytes(sceneText)")==1&&source_occurrences("editor/cpp/portable_scene.cpp","hash_file(scenePath)")==0,"Portable verification hashes the same bytes it decodes");
+    }
+    {
         // A-06-4: a file that is a symlink (or any file with a reparse attribute) was dropped from the asset browser without a trace.
         const auto scan=dir/"scan";fs::create_directories(scan/"real");
         atomic_write(scan/"real"/"model.glb","x");
