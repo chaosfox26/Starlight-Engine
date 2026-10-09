@@ -1,4 +1,5 @@
 #include <fstream>
+#include "../../deep/engine/keycard_view.h"
 template<class Require> void key_card_checks(Require require,const fs::path& folder){
     const auto work=folder/"key-card-checks";fs::remove_all(work);fs::create_directories(work);
     Character cube;cube.Shape="cube";
@@ -106,6 +107,20 @@ template<class Require> void key_card_checks(Require require,const fs::path& fol
         EngineAssets::drop_memory_cache();
         bool damaged=false;try{(void)EngineAssets::get(AssetKind::Sculpt,id);}catch(const AssetMissing& e){damaged=std::string(e.what()).find("not a Starlight asset")!=std::string::npos||std::string(e.what()).find("damaged")!=std::string::npos||std::string(e.what()).find("truncated")!=std::string::npos;}
         require(damaged,"When every copy is damaged the damage is reported, not a plain missing asset");
+    }
+    // KEYCARD-1: the key-card host API carries paths as UTF-8, so a folder outside the ANSI code page is found.
+    {
+        const auto odd=work/L"Zo\u00eb-\u043a\u043b\u044e\u0447";fs::create_directories(odd);
+        atomic_write(odd/"card.starscene","{}");
+        auto utf8=[](const fs::path& path){const auto text=path.u8string();return std::string(reinterpret_cast<const char*>(text.data()),text.size());};
+        std::string error;
+        const auto named=keycard::resolveCardPath(utf8(odd/"card.starscene"),std::string(),"card.starscene",error);
+        require(error.empty()&&named==utf8(odd/"card.starscene"),"A --card path with characters outside the ANSI code page is found");
+        error.clear();
+        const auto beside=keycard::resolveCardPath(std::string(),utf8(odd),"card.starscene",error);
+        require(error.empty()&&beside==utf8(odd/"card.starscene"),"A card beside the host module is found when the module folder has such characters, and is returned as UTF-8");
+        error.clear();
+        require(keycard::resolveCardPath(utf8(odd/"missing.starscene"),std::string(),"card.starscene",error).empty()&&error.find("does not exist")!=std::string::npos,"A missing --card file is still reported");
     }
 }
 

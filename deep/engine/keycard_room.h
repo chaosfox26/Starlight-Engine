@@ -16,9 +16,9 @@ inline std::string moduleFolder(const void* address) {
     std::wstring path(buffer, length);
     const size_t slash = path.find_last_of(L"\\/");
     if (slash != std::wstring::npos) path.resize(slash);
-    const int bytes = WideCharToMultiByte(CP_ACP, 0, path.c_str(), (int)path.size(), nullptr, 0, nullptr, nullptr);
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), (int)path.size(), nullptr, 0, nullptr, nullptr);
     std::string narrow((size_t)std::max(0, bytes), '\0');
-    if (bytes > 0) WideCharToMultiByte(CP_ACP, 0, path.c_str(), (int)path.size(), narrow.data(), bytes, nullptr, nullptr);
+    if (bytes > 0) WideCharToMultiByte(CP_UTF8, 0, path.c_str(), (int)path.size(), narrow.data(), bytes, nullptr, nullptr);
     return narrow;
 }
 
