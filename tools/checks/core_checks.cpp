@@ -114,6 +114,7 @@ static int checks_main(int argc, char **argv) {
     std::vector<std::string> checks;
     fs::path folder = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "Starlight-native-checks";
     fs::create_directories(folder);
+    const auto runStarted = fs::file_time_type::clock::now();
     {std::error_code removed;fs::remove(folder / "result.json", removed);fs::remove(folder / "progress.log", removed);}
     // One line per passed check, flushed as it passes: a crash or kill leaves a record of exactly which checks had passed.
     std::ofstream progress(folder / "progress.log", std::ios::binary);
@@ -2002,7 +2003,7 @@ static int checks_main(int argc, char **argv) {
         atomic_write(folder / "native-scene.bin",
                      std::string_view(reinterpret_cast<const char *>(packet.data()), packet.size()));
         require(packet.size() > 1000, "Native renderer packet emitted");
-        generated_scene_readback_checks(require,folder);
+        generated_scene_readback_checks(require,folder,runStarted);
         atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
         std::cout << "PASS " << checks.size() << " native checks\n";
         return 0;
