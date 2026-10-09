@@ -172,6 +172,25 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
   fs::rename(work/"held.slasset",durable/name);
  }
  {
+  fs::create_directories(work/"bundle-source");
+  std::string bundled;
+  {
+   EngineAssets::ScopedRoot source(work/"bundle-source");
+   bundled=import_blob_bytes(UvAtlasType,asset_checks_atlas(3));
+  }
+  const auto bundleAssets=work/"repo3"/"scene3"/"assets";fs::create_directories(bundleAssets);
+  const auto bundleName=starlight::editor::wide(bundled+".slasset");
+  fs::copy_file(work/"bundle-source"/bundleName,bundleAssets/bundleName);
+  EngineAssets::ScopedRegistry fresh(registryPath);
+  EngineAssets::discover_near(work/"repo3"/"scene3");
+  EngineAssets::drop_memory_cache();
+  require(EngineAssets::locate(bundled)==bundleAssets/bundleName,"Precondition: a bundle folder holds the only copy of the asset");
+  require(EngineAssets::put(AssetKind::Blob,*EngineAssets::get(AssetKind::Blob,bundled))==bundled&&fs::is_regular_file(EngineAssets::file_for(bundled)),"Storing an asset that only a bundle folder holds copies it into the primary library, so a saved scene does not depend on the bundle");
+  fs::remove(bundleAssets/bundleName);
+  EngineAssets::drop_memory_cache();
+  require(text_of([&]{(void)EngineAssets::get(AssetKind::Blob,bundled);}).empty(),"After the bundle folder is gone the stored asset still loads from the primary library");
+ }
+ {
   EngineAssets::ScopedRegistry fresh(registryPath);
   const auto crooked=work/"repo2"/"library";fs::create_directories(crooked);marker(crooked,"starlight-asset-library",2);
   EngineAssets::discover_near(work/"repo2"/"scene2");

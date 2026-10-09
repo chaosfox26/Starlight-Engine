@@ -761,8 +761,17 @@ std::string EngineAssets::put(AssetKind kind, std::string_view payload) {
         if (roots().persisted.contains(id)) { memory().add(id, std::make_shared<const std::string>(payload)); return id; }
     }
     std::shared_ptr<const std::string> verified; // the payload as read back from disk and checked against its id: the same bytes as `payload`, so the cache needs no further copy
-    if (auto existing = locate(id); !existing.empty()) {
-        try { verified = read_verified(kind, id, existing); } catch (const AssetMissing&) {}
+    for (const auto& candidate : candidate_files(id)) {
+        std::error_code error;
+        if (!fs::is_regular_file(candidate.path, error)) continue;
+        std::string whole;
+        try { verified = read_verified(kind, id, candidate.path, candidate.durable ? nullptr : &whole); } catch (const AssetMissing&) { continue; }
+        if (!candidate.durable) { // a bundle folder or shipped library is not kept: copy the asset into the primary library so the scene does not depend on it
+            const auto home = file_for(id);
+            atomic_write(home, whole);
+            verified = read_verified(kind, id, home);
+        }
+        break;
     }
     if (!verified) {
         const auto home = file_for(id);
