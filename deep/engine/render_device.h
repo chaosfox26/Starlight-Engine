@@ -1094,12 +1094,24 @@ struct RenderDevice {
         flush();
         DXGI_SWAP_CHAIN_DESC1 desc{};
         must(swap->GetDesc1(&desc), "Resize swap description");
+        const UINT oldW = w, oldH = h;
         for (auto& target : targets) target.Reset();
-        must(swap->ResizeBuffers(kFrameCount, width, height, desc.Format, desc.Flags), "ResizeBuffers");
-        w=width; h=height;
-        must(ups->resizeOutput(w,h) ? S_OK : E_FAIL, "Resize native backend");
-        createBackbufferViews();
-        applyMode(ups->mode());
+        try {
+            mustHr(swap->ResizeBuffers(kFrameCount, width, height, desc.Format, desc.Flags), "ResizeBuffers");
+            w=width; h=height;
+            must(ups->resizeOutput(w,h) ? S_OK : E_FAIL, "Resize native backend");
+            createBackbufferViews();
+            applyMode(ups->mode());
+        } catch (...) {
+            // RND-2: applyMode leaves the old scene targets in place when it fails, so going back to the old output size restores a consistent device.
+            try {
+                w=oldW; h=oldH;
+                if (FAILED(swap->ResizeBuffers(kFrameCount, oldW, oldH, desc.Format, desc.Flags))) throw std::runtime_error("ResizeBuffers rollback");
+                ups->resizeOutput(oldW,oldH);
+                createBackbufferViews();
+            } catch (...) { logLine("resize rollback failed"); }
+            throw;
+        }
         auditOutput.Reset();
         if (auditOffscreen) setAuditOffscreen(true);
         lastFrameStart=0;
@@ -1126,7 +1138,7 @@ struct RenderDevice {
         dd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; dd.Width = tw; dd.Height = th;
         dd.DepthOrArraySize = 1; dd.MipLevels = 1; dd.Format = fmt; dd.SampleDesc.Count = samples; dd.Flags = fl;
         ComPtr<ID3D12Resource> r;
-        must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, st, cv, IID_PPV_ARGS(&r)), what);
+        mustHr(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, st, cv, IID_PPV_ARGS(&r)), what);
         return r;
     }
 
@@ -1183,24 +1195,35 @@ struct RenderDevice {
     // Resting states = what the backend receives at evaluate(); render() transitions around the pass.
     void applyMode(int m) {
         flush();
+        // RND-2: the new targets are built into locals and swapped in only when all of them exist, so a failure (for example out of memory) keeps the previous state.
+        const int oldMode = ups->mode(); const UINT oldRw = rw, oldRh = rh, oldMsaa = msaa;
         UINT nrw = 0, nrh = 0;
         if (!ups->setMode(m, nrw, nrh)) return;
         rw = nrw; rh = nrh;
         D3D12_CLEAR_VALUE cc{}; cc.Format = sceneFormat();
         D3D12_CLEAR_VALUE mc{}; mc.Format = DXGI_FORMAT_R16G16_FLOAT;
         D3D12_CLEAR_VALUE dc{}; dc.Format = DXGI_FORMAT_D32_FLOAT; dc.DepthStencil.Depth = 1.0f;
-        sceneColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &cc, "create scene color");
-        sceneMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT,   D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &mc, "create scene mvec");
-        depth      = createTex(rw, rh, DXGI_FORMAT_R32_TYPELESS,   D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &dc, "create depth");
-        upOutput   = createTex(w, h,   DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, "create upscale output");
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
-        chooseMsaa(); msaaColor.Reset(); msaaMvec.Reset(); msaaDepth.Reset();
-        if (msaa > 1) {
-            D3D12_CLEAR_VALUE dm{}; dm.Format = DXGI_FORMAT_D32_FLOAT; dm.DepthStencil.Depth = 1.0f;
-            msaaColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, "create msaa scene color", msaa);
-            msaaMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, "create msaa scene mvec", msaa);
-            msaaDepth = createTex(rw, rh, DXGI_FORMAT_D32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dm, "create msaa depth", msaa);
+        ComPtr<ID3D12Resource> newColor, newMvec, newDepth, newUpOutput, newMsaaColor, newMsaaMvec, newMsaaDepth;
+        try {
+            newColor    = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &cc, "create scene color");
+            newMvec     = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT,   D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &mc, "create scene mvec");
+            newDepth    = createTex(rw, rh, DXGI_FORMAT_R32_TYPELESS,   D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &dc, "create depth");
+            newUpOutput = createTex(w, h,   DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, "create upscale output");
+            chooseMsaa();
+            if (msaa > 1) {
+                D3D12_CLEAR_VALUE dm{}; dm.Format = DXGI_FORMAT_D32_FLOAT; dm.DepthStencil.Depth = 1.0f;
+                newMsaaColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, "create msaa scene color", msaa);
+                newMsaaMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, "create msaa scene mvec", msaa);
+                newMsaaDepth = createTex(rw, rh, DXGI_FORMAT_D32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dm, "create msaa depth", msaa);
+            }
+        } catch (...) {
+            rw = oldRw; rh = oldRh; msaa = oldMsaa;
+            UINT keepW = 0, keepH = 0; ups->setMode(oldMode, keepW, keepH);
+            throw;
         }
+        sceneColor = std::move(newColor); sceneMvec = std::move(newMvec); depth = std::move(newDepth); upOutput = std::move(newUpOutput);
+        msaaColor = std::move(newMsaaColor); msaaMvec = std::move(newMsaaMvec); msaaDepth = std::move(newMsaaDepth);
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
         rtv.ptr += (SIZE_T)kFrameCount * rtvSize; device->CreateRenderTargetView(msaa > 1 ? msaaColor.Get() : sceneColor.Get(), nullptr, rtv);
         rtv.ptr += rtvSize;                        device->CreateRenderTargetView(msaa > 1 ? msaaMvec.Get() : sceneMvec.Get(), nullptr, rtv);
         D3D12_DEPTH_STENCIL_VIEW_DESC dv{}; dv.Format = DXGI_FORMAT_D32_FLOAT; dv.ViewDimension = msaa > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D;

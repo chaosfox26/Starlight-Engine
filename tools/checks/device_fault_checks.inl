@@ -47,6 +47,34 @@ static void device_fault_checks(const auto& require){
     void* again=create(window,640,360);
     require(again!=nullptr&&frame(again,0,13)==1,"CC-07: After every injected failure a fresh viewport still creates and renders");
     if(again)destroy(again);
+    // RND-2: a resize that fails part-way must leave the device in its previous state, so the next frame renders and a retry of the same resize can succeed.
+    using Resize=int(*)(void*,int,int);auto resize=reinterpret_cast<Resize>(GetProcAddress(module,"sl_resize"));
+    require(resize!=nullptr,"RND-2: The viewport module exports sl_resize");
+    if(resize){
+        void* ctx=create(window,640,360);
+        require(ctx!=nullptr&&frame(ctx,0,13)==1,"RND-2: A viewport exists for the resize failure sweep");
+        int resizeFired=0;std::string broken;
+        for(int n=1;ctx&&n<=40;++n){
+            fault(n);
+            const int result=resize(ctx,800,450);
+            const bool hit=fault(0)==0;fault(0);
+            if(hit){
+                ++resizeFired;
+                if(result!=0){broken+=" "+std::to_string(n)+"(failure not reported)";continue;}
+                if(frame(ctx,0,13)!=1)broken+=" "+std::to_string(n)+"(frame after failed resize)";
+                if(resize(ctx,800,450)!=1||frame(ctx,0,13)!=1)broken+=" "+std::to_string(n)+"(retry)";
+                if(resize(ctx,640,360)!=1||frame(ctx,0,13)!=1)broken+=" "+std::to_string(n)+"(size back)";
+            }else{
+                require(result==1&&frame(ctx,0,13)==1,"RND-2: A resize that no injected failure reaches succeeds and renders");
+                if(resize(ctx,640,360)!=1)broken+=" "+std::to_string(n)+"(size back after success)";
+                break;
+            }
+        }
+        if(!broken.empty())std::cout<<"resize failure sweep: broken after injected failure number(s):"<<broken<<'\n';
+        require(resizeFired>=3,"RND-2: Several checked results inside a resize were failed on purpose");
+        require(broken.empty(),"RND-2: After every injected failure inside a resize the viewport keeps rendering at its previous size and the resize can be retried");
+        if(ctx)destroy(ctx);
+    }
     DestroyWindow(window);
     std::cout<<"device failure checks: "<<fired<<" failures injected, "<<surfaced<<" reported by create/frame, "<<cleanup<<" by destruction\n";
 }
