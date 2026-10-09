@@ -46,7 +46,9 @@ struct GrassDeformation {
  }
  static void release(Retired& batch){for(auto& range:batch.ranges)give(*range.pool,range.offset,range.count);}
  void commit(RenderDevice& d){if(!staged.items)return;Retired batch=std::move(staged);staged=Retired{};batch.fence=d.fenceVal;retired.push(d,std::move(batch),[](Retired& done){release(done);});}
- void drain(RenderDevice& d,bool all=false){commit(d);retired.drain(d,[](Retired& done){release(done);},all);}
+ // A pool is wholly unused only once every retired range in it has been released, which happens after the fence of the last frame that used it.
+ void reclaim(){std::erase_if(pools,[](const std::unique_ptr<Pool>& pool){return pool->used==0&&pool->freeRanges.empty();});}
+ void drain(RenderDevice& d,bool all=false){commit(d);retired.drain(d,[](Retired& done){release(done);},all);reclaim();}
  std::vector<Body> contacts;
  ContactIndex contactIndex; // the same boxes bucketed by position, so reach() does not test every body for every grass part
  ComPtr<ID3D12RootSignature> root;

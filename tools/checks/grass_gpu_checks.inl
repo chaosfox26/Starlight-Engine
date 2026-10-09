@@ -58,5 +58,19 @@ static json grass_gpu_checks(void* context,const std::vector<unsigned char>& pac
   frame(6);require(std::abs(reachNow()-.16)<.002,"Grass shadow reach never returned to its base");
   sl_environment_reset(context);frame(0);
  }
+ // Grass pools hold a million vertices each: a pool left wholly unused must be freed once its retirement fences complete, and a later reload must work again.
+ {
+  auto poolBytes=[&]{uint64_t s[4]{};require(sl_grass_stats(context,s),"Grass stats unavailable");return s[3];};
+  auto settleBelow=[&](uint64_t limit){for(int i=0;i<120&&poolBytes()>limit;++i)frame(0);return poolBytes();};
+  const size_t placements=(size_t(1)<<20)/count+2;require(placements<4000,"Grass fixture too small to fill a pool");
+  auto bigPacket=packet;uint32_t n=uint32_t(placements);memcpy(bigPacket.data()+4,&n,4);
+  for(size_t i=1;i<placements;++i){size_t at=bigPacket.size();bigPacket.insert(bigPacket.end(),packet.begin()+12,packet.end());float x=float(matrix[12]+3.0*i);memcpy(bigPacket.data()+at+44+48,&x,4);}
+  const uint64_t pool=64ull<<20;
+  require(sl_scene(context,bigPacket.data(),int(bigPacket.size())),sl_error());frame(0);const uint64_t bigBytes=poolBytes();
+  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());const uint64_t smallBytes=settleBelow(bigBytes-pool);require(smallBytes+pool<=bigBytes,"Grass kept the second pool after the scene shrank");
+  require(sl_scene(context,reinterpret_cast<unsigned char*>(empty),sizeof(empty)),sl_error());const uint64_t emptyBytes=settleBelow(smallBytes-pool);require(emptyBytes+pool<=smallBytes,"Grass kept its last pool after every instance was removed");
+  require(sl_scene(context,bigPacket.data(),int(bigPacket.size())),sl_error());frame(0);const uint64_t againBytes=poolBytes();require(againBytes+(1ull<<20)>=bigBytes&&againBytes<=bigBytes+(1ull<<20),"Grass pools were not rebuilt to the same size after a reload");
+  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());require(sl_grass_contacts(context,nullptr,0),sl_error());sl_environment_reset(context);frame(0);require(read()==rest,"Grass geometry changed after the pool reclaim cycle");
+ }
  return {{"success",true},{"vertices",count},{"movingContactAndRecoverySteps",120},{"peakTrajectoryError",peakError},{"peakRootError",peakRoot},{"peakNormalLengthError",peakNormal},{"peakNormalReferenceError",peakNormalReference},{"peakHistoryError",peakHistory},{"renderedMotionPeak",motion[0]},{"movingPixels",motion[2]},{"lateContactOffset",latePeak},{"instanceIsolationError",isolationError},{"resetVerified",true},{"unloadReloadVerified",true},{"pausedClockVerified",true}};
 }
