@@ -212,4 +212,9 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         const size_t moderate=covered(1e6),vast=covered(1e10);
         require(moderate>0&&vast==moderate,"07-T1: A vast obstacle occupies the same liquid columns as a moderate one");
     }
+    {   // 07-T2: a lava patch far larger than the terrain paints every cell of the terrain, as a moderate one does.
+        auto painted=[](double size){Character patch;patch.Shape="lava";patch.Size=size;std::vector<Character> objects{patch};TerrainData flat;TerrainFlow flow(flat,std::vector<LiquidSource>{},objects);size_t n=0;for(double v:flow.lava)if(v>0)++n;return n;};
+        const size_t moderate=painted(1e6),vast=painted(1e10);
+        require(moderate==TerrainFlow::N*TerrainFlow::N&&vast==moderate,"07-T2: A vast lava patch fills the same cells as a moderate one");
+    }
 }

@@ -529,7 +529,7 @@ TerrainFlow::TerrainFlow(const TerrainData &t, const std::vector<LiquidSource> &
             auto d=world_point(c,part.mesh.vertices[part.mesh.indices[k+2]].position);
             double determinant=(b.z-d.z)*(a.x-d.x)+(d.x-b.x)*(a.z-d.z);
             if(std::abs(determinant)<1e-12)continue;
-            auto cell=[](double p){return std::clamp(int(std::floor((p+12)/Cell)),0,N-1);};
+            auto cell=[](double p){double c=std::floor((p+12)/Cell);return c>=N-1?N-1:c>0?int(c):0;}; // clamped before the int conversion, so a vast patch cannot overflow it
             for(int z=cell(std::min({a.z,b.z,d.z}));z<=cell(std::max({a.z,b.z,d.z}));++z)
                 for(int x=cell(std::min({a.x,b.x,d.x}));x<=cell(std::max({a.x,b.x,d.x}));++x){
                     double px=-12+(x+.5)*Cell,pz=-12+(z+.5)*Cell;
