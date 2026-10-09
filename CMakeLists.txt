@@ -201,7 +201,7 @@ if(STARLIGHT_BUILD_RENDERER)
  target_link_libraries(Starlight.NativeEditor PRIVATE starlight_editor_session comctl32 dbghelp winmm gdiplus msimg32 dwmapi uxtheme)
  add_test(NAME native-classic-ui COMMAND Starlight.NativeEditor --ui-check "${CMAKE_BINARY_DIR}/classic-ui-$<CONFIG>.json")
  # Development switches that narrow a run and still exit 0 must not leak in from the shell and turn a registered test into a partial pass.
- set_tests_properties(native-classic-ui PROPERTIES ENVIRONMENT_MODIFICATION "STARLIGHT_UI_RULES_ONLY=unset:;STARLIGHT_UI_LAYOUT_ONLY=unset:")
+ set_tests_properties(native-classic-ui PROPERTIES ENVIRONMENT_MODIFICATION "STARLIGHT_UI_WAVE2_ONLY=unset:;STARLIGHT_UI_RULES_ONLY=unset:;STARLIGHT_UI_LAYOUT_ONLY=unset:")
  add_executable(Starlight.NativePlayer WIN32 editor/cpp/player_main.cpp editor/cpp/editor.manifest)
  if(MINGW)
   target_sources(Starlight.NativeEditor PRIVATE editor/cpp/editor.rc)
