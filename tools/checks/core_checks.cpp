@@ -28,6 +28,7 @@
 #include <cstring>
 #include <thread>
 #include <iostream>
+#include <set>
 using namespace starlight::editor;
 #include "physics_boundary_checks.inl"
 #include "physics_abi_checks.inl"
@@ -99,7 +100,9 @@ __declspec(noinline) static void character_controller_checks(const auto& require
 // STARLIGHT_CHECK_GROUPS=name1,name2 runs only those check groups (names as in the calls below; "list" prints them) and then exits 3.
 // Unset, every group runs and nothing changes. The long inline checks after the groups only run in a full pass.
 static bool groups_filtered() { const char *env = std::getenv("STARLIGHT_CHECK_GROUPS"); return env && *env; }
+static std::set<std::string> groupsSeen; // every group the run reached, so a misspelled name in STARLIGHT_CHECK_GROUPS is refused
 static bool group_wanted(const char *name) {
+    groupsSeen.insert(name);
     const char *env = std::getenv("STARLIGHT_CHECK_GROUPS");
     if (!env || !*env) return true;
     if (std::string(env) == "list") { std::cout << name << "\n"; return false; }
@@ -197,6 +200,16 @@ static int checks_main(int argc, char **argv) {
         if (groups_filtered()) RUN_GROUP(character_controller_checks, character_controller_checks(require,folder)); // a full pass runs it later, in its usual place
 #endif
         if (groups_filtered()) {
+            const std::string requested = std::getenv("STARLIGHT_CHECK_GROUPS");
+            if (requested == "list") return 0; // only the names were printed: no result file, so nothing claims a pass
+            for (size_t start = 0; start < requested.size();) {
+                const auto found = requested.find(',', start);
+                const auto end = found == std::string::npos ? requested.size() : found;
+                const auto name = requested.substr(start, end - start);
+                if (!name.empty() && !groupsSeen.contains(name))
+                    throw std::runtime_error("Unknown check group: " + name + " (STARLIGHT_CHECK_GROUPS=list prints the names)");
+                start = end + 1;
+            }
             std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";
             atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", false}, {"filtered", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
             return 3;
