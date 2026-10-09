@@ -63,7 +63,19 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
             const auto found=scan_asset_library(scan);bool seen=false;
             for(const auto& entry:found.entries)seen=seen||entry.path.filename()==L"linked.glb";
             require(seen&&found.entries.size()==2,"A-06-4: A model that is a symlink appears in the asset browser");
-        } else require(true,"A-06-4: Symlinks cannot be created in this session, so the symlink listing was not exercised");
+        } else {
+            // Symlink creation is not permitted here: a directory junction is a reparse point that needs no privilege, and the scan must list its content once (through the real folder), not follow the junction.
+            const auto junction=scan/"junction";
+            const std::string command="mklink /J \""+junction.string()+"\" \""+(scan/"real").string()+"\" >nul 2>&1";
+            const bool made=std::system(command.c_str())==0&&fs::exists(junction/"model.glb");
+            require(made,"A-06-4: A directory junction can be created in this session");
+            if(made){
+                const auto found=scan_asset_library(scan);size_t viaJunction=0;
+                for(const auto& entry:found.entries)if(entry.path.wstring().find(L"junction")!=std::wstring::npos)++viaJunction;
+                require(viaJunction==0&&found.entries.size()==1&&!found.partial,"A-06-4: A junction is a reparse point and is not followed, so its content is listed once through the real folder");
+                std::system(("rmdir \""+junction.string()+"\" >nul 2>&1").c_str());
+            }
+        }
     }
     {
         // A-06-5: an exported folder that lost its manifest used to run with no check at all.

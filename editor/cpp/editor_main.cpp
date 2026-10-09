@@ -406,6 +406,8 @@ struct Editor {
     bool reverseBrush = false;
     std::optional<fs::file_time_type> watchedTime;
     bool watchMissing = false;        // the open scene file has disappeared: said once, not re-reported every second
+    ULONGLONG autosaveTick = GetTickCount64();
+    bool autosaveFailed = false;      // a failing autosave is logged once per streak, not every two minutes
 
     #define playback_command playback_command_prepared
     #include "classic_completion.inl"
@@ -1959,6 +1961,28 @@ struct Editor {
         }
     }
 
+    // Crash recovery: a copy of the unsaved scene beside the scene file (never over it); the next normal Save removes it.
+    void autosave() {
+        autosaveTick = GetTickCount64();
+        if (filename.empty()) return;
+        try {
+            write_autosave(scene, filename);
+            autosaveFailed = false;
+        } catch (const std::exception &e) {
+            if (!autosaveFailed) diagnostic("autosave", e.what());
+            autosaveFailed = true;
+        }
+    }
+    void note_autosave() {
+        std::error_code unreadable;
+        const auto copy = autosave_path(filename);
+        const auto saved = fs::last_write_time(copy, unreadable);
+        if (unreadable) return;
+        const auto original = fs::last_write_time(filename, unreadable);
+        if (!unreadable && saved > original)
+            SetWindowTextW(status, wide("An autosave from an earlier session is beside this scene: " + utf8(copy.filename().wstring()) + ". Rename it to .starscene to open it. Saving this scene removes it.").c_str());
+    }
+
     bool discard() {
         if (!dirty) return true;
         auto answer = MessageBoxW(window, L"Save your changes before continuing?\nYes: Save   No: Discard   Cancel: Keep editing", L"Starlight", MB_YESNOCANCEL | MB_ICONQUESTION);
@@ -1997,8 +2021,11 @@ struct Editor {
             const auto question = std::string(missing.what()) + ".\nSave anyway? The scene will not open fully until those assets are restored.";
             if (MessageBoxW(window, wide(question).c_str(), L"Starlight", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return false;
             savedHash = save_scene(scene, target, target == filename ? diskHash : std::nullopt, true);
+        } catch (const std::runtime_error &changed) {
+            if (!std::string_view(changed.what()).starts_with("File changed;")) throw;
+            throw std::runtime_error("The scene file changed outside the editor, so saving here would overwrite that change. Your edits are kept: use Save as to write them to a new file.");
         }
-        filename = target; diskHash = savedHash; dirty = false; refresh();
+        filename = target; diskHash = savedHash; dirty = false; remove_autosave(target); refresh();
         return true;
     }
     void apply() {
@@ -2665,6 +2692,7 @@ struct Editor {
             refresh();
             const bool settled = settle_scene(loading, "Preparing " + utf8(files[0].filename().wstring()));
             if (settled && repaired) SetWindowTextW(status, L"Missing models located. Save to keep the repaired paths; original scene file is unchanged.");
+            else if (settled) note_autosave();
         } else if (id == Import) {
             auto files = file_dialog(window, "models", {{L"GLB model", L"*.glb"}});
             if (files.empty())
@@ -2704,6 +2732,8 @@ struct Editor {
             ids.insert(actor()->Id);
             const auto oldSelected = selected;
             const auto oldSelectionIds = selectionIds;
+            std::vector<Character> removed;
+            for (const auto &object : scene.Characters) if (ids.contains(object.Id)) removed.push_back(object);
             try {
                 edit([&] {
                     std::erase_if(scene.Characters, [&](const Character &object) { return ids.contains(object.Id); });
@@ -2711,7 +2741,7 @@ struct Editor {
                     selected = -1; selectionIds.clear();
                 });
             } catch (...) { selected = oldSelected; selectionIds = oldSelectionIds; throw; }
-            if (auto stale = rules_naming_objects(scene, ids); !stale.empty()) {
+            if (auto stale = rules_naming_objects(scene, removed); !stale.empty()) {
                 std::string list;
                 for (size_t i = 0; i < stale.size() && i < 3; ++i) list += (i ? ", " : "") + stale[i];
                 if (stale.size() > 3) list += ", and " + std::to_string(stale.size() - 3) + " more";
@@ -3152,6 +3182,7 @@ struct Editor {
             else
                 brush_at(last.x, last.y, reverseBrush);
         }
+        if (dirty && !filename.empty() && !playing && !stroke && !loadingActive && now - autosaveTick >= 120000) autosave();
         if (!filename.empty() && !playing && !stroke && now - watchTick >= 1000) {
             watchTick = now;
             try {
@@ -3165,7 +3196,7 @@ struct Editor {
                     if (diskHash && hash != *diskHash) {
                         if (dirty)
                             SetWindowTextW(status,
-                                           L"Scene changed outside the editor. Unsaved edits are preserved.");
+                                           L"Scene changed outside the editor. Your unsaved edits are kept; use Save as to write them to a new file (Save would overwrite the other change).");
                         else {
                             LoadingScreen loading;
                             std::optional<SceneData> next;
@@ -3492,6 +3523,10 @@ struct Editor {
             SetTextColor(reinterpret_cast<HDC>(w), RGB(225, 232, 246));
             SetBkColor(reinterpret_cast<HDC>(w), style::panel);
             return reinterpret_cast<LRESULT>(style::panelBrush());
+        case WM_QUERYENDSESSION:
+            // Logoff, restart and shutdown never send WM_CLOSE: keep a recovery copy and ask before the session ends.
+            if (dirty) autosave();
+            return discard() ? TRUE : FALSE;
         case WM_CLOSE:
             if (loadingActive) {
                 preparation_cancel() = true;
@@ -3534,7 +3569,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                 automatedCheck = true;
                 if (i + 1 < commandArgc) automatedReport = commandArgv[i + 1];
             }
-            commands |= a == L"--commands" || a == L"--inspect" || a == L"--describe" || a == L"--feature" || a == L"--export-portable" || a == L"--verify-portable";
+            commands |= is_command_flag(a);
         }
         if (commands) {
             int code = run_commands(commandArgc, commandArgv);
@@ -3611,7 +3646,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
                     editor.diskHash = loadedHash;
                     editor.dirty = repaired;
                     editor.refresh();
-                    editor.settle_scene(loading, "Preparing " + utf8(path.filename().wstring()));
+                    if (editor.settle_scene(loading, "Preparing " + utf8(path.filename().wstring())) && !repaired) editor.note_autosave();
                 } catch (const std::exception &failure) {
                     loading.close();
                     editor.error(failure.what());

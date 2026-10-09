@@ -7,6 +7,8 @@ The editor executable accepts JSON commands and writes a JSON result. These comm
 Executable after building:
 `D:\projects\Starlight-Engine\out\native\Release\Starlight.NativeEditor.exe`
 
+Every command flag listed by `--describe` (`--inspect`, `--commands`, `--feature`, `--new-adventure`, `--import-model`, `--import-texture`, `--import-blob`, `--asset-ready`, `--validate-atlas`, `--asset-root-*`, `--export-portable`, `--verify-portable`, `--export-game`) also runs without a window from this executable and writes the `--result` file; `Starlight.NativeCommands.exe` is the console build of the same commands and prints the report as well.
+
 ## Discover and inspect
 
 Run the executable with `--describe --result <absolute-report.json>` to discover capabilities.
@@ -41,6 +43,10 @@ Supported operations:
 | configure | id, x, z, speed, size | Apply the same validated exact values as Advanced mode; translate the route with the position |
 | rename | id, name | Change its display name |
 | remove | id | Remove it from the scene; the asset file is preserved |
+
+Optional top-level request keys, both default `false` (the default behaviour is unchanged): `allowMissingAssets` saves the scene even when it names models that are not in the asset library, like the editor's "Save anyway"; `correctedAdd` makes `add` resolve a relative model path against the request file's folder (as `replace-model` does) and rest the new object on the terrain.
+
+The open editor keeps `<scene>.starscene.autosave` beside a scene that has unsaved edits (at most every 2 minutes). It is a recovery copy only: it never replaces the scene, and the editor removes it after a normal Save.
 
 Coordinates are metres on the floor: X and Z. The preview floor spans -12 to +12 on each axis. Character assets remain referenced by absolute path; this is not a portable asset-package exporter. [Superseded 2026-10-04: a model is referenced by a library id, not a path. `add` and `replace-model` import the GLB you name into the library (or accept an existing model id), `merge-scene` no longer rebases model paths, and portable export bundles the referenced assets.]
 

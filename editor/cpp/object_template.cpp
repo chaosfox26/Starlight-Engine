@@ -105,10 +105,16 @@ void renew_object_ids(std::vector<Character>& objects) {
         if (auto target = renamed.find(object.LightningTargetId); !object.LightningTargetId.empty() && target != renamed.end()) object.LightningTargetId = target->second;
     }
 }
-std::vector<std::string> rules_naming_objects(const SceneData& scene, const std::unordered_set<std::string>& ids) {
+std::vector<std::string> rules_naming_objects(const SceneData& scene, const std::vector<Character>& removed) {
+    std::unordered_set<std::string> ids, keys;
+    for (const auto& object : removed) {
+        ids.insert(object.Id);
+        if (object.GameplayRole == "key" && !object.GameplayKey.empty()) keys.insert(object.GameplayKey);
+    }
+    for (const auto& object : scene.Characters) if (object.GameplayRole == "key") keys.erase(object.GameplayKey);
     std::vector<std::string> names;
     for (const auto& rule : scene.Rules) {
-        bool names_one = !rule.Subject.empty() && ids.contains(rule.Subject);
+        bool names_one = !rule.Subject.empty() && (ids.contains(rule.Subject) || (rule.Event == "item-collected" && keys.contains(rule.Subject)));
         for (const auto& action : rule.Actions) names_one = names_one || (action.Type == "open-door" && ids.contains(action.Target));
         if (names_one) names.push_back(rule.Name);
     }
