@@ -194,4 +194,23 @@ static void gameplay_audit_checks(const auto& require){
         require(defaultSlow<defaultFast-1,"SLOPE-1: Without the switch the frame-wide limit keeps its previous, frame-rate dependent result");
         _putenv_s("STARLIGHT_ACTOR_STEP_PER_SUBSTEP","");
     }
+    {
+        // P2A3-1: without collision there is no airborne state, so walking reports Walk and standing still reports Idle, not Fall.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);
+        for(int i=0;i<60;++i)p.move(0,1,1./120.);
+        require(p.presentation().motion==AdventurePlayer::Presentation::Motion::Walk,"P2A3-1: Walking without collision reports Walk, not Fall");
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.presentation().motion==AdventurePlayer::Presentation::Motion::Idle,"P2A3-1: Standing still without collision reports Idle, not Fall");
+    }
+    {
+        // P2A3-2: without collision a routed object is interacted with where it is now, not where it started.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        Character lift;lift.Shape="cube";lift.Id="lift";lift.Width=1;lift.Height=6;lift.Depth=1;lift.X=0;lift.Z=-2;lift.Route={{6,-2}};lift.Speed=2;
+        level.Characters={lift};
+        AdventurePlayer p;p.start(level);
+        require(p.interact()=="This object has no interaction.","P2A3-2: The routed object is in front of the player when the scene starts");
+        for(int i=0;i<1200;++i)p.move(0,0,1./120.);
+        require(p.interact().rfind("Look at a nearby object",0)==0,"P2A3-2: Without collision the routed object has moved out of the aim, so interaction is refused");
+    }
 }

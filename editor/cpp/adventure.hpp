@@ -1237,7 +1237,7 @@ class AdventurePlayer {
         else if(grapple_.state==GrappleMotion::State::Pulling)p.motion=M::GrapplePull;
         else if(grapple_.state==GrappleMotion::State::Swing)p.motion=M::Swing;
         else if(grapple_.state==GrappleMotion::State::Wall)p.motion=std::abs(p.velocity.y)>.1?M::Climb:M::WallHold;
-        else if(!grounded())p.motion=p.velocity.y>.1?M::Jump:M::Fall;
+        else if(settings_.Collision && !grounded())p.motion=p.velocity.y>.1?M::Jump:M::Fall; // without collision there is no controller to be airborne in
         else if(posture_==3)p.motion=M::Slide;
         else if(posture_==2)p.motion=M::Crawl;
         else if(posture_==1)p.motion=M::Crouch;
@@ -1568,6 +1568,7 @@ class AdventurePlayer {
 #endif
         jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
         spatial_.fresh=false;
+        for(const auto& object:playScene_.Characters)if(!object.Route.empty())interactionBounds_[object.Id]=posed_bounds(object);
         presentationVelocity_={};
         // Without collision there is no controller to land a launch, so the arc is flown here: up at 6 m/s, back to launch height when the vertical speed reaches -6 m/s.
         if(launchAirborne_){controlVelocity_.y-=9.81*dt;velocity.x=controlVelocity_.x;velocity.z=controlVelocity_.z;if(controlVelocity_.y<=-6){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}}
