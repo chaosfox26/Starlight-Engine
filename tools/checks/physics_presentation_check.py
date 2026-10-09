@@ -9,6 +9,8 @@ class Pose(c.Structure):
     _fields_ = [("id", c.c_uint32)] + [(name, c.c_float) for name in ("x", "y", "z", "qx", "qy", "qz", "qw")]
 
 def main():
+    if not __debug__:
+        raise SystemExit("Run without -O: the checks here are assert statements")
     dll_path = Path(sys.argv[1]).resolve()
     dll = c.CDLL(str(dll_path))
     dll.slp_create.restype = c.c_void_p
