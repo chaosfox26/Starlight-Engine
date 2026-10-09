@@ -138,7 +138,7 @@ void NativeSession::gameplay_overlays(std::vector<MeshPart> parts,bool probeMoti
         same=sameVector(a.color,b.color) && a.emissive==b.emissive && a.mesh.indices==b.mesh.indices && a.mesh.vertices.size()==b.mesh.vertices.size();
         for(size_t j=0;same && j<a.mesh.vertices.size();++j){
             const auto& x=a.mesh.vertices[j];const auto& y=b.mesh.vertices[j];
-            same=sameVector(x.position,y.position) && sameVector(x.normal,y.normal) && sameVector(x.color,y.color) && x.kind==y.kind;
+            same=sameVector(x.position,y.position) && sameVector(x.normal,y.normal) && sameVector(x.color,y.color) && x.kind==y.kind && x.motionIdentity==y.motionIdentity;
         }
     }
     if(same)return;
