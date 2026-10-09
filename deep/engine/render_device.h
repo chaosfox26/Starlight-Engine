@@ -802,6 +802,18 @@ struct RenderDevice {
         mustHr(queue->Signal(fence.Get(), v), "signal GPU completion");
         waitFence(v);
     }
+    // GPU idle that the failure-injection hook cannot interrupt: false when the GPU cannot be confirmed idle (a lost device counts as idle because nothing runs on it)
+    bool flushNoFault() noexcept {
+        try {
+            if (!queue || !fence) return true;
+            const UINT64 v = ++fenceVal;
+            if (SUCCEEDED(queue->Signal(fence.Get(), v))) {
+                if (fence->GetCompletedValue() >= v) return true;
+                if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) return true;
+            }
+            return device && FAILED(device->GetDeviceRemovedReason());
+        } catch (...) { return false; }
+    }
     void waitFence(UINT64 v) {
         if (fence->GetCompletedValue() < v) {
             const double waitStarted=timingNow();
