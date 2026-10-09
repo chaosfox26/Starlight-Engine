@@ -551,7 +551,7 @@ void NativeSession::run(std::stop_token stop) {
             }
             // The poses are no longer re-sent while they do not change, so a scene that was just replaced or reset gets the last ones again.
             if(!runtimeUpdate&&next)lastRuntimeObjects.clear();
-            if((next&&!runtimeUpdate)||doReset){sceneCache.allowResting=false;settlePoses.clear();lastBodyMotion=seconds;}
+            if((next&&!runtimeUpdate)||doReset){sceneCache.allowResting=false;settlePoses.clear();lastBodyMotion=seconds;lastObstacleCheck=seconds;}
             // No rigid-body session moves the bodies of this scene (gameplay drives them, and a body that does move leaves the base through promote_moved), so the loading barrier
             // installs the resting set play will use instead of rebuilding the base 0.75 s into play (audit 04-loading-readiness finding 2).
             if(prewarm&&!play&&!physicsNeeded&&repair_delta())sceneCache.allowResting=true;
@@ -886,6 +886,7 @@ void NativeSession::run(std::stop_token stop) {
                 play = false;
                 std::lock_guard lock(mutex_);
                 playing_ = false;
+                tools_dirty_ = true;
             }
             double routeTime = repeat && duration > 0 ? std::fmod(seconds, duration) : seconds;
             if(gameplayTime)routeTime=*gameplayTime;

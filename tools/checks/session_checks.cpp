@@ -516,6 +516,7 @@ int wmain(int argc, wchar_t **argv) {
       wait(session.status().frames + 3);
       require(!session.status().playing && session.status().seconds == 0, "Native playback stop resets safely");
       SceneData route;
+      route.RaytracingEnabled = true; // without ray tracing the grass setting rebuilds the viewport at stop, which would hide a missing rebuild
       Character walker;
       walker.Shape = "cube";
       walker.Route = {{.1, 0}};
@@ -527,12 +528,19 @@ int wmain(int argc, wchar_t **argv) {
       // Playback advances in elapsed seconds, not a fixed number of frames.
       // Fast rendering can finish twelve frames before this 0.1-second route.
       auto playbackDeadline = GetTickCount64() + 5000;
+      uint64_t updatesWhilePlaying = 0;
       do {
         wait(session.status().frames + 1);
+        const auto snapshot = session.status();
+        if (snapshot.playing) updatesWhilePlaying = snapshot.scene_updates;
       } while (session.status().seconds < .1 && GetTickCount64() < playbackDeadline);
       require(!session.status().playing &&
                   std::abs(session.status().seconds - .1) < 1e-6,
               "Path completion stops nonrepeating playback");
+      // Leaving play must install the scene once more out of play mode (edit gizmos and play-only effects are part of the packet).
+      wait(session.status().frames + 3);
+      require(session.status().scene_updates > updatesWhilePlaying,
+              "Path completion rebuilds the viewport out of play mode");
       session.playback_options(true, walker.Id);
       session.playback(true, true);
       // Observe the reset before waiting for the repeat to cross its duration.
