@@ -301,6 +301,8 @@ public:
   Array<Vec3> vertices;vertices.reserve(count);for(int i=0;i<count;i++)vertices.emplace_back(points[i*3],points[i*3+1],points[i*3+2]);
   Vec3 low(FLT_MAX,FLT_MAX,FLT_MAX),high(-FLT_MAX,-FLT_MAX,-FLT_MAX);bool finite=true;
   for(const auto& v:vertices){if(!std::isfinite(v.GetX())||!std::isfinite(v.GetY())||!std::isfinite(v.GetZ())){finite=false;break;}low=Vec3::sMin(low,v);high=Vec3::sMax(high,v);}
+  // Refused before the hull builder runs: it can return a hull for NaN vertices, which would make a body with a NaN shape (audit2 F6).
+  if(!finite){++counters.rejected;throw std::runtime_error("Nonfinite collision vertex");}
   out.diagonal=finite?(high-low).Length():0.f;
   ConvexHullShapeSettings settings(vertices);settings.mDensity=density;auto result=settings.Create();
   std::string overBound;

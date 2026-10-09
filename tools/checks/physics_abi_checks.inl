@@ -16,6 +16,7 @@ __declspec(dllimport) int slp_character_start(void *, float, float, float, float
 __declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
 __declspec(dllimport) int slp_terrain_mesh(void *, const float *, int, const uint32_t *, int);
 __declspec(dllimport) int slp_rope_path(void *, uint32_t, float *, int, int);
+__declspec(dllimport) void *slp_hull_create(const float *, int, float);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -83,6 +84,14 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F6: a dynamic body or prebuilt hull cannot be made from a non-finite vertex; the hull builder used to accept it and the body got a NaN shape.
+    {
+     void* hulls=slp_create();
+     float holed[24];std::memcpy(holed,cube,sizeof(cube));holed[3]=nan;
+     require(hulls&&slp_add(hulls,holed,8,faces,36,1,1,0,1,0,0,0,0,1)==refused&&std::string(slp_error()).find("vertex")!=std::string::npos,"audit2 F6: A dynamic body with a non-finite vertex is refused");
+     require(slp_hull_create(holed,8,1)==nullptr&&std::string(slp_error()).find("vertex")!=std::string::npos,"audit2 F6: A prebuilt hull with a non-finite vertex is refused");
+     slp_destroy(hulls);
+    }
     // audit2 F2: removing the "no body" id must not remove every rope anchored to the world (an invalid id compares equal to the world anchor).
     {
      void* anchors=slp_create();
