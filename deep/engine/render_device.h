@@ -678,6 +678,7 @@ struct RenderDevice {
         return true;
     }
     ComPtr<ID3D12DescriptorHeap> srvHeap; UINT srvSize = 0; UINT srvCount = 0;
+    UINT nullTexTable = ~0u; bool nullTexTried = false;   // RND-4: a table of null SRVs for draws whose variant has no texture set
     ComPtr<ID3D12PipelineState>  psoSkin, psoFur;
     std::string modelsDir, texturesDir;  // --models / --textures (defaults under build/)
     UINT   texRes = 2048;                // --texres
@@ -1770,6 +1771,16 @@ struct RenderDevice {
         cmd->SetPipelineState(psoSkin.Get());
         cmd->SetGraphicsRootShaderResourceView(2, palettes->GetGPUVirtualAddress() + (UINT64)slot * kMaxSkinned * kPaletteBytes);   // global palette base; Inst.paletteBase indexes within
         cmd->SetGraphicsRootShaderResourceView(4, ringGpu);                                                                        // t7 Inst ring (this slot)
+        if (!nullTexTried && srvHeap) {   // RND-4: reserve one spare table in the heap and fill it with null SRVs, once
+            nullTexTried = true;
+            if (srvCount + kTexPerSet <= starlight_heap_desc(srvHeap).NumDescriptors) {
+                nullTexTable = srvCount; srvCount += kTexPerSet;
+                D3D12_CPU_DESCRIPTOR_HANDLE dh = starlight_cpu_heap_start(srvHeap); dh.ptr += (SIZE_T)nullTexTable * srvSize;
+                D3D12_SHADER_RESOURCE_VIEW_DESC sv{}; sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; sv.Texture2D.MipLevels = 1;
+                for (UINT i = 0; i < kTexPerSet; ++i) { device->CreateShaderResourceView(nullptr, &sv, dh); dh.ptr += srvSize; }
+            } else logLine("texture heap has no spare table for untextured variants");
+        }
         const UINT nb = bktCount();
         UINT cursor = 0;
         for (UINT b = 0; b < nb; ++b) {
@@ -1794,7 +1805,7 @@ struct RenderDevice {
             else if (isLod) { if (!cm.hasLod) continue; mesh = &cm.lodGpu; idxCount = (UINT)cm.lodData.indices.size(); firstIdx = 0; lodDrawn += total; }
             else { if (sub >= cm.data.subs.size()) continue; mesh = &cm.gpu; idxCount = cm.data.subs[sub].indexCount; firstIdx = cm.data.subs[sub].firstIndex; }
             const TexSet& ts = cm.variants[variant];
-            if (ts.ok) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)ts.table * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
+            if (ts.ok || nullTexTable != ~0u) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)(ts.ok ? ts.table : nullTexTable) * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
             cmd->IASetVertexBuffers(0, 1, &mesh->vbv); cmd->IASetIndexBuffer(&mesh->ibv);
             if (instancingOn) {
                 cmd->SetGraphicsRoot32BitConstant(5, baseIdx, 0);
