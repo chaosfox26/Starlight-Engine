@@ -374,10 +374,22 @@ void bench_liquid_top() {
 
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
-        if (!std::strcmp(argv[i], "--reps") && i + 1 < argc) options.reps = std::max(5, std::atoi(argv[++i]));
+        if (!std::strcmp(argv[i], "--reps") && i + 1 < argc) {
+            char *end = nullptr;
+            const long reps = std::strtol(argv[++i], &end, 10);
+            if (end == argv[i] || *end || reps < 1 || reps > 1000000) {
+                std::fprintf(stderr, "Invalid --reps value\n");
+                return 2;
+            }
+            options.reps = std::max(5, int(reps));
+        }
         else if (!std::strcmp(argv[i], "--only") && i + 1 < argc) options.only = argv[++i];
         else if (!std::strcmp(argv[i], "--csv") && i + 1 < argc) options.csv = argv[++i];
         else if (!std::strcmp(argv[i], "--detail") && i + 1 < argc) _putenv_s("STARLIGHT_MESH_DETAIL", argv[++i]);
+        else {
+            std::fprintf(stderr, "Unknown or incomplete option: %s\n", argv[i]);
+            return 2;
+        }
     }
     std::printf("Starlight.NativeBench: %d repetitions per case, A/B alternated, thread CPU microseconds per call, wall median in brackets (machine load is whatever it is: this is NOT a quiet-machine run)\n", options.reps);
     bench_contact_index();
