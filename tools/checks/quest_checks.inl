@@ -107,3 +107,28 @@
     for(int i:{4,2,1,3}){auto id=scene.Characters[i].Id;guide.opened(id);if(i==2){scene.Characters[i].X=5;guide.carried(id);}else assign_object_behavior(scene,id,i==3?"door":"breakable");guide.update(scene);}
     require(quest_views(guide.definition,guide.runtime)[0].complete,"Five separate cubes satisfy their individual requirements in arbitrary order");
 }
+
+{
+    SceneData scene;scene.Game.emplace();scene.Game->SpawnZ=2;
+    Character key;key.Shape="cube";key.Width=key.Depth=1;key.Height=2;key.GameplayRole="key";key.GameplayKey="gold";key.Name="Gold key";scene.Characters={key};
+    add_object_quest(scene,key.Id);
+    auto loaded=SceneData::decode(scene.encode());AdventurePlayer player;player.start(loaded);player.interact();
+    require(player.scene().Characters.empty() && quest_views(loaded,player.rules())[0].complete,"Named key objective completes when its key name is collected");
+    auto shared=key;shared.Id=new_id();shared.X=4;scene.Characters.push_back(shared);
+    add_object_quest(scene,shared.Id);require(scene.Rules.size()==2 && scene.Rules[1].Subject=="gold","Two keys with one name each keep their own objective");
+    assign_object_behavior(scene,key.Id,"door");require(scene.Rules[0].Event=="object-opened" && scene.Rules[0].Subject==key.Id,"Changing a named key to a door moves its objective onto the object");
+}
+
+{
+    SceneData scene;scene.Game.emplace();scene.Game->SpawnY=.5;scene.Game->SpawnZ=2;
+    Character key;key.Shape="cube";key.X=3;key.GameplayRole="key";key.GameplayKey="gold";
+    Character door;door.Shape="cube";door.X=6;door.Height=2;door.GameplayRole="door";door.GameplayKey="gold";
+    scene.Characters={key,door};
+    assign_object_behavior(scene,door.Id,"door");
+    require(scene.Characters[1].GameplayKey=="gold","Choosing Open again keeps a locked door's key requirement");
+    auto loaded=SceneData::decode(scene.encode());AdventurePlayer player;player.start(loaded);
+    player.position.x=6;player.interact();
+    require(player.scene().Characters.size()==2,"Locked door stays shut before its key is collected");
+    player.position.x=3;player.interact();player.position.x=6;player.interact();
+    require(player.scene().Characters.empty(),"Locked door opens once its key is collected");
+}
