@@ -46,4 +46,10 @@ static void render_device_checks(const auto& require){
         require(text.find("outputFailed = true;") != std::string::npos && text.find("outputFailed = false;") != std::string::npos, "RND-2: A native resize records a failed rollback and clears the record when a resize succeeds");
         require(text.find("if (outputFailed) {") != std::string::npos, "RND-2: The next frame after a failed rollback is refused instead of drawing with null targets");
     }
+    {
+        // The header is read again for the buffer pins: an empty default buffer gets the same 256 byte floor that acquireBuffer applies.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        require(text.find("const size_t allocBytes = std::max<size_t>(256, bytes);") != std::string::npos && text.find("acquireBuffer(allocBytes,D3D12_RESOURCE_STATE_COMMON)") != std::string::npos, "createDefaultBuffer(0) allocates the same 256 byte minimum that acquireBuffer uses");
+    }
 }

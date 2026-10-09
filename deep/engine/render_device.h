@@ -910,19 +910,20 @@ struct RenderDevice {
     }
 
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* src, size_t bytes, D3D12_RESOURCE_STATES finalState) {
+        const size_t allocBytes = std::max<size_t>(256, bytes);   // same 256 byte floor acquireBuffer applies; an empty upload used to fail with a zero-width resource
         D3D12_HEAP_PROPERTIES hpDefault{}; hpDefault.Type = D3D12_HEAP_TYPE_DEFAULT;
         D3D12_HEAP_PROPERTIES hpUpload{};  hpUpload.Type = D3D12_HEAP_TYPE_UPLOAD;
         D3D12_RESOURCE_DESC bd{};
-        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = bytes; bd.Height = 1;
+        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = allocBytes; bd.Height = 1;
         bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1;
         bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-        auto def=acquireBuffer(bytes,D3D12_RESOURCE_STATE_COMMON);
+        auto def=acquireBuffer(allocBytes,D3D12_RESOURCE_STATE_COMMON);
         UploadStorage up;
         size_t best = uploadPool.size();
         for (size_t i = 0; i < uploadPool.size(); ++i) {
             const auto width = starlight_resource_desc(uploadPool[i].resource).Width;
-            if (width >= bytes && (best == uploadPool.size() || width < starlight_resource_desc(uploadPool[best].resource).Width)) best = i;
+            if (width >= allocBytes && (best == uploadPool.size() || width < starlight_resource_desc(uploadPool[best].resource).Width)) best = i;
         }
         if (best != uploadPool.size()) {
             uploadPoolBytes -= uploadStorageBytes(uploadPool[best].resource.Get());
@@ -942,7 +943,7 @@ struct RenderDevice {
         }
         memcpy(up.mapped, src, bytes);
 
-        cmd->CopyBufferRegion(def.Get(), 0, up.resource.Get(), 0, bytes);
+        cmd->CopyBufferRegion(def.Get(), 0, up.resource.Get(), 0, allocBytes);
         D3D12_RESOURCE_BARRIER br{}; br.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         br.Transition.pResource = def.Get(); br.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;   // promoted by the copy above
         br.Transition.StateAfter = finalState; br.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
