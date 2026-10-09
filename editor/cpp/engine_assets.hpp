@@ -67,8 +67,11 @@ class EngineAssets {
     static std::vector<fs::path> default_roots();
     static fs::path cache_folder();
     // Redirects the library for the lifetime of the object (checks and tools); restores the previous configuration on destruction.
+    // The root is process-wide: every thread sees the redirected library while the object lives, so use it from one thread at a time
+    // (nesting on that thread is fine). A scope opened or closed on a second thread while another thread's is live is counted by overlapping_uses() and asserts in debug builds.
     class ScopedRoot {
       public:
+        static uint64_t overlapping_uses();
         explicit ScopedRoot(fs::path folder);
         ~ScopedRoot();
         ScopedRoot(const ScopedRoot&) = delete;

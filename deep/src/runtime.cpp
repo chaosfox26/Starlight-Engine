@@ -35,14 +35,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show){
         if(!j.at("scenes").contains(scene))throw std::runtime_error("Selected project does not provide scene: "+scene);
         std::set<std::string> capabilities;for(auto&v:j.at("testCapabilities"))capabilities.insert(v.get<std::string>());
         for(auto i=s.begin();i!=s.end();++i)if(!capabilities.count(i.key()))throw std::runtime_error("Project does not support test setting: "+i.key());
-        std::vector<std::wstring> args;for(auto&a:j.at("arguments"))args.push_back(wide(a.get<std::string>()));for(auto&a:j.at("scenes").at(scene).at("arguments"))args.push_back(wide(a.get<std::string>()));
+        std::vector<std::wstring> args,projectArguments;for(auto&a:j.at("arguments"))projectArguments.push_back(wide(a.get<std::string>()));append_output_arguments(projectArguments,args);for(auto&a:j.at("scenes").at(scene).at("arguments"))args.push_back(wide(a.get<std::string>()));
         auto add=[&](const wchar_t*k,std::string v){args.push_back(k);args.push_back(wide(v));};
         add(L"--res",std::to_string(s["resolution"][0].get<int>())+"x"+std::to_string(s["resolution"][1].get<int>()));add(L"--display",s["displayMode"]);add(L"--upscaler",s["upscaler"]);add(L"--quality",s["quality"]);add(L"--bench",std::to_string(s["durationMs"].get<int>()));add(L"--nocull",s["culling"].get<bool>()?"0":"1");if(!s["vsync"].get<bool>())args.push_back(L"--novsync");if(s["frameGeneration"].get<bool>())args.push_back(L"--fg");
         // Raw options are limited to output destinations; test settings cannot silently override the preset.
-        for(size_t i=0;i<extra.size();++i){if(extra[i]!=L"--report"&&extra[i]!=L"--log"&&extra[i]!=L"--shot"&&extra[i]!=L"--shotat")throw std::runtime_error("Put test options in the preset file");args.push_back(extra[i]);if(++i>=extra.size())throw std::runtime_error("Missing output argument");args.push_back(extra[i]);}
+        append_output_arguments(extra,args);
         fs::path module=project_module_path(projectPath.parent_path(),wide(j.at("module").get<std::string>()));
         if(!planPath.empty()){json a=json::array();for(auto&w:args)a.push_back(u8text(fs::path(w)));write(planPath,{{"project",u8text(projectPath)},{"scene",scene},{"module",u8text(module)},{"preset",u8text(fs::absolute(presetPath))},{"settings",s},{"arguments",a}});return 0;}
         SetEnvironmentVariableW(L"STARLIGHT_FRAME_LIMIT",std::to_wstring(s["frameLimit"].get<int>()).c_str());SetEnvironmentVariableW(L"STARLIGHT_FOREGROUND",s["foreground"].get<bool>()?L"1":L"0");
+        module=project_module_file(projectPath.parent_path(),wide(j.at("module").get<std::string>()));
         std::wstring command;for(auto&a:args)command+=quote(a)+L" ";
         HMODULE library=LoadLibraryExW(module.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);if(!library)throw std::runtime_error("Project module could not load");
         using Run=int(WINAPI*)(HINSTANCE,LPWSTR,int);auto run=reinterpret_cast<Run>(GetProcAddress(library,"StarlightRunProject"));if(!run){FreeLibrary(library);throw std::runtime_error("Project entry point missing");}int result=run(instance,command.data(),show);FreeLibrary(library);return result;

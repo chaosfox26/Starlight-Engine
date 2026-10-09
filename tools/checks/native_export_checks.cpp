@@ -48,6 +48,7 @@ int wmain(int argc,wchar_t** argv){
             check(found,std::string("Export manifest hashes ")+name);
         }
         auto player=package/L"Starlight.NativePlayer.exe";run(player,{L"--validate"});checks.push_back("Packaged content validates");
+        {auto victim=package/L"licenses/Jolt-MIT.txt";const auto original=read_file(victim);atomic_write(victim,original+"x");run(player,{L"--validate"},1);atomic_write(victim,original);run(player,{L"--validate"});check(hash_file(victim)==hash_file(runtime/L"licenses/Jolt-MIT.txt"),"A changed runtime file stops the packaged player; the restored file starts it again");}
         if(fs::is_regular_file(runtime/L"nvngx_dlssd.dll")){
             check(hash_file(package/L"nvngx_dlssd.dll")==hash_file(runtime/L"nvngx_dlssd.dll"),"Export preserves ray reconstruction runtime");
             check(read_file(package/L"licenses/NVIDIA-RTX-SDK.txt")==read_file(runtime/L"licenses/NVIDIA-RTX-SDK.txt"),"Export preserves ray reconstruction license");

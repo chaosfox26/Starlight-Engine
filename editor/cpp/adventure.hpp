@@ -225,7 +225,7 @@ class AdventurePlayer {
         static const size_t limit=[]{wchar_t v[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE",v,16)&&v[0]==L'0')return size_t(0);wchar_t m[16]{};if(GetEnvironmentVariableW(L"STARLIGHT_PREFRACTURE_MAX",m,16)){int n=_wtoi(m);if(n>=0)return size_t(n);}return size_t(256);}(); // up to 256 breakables are prepared while the scene loads (every breakable of an ordinary scene); in a larger scene the rest follow as these are used, so memory does not grow with the breakable count
         if(limit==0)return;
         const size_t cap=rolling?limit:std::min<size_t>(limit,4);
-        size_t held=0;{std::lock_guard lock(preMutex_);held=preFractures_.size();}
+        const size_t held=prefracture_live();
         if(held>=cap)return;
         // Every breakable, non-actor object that can turn into rubble (the Breakable flag, not only the explicit gameplay role).
         std::vector<const Character*> candidates;
@@ -1093,6 +1093,12 @@ class AdventurePlayer {
         bool settled()const{return prepared+failed+abandoned>=total;}
         bool ok()const{return prepared==total;}
     };
+    // Entries that still count against the break-ahead cap: queued, running or finished objects that are still in the scene. Failed or abandoned entries and entries of removed objects hold no result worth keeping a slot for.
+    size_t prefracture_live(){
+        std::lock_guard lock(preMutex_);size_t live=0;
+        for(const auto& [id,entry]:preFractures_)if(entry->state<=2&&!rules_.removed.contains(id))++live;
+        return live;
+    }
     FractureProgress fracture_progress(){
         FractureProgress p;std::lock_guard lock(preMutex_);
         for(const auto& [id,entry]:preFractures_){
@@ -1300,7 +1306,7 @@ class AdventurePlayer {
         if(cameraDistance<=.001){if(boom_smoothing())boomStamp_=-1;return view_position();}
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
         each_ray_candidate(view_position(),backward,cameraDistance+.2,[&](const Character& object){
-            if(!blocks_movement(object))return; // keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in
+            if(repair_cameraboom()?!blocks_movement(object):(object.GameplayRole=="key" || object.GameplayRole=="exit"))return; // repaired: keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in; switched off, only keys and exits are skipped
             // Session-start bounds come from every actual mesh vertex. Static
             // objects outside the finite boom cannot change its exact triangle
             // hit. Moving/routed/combat actors retain the original query path.

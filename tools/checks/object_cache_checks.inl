@@ -432,6 +432,7 @@ template<class Require> void fracture_state_checks(Require require){
     require(progress.prepared==5&&progress.ready==5,"Only valid prepared results count as done");
     require(progress.failed==1&&progress.failures.size()==1&&progress.failures[0].find("fx-empty")!=std::string::npos&&progress.failures[0].find("no fracture pieces")!=std::string::npos,"An object that cannot be fractured is Failed with its reason, not counted as done");
     require(!progress.ok(),"A failed destructible makes the preparation not ok");
+    require(player.prefracture_live()==progress.prepared&&progress.total==progress.prepared+progress.failed,"The break-ahead cap counts only live entries, not the failed destructible");
     // Move the platform and the actor away from the poses they were prepared at, then break everything.
     for(int tick=0;tick<240;++tick)player.move(0,0,1./60);
     runtime_bypass().reset();

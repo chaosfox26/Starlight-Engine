@@ -1,11 +1,13 @@
 #include "engine_assets.hpp"
 #include "platform.hpp"
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cwctype>
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 namespace starlight::editor {
@@ -29,6 +31,9 @@ struct Roots {
     std::mutex mutex;
     std::unordered_set<std::string> persisted;
     EngineAssetsState state;
+    std::thread::id scopeOwner; // thread of the outermost live ScopedRoot
+    int scopeDepth = 0;
+    uint64_t scopeOverlaps = 0;
 };
 Roots& roots() {
     static Roots value;
@@ -509,8 +514,25 @@ void EngineAssets::discover_near(const fs::path& folder) {
             if (std::find(roots().state.notes.begin(), roots().state.notes.end(), note) == roots().state.notes.end()) roots().state.notes.push_back(std::move(note));
     }
 }
+// The root is process-wide, so a scope on one thread is seen by every thread; a scope opened or closed while another thread's scope is live is counted (and asserts in debug builds).
+static void note_scope_entered() {
+    auto& r = roots();
+    if (r.scopeDepth == 0) r.scopeOwner = std::this_thread::get_id();
+    else if (r.scopeOwner != std::this_thread::get_id()) { ++r.scopeOverlaps; assert(false && "EngineAssets::ScopedRoot used from two threads at once"); }
+    ++r.scopeDepth;
+}
+static void note_scope_left() {
+    auto& r = roots();
+    if (r.scopeOwner != std::this_thread::get_id()) { ++r.scopeOverlaps; assert(false && "EngineAssets::ScopedRoot used from two threads at once"); }
+    if (r.scopeDepth > 0) --r.scopeDepth;
+}
+uint64_t EngineAssets::ScopedRoot::overlapping_uses() {
+    std::lock_guard lock(roots().mutex);
+    return roots().scopeOverlaps;
+}
 EngineAssets::ScopedRoot::ScopedRoot(fs::path folder) {
     std::lock_guard lock(roots().mutex);
+    note_scope_entered();
     previous_ = std::make_unique<EngineAssetsState>(roots().state);
     roots().state.primary = normal_folder(std::move(folder));
     roots().state.search.clear();
@@ -519,6 +541,7 @@ EngineAssets::ScopedRoot::ScopedRoot(fs::path folder) {
 }
 EngineAssets::ScopedRoot::~ScopedRoot() {
     std::lock_guard lock(roots().mutex);
+    note_scope_left();
     roots().state = *previous_;
     roots().persisted.clear();
 }
