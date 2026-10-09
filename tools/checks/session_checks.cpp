@@ -204,6 +204,7 @@ int wmain(int argc, wchar_t **argv) {
   if(argc>=4&&std::wstring_view(argv[1])==L"--destruction-dust-preview")return destruction_dust_preview(argv[2],argv[3]);
   if(argc>=4&&std::wstring_view(argv[1])==L"--terrain-destruction-preview")return terrain_destruction_preview(argv[2],argv[3]);
   if(argc>=4&&std::wstring_view(argv[1])==L"--rock-fracture-preview")return rock_fracture_preview(argv[2],argv[3]);
+  if(argc>=2&&std::wstring_view(argv[1]).starts_with(L"--")){std::fwprintf(stderr,L"Unknown or incomplete option: %ls\n",argv[1]);return 2;}
   const bool visibleLifecycle=GetEnvironmentVariableW(L"STARLIGHT_VISIBLE_LIFECYCLE",nullptr,0)!=0;
   const auto traceStatus = gate0::enable();
   fs::path output = argc > 1 ? argv[1] : L"session-checks";
