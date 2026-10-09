@@ -21,4 +21,8 @@ static void terrain_brush_checks(const auto& require){
         const size_t moderate=stamped(1e6),vast=stamped(1e10);
         require(moderate==size_t(TerrainData::N)*TerrainData::N&&vast==moderate,"07-T3: A vast stamped object raises the same terrain cells as a moderate one");
     }
+    {   // 07-T4: a NaN horizontal position gives a NaN height without converting NaN to int (undefined behaviour); far finite positions still clamp to the grid edge.
+        TerrainData flat;
+        require(std::isnan(flat.height_at(NAN,0))&&std::isnan(flat.height_at(0,NAN))&&std::isfinite(flat.height_at(1e300,-1e300)),"07-T4: Height queries with a NaN position return NaN, and finite positions far outside the terrain stay finite");
+    }
 }
