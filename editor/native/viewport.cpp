@@ -170,9 +170,8 @@ struct Viewport {
  double drawSegments[5]{};
  void draw(){
  using DrawClock=std::chrono::steady_clock;const auto segT0=DrawClock::now();
- const size_t ownParts=parts.size();
-  parts.insert(parts.end(),instanceParts.begin(),instanceParts.end());
-  struct RestoreParts{std::vector<Part>& list;size_t count;~RestoreParts(){list.resize(count);}} restoreParts{parts,ownParts};
+ // Scene parts, then resident instances, visited in place: copying every instance Part into parts each frame cost reference counts for nothing.
+  std::vector<const Part*> allParts;allParts.reserve(parts.size()+instanceParts.size());for(const auto& p:parts)allParts.push_back(&p);for(const auto& p:instanceParts)allParts.push_back(&p);
   auto& d=*renderer;surfaces.bind(d);currentVertices.clear();rtItems.clear();atmosphere.fires.clear();atmosphere.dust.clear();if(!externalFogObstacles){atmosphere.obstacleLow.clear();atmosphere.obstacleHigh.clear();atmosphere.obstacleVelocity.clear();}
   float time=visualTime();
   grass.begin(d,time);
@@ -187,7 +186,7 @@ struct Viewport {
   XMFLOAT4X4 viewClip{};if(viewCull)XMStoreFloat4x4(&viewClip,d.viewProjNoJit*XMMatrixScaling(.9f,.9f,1.f));
   const auto viewCulled=[&](const Part& part,float kind,const XMMATRIX& transform){if(!viewCull||GrassDeformation::accepts(kind))return false;auto low=part.shadowLow,high=part.shadowHigh;if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}XMFLOAT4X4 clip;XMStoreFloat4x4(&clip,transform*XMLoadFloat4x4(&viewClip));return ClipBox::outside(&low.x,&high.x,&clip._11);};
   struct LiquidDraw {const GpuMesh* mesh;XMMATRIX world;XMFLOAT3 color;float emissive;uint64_t key;float distance=0;};std::vector<LiquidDraw> liquids,solids;std::vector<SunShadows::Item> casters;
-  size_t partIndex=0;for(const auto& p:parts){auto grassKey=GrassDeformation::identity(p.motionKey,partIndex++);if(p.effect==4)continue;
+  size_t partIndex=0;for(const Part* partPointer:allParts){const Part& p=*partPointer;auto grassKey=GrassDeformation::identity(p.motionKey,partIndex++);if(p.effect==4)continue;
    float x=p.x,z=p.z,yaw=0;double remaining=seconds*p.speed;
    for(const auto& q:p.route){double dx=q.x-x,dz=q.y-z,len=sqrt(dx*dx+dz*dz);if(len>1e-8)yaw=(float)atan2(dx,dz);if(len>remaining&&len>0){x+=(float)(dx*remaining/len);z+=(float)(dz*remaining/len);break;}remaining-=len;x=q.x;z=q.y;}
    if(seconds<=0)yaw=0;
