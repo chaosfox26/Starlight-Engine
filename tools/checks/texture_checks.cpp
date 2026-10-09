@@ -1004,6 +1004,13 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB whose byteStride wraps the accessor range", e);
             require(e.code == LoadCode::Malformed && e.message.find("wraps around") != std::string::npos && !scratch.loaded, "GLB fuzz: a byteStride that wraps the accessor size arithmetic is Malformed instead of reading outside the buffer");
         }
+        {   // GLB fuzz finding: a vertex whose weights sum to zero falls back to weight 1 on joint 0 of its list, which the joint range check never looked at
+            glbfuzz::Parts parts; glbfuzz::split(glb, parts);
+            parts.bin[132] = 7; std::memset(parts.bin.data() + 160, 0, 16);
+            e = model::loadSkinnedFromMemory(ByteView(glbfuzz::pack(parts)), nullptr, "zero-weights.glb", scratch);
+            show("GLB whose unweighted vertex names joint 7", e);
+            require(e.code == LoadCode::SkeletonInvalid && !scratch.loaded, "GLB fuzz: a vertex whose weights sum to zero is held to the same joint range as a weighted one");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
