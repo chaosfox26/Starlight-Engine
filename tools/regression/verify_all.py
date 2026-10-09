@@ -110,11 +110,11 @@ def plan(args, stamp):
     if args.gpu:
         # The denoise step loads this vendor DLL from the executables folder; a fresh build folder does not have it. Copy it from the known good build, or fail loudly instead of a confusing 'Win32 126'.
         dll = os.path.join(args.build_dir, 'nvngx_dlssd.dll')
-        if not os.path.exists(dll):
+        if os.path.isdir(args.build_dir) and not os.path.exists(dll):
             for source in (r'D:\projects\Starlight-Engine-repair\out\classic\Release\nvngx_dlssd.dll',):
                 if os.path.exists(source):
                     import shutil; shutil.copy2(source, dll); print('copied nvngx_dlssd.dll into', args.build_dir)
-        if not os.path.exists(dll):
+        if os.path.isdir(args.build_dir) and not os.path.exists(dll):
             print('NOT RUN: nvngx_dlssd.dll is missing from ' + args.build_dir + ' (the GPU denoise step needs it next to the executables)'); sys.exit(2)
         packet = os.path.join(args.repo, 'editor', 'checks', 'denoise', 'regression', 'chaos-rt.packet')
         gpu = os.path.join(args.results, 'verify-' + stamp)
