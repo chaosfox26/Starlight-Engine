@@ -178,7 +178,7 @@ void NativeSession::runtime_objects(std::vector<Character> objects){
     const bool same=objects.size()==runtimeObjects_.size()&&std::equal(objects.begin(),objects.end(),runtimeObjects_.begin(),[](const Character& a,const Character& b){
         return a.Id==b.Id&&a.X==b.X&&a.Y==b.Y&&a.Z==b.Z&&a.PhysicsRotation==b.PhysicsRotation&&a.JointRuntimePoints==b.JointRuntimePoints;});
     if(same)return;
-    runtimeObjects_=std::move(objects);runtimeObjectsDirty_=!runtimeObjects_.empty();
+    runtimeObjects_=std::move(objects);runtimeObjectsDirty_=true; // an emptied list must reach the render thread too, or the last poses would be re-applied on the next runtime update or reset
 }
 void NativeSession::playback_options(bool repeat, std::string follow) {
     std::lock_guard lock(mutex_);
