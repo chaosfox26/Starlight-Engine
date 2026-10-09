@@ -65,5 +65,22 @@ static void missing_asset_save_checks(const auto& require){
         require(refusedCast.find("not in the asset library")!=std::string::npos&&load_scene(target).Characters[0].Name=="Ghost","CLI audit 1: verifyAssets:false on a cast does not let a batch save over a model an object names");
         require(run(clearCast,{{"allowMissingAssets",true}}).empty()&&load_scene(target).Cast.Models.empty(),"CLI audit 1: allowMissingAssets still saves the same batch");
     }
+    {
+        // CLI audit 2: a null scalar in a follow op is refused like any other wrong-typed value; only housing and beam treat null as removal.
+        const auto folder=work/"follow-null";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        Character spot;spot.Name="Spot";spot.Shape="light";
+        SceneData lit;lit.Characters={spot};save_scene(lit,target);
+        auto run=[&](json operation){
+            json request={{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({operation})}};
+            atomic_write(folder/"request.json",request.dump());
+            std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+            return failure;
+        };
+        const auto nulled=run(json{{"op","follow"},{"id",spot.Id},{"lag",nullptr}});
+        require(!nulled.empty()&&!load_scene(target).Characters[0].Follow,"CLI audit 2: A null lag in a follow op is refused and nothing is written");
+        require(run(json{{"op","follow"},{"id",spot.Id},{"lag",4}}).empty()&&load_scene(target).Characters[0].Follow->Lag==4,"CLI audit 2: A numeric lag in a follow op is applied");
+        require(run(json{{"op","follow"},{"id",spot.Id},{"housing",nullptr}}).empty()&&!load_scene(target).Characters[0].Follow->Housing,"CLI audit 2: A null housing in a follow op removes the housing");
+    }
     fs::remove_all(work);
 }

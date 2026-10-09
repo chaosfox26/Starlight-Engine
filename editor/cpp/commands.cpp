@@ -350,7 +350,12 @@ json apply_commands(const fs::path &file) {
                 for (const auto &[from, to] : std::initializer_list<std::pair<const char *, const char *>>{
                          {"target", "Target"}, {"offsetX", "OffsetX"}, {"offsetZ", "OffsetZ"}, {"lag", "Lag"}, {"wobble", "Wobble"},
                          {"poolRadius", "PoolRadius"}, {"housing", "Housing"}, {"beam", "Beam"}})
-                    if (op.contains(from)) patch[to] = op.at(from);
+                    if (op.contains(from)) {
+                        // Only housing and beam treat null as removal; for a scalar, merge-patch would drop the key and silently restore its default.
+                        if (op.at(from).is_null() && std::string_view(to) != "Housing" && std::string_view(to) != "Beam")
+                            throw std::runtime_error(std::string("Follow setting ") + from + " must not be null");
+                        patch[to] = op.at(from);
+                    }
                 current.merge_patch(patch);
                 c.Follow = current.get<LightFollow>();
             }
