@@ -480,6 +480,9 @@ struct Editor {
         } catch (const std::exception &e) {
             if (self)
                 self->report(e.what(), m, l);
+            // A failed save while closing or ending the session keeps the window open: DefWindowProc would destroy it on WM_CLOSE, or end the session on WM_QUERYENDSESSION.
+            if (m == WM_CLOSE) return 0;
+            if (m == WM_QUERYENDSESSION) return FALSE;
         }
         return DefWindowProc(h, m, w, l);
     }
