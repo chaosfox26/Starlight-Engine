@@ -107,7 +107,7 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
  endforeach()
  # These run the native executables of the tree under test (STARLIGHT_BUILD_DIR), not whatever sits in out/classic.
- foreach(py_test test_native_analysis test_native_audit test_native_audit_records test_native_cleanup_bridge test_native_knowledge test_native_reports)
+ foreach(py_test test_native_analysis test_native_audit test_native_audit_records test_native_cleanup_bridge test_native_knowledge test_native_reports test_scene_migration_paths)
   add_test(NAME py-${py_test} COMMAND "${CMAKE_COMMAND}" -E env "STARLIGHT_BUILD_DIR=${CMAKE_BINARY_DIR}/$<CONFIG>" "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
  endforeach()
  # The four known-failing tests are listed but disabled, so ctest reports them as "Not Run (Disabled)" instead of leaving them invisible.

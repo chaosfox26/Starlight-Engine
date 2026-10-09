@@ -982,6 +982,10 @@ int run_convert_all(const fs::path& inventoryPath, Options o, const fs::path& st
     size_t pass = 0, failed = 0, already = 0, regenerate = 0, outside = 0, warningCount = 0;
     std::map<std::string, size_t> addedTotals, kindPass;
     for (const auto& f : inventory.at("files")) {
+        if (const auto skipped = f.at("class").get<std::string>(); skipped == "generated-check" || skipped == OutsideClass || f.at("status") == "unreadable") continue;
+        confined_relative(f.contains("stage_relative") ? f.at("stage_relative").get<std::string>() : f.at("relative").get<std::string>());
+    }
+    for (const auto& f : inventory.at("files")) {
         const auto cls = f.at("class").get<std::string>();
         const auto kindText = f.contains("kind") ? f.at("kind").get<std::string>() : std::string(kind_name(kind_of_path(from_utf8(f.at("path").get<std::string>()))));
         const auto rel = f.contains("stage_relative") ? f.at("stage_relative").get<std::string>() : f.at("relative").get<std::string>();
