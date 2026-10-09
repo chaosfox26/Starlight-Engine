@@ -1037,6 +1037,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(memoryError.code == LoadCode::NoGeometry && !pathOk && pathErr.find("no textured triangle geometry") != std::string::npos, "repo GLB fixture without UVs fails identically through memory and path loaders");
         }
     }
+    fuzzSkinned(dir, root, require);
 }
 }
 int main(int argc, char** argv) {
