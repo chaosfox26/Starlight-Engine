@@ -81,6 +81,12 @@ def apply_result(suite, data):
     suite['checks'] = data.get('checks', [])
     suite['schema'] = data.get('schema')
 
+def settle_exit(suite):
+    """A suite that exits nonzero or runs out of time is not a pass, even when its result.json says success (REG-1). The error text only fills an empty error so token matching in evaluate_test still sees the failing check name."""
+    if suite.get('timedOut') or suite.get('exitCode') not in (None, 0):
+        suite['success'] = False
+        suite['error'] = suite.get('error') or ('timed out' if suite.get('timedOut') else 'process exited with code %s' % suite['exitCode'])
+
 def evaluate_test(test, suite):
     """State of one ledger test given what the suite did. suite keys: started, completed, success, error, checks (names of passed checks), skippedReason."""
     token = test['token']
@@ -240,6 +246,26 @@ def self_test():
     got, _ = evaluate_entry(entry, filtered)
     ok = filtered['success'] is False and 'not a full pass' in filtered['error'] and got == 'NOT-CHECKED'
     print('  %s a filtered result.json is never a success: %s' % ('ok ' if ok else 'BAD', got))
+    bad += not ok
+    crashed = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['a', 'X: 1', 'X: 2', 'X: 3'], 'exitCode': -1073741819, 'timedOut': False}
+    settle_exit(crashed)
+    ok = crashed['success'] is False and crashed['error'] == 'process exited with code -1073741819'
+    print('  %s a suite that exits nonzero after writing a pass is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    killed = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['X: 1', 'X: 2', 'X: 3'], 'exitCode': None, 'timedOut': True}
+    settle_exit(killed)
+    ok = killed['success'] is False and killed['error'] == 'timed out'
+    print('  %s a suite that times out after writing a pass is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    regressed = {'started': True, 'completed': True, 'success': False, 'error': 'X: 2 broke', 'checks': ['X: 1'], 'exitCode': 1, 'timedOut': False}
+    settle_exit(regressed)
+    ok = regressed['error'] == 'X: 2 broke' and evaluate_entry(entry, regressed)[0] == 'REGRESSED'
+    print('  %s a nonzero exit keeps the failing check name, so the entry is still REGRESSED' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    clean = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['X: 1', 'X: 2', 'X: 3'], 'exitCode': 0, 'timedOut': False}
+    settle_exit(clean)
+    ok = clean['success'] is True and clean['error'] is None
+    print('  %s a clean exit 0 pass is left as a pass' % ('ok ' if ok else 'BAD'))
     bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
@@ -427,6 +453,7 @@ def main():
             suite['error'] = 'suite did not finish; last passed check: %s' % (suite['checks'][-1] if suite['checks'] else 'none')
         else:
             suite['error'] = 'suite did not finish and left no progress log'
+        settle_exit(suite)
 
     entries = []
     for entry in ledger['entries']:
