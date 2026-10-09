@@ -93,7 +93,7 @@ void verify_game_files(const fs::path &folder) {
     for (const auto &entry : manifest.at("files")) {
         const auto name = entry.at("path").get<std::string>();
         const auto relative = fs::u8path(name);
-        if (relative.empty() || relative.is_absolute() || relative.has_root_name() || std::any_of(relative.begin(), relative.end(), [](const fs::path &part) { return part == L".."; }))
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() || name.find(':') != std::string::npos || std::any_of(relative.begin(), relative.end(), [](const fs::path &part) { return part == L".."; }))
             throw std::runtime_error("game-manifest.json lists an invalid file path: " + name);
         const auto path = folder / relative;
         if (!fs::is_regular_file(path)) throw std::runtime_error("Game file is missing: " + name + ". Reinstall or export the game again.");

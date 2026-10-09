@@ -378,4 +378,33 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         {SceneData plain;require(leavesNothing(games/"six",runtime,plain),"Fuzz: a scene without adventure controls is refused");}
         {atomic_write(package/"marker.txt","mine");const auto before=listing(package);require(refused([&]{export_playable_game(scene,package,runtime);})&&listing(package)==before,"Fuzz: exporting a game over an existing folder is refused and leaves it untouched");}
     }
+
+    {
+        // The player checks the runtime files named in game-manifest.json before it starts. A manifest of any damaged, forged or hostile shape is refused, and no entry may name a hidden data stream (the export never writes one).
+        const auto game=work/"player-game";fs::remove_all(game);fs::create_directories(game/"licenses");
+        atomic_write(game/"Starlight.NativePlayer.exe","player bytes");atomic_write(game/"licenses"/"notice.txt","notice");
+        const json good{{"format","starlight-playable-game"},{"version",1},{"files",json::array({{{"path","Starlight.NativePlayer.exe"},{"sha256",hash_file(game/"Starlight.NativePlayer.exe")}},{{"path","licenses/notice.txt"},{"sha256",hash_file(game/"licenses"/"notice.txt")}}})}};
+        const auto startsWith=[&](const std::string& text){atomic_write(game/"game-manifest.json",text);return outcome([&]{verify_game_files(game);});};
+        require(startsWith(good.dump())==Result::Accepted,"Fuzz baseline: a game manifest that matches its files passes the player's start-up check");
+        size_t wrong=0;
+        const auto dumped=good.dump();
+        for(size_t keep=0;keep<dumped.size();++keep)if(startsWith(dumped.substr(0,keep))==Result::Accepted)++wrong;
+        for(const std::string& text:{std::string("{{{"),std::string(),std::string("[]"),std::string("null"),std::string("5"),std::string("{}"),std::string("{\"files\":5}"),std::string("{\"files\":{}}"),std::string("{\"files\":[5]}"),std::string("{\"files\":[null]}"),std::string("{\"files\":[[]]}")})
+            if(startsWith(text)==Result::Accepted)++wrong;
+        const auto entry=[&](auto edit){auto m=good;edit(m["files"][0]);return m;};
+        for(const json& m:{entry([](json& e){e["path"]=5;}),entry([](json& e){e.erase("path");}),entry([](json& e){e.erase("sha256");}),entry([](json& e){e["sha256"]=5;}),
+            entry([](json& e){e["path"]="";}),entry([](json& e){e["path"]="..\\outside.exe";}),entry([](json& e){e["path"]="../outside.exe";}),entry([](json& e){e["path"]="C:\\Windows\\win.ini";}),entry([](json& e){e["path"]="\\Windows\\win.ini";}),
+            entry([](json& e){e["path"]=".";}),entry([](json& e){e["path"]="licenses";}),entry([](json& e){e["path"]="missing.dll";}),entry([](json& e){e["sha256"]=std::string(64,'0');}),
+            entry([](json& e){e["path"]="Starlight.NativePlayer.exe::$DATA";}),entry([](json& e){e["path"]="NUL";e["sha256"]=hash_bytes(std::string_view{});}),entry([](json& e){e["path"]="CON";e["sha256"]=hash_bytes(std::string_view{});})})
+            if(startsWith(m.dump())==Result::Accepted)++wrong;
+        {
+            // A hidden data stream of a runtime file, with a hash that matches the stream, is refused.
+            const std::string streamText="not the runtime file";
+            std::ofstream(L"\\\\?\\"+fs::path(game/"licenses"/"notice.txt").make_preferred().wstring()+L":evil",std::ios::binary)<<streamText;
+            auto streamed=good;streamed["files"][1]["path"]="licenses/notice.txt:evil";streamed["files"][1]["sha256"]=hash_bytes(streamText);
+            if(startsWith(streamed.dump())==Result::Accepted)++wrong;
+        }
+        require(wrong==0,"Fuzz: the player's start-up check refuses a damaged, forged or hostile game manifest, including entries that name a data stream or a device");
+        fs::remove_all(game);
+    }
 }
