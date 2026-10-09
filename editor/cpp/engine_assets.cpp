@@ -716,6 +716,18 @@ fs::path EngineAssets::locate(const std::string& id) {
         if (fs::is_regular_file(candidate.path, error)) return candidate.path;
     return {};
 }
+namespace {
+// Several roots can hold the same id. A damaged or truncated copy in a higher-priority root must not hide an intact copy further down the list.
+std::shared_ptr<const std::string> read_first_intact(AssetKind kind, const std::string& id, std::string* whole = nullptr) {
+    std::error_code error;
+    std::string problem;
+    for (const auto& candidate : candidate_files(id)) {
+        if (!fs::is_regular_file(candidate.path, error)) continue;
+        try { return read_verified(kind, id, candidate.path, whole); } catch (const AssetMissing& e) { if (problem.empty()) problem = e.what(); }
+    }
+    throw AssetMissing(problem.empty() ? missing_text(id) : problem);
+}
+}
 bool EngineAssets::keep(const std::string& id) {
     {
         std::lock_guard lock(roots().mutex);
@@ -773,10 +785,8 @@ std::string EngineAssets::put(AssetKind kind, std::string_view payload) {
 }
 std::string EngineAssets::verified_file_bytes(const std::string& id) {
     auto kind = kind_of(id);
-    auto path = locate(id);
-    if (path.empty()) throw AssetMissing(missing_text(id));
     std::string whole;
-    read_verified(kind, id, path, &whole);
+    read_first_intact(kind, id, &whole);
     return whole;
 }
 void EngineAssets::verify_on_disk(const std::string& id) { (void)verified_file_bytes(id); }
@@ -824,9 +834,7 @@ bool EngineAssets::exists(AssetKind kind, const std::string& id) {
 std::shared_ptr<const std::string> EngineAssets::get(AssetKind kind, const std::string& id) {
     if (!valid_id(kind, id)) throw AssetMissing("Scene references an invalid engine asset id: " + id);
     if (auto cached = memory().find(id)) return cached;
-    auto path = locate(id);
-    if (path.empty()) throw AssetMissing(missing_text(id));
-    auto payload = read_verified(kind, id, path);
+    auto payload = read_first_intact(kind, id);
     memory().add(id, payload);
     return payload;
 }

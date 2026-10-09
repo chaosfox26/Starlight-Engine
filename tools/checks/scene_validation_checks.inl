@@ -51,4 +51,42 @@ static void scene_validation_checks(const auto& require){
     SceneData full;full.Characters.reserve(SceneData::MaxCharacters);
     for(size_t i=0;i<SceneData::MaxCharacters;++i){Character c;c.Id="o"+std::to_string(i);c.Name=c.Id;c.Shape="cube";full.Characters.push_back(c);}
     require(SceneData::decode(full.encode()).Characters.size()==SceneData::MaxCharacters,"CORE-B01: A scene with exactly 20000 objects still encodes and loads");
+    auto decodeWhy=[&](const nlohmann::json& file){std::string reason;try{SceneData::decode(file.dump());}catch(const std::exception& e){reason=e.what();}return reason;};
+    // SCENE-1: the pour and route-point limits apply while the file is decoded, before the oversized lists are turned into objects.
+    {
+        auto pours=nlohmann::json::parse(text);pours["LiquidSources"]=nlohmann::json::array();for(int i=0;i<33;++i)pours["LiquidSources"].push_back(nlohmann::json::object());
+        require(decodeWhy(pours)=="Too many pours","SCENE-1: A file listing more than 32 pours is refused while decoding");
+        auto route=nlohmann::json::parse(text);route["Characters"][0]["Route"]=nlohmann::json::array();for(int i=0;i<4097;++i)route["Characters"][0]["Route"].push_back({{"X",0.},{"Z",0.}});
+        require(decodeWhy(route)=="A route supports at most 4096 points","SCENE-1: A file with more than 4096 route points on one object is refused while decoding");
+        route["Characters"][0]["Route"].erase(route["Characters"][0]["Route"].begin());
+        require(decodeWhy(route).empty(),"SCENE-1: A file with exactly 4096 route points still decodes");
+    }
+    // SCENE-3: whole-number settings reject values that would wrap or truncate.
+    {
+        for(const char* key:{"GrappleMode","CombatTeam","CombatControlEffect"}){
+            for(const char* bad:{"4294967297","1.9","\"1\""}){
+                auto file=nlohmann::json::parse(text);file["Characters"][0][key]=nlohmann::json::parse(bad);
+                require(decodeWhy(file)=="Expected a 32-bit integer",(std::string("SCENE-3: ")+key+" = "+bad+" is refused instead of wrapping or truncating").c_str());
+            }
+        }
+        auto file=nlohmann::json::parse(text);file["Characters"][0]["GrappleMode"]=2;file["Characters"][0]["CombatTeam"]=7;file["Characters"][0]["CombatControlEffect"]=3;
+        const auto kept=SceneData::decode(file.dump()).Characters[0];
+        require(kept.GrappleMode==2&&kept.CombatTeam==7&&kept.CombatControlEffect==3,"SCENE-3: Valid whole numbers still load");
+    }
+    // SCENE-4: combat and gameplay settings survive a save and reopen even when health is 0 or the role is None.
+    {
+        Character actor;actor.Id="later-enemy";actor.Name="later";actor.Shape="cube";
+        actor.CombatTeam=5;actor.CombatSightRange=80;actor.CombatAutoAttack=true;actor.CombatPursuit=true;actor.CombatControlEffect=3;actor.GameplayKey="vault-key";
+        SceneData saved;saved.Characters={actor};
+        const auto back=SceneData::decode(saved.encode()).Characters[0];
+        require(back.CombatHealth==0&&back.CombatTeam==5&&back.CombatSightRange==80&&back.CombatAutoAttack&&back.CombatPursuit&&back.CombatControlEffect==3,"SCENE-4: Combat settings set on an object with health 0 survive save and reopen");
+        require(back.GameplayRole=="none"&&back.GameplayKey=="vault-key","SCENE-4: A key name typed while the role is None survives save and reopen");
+        SceneData plain;plain.Characters={a};
+        const auto file=nlohmann::json::parse(plain.encode())["Characters"][0];
+        require(!file.contains("CombatTeam")&&!file.contains("CombatSightRange")&&!file.contains("CombatAutoAttack")&&!file.contains("CombatPursuit")&&!file.contains("CombatControlEffect")&&!file.contains("GameplayKey")&&!file.contains("GameplayRole"),"SCENE-4: An object with default settings still writes none of these fields");
+        Character fighter=a;fighter.Id="fighter";fighter.CombatHealth=50;
+        SceneData armed;armed.Characters={fighter};
+        const auto fighterFile=nlohmann::json::parse(armed.encode())["Characters"][0];
+        require(fighterFile.contains("CombatHealth")&&fighterFile.contains("CombatTeam")&&fighterFile.contains("CombatSightRange"),"SCENE-4: An object with health still writes the full combat block");
+    }
 }
