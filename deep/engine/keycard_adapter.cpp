@@ -96,13 +96,13 @@ Part makePart(const ed::Character& c) {
 std::string loadKeyCard(const std::string& cardPath, KeyCard& out) {
     try {
         out = KeyCard{};
-        const std::filesystem::path path = std::filesystem::absolute(std::filesystem::path(cardPath));
+        const std::filesystem::path path = std::filesystem::absolute(pathFromUtf8(cardPath));
         ed::EngineAssets::discover_near(path.parent_path());
         const std::string bytes = ed::read_file(path);
         const ed::SceneData scene = ed::SceneData::decode(bytes);
         scene.validate();
         out.name = scene.Name;
-        out.path = path.string();
+        out.path = pathToUtf8(path);
         out.activeMood = scene.ActiveMood;
 
         for (const ed::SceneZone& z : scene.Zones) {

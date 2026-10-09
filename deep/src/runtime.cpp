@@ -22,14 +22,15 @@ static fs::path choose(const wchar_t*title,const wchar_t*filter){wchar_t file[32
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show){
     fs::path errorFile=L"Starlight-launch-error.json";
     try{
-        wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);fs::path root=fs::path(exe).parent_path().parent_path();errorFile=starlight_diagnostics::initialize();
+        wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);errorFile=starlight_diagnostics::initialize();
         int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(!argv)throw std::runtime_error("Could not parse command line");std::unique_ptr<void,decltype(&LocalFree)> argvOwner(argv,LocalFree);
         fs::path projectPath=argc>1?fs::path(argv[1]):choose(L"Choose a project",L"Starlight projects\0*.star\0");
         if(projectPath.empty()){return 0;}
-        fs::path presetPath=root/L"settings/default.startest",planPath;json approved=json::object();std::string scene;std::vector<std::wstring> extra;
+        fs::path presetPath=find_default_preset(fs::path(exe).parent_path()),planPath;json approved=json::object();std::string scene;std::vector<std::wstring> extra;
         if(argc<2){auto choice=choose(L"Choose test settings (Cancel uses saved default)",L"Starlight test settings\0*.startest\0");if(!choice.empty())presetPath=choice;}
         for(int i=2;i<argc;++i){std::wstring a=argv[i];if(a==L"--accept-setting"){if(i+2>=argc)throw std::runtime_error("Confirmation needs old and supported setting names");std::string old=u8text(fs::path(argv[++i]));approved[old]=u8text(fs::path(argv[++i]));}else if(a==L"--preset"||a==L"--scene"||a==L"--plan"||a==L"--error"){if(++i>=argc)throw std::runtime_error("Missing launcher argument");if(a==L"--error")errorFile=argv[i];else if(a==L"--preset")presetPath=argv[i];else if(a==L"--plan")planPath=argv[i];else scene=u8text(fs::path(argv[i]));}else extra.push_back(a);}
         projectPath=fs::absolute(projectPath);auto j=read(projectPath);if(j.at("schemaVersion")!=3)throw std::runtime_error("Project needs schema version 3 migration");
+        if(presetPath.empty()){std::string looked;for(auto&c:default_preset_candidates(fs::path(exe).parent_path()))looked+=" "+u8text(c);throw std::runtime_error("No saved default test settings found; pass --preset or place default.startest in one of:"+looked);}
         auto p=preset(presetPath,approved);auto&s=p.at("settings");
         if(scene.empty())scene=j.at("defaultScene").get<std::string>();
         if(!j.at("scenes").contains(scene))throw std::runtime_error("Selected project does not provide scene: "+scene);

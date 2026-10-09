@@ -192,6 +192,13 @@ static void logLine(const std::string& s) {
     std::fprintf(g_logFile, "[%6llu.%03llu] %s\n", (unsigned long long)(ms / 1000), (unsigned long long)(ms % 1000), s.c_str());
     std::fflush(g_logFile);
 }
+// Opens a file whose path is held as UTF-8 (the host options are UTF-8), so a folder outside the ANSI code page still opens.
+static errno_t openUtf8(FILE** file, const std::string& path, const wchar_t* mode) {
+    const int count = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), (int)path.size(), nullptr, 0);
+    std::wstring wide((size_t)(count > 0 ? count : 0), L'\0');
+    if (count > 0) MultiByteToWideChar(CP_UTF8, 0, path.c_str(), (int)path.size(), wide.data(), count);
+    return _wfopen_s(file, wide.c_str(), mode);
+}
 
 // ---- gear colorways -> rgb (server COLORWAYS set + #rrggbb; empty = neutral placeholder) -------
 
@@ -410,8 +417,7 @@ static void BuildHeart(Mesh& m, int seg = 64) {
     m.loaded = true;
 }
 
-// ---- per-entity smoothed transform (interpolation between snapshots) ---------------------------
-struct SmoothXf { float x = 0, z = 0, y = 0, yaw = 0; bool init = false; };
+#include "smooth_track.h"
 
 #include "persistent_workers.h"
 #include "parallel_metrics.h"
@@ -778,7 +784,7 @@ struct RenderDevice {
     // camera + net
     XMMATRIX          viewProj = XMMatrixIdentity();
     XMFLOAT3          camWorld{ 0,0,0 };
-    std::unordered_map<uint64_t, SmoothXf> smooth;
+    std::unordered_map<uint64_t, SmoothXf> smooth; uint32_t smoothSweptAt = UINT32_MAX;
     uint64_t          lastTick = 0;
     uint64_t          startTick = 0;
 
@@ -1691,7 +1697,9 @@ struct RenderDevice {
 
     // exponential smoothing toward the snapshot target (interpolation between snapshots).
     SmoothXf& track(uint64_t key, float tx, float tz, float ty, float tyaw, float a) {
+        if (frameIndex % kSmoothSweepFrames == 0 && frameIndex != smoothSweptAt) { smoothSweptAt = frameIndex; pruneSmooth(smooth, frameIndex); }
         SmoothXf& s = smooth[key];
+        s.seen = frameIndex;
         if (!s.init) { s.x = tx; s.z = tz; s.y = ty; s.yaw = tyaw; s.init = true; return s; }
         s.x += (tx - s.x) * a; s.z += (tz - s.z) * a; s.y += (ty - s.y) * a;
         float dyaw = tyaw - s.yaw;

@@ -13,9 +13,9 @@ static host_config::Options hostOptions;
 static host_notice::Layer notice;
 static std::vector<keycard_room::Part> roomParts;
 static std::string Narrow(const std::wstring& text) {
-    const int bytes=WideCharToMultiByte(CP_ACP,0,text.c_str(),(int)text.size(),nullptr,0,nullptr,nullptr);
+    const int bytes=WideCharToMultiByte(CP_UTF8,0,text.c_str(),(int)text.size(),nullptr,0,nullptr,nullptr);
     std::string out((size_t)(bytes>0?bytes:0),'\0');
-    if(bytes>0)WideCharToMultiByte(CP_ACP,0,text.c_str(),(int)text.size(),out.data(),bytes,nullptr,nullptr);
+    if(bytes>0)WideCharToMultiByte(CP_UTF8,0,text.c_str(),(int)text.size(),out.data(),bytes,nullptr,nullptr);
     return out;
 }
 static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int);
@@ -141,4 +141,4 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     }catch(const std::exception& error){ready.fail(std::string("graphics initialisation failed: ")+error.what());report();device.teardown();DestroyWindow(h);return 2;}
 }
 
-extern "C" __declspec(dllexport) int WINAPI StarlightRunProject(HINSTANCE i, LPWSTR c, int s) { int result=RunProjectBody(i,c,s); delete &device; return result; }
+extern "C" __declspec(dllexport) int WINAPI StarlightRunProject(HINSTANCE i, LPWSTR c, int s) { int result=RunProjectBody(i,c,s); device.editorDraw=nullptr; roomParts.clear(); delete &device; return result; }

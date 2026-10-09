@@ -10,6 +10,7 @@
     "Starlight.NativeCommands.exe",
     "Starlight.NativeShaders.exe",
     "Starlight.NativeBuild.exe",
+    "Starlight.SceneMigration.exe",
     "Starlight.Viewport.dll",
     "Starlight.Physics.dll"
   ],

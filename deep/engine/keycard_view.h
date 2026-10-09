@@ -176,16 +176,22 @@ inline void reportSkippedContent(const KeyCard& card, host_readiness::Readiness&
     ready.markDegraded(ready.require("key card content", "objects this host cannot draw", cardFile, host_readiness::Need::Optional), detail);
 }
 
+// Every path string in the key card interface is UTF-8, whatever the console code page.
+inline std::filesystem::path pathFromUtf8(const std::string& text) {
+    return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+inline std::string pathToUtf8(const std::filesystem::path& path) {
+    const std::u8string text = path.u8string();
+    return std::string(reinterpret_cast<const char*>(text.data()), text.size());
 inline std::string resolveCardPath(const std::string& requested, const std::string& moduleFolder, const std::string& fileName, std::string& error) {
     namespace fs = std::filesystem;
     std::error_code ignored;
     if (!requested.empty()) {
-        if (fs::is_regular_file(fs::path(requested), ignored)) return requested;
+        if (fs::is_regular_file(pathFromUtf8(requested), ignored)) return requested;
         error = "The key card named on the command line does not exist: " + requested;
         return std::string();
     }
-    const fs::path beside = fs::path(moduleFolder) / fs::path(fileName);
-    if (fs::is_regular_file(beside, ignored)) return beside.string();
+    const fs::path beside = pathFromUtf8(moduleFolder) / pathFromUtf8(fileName);
+    if (fs::is_regular_file(beside, ignored)) return pathToUtf8(beside);
     error = "No key card was found. Pass --card <file.starscene>, or place " + fileName + " beside the host module (" + moduleFolder + "). The starter card ships with the engine under starters.";
     return std::string();
 }
