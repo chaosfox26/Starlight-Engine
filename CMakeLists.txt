@@ -244,6 +244,10 @@ if(STARLIGHT_BUILD_RENDERER)
     "${starlight_project_card}" "$<TARGET_FILE_DIR:${project_name}>/${project_name}.starscene")
   endforeach()
   target_sources(GameProject PRIVATE deep/projects/GameProject/net/ws_client.cpp)
+ add_executable(Starlight.GameProjectWsFuzz tools/checks/gameproject_ws_fuzz.cpp deep/projects/GameProject/net/ws_client.cpp)
+ target_include_directories(Starlight.GameProjectWsFuzz PRIVATE deep/projects/GameProject/net)
+ target_link_libraries(Starlight.GameProjectWsFuzz PRIVATE ws2_32 psapi)
+ add_test(NAME gameproject-ws-fuzz COMMAND Starlight.GameProjectWsFuzz)
  endif()
 endif()
 
@@ -260,7 +264,7 @@ target_link_libraries(Starlight.NativeCoreChecks PRIVATE starlight_graphics_runt
 if(MINGW)
  set(starlight_narrow_entrypoints Starlight.NativeCoreChecks Starlight.AuditContractChecks
   Starlight.NativePeChecks Starlight.NativeInventoryChecks Starlight.NativeCleanupChecks
-  Starlight.NativeEvidenceChecks Starlight.NativeTextureChecks)
+  Starlight.NativeEvidenceChecks Starlight.NativeTextureChecks Starlight.GameProjectWsFuzz)
  get_property(starlight_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
  foreach(starlight_target IN LISTS starlight_targets)
   get_target_property(starlight_target_type ${starlight_target} TYPE)
