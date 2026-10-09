@@ -418,6 +418,7 @@ static void BuildHeart(Mesh& m, int seg = 64) {
 }
 
 #include "smooth_track.h"
+#include "report_text.h"
 
 #include "persistent_workers.h"
 #include "parallel_metrics.h"

@@ -43,9 +43,12 @@ inline std::vector<std::filesystem::path> default_preset_candidates(const std::f
         found.push_back(folder / L"deep" / L"settings" / L"default.startest");
         if (!folder.has_parent_path() || folder.parent_path() == folder) break;
         folder = folder.parent_path();
+    }
     return found;
+}
 inline std::filesystem::path find_default_preset(const std::filesystem::path &hostFolder) {
     std::error_code ignored;
     for (const auto &candidate : default_preset_candidates(hostFolder))
         if (std::filesystem::is_regular_file(candidate, ignored)) return candidate;
     return {};
+}
