@@ -1339,6 +1339,12 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB with an animation channel that has no keys", e);
             require(e.ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty() && modelProblem(scratch).empty(), "GLB fuzz: an animation channel with no keys is dropped instead of leaving the pose uninitialised");
         }
+        {   // SKN-5: keyframe accessors without a buffer view are charged to the element budget before their arrays are allocated
+            const auto sampled = editJson(editJson(glb, "{\"bufferView\":7,\"componentType\":5126,\"count\":2,\"type\":\"SCALAR\"}", "{\"componentType\":5126,\"count\":4194305,\"type\":\"SCALAR\"}"), "{\"bufferView\":8,\"componentType\":5126,\"count\":2,\"type\":\"VEC4\"}", "{\"componentType\":5126,\"count\":4194305,\"type\":\"VEC4\"}");
+            e = model::loadSkinnedFromMemory(ByteView(sampled), nullptr, "sampled-without-view.glb", scratch);
+            show("GLB whose animation keyframe accessors have no buffer view and 4194305 elements", e);
+            require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-5: animation keyframe accessors without a buffer view are counted against the element budget before they are allocated");
+        }
         {   // translation (0,1,0) * rotation 90 degrees about z * scale (2,3,4)
             GlbSpec trsSpec; trsSpec.matrixTrs = true;
             const bool loaded = model::loadSkinnedFromMemory(ByteView(makeGlb(trsSpec)), nullptr, "matrix-trs.glb", scratch).ok();
