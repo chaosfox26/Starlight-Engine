@@ -971,6 +971,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirtyone.glb", scratch);
         show("GLB with 31 drawable primitives", e);
         require(e.code == LoadCode::Unsupported, "CORE-12: a model with more primitives than the instance buckets hold is refused");
+        {   // The render device cannot be built into this program, so the bucket table's shape (8 variants, 32 submesh slots of which the last two are reserved) is pinned from its source line.
+            const auto header = readBytes(root / "deep/engine/render_device.h");
+            const std::string text(header.begin(), header.end());
+            require(text.find("static const UINT kBktVariants = 8, kBktMaxSubs = 32;") != std::string::npos, "CORE-12: the instance bucket table keeps 8 variants and 32 submesh slots, 30 of them for a model's own primitives");
+        }
         GlbSpec stepSpec; stepSpec.step = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
         require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "linear.glb", scratch).ok() && !scratch.clips[0].channels[0].step, "R3: LINEAR interpolation is not held");
