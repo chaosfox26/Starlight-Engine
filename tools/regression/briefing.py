@@ -47,7 +47,7 @@ def section_ledger(results, repo):
         return ['Ledger: no readable results in %s (%s)' % (results, type(error).__name__)]
     counts = {}
     for e in registry.list_of(d.get('entries')):
-        state = registry.dict_of(e).get('state')
+        state = str(registry.dict_of(e).get('state'))
         counts[state] = counts.get(state, 0) + 1
     head = git(repo, 'rev-parse', 'HEAD')
     recorded = registry.dict_of(d.get('identity')).get('gitHead', '')
@@ -94,7 +94,7 @@ def section_tracker(tracker):
         return ['Audit tracker: unavailable (items is not a list)']
     counts = {}
     for i in items:
-        state = registry.dict_of(i).get('state')
+        state = str(registry.dict_of(i).get('state'))
         counts[state] = counts.get(state, 0) + 1
     return ['Audit tracker (%d items, updated %s): %s' % (len(items), age(path), ', '.join('%s %d' % (k, v) for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))))]
 

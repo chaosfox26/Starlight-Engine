@@ -185,7 +185,7 @@ def self_test():
         check('a failed suite is a failure even when the ledger finished', 'did not pass' in (suite_with({'success': False, 'error': 'boom'}) or ''))
         check('a missing latest.json is a failure', suite_failure(os.path.join(folder, 'nowhere')) is not None)
         import briefing
-        for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}'):
+        for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}', '{"entries": [{"state": []}], "items": [{"state": {}}]}'):
             open(os.path.join(folder, 'latest.json'), 'w').write(text)
             open(os.path.join(folder, 'AUDIT-TRACKER.json'), 'w').write(text)
             try:
