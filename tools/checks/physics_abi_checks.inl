@@ -35,6 +35,7 @@ static void physics_abi_checks(const auto& require){
     require(slp_add(world,nullptr,8,faces,36,1,1,0,1,0,0,0,0,1)==refused&&slp_add(world,cube,8,nullptr,36,1,1,0,1,0,0,0,0,1)==refused,"EL-07: Null point or index arrays are refused");
     float damaged[24];std::memcpy(damaged,cube,sizeof(cube));damaged[3]=nan;
     require(add(false,1,0,0,1,36,damaged)==refused&&std::string(slp_error()).find("vertex")!=std::string::npos,"EL-07: A static mesh with a non-finite vertex is refused");
+    require(add(true,1,0,0,1,36,damaged)==refused,"EL-07: A dynamic hull with a non-finite vertex is refused instead of being built from it");
     require(slp_terrain(world,nullptr)==0&&std::string(slp_error()).find("terrain")!=std::string::npos,"EL-07: A null terrain height array is refused");
     uint32_t after=add(true,1,3,0,1);
     require(after!=refused&&after!=good,"EL-07: The world still accepts a valid body after every refusal");

@@ -299,6 +299,8 @@ public:
   Array<Vec3> vertices;vertices.reserve(count);for(int i=0;i<count;i++)vertices.emplace_back(points[i*3],points[i*3+1],points[i*3+2]);
   Vec3 low(FLT_MAX,FLT_MAX,FLT_MAX),high(-FLT_MAX,-FLT_MAX,-FLT_MAX);bool finite=true;
   for(const auto& v:vertices){if(!std::isfinite(v.GetX())||!std::isfinite(v.GetY())||!std::isfinite(v.GetZ())){finite=false;break;}low=Vec3::sMin(low,v);high=Vec3::sMax(high,v);}
+  // Jolt builds a hull from non-finite vertices without reporting an error, so they are refused before it sees them (the static path does the same per index).
+  if(!finite){++counters.rejected;throw std::runtime_error("Nonfinite collision vertex");}
   out.diagonal=finite?(high-low).Length():0.f;
   ConvexHullShapeSettings settings(vertices);settings.mDensity=density;auto result=settings.Create();
   std::string overBound;
@@ -383,9 +385,7 @@ public:
    }
   }
   // A point set the hull builder cannot represent within tolerance must not stop the game: the body falls back to the oriented-free
-  // bounding box of the same points (same density), and the event is logged and counted so a recurring cause can be found. Non-finite points
-  // are still rejected, because no shape can be built from them.
-  if(!finite){++counters.rejected;throw std::runtime_error(reason.c_str());}
+  // bounding box of the same points (same density), and the event is logged and counted so a recurring cause can be found.
   const Vec3 half=Vec3::sMax((high-low)*.5f,Vec3::sReplicate(.005f));
   char message[512];std::snprintf(message,sizeof(message),"hull fallback to box: %d points, extent %.3f x %.3f x %.3f, builder said: %s",count,2*half.GetX(),2*half.GetY(),2*half.GetZ(),reason.c_str());
   std::fprintf(stderr,"%s\n",message);counters.NoteBox(message);
