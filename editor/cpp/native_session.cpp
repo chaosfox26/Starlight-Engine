@@ -363,7 +363,8 @@ void NativeSession::run(std::stop_token stop) {
                         if(!old.alive)continue;
                         if(matched<now.size()&&old.idHash==now[matched].idHash&&old.objectSig==now[matched].objectSig)++matched;else gone.push_back(i);
                     }
-                    if(matched==now.size()&&!gone.empty()){
+                    // Taking out more than a third of the live objects costs as much as registering the rest again (measured, Starlight.NativeBench: break-even near 40%, three times slower at 60% where the layer also compacts), so only smaller removals edit in place.
+                    if(matched==now.size()&&!gone.empty()&&(now.empty()||gone.size()*3<=now.size()+gone.size())){
                         if(now.empty()){obstacleLightEntries.clear();return nullptr;}
                         const double r0=ob0>0?starlight_diag::evnow():0;
                         auto edited=editable_obstacle_layer(current);
