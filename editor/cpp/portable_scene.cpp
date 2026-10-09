@@ -65,8 +65,10 @@ json verify_portable_scene(const fs::path &folder) {
     EngineAssets::ScopedRoot bundleLibrary(root / L"assets");
     auto sceneText = read_file(scenePath);
     for (const auto &id : EngineAssets::referenced_ids(json::parse(sceneText))) {
-        auto path = contained("assets/" + id + ".slasset");
-        if (std::find(verified.begin(), verified.end(), path) == verified.end())
+        // canonical() throws for a file that is not in the folder, so an absent asset is refused with the manifest message before it is resolved.
+        const auto name = "assets/" + id + ".slasset";
+        std::error_code ignored;
+        if (!fs::is_regular_file(root / wide(name), ignored) || std::find(verified.begin(), verified.end(), contained(name)) == verified.end())
             throw std::runtime_error("Scene references an engine asset missing from its manifest");
         EngineAssets::verify_on_disk(id);
     }

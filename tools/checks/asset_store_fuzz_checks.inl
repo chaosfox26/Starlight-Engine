@@ -309,6 +309,18 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
             require(hostileWrong==0,"Fuzz: a hash-consistent scene naming hostile asset ids (traversal, streams, wrong kind) fails verification");
             require(read_file(decoy)==pristine,"Fuzz: verification never changes a file outside the bundle");
         }
+        {
+            // A scene asset that the manifest does not list is refused with the manifest message, whether or not its file is still in the folder.
+            std::string terrainPath;for(const auto& asset:manifest.at("assets"))if(asset.at("path").get<std::string>().starts_with("assets/terrain-"))terrainPath=asset.at("path").get<std::string>();
+            auto unlisted=[&](auto&& prepare){
+                const auto copy=work/("variant-"+std::to_string(++variant));fs::copy(bundle,copy,fs::copy_options::recursive);
+                auto edited=manifest;json kept=json::array();for(const auto& asset:manifest.at("assets"))if(asset.at("path").get<std::string>()!=terrainPath)kept.push_back(asset);edited["assets"]=kept;
+                atomic_write(copy/"manifest.json",edited.dump());prepare(copy);
+                try{(void)verify_portable_scene(copy);return std::string("accepted");}catch(const std::exception& e){return std::string(e.what());}};
+            const std::string intended="Scene references an engine asset missing from its manifest";
+            require(!terrainPath.empty()&&unlisted([](const fs::path&){}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list is refused with the manifest message while its file is still in the folder");
+            require(unlisted([&](const fs::path& c){fs::remove(c/terrainPath);}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list and is absent from the folder is refused with the manifest message, not a filesystem error");
+        }
     }
 
     // Exports write only inside their own new folder, never over an existing one, and a failed export leaves nothing behind.
