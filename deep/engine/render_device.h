@@ -827,7 +827,10 @@ struct RenderDevice {
             const UINT64 v = ++fenceVal;
             if (SUCCEEDED(queue->Signal(fence.Get(), v))) {
                 if (fence->GetCompletedValue() >= v) return true;
-                if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) return fence->GetCompletedValue() >= v;   // a stale event left by an earlier timed-out wait can end this one early
+                // a stale event left by an earlier timed-out wait can wake this one before v completes: wait again instead of reporting the GPU as not idle
+                while (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) {
+                    if (fence->GetCompletedValue() >= v) return true;
+                }
             }
             return device && FAILED(device->GetDeviceRemovedReason());
         } catch (...) { return false; }
