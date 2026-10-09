@@ -55,6 +55,11 @@ def main():
         result = engine.execute([sys.executable, '-c', code], directory, base/'probe.log', 30, lambda _: None, env)
         assert result['outcome'] == 'pass', result
         assert probe.read_text() == f'{work}|a=b', probe.read_text()
+        wired = base/'wired.txt'
+        code = f'import os;open(r"{wired}","w").write(os.getcwd()+"|"+os.environ["AUDIT_CONTEXT_CHECK"])'
+        result = engine.run_registered_test(dict(test, command=[sys.executable, '-c', code]), [sys.executable, '-c', code], base, base/'wired.log', lambda _: None)
+        assert result['outcome'] == 'pass', result
+        assert wired.read_text() == f'{work}|a=b', 'the coordinator runs a registered test with its CTest working directory and environment'
     print('audit coordinator contracts pass')
 
 

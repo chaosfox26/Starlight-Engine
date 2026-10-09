@@ -30,5 +30,14 @@ static void gameplay_audit_checks(const auto& require){
         storm.Characters={bolt,third,first,second};
         auto path=trace_lightning(bolt,storm,0);
         require(path.size()==3&&path[0].hit==first.Id&&path[1].hit==second.Id&&path[2].hit==third.Id,"08#4: Lightning chains to the nearest reachable body on each hop and reaches the one behind it afterwards");
+        // With two bodies in the clear on either side of the struck one, the hop goes to the nearer of them whatever order the bodies are stored in.
+        Character closer=first;closer.Id=new_id();closer.X=3;closer.Z=4;Character farther=first;farther.Id=new_id();farther.X=3;farther.Z=-7;
+        Character single=bolt;single.LightningChains=1;
+        const std::vector<std::vector<Character>> orders{{single,first,farther,closer},{single,first,closer,farther}};
+        for(const auto& order:orders){
+            storm.Characters=order;
+            auto pair=trace_lightning(single,storm,0);
+            require(pair.size()==2&&pair[0].hit==first.Id&&pair[1].hit==closer.Id,"08#4: With two reachable bodies the chain hop goes to the nearer one");
+        }
     }
 }

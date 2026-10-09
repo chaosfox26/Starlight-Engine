@@ -90,6 +90,11 @@ def test_context(test, root):
     return properties.get('WORKING_DIRECTORY') or root, env
 
 
+def run_registered_test(test, command, root, log, progress):
+    directory, environment = test_context(test, root)
+    return execute(command, directory, log, 270, progress, environment)
+
+
 def test_command(test, stage):
     """Redirect known native test artifacts; leave source/reference inputs alone."""
     command = list(test['command'])
@@ -248,9 +253,8 @@ def main():
                     executable = Path(command[command.index('--runtime')+1])/'Starlight.NativePlayer.exe'
                 before = native_capture_record(executable, root, sources, FEATURE_BINDINGS.get(name, ['diagnostics-and-existing-audits']),
                     'unknown', name) if executable.is_file() else None
-                directory, environment = test_context(test, root)
-                result = execute(command, directory, log, 270,
-                    lambda age, n=name, pos=i: progress(5+int(45*pos/max(1,len(tests))), f'Error check: {n} — {age}s (deadline 270s)'), environment)
+                result = run_registered_test(test, command, root, log,
+                    lambda age, n=name, pos=i: progress(5+int(45*pos/max(1,len(tests))), f'Error check: {n} — {age}s (deadline 270s)'))
                 result['name'] = name; records.append(result)
                 if name not in FEATURE_BINDINGS:
                     result['coverageWarning'] = 'New test discovered; feature binding and artifact redirection require review'

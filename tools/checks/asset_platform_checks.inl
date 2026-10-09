@@ -9,10 +9,10 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         const std::vector<std::string> bystanders{"scene.starscene.bak","scene.starscene.20260101.bak","other.starscene."+std::string(32,'a')+".bak","scene.starscene."+std::string(32,'A')+".bak","scene.starscene."+std::string(32,'a')+".bak.keep"};
         for(const auto& name:bystanders)atomic_write(dir/name,"not ours");
         atomic_write(target,"version 0");
-        for(int i=1;i<=2;++i){Sleep(20);atomic_write(target,"early "+std::to_string(i),true);}
-        const auto countBackups=[&]{size_t n=0;for(const auto& entry:fs::directory_iterator(dir)){const auto name=entry.path().filename().string();if(name.size()==std::string("scene.starscene.").size()+32+4&&name.starts_with("scene.starscene.")&&name.ends_with(".bak")&&name.find("aaaa")==std::string::npos)++n;}return n;};
+        for(int i=1;i<=8;++i){Sleep(20);atomic_write(target,"early "+std::to_string(i),true);}
+        const auto countBackups=[&]{size_t n=0;for(const auto& entry:fs::directory_iterator(dir)){const auto name=entry.path().filename().string();if(name.size()==std::string("scene.starscene.").size()+32+4&&name.starts_with("scene.starscene.")&&name.ends_with(".bak")&&std::all_of(name.begin()+16,name.begin()+16+32,[](unsigned char c){return std::isdigit(c)||(c>='a'&&c<='f');}))++n;}return n;};
         const auto beforePrune=countBackups();
-        require(beforePrune>=2,"A-06-3: Backups are kept by default, nothing is deleted unless the owner asks");
+        require(beforePrune==8,"A-06-3: Backups are kept by default, nothing is deleted unless the owner asks");
         SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT","5");
         for(int i=1;i<=8;++i){Sleep(20);atomic_write(target,"version "+std::to_string(i),true);}
         SetEnvironmentVariableA("STARLIGHT_BACKUPS_KEPT",nullptr);
@@ -105,6 +105,19 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         _putenv_s("STARLIGHT_EVENT_LOG","");
         size_t lines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("events.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++lines;}
         require(lines==2,"A-10-5: Both events are written out when the log is closed");
+        // A-10-5, closing: a slot another thread reserved but has not filled yet is not written, the log is off once closed, and its buffer is left in place for a worker that is still logging.
+        _putenv_s("STARLIGHT_EVENT_LOG",(dir/"closing").string().c_str());
+        alignas(starlight_diag::EventLog) unsigned char storage[sizeof(starlight_diag::EventLog)];
+        auto* closing=new(storage) starlight_diag::EventLog;
+        closing->add("first",1,2,3);closing->count.fetch_add(1);closing->add("second",4,5,6);
+        closing->~EventLog();
+        _putenv_s("STARLIGHT_EVENT_LOG","");
+        MEMORY_BASIC_INFORMATION buffer{};
+        const bool buffered=closing->events&&VirtualQuery(closing->events,&buffer,sizeof(buffer))&&buffer.State==MEM_COMMIT;
+        require(!closing->enabled.load()&&buffered,"A-10-5: A closed event log accepts no more events and keeps its buffer instead of freeing it under a late writer");
+        if(buffered)VirtualFree(closing->events,0,MEM_RELEASE);
+        size_t closedLines=0;for(const auto& entry:fs::directory_iterator(dir))if(entry.path().filename().string().starts_with("closing.")){std::ifstream in(entry.path());std::string line;while(std::getline(in,line))++closedLines;}
+        require(closedLines==2,"A-10-5: An event reserved but never filled is not written out");
     }
     {
         // A-10-1: one DLL load kept the unrestricted search order after the vendor-DLL hardening; no load in the engine sources may use it.
