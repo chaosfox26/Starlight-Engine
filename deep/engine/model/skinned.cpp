@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -178,11 +177,6 @@ bool JsonNestsTooDeep(ByteView glb) {
     }
     return false;
 }
-// Non-joint ancestors (armature nodes) move their joints only when STARLIGHT_JOINT_ANCESTOR_TRANSFORMS=1: existing rigs would move, so the default keeps the old parenting.
-bool JointAncestorTransformsEnabled() {
-    const char* value = std::getenv("STARLIGHT_JOINT_ANCESTOR_TRANSFORMS");
-    return value && value[0] == '1';
-}
 LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
     out = SkinnedModel();
     out.source = label;
@@ -234,11 +228,9 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             const cgltf_node* n = skin->joints[j];
             Joint jt; jt.name = n->name ? n->name : ("joint" + std::to_string(j));
             XMMATRIX base = XMMatrixIdentity();
-            const bool throughAncestors = JointAncestorTransformsEnabled();
             for (const cgltf_node* a = n->parent; a; a = a->parent) {
                 auto pit = jointOf.find(a);
                 if (pit != jointOf.end()) { jt.parent = pit->second; break; }
-                if (!throughAncestors) break;
                 float local[16]; cgltf_node_transform_local(a, local);
                 base = XMMatrixMultiply(base, FromGltf(local));
             }

@@ -1351,13 +1351,8 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             auto transformed = [&](const model::SkinnedModel& m, int joint, float x, float y, float z) {
                 XMFLOAT4X4 pal[2]; model::evalPose(m, 0, 0.f, -1, 0.f, 0.f, pal, nullptr);
                 XMFLOAT3 r; XMStoreFloat3(&r, XMVector3Transform(XMVectorSet(x, y, z, 1.f), XMLoadFloat4x4(&pal[joint]))); return r; };
-            model::SkinnedModel plainRig, armRig, midRig, armOff;
-            const auto setAncestors = [](bool on) { _putenv_s("STARLIGHT_JOINT_ANCESTOR_TRANSFORMS", on ? "1" : ""); };
-            setAncestors(false);
+            model::SkinnedModel plainRig, armRig, midRig;
             require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "plain.glb", plainRig).ok(), "R4: baseline rig loads");
-            GlbSpec offSpec; offSpec.armature = 1;
-            require(model::loadSkinnedFromMemory(ByteView(makeGlb(offSpec)), nullptr, "armature-off.glb", armOff).ok() && armOff.joints[0].parent == -1 && armOff.joints[1].parent == 0 && std::fabs(transformed(armOff, 0, 1.f, 0.f, 0.f).x - 1.f) < 1e-6f && std::fabs(transformed(armOff, 0, 1.f, 0.f, 0.f).y) < 1e-6f, "R4: by default an armature node's transform is not applied, so existing rigs do not move");
-            setAncestors(true);
             GlbSpec armSpec; armSpec.armature = 1;
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(armSpec)), nullptr, "armature.glb", armRig).ok() && armRig.joints[0].parent == -1 && armRig.joints[1].parent == 0, "R4: a rig under a transformed non-joint armature node loads");
             const XMFLOAT3 a0 = transformed(armRig, 0, 1.f, 0.f, 0.f), a1 = transformed(armRig, 1, 1.f, 0.f, 0.f);
@@ -1372,7 +1367,6 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
             const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
             require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
-            setAncestors(false);
         }
         {
             auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
