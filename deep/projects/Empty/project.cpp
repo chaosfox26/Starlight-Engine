@@ -75,8 +75,8 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     if(cardError.empty())cardError=keycard::loadKeyCard(cardFile,card);
     if(cardError.empty())ready.markReady(cardItem);else ready.markFailed(cardItem,cardError);
     keycard::reportSkippedContent(card,ready,cardFile.empty()?hostOptions.cardPath:cardFile);
-    auto report=[&]{
-        const std::string text=ready.diagnostics();
+    auto report=[&](const std::string& cause=std::string()){
+        const std::string text=ready.diagnostics()+cause;
         logLine("Empty cannot continue:\n"+text);
         OutputDebugStringA(("Empty cannot continue:\n"+text).c_str());
         if(interactive){ShowWindow(h,SW_HIDE);MessageBoxA(nullptr,text.c_str(),"Empty could not finish loading",MB_OK|MB_ICONERROR|MB_TOPMOST|MB_SETFOREGROUND);}
@@ -138,7 +138,7 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
             else{device.renderEmpty(h);notice.follow();}
         }
         notice.close();device.teardown();DestroyWindow(h);return 0;
-    }catch(const std::exception& error){ready.fail(std::string("graphics initialisation failed: ")+error.what());report();device.teardown();DestroyWindow(h);return 2;}
+    }catch(const std::exception& error){report(std::string("graphics failed: ")+error.what()+"\n");device.teardown();DestroyWindow(h);return 2;}
 }
 
 extern "C" __declspec(dllexport) int WINAPI StarlightRunProject(HINSTANCE i, LPWSTR c, int s) { int result=RunProjectBody(i,c,s); device.editorDraw=nullptr; roomParts.clear(); delete &device; return result; }
