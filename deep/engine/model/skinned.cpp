@@ -252,6 +252,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             if (out.joints[j].parent >= (int)j) return fail(LoadCode::SkeletonInvalid, "skin joint order is not parent-first");
     }
 
+    cgltf_size dataLessElements = 0;
     bool first = true;
     auto grow = [&](float x, float y, float z) {
         if (first) { out.bbMin = out.bbMax = XMFLOAT3(x, y, z); first = false; return; }
@@ -296,6 +297,11 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             if (uv->count != pos->count || (nrm && nrm->count != pos->count) || (jn && jn->count != pos->count) || (wt && wt->count != pos->count))
                 return bad(LoadCode::Malformed, pi, "vertex attribute counts differ from POSITION (" + std::to_string(pos->count) + ")");
             if (out.verts.size() + pos->count > 0xFFFFFFFFull) return bad(LoadCode::TooLarge, pi, "vertex total exceeds the 32-bit index range");
+            const cgltf_accessor* const counted[2] = { pos, prim->indices };
+            for (const cgltf_accessor* a : counted) if (a && !a->buffer_view) {
+                dataLessElements += a->count;
+                if (dataLessElements > (1u << 22)) return bad(LoadCode::TooLarge, pi, "POSITION and index accessors without a buffer view hold " + std::to_string(dataLessElements) + " all-zero elements; the limit is 4194304");
+            }
             const cgltf_size triangleIndices = prim->indices ? prim->indices->count : pos->count;
             if (prim->type == cgltf_primitive_type_triangles && triangleIndices % 3 != 0) return bad(LoadCode::Malformed, pi, "index count " + std::to_string(triangleIndices) + " is not a multiple of 3");
             Submesh sm; sm.node = nodeName;
@@ -384,6 +390,9 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             else continue;
             if (ch.sampler->interpolation == cgltf_interpolation_type_cubic_spline)
                 return fail(LoadCode::Unsupported, "clip '" + c.name + "' uses CUBICSPLINE interpolation, which the pose evaluator does not implement");
+            if (ch.sampler->input->count == 0) continue;
+            if (ch.sampler->input->type != cgltf_type_scalar || ch.sampler->output->type != (comps == 4 ? cgltf_type_vec4 : cgltf_type_vec3))
+                return fail(LoadCode::Malformed, "clip '" + c.name + "' sampler accessors have the wrong element type (keyframe times must be SCALAR, values VEC3 or VEC4)");
             k.times.resize(ch.sampler->input->count);
             if (cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size()) != k.times.size())
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times could not be read");

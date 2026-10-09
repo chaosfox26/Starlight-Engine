@@ -45,7 +45,7 @@ class GameplayAudio {
     std::mutex mutex_;
     std::condition_variable_any wake_;
     std::deque<Request> queue_;
-    std::atomic<bool> voicesOpen_{false};
+    std::atomic<bool> voicesOpen_{false},busy_{false};   // busy_: a request has left the queue and is still being played or stopped
     uint64_t epoch_=0,shots_=0,shatters_=0,impacts_=0,lightning_=0;
     double chirpAt_=0;
     struct PendingThunder {LightningSoundEvent event;double arrival;};
@@ -78,10 +78,11 @@ class GameplayAudio {
                 std::unique_lock lock(mutex_);
                 wake_.wait(lock,stop,[&]{return !queue_.empty();});
                 if(queue_.empty())break; // stop requested
-                r=queue_.front();queue_.pop_front();
+                r=queue_.front();queue_.pop_front();busy_=true;
             }
             if(r.stopAll){for(auto& v:voices_)release(v);voicesOpen_=false;}
             else play_now(r);
+            busy_=false;
         }
         for(auto& v:voices_)release(v);
     }
@@ -95,8 +96,7 @@ public:
     ~GameplayAudio(){worker_.request_stop();wake_.notify_all();worker_.join();}
     void stop(){
         baseline_=false;thunder_.clear();
-        if(!voicesOpen_.load()){std::lock_guard lock(mutex_);if(queue_.empty())return;}
-        {std::lock_guard lock(mutex_);queue_.clear();queue_.push_back({true});}
+        {std::lock_guard lock(mutex_);if(!voicesOpen_.load()&&!busy_.load()&&queue_.empty())return;queue_.clear();queue_.push_back({true});}
         wake_.notify_one();
     }
     void play(GameplayCue cue,double gain=1,double pan=0){

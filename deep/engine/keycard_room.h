@@ -1,6 +1,7 @@
 #pragma once
 #include "render_device.h"
 #include "keycard_view.h"
+#include "upscale/upscale_paths.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -11,9 +12,7 @@ namespace keycard_room {
 inline std::string moduleFolder(const void* address) {
     HMODULE module = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCWSTR>(address), &module);
-    wchar_t buffer[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameW(module, buffer, MAX_PATH);
-    std::wstring path(buffer, length);
+    std::wstring path = up::modulePath(module);
     const size_t slash = path.find_last_of(L"\\/");
     if (slash != std::wstring::npos) path.resize(slash);
     const int bytes = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), (int)path.size(), nullptr, 0, nullptr, nullptr);

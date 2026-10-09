@@ -1176,6 +1176,30 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             validated = cgltf_result_success;
             require(validateAtGuardPage(makeSparseGlb(200), validated) == 0 && validated == cgltf_result_data_too_short, "DEP-01: validation rejects a sparse index view outside its buffer without reading it (a read past the buffer faults on the guard page)");
         }
+        GlbSpec wideSpec; wideSpec.wideTimes = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(wideSpec)), nullptr, "wide-times.glb", scratch);
+        show("GLB whose keyframe times accessor is VEC2", e);
+        require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-1: a keyframe times accessor that is not SCALAR is rejected");
+        {
+            const auto bytes = makeSparseGlb(76);
+            cgltf_options opts{}; cgltf_data* d = nullptr;
+            bool ok = cgltf_parse(&opts, bytes.data(), bytes.size(), &d) == cgltf_result_success && cgltf_load_buffers(&opts, d, nullptr) == cgltf_result_success && cgltf_validate(d) == cgltf_result_success;
+            std::vector<float> out(12, -1.f);
+            ok = ok && cgltf_accessor_unpack_floats(&d->accessors[0], out.data(), 3) == 3;
+            bool untouched = true;
+            for (size_t i = 3; i < out.size(); ++i) untouched = untouched && out[i] == -1.f;
+            if (d) cgltf_free(d);
+            require(ok && untouched, "SKN-1: sparse values are never written past the float count the caller asked for");
+        }
+        GlbSpec emptySpec; emptySpec.emptyChannel = true;
+        require(model::loadSkinnedFromMemory(ByteView(makeGlb(emptySpec)), nullptr, "empty-channel.glb", scratch).ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty(), "SKN-4: an animation channel with no keyframes is dropped so the joint keeps its rest pose");
+        GlbSpec noViewSpec; noViewSpec.noViewVerts = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewSpec)), nullptr, "no-view-vertices.glb", scratch);
+        show("GLB whose vertex accessors have no buffer view and 5 million elements", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-3: a vertex or index accessor without data cannot ask for millions of elements");        GlbSpec hugeSpec; hugeSpec.hugeIndexCount = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(hugeSpec)), nullptr, "huge-index-count.glb", scratch);
+        show("GLB whose index count wraps the size check", e);
+        require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-2: an accessor count that wraps the 64-bit size check is rejected instead of read");
         GlbSpec manySpec; manySpec.primitives = 30;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(manySpec)), nullptr, "thirty.glb", scratch).ok() && scratch.subs.size() == 30, "CORE-12: a model with 30 drawable primitives loads");
         manySpec.primitives = 31;
