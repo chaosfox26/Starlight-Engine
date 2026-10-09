@@ -96,7 +96,7 @@ def suite_failure(results):
         suite = registry.dict_of(registry.read_json_object(os.path.join(results, 'latest.json')).get('suite'))
     except (OSError, ValueError):
         return 'the ledger wrote no readable latest.json'
-    if suite.get('success') is True:
+    if suite.get('success') is True and suite.get('exitCode') in (None, 0) and not suite.get('timedOut'):
         return None
     return 'the core suite did not pass: %s' % str(suite.get('error') or 'a check failed')[:300]
 
@@ -184,6 +184,8 @@ def self_test():
         check('a passing suite is not a failure', suite_with({'success': True}) is None)
         check('a failed suite is a failure even when the ledger finished', 'did not pass' in (suite_with({'success': False, 'error': 'boom'}) or ''))
         check('a missing latest.json is a failure', suite_failure(os.path.join(folder, 'nowhere')) is not None)
+        check('a passing suite whose process exited nonzero is a failure', suite_with({'success': True, 'exitCode': 3, 'timedOut': False}) is not None)
+        check('a passing suite that timed out after its result is a failure', suite_with({'success': True, 'exitCode': None, 'timedOut': True}) is not None)
         import briefing
         for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}'):
             open(os.path.join(folder, 'latest.json'), 'w').write(text)
