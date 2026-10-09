@@ -208,7 +208,7 @@ class AdventurePlayer {
   private:
     void stop_prefracture(){
         for(auto& worker:preWorkers_)worker.request_stop();for(auto& worker:preWorkers_)if(worker.joinable())worker.join();preWorkers_.clear();preActive_=0;
-        std::lock_guard lock(preMutex_);preQueue_.clear();preFractures_.clear();
+        std::lock_guard lock(preMutex_);if(!preFractures_.empty())++preVersion_;preQueue_.clear();preFractures_.clear(); // the reported set changes (to none), so take_prefractured_parts must say so
     }
     void schedule_prefracture(){
         stop_prefracture();
