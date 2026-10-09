@@ -1,6 +1,6 @@
 // Pure parts of the render device (audit RND): the snapshot smoothing, which must survive bad input.
 #include <limits>
-#include "../../deep/engine/smooth_xf.h"
+#include "../../deep/engine/smooth_track.h"
 #include "../../deep/engine/report_text.h"
 static void render_device_checks(const auto& require){
     const float nan=std::numeric_limits<float>::quiet_NaN(),inf=std::numeric_limits<float>::infinity();

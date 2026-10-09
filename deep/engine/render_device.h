@@ -1745,11 +1745,7 @@ struct RenderDevice {
         if (frameIndex % kSmoothSweepFrames == 0 && frameIndex != smoothSweptAt) { smoothSweptAt = frameIndex; pruneSmooth(smooth, frameIndex); }
         SmoothXf& s = smooth[key];
         s.seen = frameIndex;
-        if (!s.init) { s.x = tx; s.z = tz; s.y = ty; s.yaw = tyaw; s.init = true; return s; }
-        s.x += (tx - s.x) * a; s.z += (tz - s.z) * a; s.y += (ty - s.y) * a;
-        float dyaw = tyaw - s.yaw;
-        while (dyaw > XM_PI) dyaw -= XM_2PI; while (dyaw < -XM_PI) dyaw += XM_2PI;
-        s.yaw += dyaw * a;
+        s.follow(tx, tz, ty, tyaw, a);
         return s;
     }
 
@@ -2093,7 +2089,7 @@ struct RenderDevice {
             m6.c_str(),
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
-        if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
+        if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf.c_str(), f); fclose(f); logLine("report written: " + reportPath); }
         else logLine("report: cannot write " + reportPath);
     }
     std::function<void()> editorDraw;

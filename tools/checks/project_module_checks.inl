@@ -32,7 +32,6 @@ static void project_module_checks(const auto& require,const std::filesystem::pat
         std::vector<std::wstring> none;append_output_arguments({},none);
         require(none.empty(),"10-security 6: A project with no arguments adds none");
     }
-}
     {   // PROJ-4: the saved default test settings are found from the build tree, the staged package and the old deep/bin layout
         namespace fs=std::filesystem;
         const fs::path scratch=fs::temp_directory_path()/(L"starlight-default-preset-"+std::to_wstring(GetCurrentProcessId()));

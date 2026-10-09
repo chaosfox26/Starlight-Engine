@@ -270,7 +270,9 @@ struct FuzzRng {
     uint64_t next() { s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; }
     uint32_t below(uint32_t n) { return n ? uint32_t(next() % n) : 0; }
 };
+
 const uint32_t kFuzzWords[] = { 0, 1, 2, 3, 0xFFFF, 0x4000, 0x4001, 0x7FFFFFFF, 0x80000000u, 0xFFFFFFFFu, 65536, 1u << 20 };
+
 // Re-computes every PNG chunk CRC that still lies inside the buffer, so that mutations reach the code behind the CRC gate.
 void fixPngCrcs(std::vector<uint8_t>& v) {
     size_t pos = 8;
@@ -280,6 +282,9 @@ void fixPngCrcs(std::vector<uint8_t>& v) {
         const uint32_t c = crc32(v.data() + pos + 4, len + 4);
         for (int i = 0; i < 4; ++i) v[pos + 8 + len + i] = uint8_t(c >> (24 - 8 * i));
         pos += len + 12;
+    }
+}
+
 std::vector<uint8_t> fuzzMutate(std::vector<uint8_t> v, FuzzRng& r, uint32_t kind, int container) {
     if (v.empty()) return v;
     auto at = [&] { return size_t(r.below(uint32_t(v.size()))); };
@@ -335,9 +340,12 @@ std::vector<uint8_t> fuzzMutate(std::vector<uint8_t> v, FuzzRng& r, uint32_t kin
                 if (v[p] == 0xFF && v[p + 1] != 0 && v[p + 1] != 0xFF && r.below(8) == 0) { const uint32_t w = kFuzzWords[r.below(12)]; v[p + 2] = uint8_t(w >> 8); v[p + 3] = uint8_t(w); break; }
         } else v[at()] = uint8_t(r.next());
         break;
+    }
     if (container == 1 && r.below(4) != 0) fixPngCrcs(v);
     if (container == 2 && r.below(5) != 0 && v.size() >= 2 && !(v[v.size() - 2] == 0xFF && v.back() == 0xD9)) { v.push_back(0xFF); v.push_back(0xD9); }
     return v;
+}
+
 std::vector<uint8_t> fuzzDds(uint32_t format, uint32_t w, uint32_t h, uint32_t levels) {
     std::array<uint32_t, 37> header{};
     header[0] = 0x20534444; header[1] = 124; header[3] = h; header[4] = w; header[7] = levels;
@@ -345,6 +353,8 @@ std::vector<uint8_t> fuzzDds(uint32_t format, uint32_t w, uint32_t h, uint32_t l
     std::vector<uint8_t> out(reinterpret_cast<const uint8_t*>(header.data()), reinterpret_cast<const uint8_t*>(header.data()) + sizeof(header));
     for (uint32_t l = 0; l < levels; ++l) { out.insert(out.end(), size_t((w + 3) / 4) * ((h + 3) / 4) * 16, uint8_t(l + 1)); w = std::max(1u, w / 2); h = std::max(1u, h / 2); }
     return out;
+}
+
 // Deterministic mutation fuzz of the PNG, JPEG and DDS readers. Every mutant must come back with a clean error or a sane image,
 // quickly, and without a large allocation. STARLIGHT_TEXTURE_FUZZ_ITERS (mutants per seed) and STARLIGHT_TEXTURE_FUZZ_SEED widen the run.
 template <class R> void fuzzDecoders(const fs::path& work, const fs::path& root, R& require) {
@@ -357,14 +367,18 @@ template <class R> void fuzzDecoders(const fs::path& work, const fs::path& root,
     PngSpec adam7; adam7.interlaced = true;
     seeds.push_back({ "adam7.png", makePng(8, 6, gradient(8, 6), adam7), 1 });
     for (const char* name : { "editor/checks/corner-controls/left-controls.png", "editor/checks/corner-controls/top-edge.png", "editor/checks/bottom-bar/shapes-bar.png" }) {
+        auto bytes = readBytes(root / name);
         if (bytes.empty()) { std::cout << "  NOT RUN, repo fixture missing: " << name << '\n'; require(false, "fuzz PNG fixture present"); }
         seeds.push_back({ fs::path(name).filename().string(), std::move(bytes), 1 });
+    }
     {
         auto bytes = readBytes(root / "migration/classic-advanced.jpg");
         if (bytes.empty()) { std::cout << "  NOT RUN, repo fixture missing: migration/classic-advanced.jpg\n"; require(false, "fuzz JPEG fixture present"); }
         seeds.push_back({ "classic-advanced.jpg", std::move(bytes), 2 });
+    }
     seeds.push_back({ "bc7.dds", fuzzDds(DXGI_FORMAT_BC7_UNORM, 16, 16, 5), 3 });
     seeds.push_back({ "bc5.dds", fuzzDds(DXGI_FORMAT_BC5_UNORM, 12, 8, 4), 3 });
+
     PROCESS_MEMORY_COUNTERS before{}; GetProcessMemoryInfo(GetCurrentProcess(), &before, sizeof(before));
     size_t cases = 0, accepted = 0, failures = 0; double slowest = 0; std::string slowestWhat;
     auto fail = [&](const Seed& s, uint32_t i, const std::vector<uint8_t>& bytes, const std::string& why) {
@@ -408,11 +422,15 @@ template <class R> void fuzzDecoders(const fs::path& work, const fs::path& root,
                 if (!sane) fail(s, i, m, "load accepted with inconsistent mip sizes");
             }
             else if (!img.mips.empty()) fail(s, i, m, "load failed but left pixels behind");
+        }
+    }
     PROCESS_MEMORY_COUNTERS after{}; GetProcessMemoryInfo(GetCurrentProcess(), &after, sizeof(after));
     const double grewMiB = (double(after.PeakWorkingSetSize) - double(before.PeakWorkingSetSize)) / 1048576.0;
     std::cout << "  decoder mutation fuzz: " << cases << " mutants over " << seeds.size() << " seeds, " << accepted << " accepted, slowest " << slowest << " ms (" << slowestWhat << "), peak working set grew " << grewMiB << " MiB\n";
     require(failures == 0, "decoder mutation fuzz: every mutant gets a clean error or a sane image, quickly");
     require(grewMiB < double(starlight::texture_limits::decodedBudget()) * 1.75 / 1048576.0, "decoder mutation fuzz: mutants never allocate much beyond the decoded-memory budget");
+}
+
 template <class R> void run(const fs::path& dir, const fs::path& root, R& require) {
     const fs::path work = dir / "memload";
     fs::create_directories(work);
@@ -1289,6 +1307,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(loaded && std::fabs(j.t.x) < 1e-4f && std::fabs(j.t.y - 1.f) < 1e-4f && std::fabs(j.t.z) < 1e-4f, "R4: a matrix joint keeps its translation next to a rotation and a scale");
             require(std::fabs(j.s.x - 2.f) < 1e-4f && std::fabs(j.s.y - 3.f) < 1e-4f && std::fabs(j.s.z - 4.f) < 1e-4f, "R4: a matrix joint keeps its scale");
             require(std::fabs(j.r.x) < 1e-4f && std::fabs(j.r.y) < 1e-4f && std::fabs(j.r.z - 0.70710678f) < 1e-4f && std::fabs(j.r.w - 0.70710678f) < 1e-4f, "R4: a matrix joint keeps its rotation");
+        }
         {
             auto transformed = [&](const model::SkinnedModel& m, int joint, float x, float y, float z) {
                 XMFLOAT4X4 pal[2]; model::evalPose(m, 0, 0.f, -1, 0.f, 0.f, pal, nullptr);
@@ -1309,6 +1328,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
             const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
             require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
+        }
         {
             auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
             model::SkinnedModel strip, fan, points, lines, onlyLines;
@@ -1325,6 +1345,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(model::loadSkinned(modesPath.string(), "", viaPath, note) && note.find("1 POINTS") != std::string::npos, "06#11: the path loader returns the skipped-primitive note in its message");
             e = loadWith(0, 1, onlyLines);
             require(e.code == LoadCode::NoGeometry && e.message.find("1 LINES") != std::string::npos, "06#11: a model whose only primitive is not a triangle type fails with a message that names what was skipped");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
