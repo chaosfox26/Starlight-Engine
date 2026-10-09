@@ -211,7 +211,8 @@ class TerrainFlow {
     // One-frame-ahead pipelining: call after the last change of a step. A background thread computes geometry() of this
     // state while the caller keeps working. Every method that changes the flow first waits for it (settle_async), so the
     // state can never change underneath it. geometry_for_render() returns the finished result of the previous begin, or
-    // (nothing prepared) the geometry of the present state.
+    // (nothing prepared) the geometry of the present state. A result is never returned for a state that a change has
+    // superseded when no newer begin is pending (a scene edit while paused): the present state is computed instead.
     void geometry_begin_async() const;
     std::vector<MeshPart> geometry_for_render() const;
     std::vector<MeshPart> geometry_unverified() const; // fast exact path (or the reference when exactClearance_ is set)
@@ -219,10 +220,11 @@ class TerrainFlow {
     mutable bool exactClearance_=false; // STARLIGHT_FLOW_VERIFY=1: rebuild with exact obstacle clearance and compare
   private:
     uint64_t terrainVersion_=1; // bumped whenever terrain_'s solid shape (heights/volumes) changes
+    mutable uint64_t stateVersion_=0; // counts the calls that may change the flow (every one settles first), see geometry_for_render()
     mutable FlowGeometryScratchHolder geometryScratch_;
     mutable FlowAsyncGeometryHolder asyncGeometry_;
     void settle_async_impl() const;
-    void settle_async() const { if(asyncGeometry_.state)settle_async_impl(); }
+    void settle_async() const { ++stateVersion_; if(asyncGeometry_.state)settle_async_impl(); }
 };
 // Atmospheric density occupies air above both terrain and the current liquid surface.
 inline double atmosphere_surface(const TerrainData* terrain,const TerrainFlow* flow,double x,double z){
