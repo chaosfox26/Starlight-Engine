@@ -1,0 +1,2 @@
+# Starter cards are compared byte for byte with the engine's own canonical encoding, so they must stay LF on every checkout.
+*.starscene text eol=lf

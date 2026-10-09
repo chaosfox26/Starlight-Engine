@@ -1,6 +1,7 @@
 /*
 !/.gitignore
 !/.gitmodules
+!/.gitattributes
 !/README.md
 !/STARLIGHT-PRODUCT-DIRECTION.md
 !/Build-Native.py
@@ -32,6 +33,8 @@
 /migration/*
 !/migration/verify_no_managed.py
 !/migration/geometry-reference.json
+!/migration/classic-advanced.jpg
+!/migration/fixtures/
 !/tools/
 /tools/*
 !/tools/audit/
@@ -112,6 +115,15 @@
 /editor/checks/denoise/regression/*
 !/editor/checks/denoise/regression/chaos-rt.packet
 !/editor/checks/denoise/regression/DXR-preview.starscene
+!/editor/checks/corner-controls/
+/editor/checks/corner-controls/*
+!/editor/checks/corner-controls/left-controls.png
+!/editor/checks/corner-controls/top-edge.png
+!/editor/checks/bottom-bar/
+/editor/checks/bottom-bar/*
+!/editor/checks/bottom-bar/shapes-bar.png
+!/editor/checks/feature-panel.png
+!/editor/checks/editor-preview.png
 
 # Local credentials and machine-specific settings must never enter checkpoints.
 .env

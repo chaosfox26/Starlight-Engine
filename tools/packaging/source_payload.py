@@ -26,7 +26,8 @@ def source_files(root):
                 if not source.resolve().is_relative_to(root):
                     raise ValueError('Source path escapes package root')
                 selected.add(source)
-    for name in ('CMakeLists.txt', 'LICENSE', 'deep/third_party/JoltPhysics/LICENSE',
+    for name in ('CMakeLists.txt', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'tools/build/renderer-transforms.json',
+                 'deep/third_party/JoltPhysics/LICENSE',
                  *(str(p.relative_to(root)) for p in sorted((root/'starters').glob('*/*.starscene'))),
                  *(str(p.relative_to(root)) for p in sorted((root/'licenses').glob('*')) if p.is_file())):
         source = root/name
