@@ -344,6 +344,7 @@ API int sl_effect_clock(void* handle,double seconds){if(!handle||!std::isfinite(
 API float sl_effect_time(void* handle){return static_cast<Viewport*>(handle)->previousEffectTime;}
 API const char* sl_error(){return failure.c_str();}
 API int sl_debug_fail_hresult(int n){const int remaining=RenderDevice::hrFaultCountdown;RenderDevice::hrFaultCountdown=n<0?0:n;return remaining;}
+API int sl_debug_remove_device(void* handle){if(!handle)return 0;ComPtr<ID3D12Device5> device5;if(FAILED(static_cast<Viewport*>(handle)->renderer->device.As(&device5)))return 0;device5->RemoveDevice();return 1;}
 // Optional ABI: old DLLs can be tested without importing unavailable symbols.
 API void sl_surface_texture_stats(void* handle,uint64_t* output){auto& maps=static_cast<Viewport*>(handle)->surfaces;output[0]=maps.resolution;output[1]=maps.levels;output[2]=maps.residentBytes;output[3]=SurfaceTextures::count;}
 API uint64_t sl_water_scene_bytes(void* handle){return static_cast<Viewport*>(handle)->surfaces.waterSceneBytes;}

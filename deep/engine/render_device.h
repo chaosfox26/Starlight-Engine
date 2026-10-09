@@ -794,7 +794,14 @@ struct RenderDevice {
     UINT64 fenceVal = 0;
     HANDLE fenceEvent = nullptr;
 
-    void must(HRESULT hr, const char* what) { if (FAILED(hr)) { drainDebug(); throw std::runtime_error(what); } }   // debug-layer reason lands in the log first
+    bool deviceLossLogged = false, tornDown = false;
+    // debug-layer reason lands in the log first; a removed device is reported (with the DRED breadcrumbs) by the first call that fails on it (RND-8)
+    void must(HRESULT hr, const char* what) {
+        if (FAILED(hr)) {
+            if (device && !deviceLossLogged && FAILED(device->GetDeviceRemovedReason())) { deviceLossLogged = true; reportDeviceLoss(); }
+            drainDebug(); throw std::runtime_error(what);
+        }
+    }
     // Test hook (audit CC-07): the n-th checked D3D12 result after setting the countdown is reported as failed, so the failure paths run without a real device fault.
     inline static int hrFaultCountdown = 0;
     void mustHr(HRESULT hr, const char* what) { if (hrFaultCountdown > 0 && --hrFaultCountdown == 0) hr = E_FAIL; must(hr, what); }
@@ -863,13 +870,21 @@ struct RenderDevice {
         logLine(std::string("fullscreen exclusive: ") + (SUCCEEDED(hr) ? "on" : "unavailable (staying borderless)"));
     }
     void teardown() {
-        if (!queue) return;
-        flush(); drainDebug();
+        if (!queue || tornDown) return;
+        tornDown = true;
+        // RND-8: teardown runs inside catch handlers, so a failed idle wait must not stop the release below. On a removed device that failure is expected and already
+        // reported; any other failure is rethrown once everything is released.
+        std::exception_ptr idleFailure;
+        try { flush(); drainDebug(); } catch (...) { idleFailure = std::current_exception(); }
         if (swap) swap->SetFullscreenState(FALSE, nullptr);   // must leave exclusive before releasing the swapchain
         for (UINT i = 0; i < kFrameCount; ++i) targets[i].Reset();
         swap.Reset();
         if (ups) { ups->shutdown(); ups.reset(); }
         antilag.shutdown();
+        if (idleFailure) {
+            if (device && FAILED(device->GetDeviceRemovedReason())) logLine("teardown: the device was removed, skipping the GPU idle wait");
+            else std::rethrow_exception(idleFailure);
+        }
     }
 
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* src, size_t bytes, D3D12_RESOURCE_STATES finalState) {

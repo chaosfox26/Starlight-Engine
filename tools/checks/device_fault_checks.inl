@@ -5,9 +5,14 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <fstream>
+#include <iterator>
 static void device_fault_checks(const auto& require){
     // Set while the GPU must stay free (for example during gaming): the device checks are then reported as NOT RUN, which the ledger counts as missing coverage, never as a pass.
     if(std::getenv("STARLIGHT_SKIP_GPU_CHECKS")){std::cout<<"device failure checks: NOT RUN (STARLIGHT_SKIP_GPU_CHECKS is set)"<<std::endl;return;}
+    // The renderer opens its log on the first viewport of the process; RND-8 reads it to see that a lost device is reported.
+    std::wstring lossLog;{wchar_t base[MAX_PATH]{};GetTempPathW(MAX_PATH,base);lossLog=std::wstring(base)+L"starlight-device-loss-"+std::to_wstring(GetCurrentProcessId())+L".log";}
+    DeleteFileW(lossLog.c_str());_wputenv_s(L"STARLIGHT_NATIVE_LOG",lossLog.c_str());
     HMODULE module=LoadLibraryW(L"Starlight.Viewport.dll");
     require(module!=nullptr,"CC-07: The viewport module loads for the device-failure checks");
     if(!module)return;
@@ -93,6 +98,23 @@ static void device_fault_checks(const auto& require){
         require(frameFired>=8,"RND-3: Several checked results inside a frame were failed on purpose");
         require(wedged.empty(),"RND-3: After a failure inside a frame the next frames render again");
         if(ctx)destroy(ctx);
+    }
+    // RND-8: a removed device is reported (with the DRED breadcrumbs) by the first failing call, and the viewport can still be destroyed and replaced.
+    using Remove=int(*)(void*);auto remove=reinterpret_cast<Remove>(GetProcAddress(module,"sl_debug_remove_device"));
+    require(remove!=nullptr,"RND-8: The viewport module exports the device removal hook");
+    if(remove){
+        void* ctx=create(window,640,360);
+        require(ctx!=nullptr&&frame(ctx,0,13)==1&&remove(ctx)==1,"RND-8: A viewport exists and its device could be removed on purpose");
+        if(ctx){
+            require(frame(ctx,0,13)==0&&error()[0]!=0,"RND-8: A frame on a removed device fails with an error");
+            destroy(ctx);
+        }
+        void* replacement=create(window,640,360);
+        require(replacement!=nullptr&&frame(replacement,0,13)==1,"RND-8: A new viewport renders after another one lost its device");
+        if(replacement)destroy(replacement);
+        std::ifstream log(lossLog);std::string text((std::istreambuf_iterator<char>(log)),std::istreambuf_iterator<char>());
+        if(text.empty())std::cout<<"device removal report: NOT RUN (the renderer log was opened earlier in this process)"<<std::endl;
+        else require(text.find("device removed HRESULT")!=std::string::npos,"RND-8: The first failing call on a removed device writes the device removal report to the log");
     }
     DestroyWindow(window);
     std::cout<<"device failure checks: "<<fired<<" failures injected, "<<surfaced<<" reported by create/frame, "<<cleanup<<" by destruction\n";
