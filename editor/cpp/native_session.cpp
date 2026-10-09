@@ -82,7 +82,10 @@ NativeSession::NativeSession(HWND window, int w, int h)
     thread_ = std::jthread([this](std::stop_token stop) { run(stop); });
 }
 NativeSession::~NativeSession() {
-    thread_.request_stop();
+    {
+        std::lock_guard lock(mutex_);
+        thread_.request_stop();
+    }
     condition_.notify_all();
     if (thread_.joinable())
         thread_.join();
