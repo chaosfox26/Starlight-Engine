@@ -476,12 +476,12 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
     err.clear();
     try {
     std::vector<uint8_t> glb, atlas;
-    LoadError e = readWholeFile(glbPath, glb);
+    LoadError e = readWholeFile(glbPath, glb, MaxModelFileBytes);
     if (e.failed()) { err = e.message; return false; }
     std::string warning;
     bool haveAtlas = false;
     if (!atlasUvBin.empty()) {
-        const LoadError atlasFile = readWholeFile(atlasUvBin, atlas);
+        const LoadError atlasFile = readWholeFile(atlasUvBin, atlas, MaxAtlasFileBytes);
         if (atlasFile.ok()) haveAtlas = true;
         else warning = (atlasFile.code == LoadCode::NotFound ? "atlas uv bin not found: " + atlasUvBin : atlasFile.message) + "; keeping glb UVs";
     }
