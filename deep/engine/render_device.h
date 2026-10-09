@@ -191,6 +191,13 @@ static void logLine(const std::string& s) {
     std::fprintf(g_logFile, "[%6llu.%03llu] %s\n", (unsigned long long)(ms / 1000), (unsigned long long)(ms % 1000), s.c_str());
     std::fflush(g_logFile);
 }
+// Opens a file whose path is held as UTF-8 (the host options are UTF-8), so a folder outside the ANSI code page still opens.
+static errno_t openUtf8(FILE** file, const std::string& path, const wchar_t* mode) {
+    const int count = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), (int)path.size(), nullptr, 0);
+    std::wstring wide((size_t)(count > 0 ? count : 0), L'\0');
+    if (count > 0) MultiByteToWideChar(CP_UTF8, 0, path.c_str(), (int)path.size(), wide.data(), count);
+    return _wfopen_s(file, wide.c_str(), mode);
+}
 
 // ---- gear colorways -> rgb (server COLORWAYS set + #rrggbb; empty = neutral placeholder) -------
 
@@ -1946,7 +1953,7 @@ struct RenderDevice {
             logLine(row);
         }
         js += "]}\n";
-        if (!reportPath.empty()) { FILE* f = nullptr; if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(js.c_str(), f); fclose(f); } }
+        if (!reportPath.empty()) { FILE* f = nullptr; if (openUtf8(&f, reportPath, L"w") == 0 && f) { fputs(js.c_str(), f); fclose(f); } }
         logLine("=== MT-PROOF done ===");
     }
 
@@ -2017,7 +2024,7 @@ struct RenderDevice {
             m6,
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
-        if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
+        if (openUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
         else logLine("report: cannot write " + reportPath);
     }
     std::function<void()> editorDraw;

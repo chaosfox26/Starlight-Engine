@@ -13,9 +13,9 @@ static host_config::Options hostOptions;
 static host_notice::Layer notice;
 static std::vector<keycard_room::Part> roomParts;
 static std::string Narrow(const std::wstring& text) {
-    const int bytes=WideCharToMultiByte(CP_ACP,0,text.c_str(),(int)text.size(),nullptr,0,nullptr,nullptr);
+    const int bytes=WideCharToMultiByte(CP_UTF8,0,text.c_str(),(int)text.size(),nullptr,0,nullptr,nullptr);
     std::string out((size_t)(bytes>0?bytes:0),'\0');
-    if(bytes>0)WideCharToMultiByte(CP_ACP,0,text.c_str(),(int)text.size(),out.data(),bytes,nullptr,nullptr);
+    if(bytes>0)WideCharToMultiByte(CP_UTF8,0,text.c_str(),(int)text.size(),out.data(),bytes,nullptr,nullptr);
     return out;
 }
 static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int);
@@ -29,7 +29,7 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     int argc=0; auto argv=CommandLineToArgvW((L"project "+std::wstring(command)).c_str(),&argc);
     device.benchMs=0; UINT width=0,height=0; std::wstring display;
     for(int i=1;i+1<argc;++i) {
-        if(std::wstring(argv[i])==L"--report") { std::wstring p=argv[++i]; device.reportPath=std::string(p.begin(),p.end()); }
+        if(std::wstring(argv[i])==L"--report") { std::wstring p=argv[++i]; device.reportPath=Narrow(p); }
         else if(std::wstring(argv[i])==L"--bench") device.benchMs=std::stoull(argv[++i]);
     }
     for(int i=1;i<argc;++i) {

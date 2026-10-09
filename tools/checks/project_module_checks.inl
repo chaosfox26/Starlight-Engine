@@ -1,5 +1,6 @@
 // A project's module must be a plain file name inside the project folder (audit H1): a .star file from elsewhere must not be able to name any DLL on the disk.
 #include "../../deep/src/project_module.hpp"
+#include "../../deep/engine/keycard_view.h"
 static void project_module_checks(const auto& require){
     const std::filesystem::path folder=L"C:\\Projects\\Demo";
     auto refused=[&](const wchar_t* name){try{(void)project_module_path(folder,name);return false;}catch(const std::runtime_error&){return true;}};
@@ -25,5 +26,20 @@ static void project_module_checks(const auto& require){
         require(find_default_preset(scratch/L"none/a").empty(),"PROJ-4: A host with no saved default settings gets an empty path, not a made-up one");
         require(default_preset_candidates(scratch/L"none/a").front()==scratch/L"none/a/settings/default.startest","PROJ-4: The nearest folder is searched first");
         fs::remove_all(scratch,ignored);
+    }
+    {   // PROJ-3: the key card lookup holds paths as UTF-8, so a folder named outside the ANSI code page is found
+        namespace fs=std::filesystem;
+        const fs::path folder=fs::temp_directory_path()/(L"Starlight Moved Ω "+std::to_wstring(GetCurrentProcessId()));
+        std::error_code ignored;fs::remove_all(folder,ignored);fs::create_directories(folder);
+        std::ofstream(folder/L"Empty.starscene")<<"x";
+        const std::string utf8=keycard::pathToUtf8(folder);
+        require(utf8.find("\xCE\xA9")!=std::string::npos,"PROJ-3: A folder path converts to UTF-8");
+        require(keycard::pathFromUtf8(utf8)==folder,"PROJ-3: A UTF-8 folder path converts back to the same path");
+        std::string error;
+        const std::string beside=keycard::resolveCardPath("",utf8,"Empty.starscene",error);
+        require(error.empty()&&!beside.empty()&&fs::is_regular_file(keycard::pathFromUtf8(beside)),"PROJ-3: The card beside a module in a non-ANSI folder is found");
+        const std::string named=keycard::resolveCardPath(beside,"","Empty.starscene",error);
+        require(error.empty()&&named==beside,"PROJ-3: A --card path in a non-ANSI folder is found");
+        fs::remove_all(folder,ignored);
     }
 }
