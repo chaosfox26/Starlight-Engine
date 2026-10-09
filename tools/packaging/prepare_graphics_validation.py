@@ -10,14 +10,23 @@ SHA256 = '08f0489281401aa430fc37322d6c3fc98a8025175aacd714c10d562f4963f1e9'
 URL = f'https://api.nuget.org/v3-flatcontainer/microsoft.direct3d.d3d12/{VERSION}/microsoft.direct3d.d3d12.{VERSION}.nupkg'
 
 
+def fetch_verified(archive, fetch=urllib.request.urlretrieve):
+    """The archive is only ever replaced by a complete download that matches the pinned hash, so a dropped connection cannot leave a bad cached file."""
+    if archive.exists() and hashlib.sha256(archive.read_bytes()).hexdigest() == SHA256:
+        return
+    part = archive.with_name(archive.name + '.part')
+    fetch(URL, part)
+    if hashlib.sha256(part.read_bytes()).hexdigest() != SHA256:
+        part.unlink()
+        raise RuntimeError('Graphics validation SDK hash mismatch')
+    part.replace(archive)
+
+
 def prepare():
     cache = ROOT / 'out/dependency-review' / f'agility-{VERSION}'
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / 'sdk.nupkg'
-    if not archive.exists():
-        urllib.request.urlretrieve(URL, archive)
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != SHA256:
-        raise RuntimeError('Graphics validation SDK hash mismatch')
+    fetch_verified(archive)
     destination = ROOT / 'out/classic/Release/D3D12'
     destination.mkdir(parents=True, exist_ok=True)
     # Only the two DLLs expressly listed in the package's distributable list.
