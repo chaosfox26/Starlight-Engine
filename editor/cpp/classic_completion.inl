@@ -308,7 +308,7 @@ static LRESULT CALLBACK card_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, 
     {
         e.cardDragging = false;
         ReleaseCapture();
-        e.error(ex.what());
+        e.report(ex.what(), m, l);
     }
     return DefSubclassProc(h, m, w, l);
 }
