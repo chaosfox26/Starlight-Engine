@@ -71,6 +71,8 @@
         autoFits &= compactScale<settingsScale && settingsScale==100 && interfacePercent==0;
     }
     check("Auto shrinks and restores the UI through repeated window resizes",autoFits);
+    ShowWindow(window,SW_MINIMIZE);const auto minimizedScale=settingsScale;ShowWindow(window,SW_RESTORE);
+    check("minimizing keeps the Auto UI scale instead of fitting a zero-size window",minimizedScale==100 && settingsScale==100 && interfacePercent==0);
     toggle_menu(MenuFile);SendMessage(GetDlgItem(menuPanel,SettingsScale),BM_SETCHECK,BST_UNCHECKED,0);command(SettingsScale);
     check("switching from Auto restores the chosen manual percentage",settingsScale==63);
     zoomSlider=GetDlgItem(menuPanel,InterfaceSlider);SendMessage(zoomSlider,TBM_SETPOS,TRUE,100);

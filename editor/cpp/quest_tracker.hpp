@@ -187,7 +187,7 @@ public:
         else if(h.id=="__journal"){journal_=true;selected_=views_.empty()?std::string{}:views_.front().id;settingsOpen_=false;}
         else if(h.id=="__fold")collapsed_=!collapsed_;
         else if(h.id.empty()){journal_=!journal_;selected_=journal_ && !views_.empty()?views_.front().id:std::string{};}
-        else if(h.pin){auto q=std::find_if(views_.begin(),views_.end(),[&](const auto& v){return v.id==h.id;});pins_[h.id]=!(pins_.contains(h.id)?pins_[h.id]:q->tracked);}
+        else if(h.pin){auto q=std::find_if(views_.begin(),views_.end(),[&](const auto& v){return v.id==h.id;});if(q!=views_.end())pins_[h.id]=!(pins_.contains(h.id)?pins_[h.id]:q->tracked);}
         else {selected_=h.id;journal_=true;collapsed_=false;settingsOpen_=false;}
         scroll_=0;relayout();InvalidateRect(window_,nullptr,FALSE);return;
     }}
