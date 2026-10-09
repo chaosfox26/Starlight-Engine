@@ -839,7 +839,10 @@ struct RenderDevice {
             const UINT64 v = ++fenceVal;
             if (SUCCEEDED(queue->Signal(fence.Get(), v))) {
                 if (fence->GetCompletedValue() >= v) return true;
-                if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) return fence->GetCompletedValue() >= v;   // a stale event left by an earlier timed-out wait can end this one early
+                // a stale event left by an earlier timed-out wait can wake this one before v completes: wait again instead of reporting the GPU as not idle
+                while (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) {
+                    if (fence->GetCompletedValue() >= v) return true;
+                }
             }
             return device && FAILED(device->GetDeviceRemovedReason());
         } catch (...) { return false; }
@@ -1254,7 +1257,11 @@ struct RenderDevice {
         // RND-2: the new targets are built into locals and swapped in only when all of them exist, so a failure (for example out of memory) keeps the previous state.
         const int oldMode = ups->mode(); const UINT oldRw = rw, oldRh = rh, oldMsaa = msaa;
         UINT nrw = 0, nrh = 0;
-        must(ups->setMode(m, nrw, nrh) ? S_OK : E_FAIL, "set upscaler quality mode");   // a refused mode must not leave the scene targets unset or mismatched with the output
+        if (!ups->setMode(m, nrw, nrh)) {
+            // start-up has no scene targets yet, so a refused mode fails loudly there; later the current mode and targets are kept, because the quality hotkey must not throw out of the frame
+            if (!sceneColor.Get()) must(E_FAIL, "set upscaler quality mode");
+            return;
+        }
         rw = nrw; rh = nrh;
         D3D12_CLEAR_VALUE cc{}; cc.Format = sceneFormat();
         D3D12_CLEAR_VALUE mc{}; mc.Format = DXGI_FORMAT_R16G16_FLOAT;
