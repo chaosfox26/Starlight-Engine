@@ -177,3 +177,32 @@ static void viewport_error_text_checks(const auto &require) {
     require(obstacleError.find("fog obstacle") != std::string::npos, "VWP-2: The rejected fog obstacle list reports its own reason");
     require(waitFailed && waitError.find("GPU completion") != std::string::npos, "VWP-2: A failed GPU wait returns 0 and reports its own reason");
 }
+
+// VWP-3: a scene that fails validation leaves the resident base scene and its token as they were.
+static void viewport_scene_failure_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport scene failure checks")) return;
+    const auto &api = session.api;
+    const auto sceneBase = api.get<int (*)(void *, const uint8_t *, int, uint64_t)>("sl_scene_base");
+    const auto sceneDelta = api.get<int (*)(void *, const uint8_t *, int, uint64_t)>("sl_scene_delta");
+    const auto partCount = api.get<int (*)(void *)>("sl_parts");
+    require(sceneBase && sceneDelta && partCount, "VWP-3: The viewport module exports the resident scene calls");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-3: A viewport is created");
+    const auto base = vwp_scene({{0, 0, 0}});
+    const auto duplicate = vwp_scene({{5, 1.36f, 0}, {5, 1.36f, 2}});   // two grass parts with one motion key share an identity
+    const auto tail = vwp_delta(7, {{0, 0, 3}});
+    const bool baseOk = sceneBase(viewport, base.data(), int(base.size()), 7) == 1 && partCount(viewport) == 1;
+    const bool duplicateRejected = sceneBase(viewport, duplicate.data(), int(duplicate.size()), 8) == 0;
+    const std::string duplicateError = api.error();
+    const int partsAfterFailure = partCount(viewport);
+    const bool deltaOk = sceneDelta(viewport, tail.data(), int(tail.size()), 7) == 1;
+    const int partsAfterDelta = partCount(viewport);
+    const bool framed = api.frame(viewport, 0, 13) == 1;
+    api.destroy(viewport);
+    require(baseOk, "VWP-3: A resident base scene installs");
+    require(duplicateRejected && duplicateError.find("Duplicate grass instance identity") != std::string::npos, "VWP-3: Two grass parts with one identity are rejected");
+    require(partsAfterFailure == 1, "VWP-3: The rejected scene leaves the resident parts untouched");
+    require(deltaOk && partsAfterDelta == 2, "VWP-3: The resident base token still accepts a delta after a rejected scene");
+    require(framed, "VWP-3: The viewport still renders after a rejected scene");
+}

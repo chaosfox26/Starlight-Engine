@@ -429,6 +429,9 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
    vertexTotal+=in.mesh.verts.size();incoming.push_back(std::move(in));
   }
   if(r.left)throw std::runtime_error("Unexpected viewport scene data");
+  {std::set<uint64_t> identities;const size_t first=delta?v.baseCount:0; // rejected before anything is replaced, so a failed scene leaves the resident base and its token intact
+   for(size_t i=0;i<first;++i)if(GrassDeformation::accepts(v.parts[i].source->verts.front().kind))identities.insert(GrassDeformation::identity(v.parts[i].motionKey,i));
+   for(size_t i=0;i<incoming.size();++i)if(GrassDeformation::accepts(incoming[i].mesh.verts.front().kind)&&!identities.insert(GrassDeformation::identity(incoming[i].part.motionKey,first+i)).second)throw std::runtime_error("Duplicate grass instance identity");}
   const auto parsed=SceneClock::now();const double parseMs=sceneMs(lap,parsed)-hashMs;lap=parsed;
   std::unordered_map<uint64_t,std::shared_ptr<Mesh>> sources;for(auto& p:v.parts)sources.emplace(p.meshKey,p.source);
   // Bounds are cached once at scene upload, never reconstructed per light/frame.
@@ -451,7 +454,7 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
    if(original!=v.parts.end() && original->streaming)v.streams.push_back({old.second,d.fenceVal,starlight_resource_desc(old.second.vb).Width,starlight_resource_desc(old.second.ib).Width});
    else v.retiredResident.push_back({old.second,d.fenceVal});
   }
-  if(delta){v.parts.erase(v.parts.begin()+v.baseCount,v.parts.end());for(auto& p:next)v.parts.push_back(std::move(p));}else v.parts=std::move(next);
+  if(delta){v.parts.erase(v.parts.begin()+v.baseCount,v.parts.end());for(auto& p:next)v.parts.push_back(std::move(p));}else{v.parts=std::move(next);v.baseCount=0;v.baseToken=0;}
   {const auto now=SceneClock::now();v.sceneStats.upload+=sceneMs(lap,now);lap=now;}
   std::set<uint64_t> grassKeys;bool grassChanged=false;
   for(size_t i=0;i<v.parts.size();++i){const auto& p=v.parts[i];if(!GrassDeformation::accepts(p.source->verts.front().kind))continue;auto key=GrassDeformation::identity(p.motionKey,i);if(!grassKeys.insert(key).second)throw std::runtime_error("Duplicate grass instance identity");auto old=v.grass.entries.find(key);grassChanged|=old==v.grass.entries.end()||old->second.meshKey!=p.meshKey;}
