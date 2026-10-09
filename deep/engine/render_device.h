@@ -2172,9 +2172,9 @@ struct RenderDevice {
         }
         alloc = allocs[slot];
         mustHr(alloc->Reset(), "reset frame command allocator");
-        mustHr(cmd->Reset(alloc.Get(), pso.Get()), "reset frame command list");
-        // RND-3: anything that throws while this frame is recording must still close the list, or every later frame fails to reset it.
+        // RND-3: anything that throws while this frame is recording must still close the list, or every later frame fails to reset it. The guard comes first so a failure reported after the reset itself succeeded also closes it.
         struct OpenList { ID3D12GraphicsCommandList* list; ~OpenList() { if (list) (void)list->Close(); } } openList{ cmd.Get() };
+        mustHr(cmd->Reset(alloc.Get(), pso.Get()), "reset frame command list");
         if (tsHeap) {   // GPU timer: the slot fence was waited above, so this slot's PREVIOUS resolve is ready to read
             if (tsFreq) {
                 void* p = nullptr; D3D12_RANGE rr{ (SIZE_T)(sizeof(UINT64) * 2 * slot), (SIZE_T)(sizeof(UINT64) * (2 * slot + 2)) };
@@ -2280,8 +2280,10 @@ struct RenderDevice {
         if (!auditOffscreen) ups->afterPresent();stageMarks[7]=timingNow();
         // ---- retire by slot instead of flushing. The fence value signalled here is what the
         // slot waits on kFrameCount frames from now; --inflight < 3 waits earlier (1 = old behaviour).
-        slotFence[slot] = ++fenceVal;
-        {const double s0=timingNow();mustHr(queue->Signal(fence.Get(), fenceVal), "signal frame fence");signalMs=(timingNow()-s0)*1000;}
+        const UINT64 submittedFence = ++fenceVal;
+        // RND-3: the slot only waits on a fence value that was really signalled. When the signal fails the submission is drained here, so the next frame neither waits forever on a value nobody signals nor reuses an allocator the GPU still reads, and it follows the swapchain to the buffer the present already advanced to (drawing into the stale one hung the device).
+        {const double s0=timingNow();try{mustHr(queue->Signal(fence.Get(), submittedFence), "signal frame fence");}catch(...){flushNoFault();{UINT current=swap->GetCurrentBackBufferIndex();if(current<kFrameCount)frame=current;}throw;}signalMs=(timingNow()-s0)*1000;}
+        slotFence[slot] = submittedFence;
         {const double w0=timingNow();if (inflight < (int)kFrameCount) waitFence(fenceVal - (UINT64)(inflight - 1));inflightWaitMs=(timingNow()-w0)*1000;}
         if (shotNow) { flush(); writeShotBmp(); shotDone = true; }
         stageMarks[8]=timingNow();

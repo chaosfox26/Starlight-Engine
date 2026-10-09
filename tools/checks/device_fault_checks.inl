@@ -110,7 +110,8 @@ static void device_fault_checks(const auto& require){
             if(frame(ctx,0,13)!=1&&frame(ctx,0,13)!=1)wedged+=" "+std::to_string(n);
         }
         if(!wedged.empty())std::cout<<"frame failure sweep: frames kept failing after injected failure number(s):"<<wedged<<'\n';
-        require(frameFired>=8,"RND-3: Several checked results inside a frame were failed on purpose");
+        // an empty viewport frame has four checked results (allocator reset, list reset, list close, fence signal); every one of them must have been failed
+        require(frameFired>=4,"RND-3: Every checked result inside a frame was failed on purpose");
         require(wedged.empty(),"RND-3: After a failure inside a frame the next frames render again");
         if(ctx)destroy(ctx);
     }
