@@ -39,4 +39,11 @@ static void render_device_checks(const auto& require){
         require(report_text::format("%s","").empty()&&report_text::format("plain")=="plain","RND-6: Empty and plain formats work");
         require(report_text::escape(std::string("a\nb\tc\"d\\e\x01"))=="a\\u000ab\\u0009c\\\"d\\\\e\\u0001","RND-6: Control characters, quotes and backslashes are escaped");
     }
+    {
+        // RND-2: the header is read from the source tree next to this file, so these pins follow the code they describe.
+        std::ifstream in(fs::absolute(fs::path(__FILE__)).parent_path() / ".." / ".." / "deep" / "engine" / "render_device.h", std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        require(text.find("outputFailed = true;") != std::string::npos && text.find("outputFailed = false;") != std::string::npos, "RND-2: A native resize records a failed rollback and clears the record when a resize succeeds");
+        require(text.find("if (outputFailed) {") != std::string::npos, "RND-2: The next frame after a failed rollback is refused instead of drawing with null targets");
+    }
 }

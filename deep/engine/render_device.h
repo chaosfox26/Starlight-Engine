@@ -605,6 +605,8 @@ struct RenderDevice {
     UINT64 slotFence[kFrameCount] = {};                    // fence value that retires each slot's last submission
     UINT   slot = 0;                                        // = frameIndex % kFrameCount
     bool   warnedBbIndex = false;                          // one-shot: log if the swapchain ever returns an out-of-range backbuffer index (Streamline proxy swapchain, #35)
+    bool   outputFailed = false;                           // RND-2: a native resize and its rollback both failed, so the swapchain is at the new size while the targets are null; frames are refused until a resize succeeds
+    bool   warnedOutputFailed = false;                     // one-shot log line for that refusal
     int    inflight = 3;                                    // --inflight 1..3
     HANDLE frameLatencyWaitable = nullptr;                  // DXGI frame-latency waitable: waited at frame TOP so present() runs async (CPU records N+1 while GPU+present handle N)
     uint32_t stallCount = 0;                                // frames where the CPU had to wait for a slot (report)
@@ -1150,12 +1152,13 @@ struct RenderDevice {
                 if (FAILED(swap->ResizeBuffers(kFrameCount, oldW, oldH, desc.Format, desc.Flags))) throw std::runtime_error("ResizeBuffers rollback");
                 ups->resizeOutput(oldW,oldH);
                 createBackbufferViews();
-            } catch (...) { logLine("resize rollback failed"); }
+            } catch (...) { outputFailed = true; logLine("resize rollback failed"); }
             throw;
         }
         auditOutput.Reset();
         if (auditOffscreen) setAuditOffscreen(true);
         lastFrameStart=0;
+        outputFailed = false; warnedOutputFailed = false;
     }
 
     void createBackbufferViews() {
@@ -2099,6 +2102,10 @@ struct RenderDevice {
     bool hostCamera=false;XMFLOAT3 hostEye{0,3,8},hostTarget{0,0,0};float hostFovDegrees=50.0f,hostNear=0.1f,hostFar=400.0f;
     double stageMarks[10]{};double inflightWaitMs=0,signalMs=0;uint32_t passFrameId[3]{};   // diagnostic: stage timestamps, tail timers, and the frame each GPU pass slot was submitted for   // diagnostic: timingNow() at the main stages of the last frame
     void renderEmpty(HWND hwnd) {
+        if (outputFailed) {   // RND-2: the targets are null after a failed resize rollback; refuse the frame instead of drawing with them
+            if (!warnedOutputFailed) { warnedOutputFailed = true; logLine("frame refused: the native output is unusable after a failed resize and its rollback; the next sl_resize rebuilds it"); }
+            throw std::runtime_error("Native output is unusable after a failed resize; resize the viewport to rebuild it");
+        }
         (void)hwnd;stageMarks[0]=timingNow();
         struct FrameTail{RenderDevice* d;uint32_t id;~FrameTail(){d->stageMarks[9]=timingNow();if(starlight_diag::events_enabled()){starlight_diag::evlog("rf.end",id,1000*(d->stageMarks[9]-d->stageMarks[0]),1000*(d->stageMarks[9]-d->stageMarks[7]));starlight_diag::evlog("rf.tail",d->signalMs,d->inflightWaitMs,1000*(d->stageMarks[9]-d->stageMarks[8]));starlight_diag::evlog("tri",double(d->triDraw),double(d->triPrepass),double(d->triShadow));}}} frameTail{this,frameIndex};
         starlight_diag::evlog("rf.begin",frameIndex,slot);
