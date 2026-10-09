@@ -10,13 +10,13 @@
 #include <wrl/client.h>
 namespace starlight::editor {
 using Microsoft::WRL::ComPtr;
-namespace {
 fs::path native_file_path(const fs::path& path) {
-    if(path.wstring().rfind(L"\\\\?\\",0)==0)return path;
+    if(path.wstring().rfind(L"\\\\?\\",0)==0)return fs::path(path).make_preferred(); // The extended form does not translate '/' separators, so a manifest-style path needs it too.
     auto native=fs::absolute(path).lexically_normal().make_preferred().wstring();
     if(native.rfind(L"\\\\?\\",0)==0)return fs::path(native);
     return fs::path(native.rfind(L"\\\\",0)==0 ? L"\\\\?\\UNC\\"+native.substr(2) : L"\\\\?\\"+native);
 }
+namespace {
 void check(HRESULT hr) {
     if (FAILED(hr))
         throw std::runtime_error("Windows operation failed: " +

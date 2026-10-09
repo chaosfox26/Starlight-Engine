@@ -133,7 +133,7 @@ std::string file_name(const std::string& id) {
 }
 std::shared_ptr<const std::string> read_verified(AssetKind kind, const std::string& id, const fs::path& path, std::string* whole = nullptr) {
     std::error_code sizeError;
-    const auto onDisk = fs::file_size(path, sizeError);
+    const auto onDisk = fs::file_size(native_file_path(path), sizeError);
     if (!sizeError && onDisk > max_file_bytes(kind)) throw AssetMissing("Engine asset " + id + " is larger than the " + std::to_string(max_file_bytes(kind) >> 20) + " MiB limit for its kind");
     std::string file;
     try {
@@ -713,7 +713,7 @@ std::vector<Candidate> candidate_files(const std::string& id) {
 fs::path EngineAssets::locate(const std::string& id) {
     std::error_code error;
     for (const auto& candidate : candidate_files(id))
-        if (fs::is_regular_file(candidate.path, error)) return candidate.path;
+        if (fs::is_regular_file(native_file_path(candidate.path), error)) return candidate.path;
     return {};
 }
 namespace {
@@ -722,7 +722,7 @@ std::shared_ptr<const std::string> read_first_intact(AssetKind kind, const std::
     std::error_code error;
     std::string problem;
     for (const auto& candidate : candidate_files(id)) {
-        if (!fs::is_regular_file(candidate.path, error)) continue;
+        if (!fs::is_regular_file(native_file_path(candidate.path), error)) continue;
         try { return read_verified(kind, id, candidate.path, whole); } catch (const AssetMissing& e) { if (problem.empty()) problem = e.what(); }
     }
     throw AssetMissing(problem.empty() ? missing_text(id) : problem);
@@ -740,7 +740,7 @@ bool EngineAssets::keep(const std::string& id) {
     std::error_code error;
     for (const auto& candidate : candidate_files(id)) {
         const auto& path = candidate.path;
-        if (!fs::is_regular_file(path, error)) continue;
+        if (!fs::is_regular_file(native_file_path(path), error)) continue;
         std::string whole;
         try { read_verified(kind, id, path, &whole); } catch (const AssetMissing&) { continue; }
         if (path != home && !candidate.durable) {
@@ -801,7 +801,7 @@ void EngineAssets::bundle_into(const std::set<std::string>& ids, const fs::path&
     for (const auto& id : ids) {
         auto target = folder / wide(file_name(id));
         std::error_code error;
-        if (fs::is_regular_file(target, error)) {
+        if (fs::is_regular_file(native_file_path(target), error)) {
             try { read_verified(kind_of(id), id, target); continue; } catch (const AssetMissing&) {}
         }
         atomic_write(target, verified_file_bytes(id));

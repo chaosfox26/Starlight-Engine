@@ -7,10 +7,10 @@ namespace starlight::editor {
 json export_portable_scene(const SceneData &source, const fs::path &destination) {
     source.validate();
     auto target = fs::absolute(destination).lexically_normal();
-    if (fs::exists(target)) throw std::runtime_error("Choose a new folder for portable export; existing folders are never overwritten");
-    fs::create_directories(target.parent_path());
+    if (fs::exists(native_file_path(target))) throw std::runtime_error("Choose a new folder for portable export; existing folders are never overwritten");
+    fs::create_directories(native_file_path(target.parent_path()));
     auto stage = target.parent_path() / (L".starlight-export-" + wide(new_id()));
-    if (!fs::create_directory(stage)) throw std::runtime_error("Cannot create export staging folder");
+    if (!fs::create_directory(native_file_path(stage))) throw std::runtime_error("Cannot create export staging folder");
     try {
         auto scene = source;
         json assets = json::array();
@@ -28,16 +28,16 @@ json export_portable_scene(const SceneData &source, const fs::path &destination)
             {"sceneSha256",hash_file(stage / L"scene.starscene")},{"assets",assets},
             {"scope","Editor scene and its engine assets (sculpts, terrain, models); not an executable game"}};
         atomic_write(stage / L"manifest.json", manifest.dump(2));
-        fs::rename(stage, target);
+        fs::rename(native_file_path(stage), native_file_path(target));
         return {{"success",true},{"folder",utf8(target.wstring())},{"assetCount",assets.size()}};
     } catch (...) {
         std::error_code ignored;
-        fs::remove_all(stage, ignored); // Only this invocation's uniquely created staging directory.
+        fs::remove_all(native_file_path(stage), ignored); // Only this invocation's uniquely created staging directory.
         throw;
     }
 }
 json verify_portable_scene(const fs::path &folder) {
-    auto root = fs::canonical(folder);
+    auto root = fs::canonical(native_file_path(folder));
     auto manifest = json::parse(read_file(root / L"manifest.json"));
     if (manifest.at("format") != "starlight-portable-scene" || native_int(manifest.at("version")) != 1 ||
         manifest.at("scene") != "scene.starscene") throw std::runtime_error("Unsupported portable scene manifest");
@@ -45,7 +45,7 @@ json verify_portable_scene(const fs::path &folder) {
         auto relative = fs::path(wide(name));
         if (relative.is_absolute() || relative.has_root_name() || relative.empty() || name.find(':') != std::string::npos)
             throw std::runtime_error("Invalid portable scene path");
-        auto path = fs::canonical(root / relative);
+        auto path = fs::canonical(native_file_path(root / relative));
         auto within = path.lexically_relative(root);
         if (within.empty() || *within.begin() == L"..") throw std::runtime_error("Asset escapes portable scene folder");
         return path;
@@ -58,7 +58,7 @@ json verify_portable_scene(const fs::path &folder) {
     std::vector<fs::path> verified;
     for (const auto &asset : assets) {
         auto path = contained(asset.at("path").get<std::string>());
-        if (hash_file(path) != asset.at("sha256").get<std::string>() || fs::file_size(path) != asset.at("bytes").get<uint64_t>())
+        if (hash_file(path) != asset.at("sha256").get<std::string>() || fs::file_size(native_file_path(path)) != asset.at("bytes").get<uint64_t>())
             throw std::runtime_error("Portable asset changed since export");
         verified.push_back(path);
     }
@@ -68,7 +68,7 @@ json verify_portable_scene(const fs::path &folder) {
         // canonical() throws for a file that is not in the folder, so an absent asset is refused with the manifest message before it is resolved.
         const auto name = "assets/" + id + ".slasset";
         std::error_code ignored;
-        if (!fs::is_regular_file(root / wide(name), ignored) || std::find(verified.begin(), verified.end(), contained(name)) == verified.end())
+        if (!fs::is_regular_file(native_file_path(root / wide(name)), ignored) || std::find(verified.begin(), verified.end(), contained(name)) == verified.end())
             throw std::runtime_error("Scene references an engine asset missing from its manifest");
         EngineAssets::verify_on_disk(id);
     }

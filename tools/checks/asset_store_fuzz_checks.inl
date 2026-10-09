@@ -3,7 +3,7 @@
 // STARLIGHT_CHECK_GROUPS=asset_store_fuzz_checks.
 #include <fstream>
 template<class Require> void asset_store_fuzz_checks(Require require,const fs::path& folder){
-    const auto work=fs::absolute(folder/"asset-store-fuzz").lexically_normal();std::error_code cleared;fs::remove_all(work,cleared);fs::create_directories(work);
+    const auto work=fs::absolute(folder/"asset-store-fuzz").lexically_normal();std::error_code cleared;fs::remove_all(native_file_path(work),cleared);fs::create_directories(work);
     EngineAssets::ScopedRoot library(work/"library");
     enum class Result{Accepted,AssetMissingError,OtherError,Unknown};
     auto outcome=[](auto&& action){try{action();return Result::Accepted;}catch(const AssetMissing&){return Result::AssetMissingError;}catch(const std::exception&){return Result::OtherError;}catch(...){return Result::Unknown;}};
@@ -321,6 +321,17 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
             require(!terrainPath.empty()&&unlisted([](const fs::path&){}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list is refused with the manifest message while its file is still in the folder");
             require(unlisted([&](const fs::path& c){fs::remove(c/terrainPath);}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list and is absent from the folder is refused with the manifest message, not a filesystem error");
         }
+    }
+    {
+        // An export and its verification must work when the full path of a file passes MAX_PATH (a staging folder inside a deep folder). The folder is always this deep, so the long case runs from any scratch path.
+        const auto deep=work/std::string(70,'d')/std::string(70,'e')/"deep-export";
+        SceneData scene;scene.Characters={tree};scene.Terrain.emplace();scene.Terrain->brush(0,0,2,1,"raise",0,0,.05);
+        export_portable_scene(scene,deep);
+        require(verify_portable_scene(deep).at("success").get<bool>(),"Fuzz: an export whose asset paths pass 260 characters verifies");
+        const fs::path asset=deep/fs::path(json::parse(read_file(deep/"manifest.json")).at("assets").at(0).at("path").get<std::string>());
+        require(asset.wstring().size()>260,"Fuzz: the long-path export really has asset paths longer than 260 characters");
+        auto bytes=read_file(asset);bytes.back()^=1;atomic_write(asset,bytes);
+        require(refused([&]{(void)verify_portable_scene(deep);}),"Fuzz: a damaged asset in an export whose paths pass 260 characters is refused");
     }
 
     // Exports write only inside their own new folder, never over an existing one, and a failed export leaves nothing behind.
