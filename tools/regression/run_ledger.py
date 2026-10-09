@@ -111,6 +111,12 @@ def evaluate_test(test, suite):
 
 ORDER = ['REGRESSED', 'COVERAGE-ERROR', 'NOT-CHECKED', 'SKIPPED', 'VERIFIED']
 
+def exit_code(states, suite):
+    """0 only when every entry is VERIFIED and the suite itself passed: a suite that timed out or crashed after its checks is not a pass."""
+    if 'REGRESSED' in states or 'COVERAGE-ERROR' in states:
+        return 1
+    return 0 if states == {'VERIFIED'} and suite.get('success') is True else 2
+
 def evaluate_entry(entry, suite):
     states = []
     for test in entry['tests']:
@@ -253,6 +259,11 @@ def self_test():
     apply_result(crashed_after, {'success': True, 'checks': ['a']})
     ok = crashed_after['success'] is False and 'exited with code 3' in crashed_after['error']
     print('  %s a suite that wrote success and then exited non-zero is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    ok = (exit_code({'VERIFIED'}, {'success': True}) == 0 and exit_code({'VERIFIED'}, {'success': None}) == 2
+          and exit_code({'VERIFIED', 'REGRESSED'}, {'success': True}) == 1 and exit_code({'NOT-CHECKED'}, {'success': True}) == 2
+          and exit_code(set(), {'success': True}) == 2)
+    print('  %s every entry VERIFIED still exits 2 when the suite did not pass' % ('ok ' if ok else 'BAD'))
     bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
@@ -473,10 +484,7 @@ def main():
         print('  %-14s %-14s %s' % (e['id'], e['state'], e['tests'][0]['reason']))
     for t in report['transitions']:
         print('NOTICE:', t)
-    states = {e['state'] for e in entries}
-    if 'REGRESSED' in states or 'COVERAGE-ERROR' in states:
-        return 1
-    return 0 if states == {'VERIFIED'} else 2
+    return exit_code({e['state'] for e in entries}, suite)
 
 if __name__ == '__main__':
     sys.exit(main())
