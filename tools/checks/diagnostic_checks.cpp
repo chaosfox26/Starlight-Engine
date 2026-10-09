@@ -30,7 +30,7 @@ int wmain(int argc, wchar_t **argv) try {
             entry.last_write_time(timeError) >= started)
             dump = entry.path();
     bool valid = !dump.empty() && read_file(dump).starts_with("MDMP");
-    diagnostic("native diagnostic regression", "Controlled child crash verified");
+    if (valid) diagnostic("native diagnostic regression", "Controlled child crash verified");
     atomic_write(output / "diagnostics.json", json{{"success",valid},{"dump",utf8(dump.wstring())},
         {"childPid",process.dwProcessId},{"controlledException","0xe0425354"},
         {"directory",utf8(directory.wstring())},{"inventoryError",inventoryError.message()}}.dump(2));
