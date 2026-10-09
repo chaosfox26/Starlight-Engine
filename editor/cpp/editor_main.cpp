@@ -3554,7 +3554,12 @@ struct Editor {
         case WM_QUERYENDSESSION:
             // Logoff, restart and shutdown never send WM_CLOSE: keep a recovery copy and ask before the session ends.
             if (dirty) autosave();
-            return discard() ? TRUE : FALSE;
+            try {
+                return discard() ? TRUE : FALSE;
+            } catch (const std::exception &e) {
+                report(e.what(), m, l); // a failed save keeps the session open; the error is shown
+                return FALSE;
+            }
         case WM_CLOSE:
             if (loadingActive) {
                 preparation_cancel() = true;
@@ -3562,8 +3567,13 @@ struct Editor {
                 if (std::find(waiting.begin(), waiting.end(), window) == waiting.end()) waiting.push_back(window);
                 return 0;
             }
-            if (!discard())
+            try {
+                if (!discard())
+                    return 0;
+            } catch (const std::exception &e) {
+                report(e.what(), m, l); // a failed save keeps the window and its edits; the error is shown
                 return 0;
+            }
             KillTimer(window, 1);
             gamePreview.reset();
             if(projectWindow){DestroyWindow(projectWindow);projectWindow=nullptr;}
