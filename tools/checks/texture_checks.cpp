@@ -1,4 +1,7 @@
 #define CGLTF_IMPLEMENTATION
+#include "glb_fuzz.hpp"
+#define CGLTF_MALLOC(size) glbfuzz::trackedMalloc(size)
+#define CGLTF_FREE(ptr) glbfuzz::trackedFree(ptr)
 #include "../../deep/engine/model/skinned.cpp"
 #include "../../deep/engine/model/texture.h"
 #include "../../deep/engine/surface_texture_data.h"
@@ -112,78 +115,9 @@ bool sameImage(const model::TexImage& a, const model::TexImage& b) {
     return a.w == b.w && a.h == b.h && a.format == b.format && a.mips == b.mips;
 }
 
-struct GlbSpec { bool nanPosition = false, badIndex = false, badJoint = false, cubic = false; size_t trimBin = 0; int primitives = 1; bool step = false; bool matrixJoint = false; int badTimes = 0; };
-
-template <class T> size_t addBlob(std::vector<uint8_t>& bin, const std::vector<T>& v) {
-    while (bin.size() % 4) bin.push_back(0);
-    const size_t offset = bin.size();
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(v.data());
-    bin.insert(bin.end(), p, p + v.size() * sizeof(T));
-    return offset;
-}
-
-std::vector<uint8_t> makeGlb(const GlbSpec& spec = {}) {
-    std::vector<float> pos{ 0,0,0, 1,0,0, 1,1,0, 0,1,0 };
-    if (spec.nanPosition) pos[0] = std::numeric_limits<float>::quiet_NaN();
-    std::vector<float> nrm{ 0,0,1, 0,0,1, 0,0,1, 0,0,1 };
-    std::vector<float> uv{ 0,0, 1,0, 1,1, 0,1 };
-    std::vector<uint8_t> joints{ 0,0,0,0, uint8_t(spec.badJoint ? 7 : 1),0,0,0, 0,1,0,0, 1,0,0,0 };
-    std::vector<float> weights{ 1,0,0,0, 1,0,0,0, 0.5f,0.5f,0,0, 1,0,0,0 };
-    std::vector<uint16_t> indices{ 0,1,2, 0,2,uint16_t(spec.badIndex ? 9 : 3) };
-    std::vector<float> ibm{ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,-1,0,1 };
-    std::vector<float> times{ 0.f, 1.f };
-    if (spec.badTimes == 1) times[0] = std::nanf("");
-    if (spec.badTimes == 2) times = { 1.f, 0.f };
-    std::vector<float> rot = spec.cubic ? std::vector<float>{ 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,0, 0,0,.7071f,.7071f, 0,0,0,0 } : std::vector<float>{ 0,0,0,1, 0,0,.7071f,.7071f };
-    std::vector<uint8_t> bin;
-    const size_t offs[9] = { addBlob(bin, pos), addBlob(bin, nrm), addBlob(bin, uv), addBlob(bin, joints), addBlob(bin, weights), addBlob(bin, indices), addBlob(bin, ibm), addBlob(bin, times), addBlob(bin, rot) };
-    const size_t lens[9] = { pos.size() * 4, nrm.size() * 4, uv.size() * 4, joints.size(), weights.size() * 4, indices.size() * 2, ibm.size() * 4, times.size() * 4, rot.size() * 4 };
-    while (bin.size() % 4) bin.push_back(0);
-    const size_t declared = bin.size();
-    const struct { int component; size_t count; const char* type; } acc[9] = {
-        { 5126, 4, "VEC3" }, { 5126, 4, "VEC3" }, { 5126, 4, "VEC2" }, { 5121, 4, "VEC4" }, { 5126, 4, "VEC4" },
-        { 5123, 6, "SCALAR" }, { 5126, 2, "MAT4" }, { 5126, 2, "SCALAR" }, { 5126, spec.cubic ? 6u : 2u, "VEC4" } };
-    std::string views, accessors;
-    for (int i = 0; i < 9; ++i) {
-        views += std::string(i ? "," : "") + "{\"buffer\":0,\"byteOffset\":" + std::to_string(offs[i]) + ",\"byteLength\":" + std::to_string(lens[i]) + "}";
-        accessors += std::string(i ? "," : "") + "{\"bufferView\":" + std::to_string(i) + ",\"componentType\":" + std::to_string(acc[i].component) + ",\"count\":" + std::to_string(acc[i].count) + ",\"type\":\"" + acc[i].type + "\"}";
-    }
-    std::string primitiveList;
-    for (int i = 0; i < spec.primitives; ++i) primitiveList += std::string(i ? "," : "") + "{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"JOINTS_0\":3,\"WEIGHTS_0\":4},\"indices\":5,\"material\":0}";
-    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":" + std::to_string(declared) + "}],\"bufferViews\":[" + views + "],\"accessors\":[" + accessors + "],"
-        "\"materials\":[{\"name\":\"fur\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.5,0.25,0.75,1]}}],"
-        "\"meshes\":[{\"primitives\":[" + primitiveList + "]}],"
-        "\"nodes\":[{\"name\":\"body\",\"mesh\":0,\"skin\":0},{\"name\":\"root\",\"children\":[2]},{\"name\":\"child\"," + std::string(spec.matrixJoint ? "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]" : "\"translation\":[0,1,0]") + "}],"
-        "\"skins\":[{\"joints\":[1,2],\"inverseBindMatrices\":6}],"
-        "\"animations\":[{\"name\":\"idle\",\"samplers\":[{\"input\":7,\"output\":8,\"interpolation\":\"" + std::string(spec.cubic ? "CUBICSPLINE" : spec.step ? "STEP" : "LINEAR") + "\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":2,\"path\":\"rotation\"}}]}],"
-        "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
-    while (json.size() % 4) json.push_back(' ');
-    bin.resize(bin.size() - spec.trimBin);
-    while (bin.size() % 4) bin.push_back(0);
-    std::vector<uint8_t> glb;
-    putLE(glb, 0x46546C67u); putLE(glb, 2); putLE(glb, uint32_t(12 + 8 + json.size() + 8 + bin.size()));
-    putLE(glb, uint32_t(json.size())); putLE(glb, 0x4E4F534Au); glb.insert(glb.end(), json.begin(), json.end());
-    putLE(glb, uint32_t(bin.size())); putLE(glb, 0x004E4942u); glb.insert(glb.end(), bin.begin(), bin.end());
-    return glb;
-}
-
-std::vector<uint8_t> makeSparseGlb(uint32_t indicesOffset) {
-    std::vector<uint8_t> bin(104, 0);
-    auto putF = [&](size_t at, float v) { std::memcpy(bin.data() + at, &v, 4); };
-    for (int i = 0; i < 3; ++i) for (int c = 0; c < 3; ++c) putF(size_t(i) * 32 + c * 4, float(1 + c));
-    bin[76] = 1; bin[77] = 2;
-    for (int i = 0; i < 6; ++i) putF(80 + size_t(i) * 4, float(10 + i));
-    std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":104}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":76,\"byteStride\":32},{\"buffer\":0,\"byteOffset\":" + std::to_string(indicesOffset) + ",\"byteLength\":2},{\"buffer\":0,\"byteOffset\":80,\"byteLength\":24}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"sparse\":{\"count\":2,\"indices\":{\"bufferView\":1,\"componentType\":5121},\"values\":{\"bufferView\":2}}}]}";
-    while (json.size() % 4) json.push_back(' ');
-    std::vector<uint8_t> glb;
-    putLE(glb, 0x46546C67u); putLE(glb, 2); putLE(glb, uint32_t(12 + 8 + json.size() + 8 + bin.size()));
-    putLE(glb, uint32_t(json.size())); putLE(glb, 0x4E4F534Au); glb.insert(glb.end(), json.begin(), json.end());
-    putLE(glb, uint32_t(bin.size())); putLE(glb, 0x004E4942u); glb.insert(glb.end(), bin.begin(), bin.end());
-    return glb;
-}
+using glbfuzz::GlbSpec;
+using glbfuzz::makeGlb;
+using glbfuzz::makeSparseGlb;
 
 std::vector<uint8_t> atlasBytes(const std::vector<float>& values) {
     std::vector<uint8_t> b(values.size() * 4);
@@ -212,6 +146,96 @@ bool sameModel(const model::SkinnedModel& a, const model::SkinnedModel& b) {
     return true;
 }
 
+// A model the loader accepted must be safe for every consumer: indices and sub-meshes inside their arrays, finite vertices, sane skeleton and clips.
+std::string modelProblem(const model::SkinnedModel& m) {
+    if (!m.loaded) return "accepted but loaded is false";
+    if (m.verts.empty() || m.indices.empty()) return "accepted with no vertices or indices";
+    if (m.indices.size() % 3) return "index count is not a multiple of 3";
+    for (uint32_t i : m.indices) if (i >= m.verts.size()) return "an index is outside the vertex array";
+    for (const auto& v : m.verts) {
+        const float all[] = { v.px, v.py, v.pz, v.nx, v.ny, v.nz, v.tx, v.ty, v.tz, v.tw, v.u, v.v, v.w[0], v.w[1], v.w[2], v.w[3] };
+        for (float f : all) if (!std::isfinite(f)) return "a vertex holds a non-finite value";
+        if (!m.joints.empty()) for (int k = 0; k < 4; ++k) if (v.w[k] > 0.f && v.j[k] >= m.joints.size()) return "a weighted joint index is outside the skeleton";
+    }
+    if (m.subs.empty() || m.subs.size() > 30) return "sub-mesh count is outside 1..30";
+    for (const auto& s : m.subs) if (s.indexCount % 3 || size_t(s.firstIndex) + s.indexCount > m.indices.size()) return "a sub-mesh range is outside the index array";
+    for (size_t j = 0; j < m.joints.size(); ++j) if (m.joints[j].parent >= int(j)) return "a joint parent does not precede the joint";
+    for (const auto& c : m.clips) {
+        if (!std::isfinite(c.duration) || c.duration < 0) return "a clip duration is not finite and non-negative";
+        for (const auto& ch : c.channels) {
+            if (ch.joint < 0 || size_t(ch.joint) >= m.joints.size() || ch.path < 0 || ch.path > 2) return "a channel targets a joint or path that does not exist";
+            if (ch.times.empty() || ch.values.size() != ch.times.size() * (ch.path == 1 ? 4u : 3u)) return "a channel has " + std::to_string(ch.times.size()) + " times but " + std::to_string(ch.values.size()) + " values";
+        }
+    }
+    const float box[] = { m.bbMin.x, m.bbMin.y, m.bbMin.z, m.bbMax.x, m.bbMax.y, m.bbMax.z };
+    for (float f : box) if (!std::isfinite(f)) return "the bounding box is not finite";
+    if (m.bbMin.x > m.bbMax.x || m.bbMin.y > m.bbMax.y || m.bbMin.z > m.bbMax.z) return "the bounding box is inverted";
+    if (!m.joints.empty()) {   // sampling every clip must stay inside the arrays
+        std::vector<DirectX::XMFLOAT4X4> palette(m.joints.size()), global(m.joints.size());
+        for (int clip = 0; clip < (int)m.clips.size(); ++clip)
+            for (float t : { 0.f, 0.37f, 1e6f }) model::evalPose(m, clip, t, (clip + 1) % (int)m.clips.size(), t * 0.5f, 0.5f, palette.data(), global.data());
+    }
+    return std::string();
+}
+
+std::vector<uint8_t> editJson(const std::vector<uint8_t>& bytes, const char* from, const std::string& to) {
+    glbfuzz::Parts parts;
+    glbfuzz::split(bytes, parts);
+    const size_t at = parts.json.find(from);
+    if (at == std::string::npos) throw std::runtime_error("fuzz regression fixture text missing");
+    parts.json.replace(at, std::strlen(from), to);
+    return glbfuzz::pack(std::move(parts));
+}
+template <class R> void fuzzSkinned(const fs::path& dir, const fs::path& root, R& require) {
+    std::vector<glbfuzz::Seed> seeds;
+    seeds.push_back({ "makeGlb", glbfuzz::makeGlb() });
+    GlbSpec step; step.step = true; seeds.push_back({ "makeGlb-step", glbfuzz::makeGlb(step) });
+    GlbSpec matrix; matrix.matrixJoint = true; seeds.push_back({ "makeGlb-matrix", glbfuzz::makeGlb(matrix) });
+    GlbSpec three; three.primitives = 3; seeds.push_back({ "makeGlb-3-primitives", glbfuzz::makeGlb(three) });
+    seeds.push_back({ "sparse", glbfuzz::makeSparseGlb(76) });
+    seeds.push_back({ "interleaved", glbfuzz::makeInterleavedGlb() });
+    seeds.push_back({ "data-uri", glbfuzz::makeDataUriGlb() });
+    for (const char* name : { "migration/fixtures/triangle.glb", "migration/fixtures/deep-node-graph.glb" }) {
+        auto bytes = readBytes(root / name);
+        if (bytes.empty()) { std::cout << "  NOT RUN, repo fixture missing: " << name << '\n'; require(false, "repo GLB fixture present for the fuzzer"); }
+        seeds.push_back({ name, std::move(bytes) });
+    }
+    for (size_t s = 0; s < 4; ++s) {   // the unmutated fixtures that are meant to load do load
+        model::SkinnedModel m;
+        const LoadError e = model::loadSkinnedFromMemory(ByteView(seeds[s].bytes), nullptr, seeds[s].name, m);
+        require(e.ok() && modelProblem(m).empty(), "GLB fuzz: each unmutated model fixture loads and is valid");
+    }
+    size_t counter = 0;
+    const size_t iterations = (size_t)glbfuzz::envNumber("STARLIGHT_GLB_FUZZ_ITERATIONS", 20000);
+    const auto report = glbfuzz::run("skinned", seeds, iterations, glbfuzz::envNumber("STARLIGHT_GLB_FUZZ_SEED", 20261008), dir / "glb-fuzz", [&](const std::vector<uint8_t>& bytes) {
+        glbfuzz::Outcome out;
+        model::SkinnedModel m;
+        const LoadError e = model::loadSkinnedFromMemory(ByteView(bytes), nullptr, "fuzz.glb", m);
+        out.accepted = e.ok();
+        if (e.failed()) {
+            if (m.loaded || !m.verts.empty() || !m.indices.empty() || !m.subs.empty() || !m.joints.empty() || !m.clips.empty()) { out.valid = false; out.what = "a rejected input left a partial model behind"; }
+            else if (e.message.empty()) { out.valid = false; out.what = "a rejection with no message"; }
+            else if (e.code == LoadCode::Internal || e.code == LoadCode::OutOfMemory) { out.valid = false; out.what = std::string("a rejection of kind ") + model::loadCodeName(e.code) + ": " + e.message; }
+            return out;
+        }
+        const std::string problem = modelProblem(m);
+        if (!problem.empty()) { out.valid = false; out.what = problem; return out; }
+        if (++counter % 5 == 0) {   // the atlas path on an accepted model: a right-sized finite span applies, a span with a NaN is refused
+            std::vector<float> uv(m.verts.size() * 2, 0.25f);
+            std::vector<uint8_t> raw(uv.size() * 4);
+            std::memcpy(raw.data(), uv.data(), raw.size());
+            model::SkinnedModel withAtlas;
+            const ByteView view(raw);
+            if (model::loadSkinnedFromMemory(ByteView(bytes), &view, "fuzz.glb", withAtlas).failed() || !withAtlas.atlasUV || !modelProblem(withAtlas).empty()) { out.valid = false; out.what = "an accepted model rejected a right-sized finite atlas"; return out; }
+            const float nan = std::numeric_limits<float>::quiet_NaN();
+            std::memcpy(raw.data() + raw.size() - 4, &nan, 4);
+            if (model::loadSkinnedFromMemory(ByteView(bytes), &view, "fuzz.glb", withAtlas).code != LoadCode::AtlasNotFinite) { out.valid = false; out.what = "an atlas with a NaN was not refused"; return out; }
+        }
+        return out;
+    });
+    require(report.failures == 0, "GLB fuzz: the skinned loader never crashes, hangs, over-allocates, or accepts an invalid model");
+    require(report.accepted > 0 && report.rejected > 0, "GLB fuzz: the skinned corpus exercises both outcomes");
+}
 template <class R> void run(const fs::path& dir, const fs::path& root, R& require) {
     const fs::path work = dir / "memload";
     fs::create_directories(work);
