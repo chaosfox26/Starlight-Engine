@@ -24,22 +24,31 @@ static void device_fault_checks(const auto& require){
     require(clean!=nullptr&&frame(clean,0,13)==1&&frame(clean,0,13)==1,"CC-07: With no injected failure a viewport is created and renders frames");
     if(clean)destroy(clean);
     if(!clean){DestroyWindow(window);return;}
-    int fired=0,surfaced=0,cleanup=0;bool exhausted=false;std::string silent;
+    // sl_error() is a thread_local that is never cleared on success, so every iteration runs on a fresh thread: only a message written by this iteration can classify it.
+    int fired=0,surfaced=0,cleanup=0,stale=0;bool exhausted=false;std::string silent;
     for(int n=1;n<=128&&!exhausted;++n){
-        fault(n);
-        void* ctx=create(window,640,360);
-        bool reported=ctx==nullptr&&error()[0]!=0;
-        if(ctx){for(int i=0;i<2&&!reported;++i)if(frame(ctx,0,13)!=1)reported=error()[0]!=0;}
-        if(ctx){destroy(ctx);}
-        const std::string after=error();
-        const bool cleanupReported=after.find("Viewport cleanup")!=std::string::npos;
-        const bool hit=fault(0)==0;
+        bool reported=false,cleanupReported=false,hit=false,startedClean=false;
+        std::thread worker([&]{
+            HWND own=CreateWindowExW(0,L"STATIC",L"Starlight device failure checks",0,0,0,640,360,nullptr,nullptr,nullptr,nullptr);
+            startedClean=error()[0]==0;
+            fault(n);
+            void* ctx=create(own,640,360);
+            reported=ctx==nullptr&&error()[0]!=0;
+            if(ctx){for(int i=0;i<2&&!reported;++i)if(frame(ctx,0,13)!=1)reported=error()[0]!=0;}
+            if(ctx){destroy(ctx);}
+            cleanupReported=std::string(error()).find("Viewport cleanup")!=std::string::npos;
+            hit=fault(0)==0;
+            if(own)DestroyWindow(own);
+        });
+        worker.join();
+        if(!startedClean)++stale;
         if(!hit){exhausted=true;break;}
         ++fired;
         if(reported)++surfaced;else if(cleanupReported)++cleanup;else silent+=" "+std::to_string(n);
     }
     fault(0);
     require(exhausted,"CC-07: Every checked D3D12 result up to the end of the first frames and the destruction was exercised");
+    require(stale==0,"CC-07: Every injected-failure iteration starts with an empty viewport error, so a stale message cannot hide a swallowed failure");
     require(fired>=8,"CC-07: A meaningful number of checked results were failed on purpose");
     if(!silent.empty())std::cout<<"device failure checks: injected failure number(s) that were not reported:"<<silent<<'\n';
     require(silent.empty(),"CC-07: Every injected D3D12 failure is reported by create, frame or destruction instead of being ignored");
