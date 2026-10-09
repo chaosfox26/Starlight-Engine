@@ -1,6 +1,7 @@
 // A project's module must be a plain file name inside the project folder (audit H1): a .star file from elsewhere must not be able to name any DLL on the disk.
 #include "../../deep/src/project_module.hpp"
 #include "../../deep/engine/keycard_view.h"
+#include "../../deep/engine/smooth_track.h"
 static void project_module_checks(const auto& require){
     const std::filesystem::path folder=L"C:\\Projects\\Demo";
     auto refused=[&](const wchar_t* name){try{(void)project_module_path(folder,name);return false;}catch(const std::runtime_error&){return true;}};
@@ -41,5 +42,18 @@ static void project_module_checks(const auto& require){
         const std::string named=keycard::resolveCardPath(beside,"","Empty.starscene",error);
         require(error.empty()&&named==beside,"PROJ-3: A --card path in a non-ANSI folder is found");
         fs::remove_all(folder,ignored);
+    }
+    {   // PROJ-9: ids that stop being tracked (spent projectiles, departed players) leave the smoothing map, tracked ones stay
+        std::unordered_map<uint64_t,SmoothXf> map;
+        for(uint64_t id=0;id<1000;++id){SmoothXf s;s.init=true;s.seen=id<10?5000:100;map[id]=s;}
+        pruneSmooth(map,5000);
+        require(map.size()==10,"PROJ-9: Entries untouched for longer than the maximum age are removed and the recently tracked ones are kept");
+        pruneSmooth(map,5000+kSmoothMaxAgeFrames);
+        require(map.size()==10,"PROJ-9: An entry exactly at the maximum age is kept");
+        pruneSmooth(map,5000+kSmoothMaxAgeFrames+1);
+        require(map.empty(),"PROJ-9: An entry past the maximum age is removed");
+        SmoothXf late;late.seen=UINT32_MAX-5;map[1]=late;
+        pruneSmooth(map,10);
+        require(map.size()==1,"PROJ-9: The age is measured across the frame counter wrapping around");
     }
 }

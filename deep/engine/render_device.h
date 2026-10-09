@@ -416,8 +416,7 @@ static void BuildHeart(Mesh& m, int seg = 64) {
     m.loaded = true;
 }
 
-// ---- per-entity smoothed transform (interpolation between snapshots) ---------------------------
-struct SmoothXf { float x = 0, z = 0, y = 0, yaw = 0; bool init = false; };
+#include "smooth_track.h"
 
 #include "persistent_workers.h"
 #include "parallel_metrics.h"
@@ -783,7 +782,7 @@ struct RenderDevice {
     // camera + net
     XMMATRIX          viewProj = XMMatrixIdentity();
     XMFLOAT3          camWorld{ 0,0,0 };
-    std::unordered_map<uint64_t, SmoothXf> smooth;
+    std::unordered_map<uint64_t, SmoothXf> smooth; uint32_t smoothSweptAt = UINT32_MAX;
     uint64_t          lastTick = 0;
     uint64_t          startTick = 0;
 
@@ -1684,7 +1683,9 @@ struct RenderDevice {
 
     // exponential smoothing toward the snapshot target (interpolation between snapshots).
     SmoothXf& track(uint64_t key, float tx, float tz, float ty, float tyaw, float a) {
+        if (frameIndex % kSmoothSweepFrames == 0 && frameIndex != smoothSweptAt) { smoothSweptAt = frameIndex; pruneSmooth(smooth, frameIndex); }
         SmoothXf& s = smooth[key];
+        s.seen = frameIndex;
         if (!s.init) { s.x = tx; s.z = tz; s.y = ty; s.yaw = tyaw; s.init = true; return s; }
         s.x += (tx - s.x) * a; s.z += (tz - s.z) * a; s.y += (ty - s.y) * a;
         float dyaw = tyaw - s.yaw;
