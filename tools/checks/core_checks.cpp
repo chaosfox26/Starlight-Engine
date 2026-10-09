@@ -39,6 +39,7 @@ using namespace starlight::editor;
 #include "asset_platform_checks.inl"
 #include "asset_scan_checks.inl"
 #include "error_throttle_checks.inl"
+#include "render_device_checks.inl"
 #include "project_module_checks.inl"
 #include "lightning_target_checks.inl"
 #include "gameplay_audit_checks.inl"
@@ -129,6 +130,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(asset_scan_checks, asset_scan_checks(require,folder));
         RUN_GROUP(error_throttle_checks, error_throttle_checks(require));
         RUN_GROUP(project_module_checks, project_module_checks(require,folder));
+        RUN_GROUP(render_device_checks, render_device_checks(require));
         RUN_GROUP(lightning_target_checks, lightning_target_checks(require));
         RUN_GROUP(gameplay_audit_checks, gameplay_audit_checks(require));
         RUN_GROUP(missing_asset_save_checks, missing_asset_save_checks(require));

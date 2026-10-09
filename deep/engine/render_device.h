@@ -685,6 +685,7 @@ struct RenderDevice {
         return true;
     }
     ComPtr<ID3D12DescriptorHeap> srvHeap; UINT srvSize = 0; UINT srvCount = 0;
+    UINT nullTexTable = ~0u; bool nullTexTried = false;   // RND-4: a table of null SRVs for draws whose variant has no texture set
     ComPtr<ID3D12PipelineState>  psoSkin, psoFur;
     std::string modelsDir, texturesDir;  // --models / --textures (defaults under build/)
     UINT   texRes = 2048;                // --texres
@@ -786,6 +787,7 @@ struct RenderDevice {
     XMFLOAT3          camWorld{ 0,0,0 };
     std::unordered_map<uint64_t, SmoothXf> smooth; uint32_t smoothSweptAt = UINT32_MAX;
     uint64_t          lastTick = 0;
+    double            lastDtClock = 0;
     uint64_t          startTick = 0;
 
     // --shot <file.bmp>: backbuffer readback after shotAtMs
@@ -799,7 +801,14 @@ struct RenderDevice {
     UINT64 fenceVal = 0;
     HANDLE fenceEvent = nullptr;
 
-    void must(HRESULT hr, const char* what) { if (FAILED(hr)) { drainDebug(); throw std::runtime_error(what); } }   // debug-layer reason lands in the log first
+    bool deviceLossLogged = false, tornDown = false;
+    // debug-layer reason lands in the log first; a removed device is reported (with the DRED breadcrumbs) by the first call that fails on it (RND-8)
+    void must(HRESULT hr, const char* what) {
+        if (FAILED(hr)) {
+            if (device && !deviceLossLogged && FAILED(device->GetDeviceRemovedReason())) { deviceLossLogged = true; reportDeviceLoss(); }
+            drainDebug(); throw std::runtime_error(what);
+        }
+    }
     // Test hook (audit CC-07): the n-th checked D3D12 result after setting the countdown is reported as failed, so the failure paths run without a real device fault.
     inline static int hrFaultCountdown = 0;
     void mustHr(HRESULT hr, const char* what) { if (hrFaultCountdown > 0 && --hrFaultCountdown == 0) hr = E_FAIL; must(hr, what); }
@@ -880,13 +889,21 @@ struct RenderDevice {
         logLine(std::string("fullscreen exclusive: ") + (SUCCEEDED(hr) ? "on" : "unavailable (staying borderless)"));
     }
     void teardown() {
-        if (!queue) return;
-        flush(); drainDebug();
+        if (!queue || tornDown) return;
+        tornDown = true;
+        // RND-8: teardown runs inside catch handlers, so a failed idle wait must not stop the release below. On a removed device that failure is expected and already
+        // reported; any other failure is rethrown once everything is released.
+        std::exception_ptr idleFailure;
+        try { flush(); drainDebug(); } catch (...) { idleFailure = std::current_exception(); }
         if (swap) swap->SetFullscreenState(FALSE, nullptr);   // must leave exclusive before releasing the swapchain
         for (UINT i = 0; i < kFrameCount; ++i) targets[i].Reset();
         swap.Reset();
         if (ups) { ups->shutdown(); ups.reset(); }
         antilag.shutdown();
+        if (idleFailure) {
+            if (device && FAILED(device->GetDeviceRemovedReason())) logLine("teardown: the device was removed, skipping the GPU idle wait");
+            else std::rethrow_exception(idleFailure);
+        }
     }
 
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* src, size_t bytes, D3D12_RESOURCE_STATES finalState) {
@@ -1112,12 +1129,24 @@ struct RenderDevice {
         flush();
         DXGI_SWAP_CHAIN_DESC1 desc{};
         must(swap->GetDesc1(&desc), "Resize swap description");
+        const UINT oldW = w, oldH = h;
         for (auto& target : targets) target.Reset();
-        must(swap->ResizeBuffers(kFrameCount, width, height, desc.Format, desc.Flags), "ResizeBuffers");
-        w=width; h=height;
-        must(ups->resizeOutput(w,h) ? S_OK : E_FAIL, "Resize native backend");
-        createBackbufferViews();
-        applyMode(ups->mode());
+        try {
+            mustHr(swap->ResizeBuffers(kFrameCount, width, height, desc.Format, desc.Flags), "ResizeBuffers");
+            w=width; h=height;
+            must(ups->resizeOutput(w,h) ? S_OK : E_FAIL, "Resize native backend");
+            createBackbufferViews();
+            applyMode(ups->mode());
+        } catch (...) {
+            // RND-2: applyMode leaves the old scene targets in place when it fails, so going back to the old output size restores a consistent device.
+            try {
+                w=oldW; h=oldH;
+                if (FAILED(swap->ResizeBuffers(kFrameCount, oldW, oldH, desc.Format, desc.Flags))) throw std::runtime_error("ResizeBuffers rollback");
+                ups->resizeOutput(oldW,oldH);
+                createBackbufferViews();
+            } catch (...) { logLine("resize rollback failed"); }
+            throw;
+        }
         auditOutput.Reset();
         if (auditOffscreen) setAuditOffscreen(true);
         lastFrameStart=0;
@@ -1144,7 +1173,7 @@ struct RenderDevice {
         dd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; dd.Width = tw; dd.Height = th;
         dd.DepthOrArraySize = 1; dd.MipLevels = 1; dd.Format = fmt; dd.SampleDesc.Count = samples; dd.Flags = fl;
         ComPtr<ID3D12Resource> r;
-        must(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, st, cv, IID_PPV_ARGS(&r)), what);
+        mustHr(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &dd, st, cv, IID_PPV_ARGS(&r)), what);
         return r;
     }
 
@@ -1201,24 +1230,35 @@ struct RenderDevice {
     // Resting states = what the backend receives at evaluate(); render() transitions around the pass.
     void applyMode(int m) {
         flush();
+        // RND-2: the new targets are built into locals and swapped in only when all of them exist, so a failure (for example out of memory) keeps the previous state.
+        const int oldMode = ups->mode(); const UINT oldRw = rw, oldRh = rh, oldMsaa = msaa;
         UINT nrw = 0, nrh = 0;
         if (!ups->setMode(m, nrw, nrh)) return;
         rw = nrw; rh = nrh;
         D3D12_CLEAR_VALUE cc{}; cc.Format = sceneFormat();
         D3D12_CLEAR_VALUE mc{}; mc.Format = DXGI_FORMAT_R16G16_FLOAT;
         D3D12_CLEAR_VALUE dc{}; dc.Format = DXGI_FORMAT_D32_FLOAT; dc.DepthStencil.Depth = 1.0f;
-        sceneColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &cc, "create scene color");
-        sceneMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT,   D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &mc, "create scene mvec");
-        depth      = createTex(rw, rh, DXGI_FORMAT_R32_TYPELESS,   D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &dc, "create depth");
-        upOutput   = createTex(w, h,   DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, "create upscale output");
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
-        chooseMsaa(); msaaColor.Reset(); msaaMvec.Reset(); msaaDepth.Reset();
-        if (msaa > 1) {
-            D3D12_CLEAR_VALUE dm{}; dm.Format = DXGI_FORMAT_D32_FLOAT; dm.DepthStencil.Depth = 1.0f;
-            msaaColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, "create msaa scene color", msaa);
-            msaaMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, "create msaa scene mvec", msaa);
-            msaaDepth = createTex(rw, rh, DXGI_FORMAT_D32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dm, "create msaa depth", msaa);
+        ComPtr<ID3D12Resource> newColor, newMvec, newDepth, newUpOutput, newMsaaColor, newMsaaMvec, newMsaaDepth;
+        try {
+            newColor    = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &cc, "create scene color");
+            newMvec     = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT,   D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &mc, "create scene mvec");
+            newDepth    = createTex(rw, rh, DXGI_FORMAT_R32_TYPELESS,   D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &dc, "create depth");
+            newUpOutput = createTex(w, h,   DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, "create upscale output");
+            chooseMsaa();
+            if (msaa > 1) {
+                D3D12_CLEAR_VALUE dm{}; dm.Format = DXGI_FORMAT_D32_FLOAT; dm.DepthStencil.Depth = 1.0f;
+                newMsaaColor = createTex(rw, rh, sceneFormat(), D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &cc, "create msaa scene color", msaa);
+                newMsaaMvec  = createTex(rw, rh, DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, &mc, "create msaa scene mvec", msaa);
+                newMsaaDepth = createTex(rw, rh, DXGI_FORMAT_D32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dm, "create msaa depth", msaa);
+            }
+        } catch (...) {
+            rw = oldRw; rh = oldRh; msaa = oldMsaa;
+            UINT keepW = 0, keepH = 0; ups->setMode(oldMode, keepW, keepH);
+            throw;
         }
+        sceneColor = std::move(newColor); sceneMvec = std::move(newMvec); depth = std::move(newDepth); upOutput = std::move(newUpOutput);
+        msaaColor = std::move(newMsaaColor); msaaMvec = std::move(newMsaaMvec); msaaDepth = std::move(newMsaaDepth);
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = starlight_cpu_heap_start(rtvHeap);
         rtv.ptr += (SIZE_T)kFrameCount * rtvSize; device->CreateRenderTargetView(msaa > 1 ? msaaColor.Get() : sceneColor.Get(), nullptr, rtv);
         rtv.ptr += rtvSize;                        device->CreateRenderTargetView(msaa > 1 ? msaaMvec.Get() : sceneMvec.Get(), nullptr, rtv);
         D3D12_DEPTH_STENCIL_VIEW_DESC dv{}; dv.Format = DXGI_FORMAT_D32_FLOAT; dv.ViewDimension = msaa > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D;
@@ -1673,7 +1713,6 @@ struct RenderDevice {
             const uint8_t* original=(const uint8_t*)verts;
             for(size_t i=0;i<count;++i) {
                 memcpy(alignedVertices.data()+i*96,original+i*68,68);
-                if(memcmp(alignedVertices.data()+i*96,original+i*68,68))throw std::runtime_error("Vertex padding changed data");
             }
             verts=alignedVertices.data();vbytes=alignedVertices.size();stride=96;
             logLine("vertex stride: 96");
@@ -1774,6 +1813,16 @@ struct RenderDevice {
         cmd->SetPipelineState(psoSkin.Get());
         cmd->SetGraphicsRootShaderResourceView(2, palettes->GetGPUVirtualAddress() + (UINT64)slot * kMaxSkinned * kPaletteBytes);   // global palette base; Inst.paletteBase indexes within
         cmd->SetGraphicsRootShaderResourceView(4, ringGpu);                                                                        // t7 Inst ring (this slot)
+        if (!nullTexTried && srvHeap) {   // RND-4: reserve one spare table in the heap and fill it with null SRVs, once
+            nullTexTried = true;
+            if (srvCount + kTexPerSet <= starlight_heap_desc(srvHeap).NumDescriptors) {
+                nullTexTable = srvCount; srvCount += kTexPerSet;
+                D3D12_CPU_DESCRIPTOR_HANDLE dh = starlight_cpu_heap_start(srvHeap); dh.ptr += (SIZE_T)nullTexTable * srvSize;
+                D3D12_SHADER_RESOURCE_VIEW_DESC sv{}; sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; sv.Texture2D.MipLevels = 1;
+                for (UINT i = 0; i < kTexPerSet; ++i) { device->CreateShaderResourceView(nullptr, &sv, dh); dh.ptr += srvSize; }
+            } else logLine("texture heap has no spare table for untextured variants");
+        }
         const UINT nb = bktCount();
         UINT cursor = 0;
         for (UINT b = 0; b < nb; ++b) {
@@ -1798,7 +1847,7 @@ struct RenderDevice {
             else if (isLod) { if (!cm.hasLod) continue; mesh = &cm.lodGpu; idxCount = (UINT)cm.lodData.indices.size(); firstIdx = 0; lodDrawn += total; }
             else { if (sub >= cm.data.subs.size()) continue; mesh = &cm.gpu; idxCount = cm.data.subs[sub].indexCount; firstIdx = cm.data.subs[sub].firstIndex; }
             const TexSet& ts = cm.variants[variant];
-            if (ts.ok) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)ts.table * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
+            if (ts.ok || nullTexTable != ~0u) { D3D12_GPU_DESCRIPTOR_HANDLE gh = starlight_gpu_heap_start(srvHeap); gh.ptr += (UINT64)(ts.ok ? ts.table : nullTexTable) * srvSize; cmd->SetGraphicsRootDescriptorTable(3, gh); }
             cmd->IASetVertexBuffers(0, 1, &mesh->vbv); cmd->IASetIndexBuffer(&mesh->ibv);
             triDraw += uint64_t(idxCount / 3) * total;
             if (instancingOn) {
@@ -1997,7 +2046,7 @@ struct RenderDevice {
         double poseAvg = benchPoseMs.empty() ? 0 : poSum / benchPoseMs.size();
         std::string ver = ups->versionString(), fg = ups->fgStatus(), extra = ups->extraStatus();
         uint64_t presentedN = ups->hasPresentedCounter() ? benchPresented : (uint64_t)benchFrames.size();
-        auto esc = [](std::string s) { std::string o; for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); } return o; };
+        auto esc = [](const std::string& s) { return report_text::escape(s); };
         // Report block: what was actually loaded + drawn, and how the pacing behaved
         std::string modelsJson = "[";
         size_t joints = 0, clips = 0;
@@ -2005,15 +2054,12 @@ struct RenderDevice {
             const CharModel& cm = models[i];
             joints += cm.data.joints.size(); clips += cm.data.clips.size();
             int texOk = 0; for (const auto& v : cm.variants) if (v.ok) ++texOk;
-            char mb[512];
-            snprintf(mb, sizeof(mb), "%s{\"name\":\"%s\",\"verts\":%zu,\"tris\":%zu,\"submeshes\":%zu,\"joints\":%zu,\"clips\":%zu,\"atlasUV\":%s,\"variants\":%d,\"scale\":%.3f}",
+            modelsJson += report_text::format("%s{\"name\":\"%s\",\"verts\":%zu,\"tris\":%zu,\"submeshes\":%zu,\"joints\":%zu,\"clips\":%zu,\"atlasUV\":%s,\"variants\":%d,\"scale\":%.3f}",
                 i ? "," : "", esc(cm.data.name).c_str(), cm.data.verts.size(), cm.data.indices.size() / 3, cm.data.subs.size(), cm.data.joints.size(), cm.data.clips.size(),
                 cm.data.atlasUV ? "true" : "false", texOk, cm.scale);
-            modelsJson += mb;
         }
         modelsJson += "]";
-        char m6[2048];
-        snprintf(m6, sizeof(m6),
+        const std::string m6 = report_text::format(
             "\"inflight\":%d,\"stalls\":%u,\"stallMs\":%.2f,\"models\":%s,\"joints\":%zu,\"clips\":%zu,\"textures\":%d,\"textureMB\":%.1f,"
             "\"texturesFromCache\":%d,\"texRes\":%u,\"modelLoadMs\":%.1f,\"textureLoadMs\":%.1f,\"skinned\":%u,\"charsWhy\":\"%s\","
             "\"fur\":%s,\"furShells\":%u,\"furShellsNear\":%d,\"furShellsMid\":%d,\"instMax\":%u,\"instDropped\":%llu,\"instCap\":%u,\"skinCap\":%u,\"crowdParsed\":%d,\"draws\":%u,\"instEntries\":%u,\"culled\":%u,\"lod\":%u,\"instancingOn\":%s",
@@ -2021,8 +2067,7 @@ struct RenderDevice {
             texturesFromCache, texRes, modelLoadMs, textureLoadMs, skinnedDrawnLast, esc(charsWhy).c_str(),
             noFur ? "false" : "true", furShellsLast, STARLIGHT_FUR_SHELLSNEAR, STARLIGHT_FUR_SHELLSMID,
             benchInstMax, (unsigned long long)instDropped, kMaxInstances, kMaxSkinned, lastCrowd, drawCallLast, instEntriesLast, culledLast, lodDrawnLast, instancingOn ? "true" : "false");
-        char buf[4608];
-        snprintf(buf, sizeof(buf),
+        const std::string buf = report_text::format(
             "{\"instanceMemory\":\"%s\",\"upscaler\":\"%s\",\"requested\":\"%s\",\"reason\":\"%s\",\"version\":\"%s\",\"extra\":\"%s\","
             "\"mode\":\"%s\",\"renderW\":%u,\"renderH\":%u,\"outW\":%u,\"outH\":%u,"
             "\"fgRequested\":%s,\"fgEnabled\":%s,\"fgStatus\":\"%s\",\"vsync\":%s,"
@@ -2039,7 +2084,7 @@ struct RenderDevice {
             benchFrames.size(), (unsigned long long)presentedN, sum > 0 ? presentedN / sum : 0.0, sum, fps, avgMs, p99Ms,
             gpuAvg, gpuMin, gpuP99, gpuFps,
             cpuRecAvg, cpuRecP99, poseAvg, profileSamples ? profileGatherSum / profileSamples : 0.0, profileSamples ? profileEmitSum / profileSamples : 0.0, profileSamples ? profileMergeSum / profileSamples : 0.0,
-            m6,
+            m6.c_str(),
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
         if (fopenUtf8(&f, reportPath, L"w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
@@ -2058,7 +2103,8 @@ struct RenderDevice {
         if (frameLatencyWaitable && !auditOffscreen){double started=timingNow();WaitForSingleObject(frameLatencyWaitable,1000);measuredPresentWaitMs+=(timingNow()-started)*1000;}stageMarks[1]=timingNow();
         paceFrame();stageMarks[2]=timingNow();
         uint64_t now = GetTickCount64();
-        float dt = lastTick ? (now-lastTick)*0.001f : 0.016f; lastTick=now;
+        const double dtClock = timingNow();   // RND-5: GetTickCount64 only moves every 10-16 ms, so the frame delta comes from the performance counter
+        float dt = lastDtClock > 0 ? (float)(dtClock - lastDtClock) : 0.016f; lastTick=now; lastDtClock=dtClock;
         const float nearZ=hostCamera?hostNear:0.1f, farZ=hostCamera?hostFar:400.0f, fovY=XMConvertToRadians(hostCamera?hostFovDegrees:50.0f);
         XMVECTOR eye=editorCameraDistance>0?XMLoadFloat3(&editorEye):(hostCamera?XMLoadFloat3(&hostEye):XMVectorSet(0,3,8,0)), ctr=editorCameraDistance>0?XMLoadFloat3(&editorTarget):(hostCamera?XMLoadFloat3(&hostTarget):XMVectorZero());
         XMMATRIX view=editorCameraDistance>0?XMMatrixLookAtRH(eye, ctr, XMLoadFloat3(&editorUp)):XMMatrixLookAtLH(eye, ctr, XMVectorSet(0,1,0,0));
@@ -2082,6 +2128,8 @@ struct RenderDevice {
         alloc = allocs[slot];
         mustHr(alloc->Reset(), "reset frame command allocator");
         mustHr(cmd->Reset(alloc.Get(), pso.Get()), "reset frame command list");
+        // RND-3: anything that throws while this frame is recording must still close the list, or every later frame fails to reset it.
+        struct OpenList { ID3D12GraphicsCommandList* list; ~OpenList() { if (list) (void)list->Close(); } } openList{ cmd.Get() };
         if (tsHeap) {   // GPU timer: the slot fence was waited above, so this slot's PREVIOUS resolve is ready to read
             if (tsFreq) {
                 void* p = nullptr; D3D12_RANGE rr{ (SIZE_T)(sizeof(UINT64) * 2 * slot), (SIZE_T)(sizeof(UINT64) * (2 * slot + 2)) };
@@ -2137,7 +2185,7 @@ struct RenderDevice {
             cmd->SetPipelineState(pso.Get());
         }
 
-        if(editorDraw){try{editorDraw();}catch(...){(void)cmd->Close();throw;}}   // an exception must not leave the frame command list open for every later frame
+        if(editorDraw)editorDraw();
         stageMarks[4]=timingNow();gpuMark(2);
         // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
         if (msaa > 1) resolveScene();
@@ -2177,6 +2225,7 @@ struct RenderDevice {
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
         lastPoseMs = (float)poseAccumMs;
+        openList.list = nullptr;
         mustHr(cmd->Close(), "close command list");
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
