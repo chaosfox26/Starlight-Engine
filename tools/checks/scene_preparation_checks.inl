@@ -64,5 +64,14 @@ static void scene_preparation_checks(const auto& require){
         LoadingScreen screen;auto report=prepare_scene(*player,screen);
         require(!report.stopped()&&report.breakablesQueued==2&&report.breakablesPrepared==2&&!authored->Game,"04#4: A scene without Game prepares its breakables on a copy with default settings and the authored scene is unchanged");
     }
+    {
+        // A close request that arrived before preparation started (the player pumps messages while it reads the scene) still cancels that preparation.
+        auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=40;
+        auto player=std::make_unique<AdventurePlayer>();player->start(*scene);
+        preparation_cancel()=true;preparation_deferred_close().push_back(reinterpret_cast<HWND>(static_cast<uintptr_t>(0x5a5a)));
+        LoadingScreen screen;auto report=prepare_scene(*player,screen);
+        preparation_deferred_close().clear();preparation_cancel()=false;
+        require(report.cancelled&&report.stopped(),"A close request that arrived before preparation started cancels the preparation instead of being dropped");
+    }
 }
 

@@ -40,8 +40,9 @@ void playback_command(int id)
         // Every scene starts through the same preparation: loading screen, cache warm-up, collision, break-ahead fracture, upload.
         loading.emplace();loading->show(window,view);loading->update(0,"Starting your scene");statusBeforeInstall=renderer->status();
         renderer->playback(false);
-        questTracker.reset();adventure.emplace();preparationRollback.owned=true;adventure->start(scene);
-        lastPreparation=prepare_scene(*adventure,*loading);
+        questTracker.reset();adventure.emplace();preparationRollback.owned=true;
+        try{adventure->start(scene);lastPreparation=prepare_scene(*adventure,*loading);}
+        catch(...){release_deferred_close();throw;} // the rollback above clears the scene; a close request deferred during preparation must not stay queued
         if(lastPreparation.stopped()){ // never reveal a scene that did not finish preparing
             loading->update(loading->fraction(),"Loading did not finish: "+lastPreparation.reason);
             const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();adventure.reset();adventureHint.clear();
@@ -79,7 +80,8 @@ void playback_command(int id)
         if(!startAfterReady)preview_state(next);
     }
     if(loading&&adventure){
-        finish_scene_upload(*renderer,statusBeforeInstall,*adventure,*loading,lastPreparation);
+        try{finish_scene_upload(*renderer,statusBeforeInstall,*adventure,*loading,lastPreparation);}
+        catch(...){loading.reset();adventure.reset();adventureHint.clear();release_deferred_close();renderer->scene(scene);throw;} // the renderer already holds the play scene; hand back the authored one
         if(!lastPreparation.ready()){
             const std::string reason=lastPreparation.reason;const bool cancelled=lastPreparation.cancelled;loading.reset();
             renderer->prewarm_play(false);

@@ -199,7 +199,7 @@ struct PreparationStages {
 inline PreparationReport prepare_scene(AdventurePlayer& adventure, LoadingScreen& screen) {
     PreparationReport report;
     report.generation = ++preparation_counter();
-    preparation_cancel() = false;
+    if (preparation_deferred_close().empty()) preparation_cancel() = false; // a close request queued before this point still cancels
     const double begin = prepare_now_ms();
     double base = 0;
     report.tasksTotal = 2;
