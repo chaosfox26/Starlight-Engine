@@ -1427,6 +1427,7 @@ class AdventurePlayer {
     }}
     void start(const SceneData& scene,bool gameplayRules=true){
         if(!scene.Game)throw std::runtime_error("Choose an adventure preset first");
+        scene.validate(); // before any state is torn down, so a scene that fails leaves the running session intact
         ObjectCache::shared().begin_preparation();release_pins();spatial_=SpatialState{};solidIndex_.clear();solidSlot_.clear();geometryReport_={};
         lightningCycles_.clear();lightningSerial_=0;lightningSounds_.clear();
         ++presentationEpoch_;shotSerial_=shatterSerial_=impactSerial_=0;lastShotTime_=-1;
@@ -1441,7 +1442,7 @@ class AdventurePlayer {
         cancel_mobility_input();attack_={};hitChance_={};lastDisplayControl_.reset();lastVisibleIds_.clear();control_={};control_.player=true;health_=100;controlOrigin_=controlVelocity_={};launchAirborne_=false;tetherPull_=tetherCooldown_=0;selectedTarget_.clear();fragments_.clear();dust_.clear();destruction_.reset();terrainDestruction_.reset();combatActors_.clear();healingCasts_.clear();lunging_=false;
         for(const auto& c:scene.Characters)if(c.CombatHealth>0){CombatActor actor;actor.health=actor.maximum=c.CombatHealth;actor.team=c.CombatTeam;actor.boss=c.CombatBoss;actor.attack.cycleSeconds=1.5;combatActors_.emplace(c.Id,actor);}
         posture_=0;controlHeld_=controlConsumed_=false;controlTime_=slideRemaining_=0;slideVelocity_={};
-        scene.validate();playScene_=scene;actorRoutes_.clear();actorRouteTimes_.clear();
+        playScene_=scene;actorRoutes_.clear();actorRouteTimes_.clear();
         if(gameplayRules)for(auto& c:playScene_.Characters)if(c.CombatHealth>0 && !c.Route.empty()){actorRoutes_.emplace(c.Id,c);actorRouteTimes_.emplace(c.Id,0);c.Route.clear();}
         rules_.reset(scene.Rules);rulesEnabled_=gameplayRules;finished=false;settings_=*scene.Game;terrain_=scene.Terrain;solids_.clear();interactionBounds_.clear();
         for(const auto& object:scene.Characters){

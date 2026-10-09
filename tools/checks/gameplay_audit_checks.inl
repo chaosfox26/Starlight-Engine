@@ -95,4 +95,13 @@ static void gameplay_audit_checks(const auto& require){
         bool inside=false;for(const auto& f:adventure_readiness(level))inside=inside||f.find("starts inside a solid")!=std::string::npos;
         require(inside,"GAME-7: Spawning inside a solid cube is still reported");
     }
+    {
+        // GAME-9: a scene that fails validation leaves the running session untouched.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;
+        Character enemy;enemy.Shape="cube";enemy.CombatHealth=100;enemy.Z=-3;level.Characters={enemy};
+        AdventurePlayer p;p.start(level);for(int i=0;i<30;++i)p.move(0,0,1./120.);
+        auto bad=level;bad.Characters.clear();bad.Game->MoveSpeed=0;
+        bool threw=false;try{p.start(bad);}catch(...){threw=true;}
+        require(threw&&p.combat_actors().size()==1&&p.seconds()>0&&p.scene().Characters.size()==1,"GAME-9: A scene that fails validation does not reset the running session");
+    }
 }
