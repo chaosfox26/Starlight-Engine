@@ -2467,6 +2467,11 @@ struct Editor {
             for (size_t i = 0; i < scene.Characters.size(); i++)
                 if (SendMessage(list, LB_GETSEL, i, 0) > 0)
                     selectionIds.insert(scene.Characters[i].Id);
+            if (selected >= 0 && selected < int(scene.Characters.size()) && !selectionIds.contains(scene.Characters[selected].Id)) {
+                selected = -1;   // the caret row was deselected: the object being edited must be one that is selected
+                for (size_t i = 0; i < scene.Characters.size(); i++)
+                    if (selectionIds.contains(scene.Characters[i].Id)) { selected = int(i); break; }
+            }
             inspector_fields();
             return;
         }
@@ -2660,7 +2665,7 @@ struct Editor {
             filename = files[0];
             diskHash = loadedHash;
             history.clear();
-            selected = -1;
+            selected = -1; selectionIds.clear();
             dirty = repaired;
             refresh();
             const bool settled = settle_scene(loading, "Preparing " + utf8(files[0].filename().wstring()));
@@ -2695,7 +2700,7 @@ struct Editor {
             end_stroke();
             bool changed = id == Undo ? history.undo(scene) : history.redo(scene);
             if (changed) {
-                selected = -1;
+                selected = -1; selectionIds.clear();
                 dirty = true;
                 refresh();
             }
@@ -2919,7 +2924,7 @@ struct Editor {
                 return;
             int hit = pick(x, y);
             if (hit >= 0)
-                selected = hit;
+                select_hit(hit);
             for (size_t i = 0; i < scene.Characters.size(); i++)
                 SendMessage(list, LB_SETSEL,
                             selectionIds.contains(scene.Characters[i].Id) || int(i) == selected, i);
@@ -3042,6 +3047,12 @@ struct Editor {
         last = {x, y};
     }
 
+    // A click that picks an object makes it the one selection unless it is already part of the multi-selection (EDIT-2).
+    void select_hit(int hit) {
+        selected = hit;
+        if (!selectionIds.contains(scene.Characters[hit].Id))
+            selectionIds = {scene.Characters[hit].Id};
+    }
     void begin_group() {
         dragOriginals.clear();
         if (!actor())
@@ -3184,7 +3195,7 @@ struct Editor {
                                 scene = std::move(*next);
                                 diskHash = hash;
                                 history.clear();
-                                selected = -1;
+                                selected = -1; selectionIds.clear();
                                 refresh();
                                 settle_scene(loading, "Preparing " + utf8(filename.filename().wstring()));
                             }
