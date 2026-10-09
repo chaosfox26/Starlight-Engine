@@ -194,6 +194,23 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         require(read_file(decoy)==pristine,"Fuzz: a file outside the library is never read or changed through an asset identifier");
     }
 
+    {
+        // Scene JSON of any shape is read for the ids it names without throwing; only strings in the expected places count.
+        size_t wrong=0;
+        for(const char* text:{"null","[]","5","{}","{\"Characters\":5}","{\"Characters\":[null,5,[],{\"Sculpt\":5,\"Asset\":7}]}","{\"Objects\":{\"a\":1},\"Object\":[],\"Terrain\":\"x\"}","{\"Terrain\":{\"Asset\":3}}","{\"Cast\":{\"Models\":[1,{\"Uv\":5,\"Maps\":{\"a\":5,\"b\":{\"c\":9}}}]}}"})
+            if(outcome([&]{(void)EngineAssets::referenced_ids(json::parse(text));})!=Result::Accepted)++wrong;
+        require(wrong==0&&EngineAssets::referenced_ids(json::parse("{\"Characters\":[{\"Sculpt\":{\"Asset\":\"x\"}}],\"Terrain\":{\"Asset\":\"y\"}}"))==std::set<std::string>{"x","y"},"Fuzz: scene JSON with unexpected shapes is scanned for asset ids without failing");
+        SceneData solo;solo.Characters={tree};const auto card=json::parse(solo.encode());
+        wrong=0;
+        for(const std::string& hostile:std::vector<std::string>{"","sculpt-","sculpt-\\..\\..\\decoy","sculpt-/../../decoy","terrain-"+std::string(64,'a'),std::string(5,'x'),"C:\\Windows\\win.ini"}){
+            auto edited=card;edited["Characters"][0]["Sculpt"]["Asset"]=hostile;
+            if(!refused([&]{(void)SceneData::decode(edited.dump());}))++wrong;
+        }
+        {auto edited=card;edited["Characters"][0]["Sculpt"]["Asset"]=5;if(!refused([&]{(void)SceneData::decode(edited.dump());}))++wrong;}
+        {auto edited=card;edited["Characters"][0]["Sculpt"].erase("Asset");if(!refused([&]{(void)SceneData::decode(edited.dump());}))++wrong;}
+        require(wrong==0,"Fuzz: a key card whose sculpt names a hostile, wrong-kind or malformed asset id is refused when opened");
+    }
+
     // Portable scenes: a manifest or bundle that was edited, forged or damaged must fail verification cleanly, and nothing may be read outside the bundle.
     {
         SceneData scene;scene.Characters={tree};scene.Terrain.emplace();scene.Terrain->brush(0,0,2,1,"raise",0,0,.05);
