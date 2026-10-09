@@ -31,8 +31,8 @@ struct OffUpscaler : Upscaler {
     ComPtr<ID3D12RootSignature>  rs;
     ComPtr<ID3D12PipelineState>  pso;
     ComPtr<ID3D12DescriptorHeap> heap;      // 2 shader-visible: SRV color, UAV output
-    ID3D12Resource* lastSrc = nullptr;
-    ID3D12Resource* lastDst = nullptr;
+    ComPtr<ID3D12Resource>       lastSrc;   // held, so a recycled address cannot pass the view-cache test below
+    ComPtr<ID3D12Resource>       lastDst;
     UINT   inc = 0, outW = 0, outH = 0;
     int    curMode = 0;
     LogFn  log = nullptr;
@@ -97,7 +97,7 @@ struct OffUpscaler : Upscaler {
     std::string fgStatus() const override { return "FG n/a"; }
 
     void evaluate(const FrameIn& f) override {
-        if (f.color != lastSrc || f.output != lastDst) {
+        if (f.color != lastSrc.Get() || f.output != lastDst.Get()) {
             D3D12_CPU_DESCRIPTOR_HANDLE h = starlight_cpu_heap_start(heap);
             D3D12_SHADER_RESOURCE_VIEW_DESC sv{}; sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; sv.Texture2D.MipLevels = 1;
