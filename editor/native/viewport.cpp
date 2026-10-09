@@ -57,6 +57,7 @@ struct Viewport {
  VertexHistory staticVertices; // vertex identity -> position of parts that never move their vertices (GPU grass rest meshes), recorded once
  std::unordered_map<uint64_t,std::pair<const void*,uint64_t>> staticRecorded; // first vertex identity -> (mesh address, content fingerprint)
  bool externalFogObstacles=false;
+ bool resizeStale=false,postStale=false; // set while a resize or glow rebuild is unfinished, so an identical retry runs again instead of reporting success
  AtmospherePass atmosphere;HdrPostPass post;SunShadows sunShadows;PointShadows pointShadows;FrameCB frameLights{};float hour=15,cycle=0,dayLength=180,fogDensity=.018f;std::vector<XMFLOAT4> smoke;std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
  std::unique_ptr<RenderDevice> renderer;
  std::vector<uint64_t> telegraphIdentities;
@@ -379,8 +380,8 @@ API int sl_resize(void* handle,int width,int height){
   if(!handle)throw std::runtime_error("Invalid viewport handle");
   if(!starlight::valid_render_size(width,height))throw std::runtime_error(starlight::renderSizeError);
   auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
-  if(d.w==(UINT)width&&d.h==(UINT)height)return 1;
-  d.resizeNativeOutput(width,height);v.surfaces.resize(d);v.rt.resize(d);v.post.resize(d);v.atmosphere.linearOutput=v.post.scene;v.atmosphere.resize(d);return 1;
+  if(!v.resizeStale&&d.w==(UINT)width&&d.h==(UINT)height)return 1;
+  v.resizeStale=true;d.resizeNativeOutput(width,height,true);v.surfaces.resize(d);v.rt.resize(d);v.post.resize(d);v.atmosphere.linearOutput=v.post.scene;v.atmosphere.resize(d);v.resizeStale=false;return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
 static_assert(offsetof(Vertex,previousX)==10*sizeof(float));
@@ -680,7 +681,7 @@ API int sl_hdr_post_settings(void* handle,int quality,float strength){
  try{
   if(!handle||quality<0||quality>3||!std::isfinite(strength)||strength<0||strength>.5f)throw std::runtime_error("Invalid glow settings");
   auto& v=*static_cast<Viewport*>(handle);auto& post=v.post;const UINT levels=quality==3?6:quality==1?3:5;bool enabled=quality>0;
-  if(post.enabled!=enabled||post.levels!=levels){v.renderer->flush();post.enabled=enabled;post.levels=levels;post.resize(*v.renderer);v.atmosphere.linearOutput=post.scene;v.atmosphere.resize(*v.renderer);}
+  if(v.postStale||post.enabled!=enabled||post.levels!=levels){v.postStale=true;v.renderer->flush();post.enabled=enabled;post.levels=levels;post.resize(*v.renderer);v.atmosphere.linearOutput=post.scene;v.atmosphere.resize(*v.renderer);v.postStale=false;}
   post.strength=strength;return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }

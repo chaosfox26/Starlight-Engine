@@ -206,3 +206,36 @@ static void viewport_scene_failure_checks(const auto &require) {
     require(deltaOk && partsAfterDelta == 2, "VWP-3: The resident base token still accepts a delta after a rejected scene");
     require(framed, "VWP-3: The viewport still renders after a rejected scene");
 }
+
+// VWP-4: a resize that failed part way is redone by the identical retry instead of reporting success.
+static void viewport_resize_failure_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport resize failure checks")) return;
+    const auto &api = session.api;
+    const auto resize = api.get<int (*)(void *, int, int)>("sl_resize");
+    const auto waterBytes = api.get<uint64_t (*)(void *)>("sl_water_scene_bytes");
+    const auto fault = api.get<int (*)(int)>("sl_debug_fail_hresult");
+    require(resize && waterBytes && fault, "VWP-4: The viewport module exports the resize calls");
+    void *reference = api.create(session.window, 640, 360);
+    require(reference != nullptr, "VWP-4: A reference viewport is created");
+    const bool referenceResized = resize(reference, 800, 450) == 1;
+    const uint64_t expected = waterBytes(reference);
+    api.destroy(reference);
+    require(referenceResized && expected != 0, "VWP-4: A clean resize rebuilds the water scene textures");
+    int failures = 0;
+    for (int n = 1; n <= 6; ++n) {
+        void *viewport = api.create(session.window, 640, 360);
+        require(viewport != nullptr, "VWP-4: A viewport is created for the resize failure sweep");
+        fault(n);
+        const bool failed = resize(viewport, 800, 450) == 0;
+        fault(0);
+        const bool retried = resize(viewport, 800, 450) == 1;
+        const uint64_t bytes = waterBytes(viewport);
+        const bool framed = api.frame(viewport, 0, 13) == 1 && api.frame(viewport, 0, 13) == 1;
+        api.destroy(viewport);
+        if (failed) ++failures;
+        if (failed) std::cout << "viewport resize failure checks: failure " << n << " retry=" << retried << " water scene bytes " << bytes << " expected " << expected << " framed=" << framed << std::endl;
+        require(!failed || (retried && bytes == expected && framed), "VWP-4: Retrying a resize that failed part way rebuilds every size dependent resource");
+    }
+    require(failures >= 1, "VWP-4: The failure sweep failed at least one resize on purpose");
+}
