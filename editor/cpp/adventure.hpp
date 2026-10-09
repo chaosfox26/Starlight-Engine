@@ -509,6 +509,7 @@ class AdventurePlayer {
         bool clear=true;
         each_ray_candidate(origin,direction,distance,[&](const Character& c){
             if(!clear || c.Id==caster || c.Id==target || rules_.removed.contains(c.Id))return;
+            if(repair_solids()&&!blocks_movement(c))return; // grass, fire, lights, lava, lightning, smoke, keys and exits never block sight, as they never block movement
             if(repair_bounds()&&!ray_reaches_bounds(origin,direction,distance,posed_bounds(c)))return; // cannot be hit; skip building its mesh
             // Scenery that does not move on its own uses the engine-wide prepared collision mesh instead of rebuilding it per query.
             auto hit=object_hit(c,route_pose_of(c,seconds_),origin,direction);

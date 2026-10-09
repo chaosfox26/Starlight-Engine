@@ -51,4 +51,17 @@ static void gameplay_audit_checks(const auto& require){
         for(int i=0;i<60;++i)p.move(0,0,1./120.);
         require(p.position.z<start.z-3,"GAME-2: Pull moves the player in a no-collision scene");
     }
+    {
+        // GAME-4: line of sight ignores objects that never block movement; a real wall still blocks it.
+        for(const char* shape:{"grass","fire","light","lava","craxis-smoke","key"}){
+            SceneData level;level.Game.emplace();
+            Character c;c.Shape=std::string(shape)=="key"?"cube":shape;if(std::string(shape)=="key"){c.GameplayRole="key";c.GameplayKey="k";}c.Width=c.Height=c.Depth=2;c.Z=-3;level.Characters={c};
+            AdventurePlayer p;p.start(level);
+            require(p.unobstructed({0,1,0},{0,1,-6},"","far"),(std::string("GAME-4: Line of sight passes through a non-blocking ")+shape+" object").c_str());
+        }
+        SceneData level;level.Game.emplace();
+        Character wall;wall.Shape="cube";wall.Width=wall.Height=wall.Depth=2;wall.Z=-3;level.Characters={wall};
+        AdventurePlayer p;p.start(level);
+        require(!p.unobstructed({0,1,0},{0,1,-6},"","far"),"GAME-4: Line of sight is still blocked by a solid cube");
+    }
 }
