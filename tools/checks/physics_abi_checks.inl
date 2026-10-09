@@ -166,6 +166,9 @@ static void physics_abi_checks(const auto& require){
      require(state==1,"audit2 F1: The terrain becomes ready once a body slot is freed, instead of staying not ready for good");
      slp_destroy(full);
     }
+    require(slp_character_start(terrainWorld,.3f,nan,0,0)==0&&std::string(slp_error()).find("Invalid character start")!=std::string::npos,"TERR CHAR-1: A character start at a non-finite position is refused");
+    require(slp_character_start(terrainWorld,nan,0,0,0)==0&&slp_character_start(terrainWorld,0.f,0,0,0)==0&&slp_character_start(terrainWorld,3.f,0,0,0)==0,"TERR CHAR-1: A character start with a non-finite, zero or oversized radius is refused");
+    require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: The controller started before the refused starts still steps after them");
     slp_destroy(terrainWorld);
     slp_destroy(world);
 }
