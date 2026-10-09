@@ -14,6 +14,7 @@ int wmain(int argc, wchar_t **argv) try {
     std::wstring command = L"\"" + std::wstring(exe) + L"\" --crash-child";
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
+    const auto started = fs::file_time_type::clock::now();
     if (!CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
                         &startup, &process)) return 2;
     Handle child(process.hProcess), thread(process.hThread);
@@ -23,9 +24,10 @@ int wmain(int argc, wchar_t **argv) try {
     auto directory = application_data() / L"Diagnostics/NativeEditor";
     fs::path dump;
     auto prefix = L"Starlight." + std::to_wstring(process.dwProcessId) + L".";
-    std::error_code inventoryError;
+    std::error_code inventoryError, timeError;
     for (const auto &entry : fs::directory_iterator(directory, inventoryError))
-        if (entry.path().filename().wstring().starts_with(prefix) && entry.path().extension() == L".dmp")
+        if (entry.path().filename().wstring().starts_with(prefix) && entry.path().extension() == L".dmp" &&
+            entry.last_write_time(timeError) >= started)
             dump = entry.path();
     bool valid = !dump.empty() && read_file(dump).starts_with("MDMP");
     diagnostic("native diagnostic regression", "Controlled child crash verified");
