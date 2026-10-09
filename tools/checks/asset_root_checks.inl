@@ -267,6 +267,17 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
    const auto onlyLines=text_of([&]{(void)parse_glb(asset_checks_mode_glb(1,false));});
    require(has(onlyLines,"no triangle geometry")&&has(onlyLines,"1 LINES")&&model_uv_vertex_count(asset_checks_mode_glb(1,false))==0,"06#11: A model with only line primitives is refused with a message that names them");
   }
+  {
+   // A negative accessor count is refused; as an unsigned size it would wrap and inflate the UV vertex total.
+   auto json_only_glb=[&](const std::string& text){
+    std::string bytes="glTF";auto word=[&](uint32_t v){bytes.append(reinterpret_cast<const char*>(&v),4);};
+    word(2);word(uint32_t(20+text.size()));word(uint32_t(text.size()));word(0x4e4f534a);bytes+=text;return bytes;
+   };
+   const std::string accessor=R"({"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1}}]}],"accessors":[{"count":)";
+   require(model_uv_vertex_count(json_only_glb(accessor+R"(4)"+R"(},{"count":4}]})"))==4,"A UV accessor with a whole, positive count is counted");
+   bool refusedNegative=false;try{(void)model_uv_vertex_count(json_only_glb(accessor+R"(-1)"+R"(},{"count":4}]})"));}catch(const std::runtime_error&){refusedNegative=true;}
+   require(refusedNegative,"CC-02: A negative accessor count is refused instead of wrapping into a huge vertex total");
+  }
   const auto glb=asset_checks_uv_glb(false),mixed=asset_checks_uv_glb(true);
   const auto uvModel=import_model_bytes(glb),mixedModel=import_model_bytes(mixed),plainModel=import_model(solid_glb_fixture(work));
   require(*load_model_bytes(uvModel)==glb&&model_uv_vertex_count(glb)==4&&model_uv_vertex_count(mixed)==4,"The model bytes are available in memory exactly as authored and the UV-bearing vertices are counted");
