@@ -106,7 +106,7 @@
     {
       "kind": "replace",
       "find": "        if(!linearHdrScene)ups->evaluate(fi);",
-      "replacement": "        if(!linearHdrScene)ups->evaluate(fi);\n        if(editorPost)editorPost();"
+      "replacement": "        if(!linearHdrScene)ups->evaluate(fi);\n        if(editorPost){try{editorPost();}catch(...){(void)cmd->Close();throw;}}   // an exception must not leave the frame command list open for every later frame"
     },
     {
       "kind": "replace",
