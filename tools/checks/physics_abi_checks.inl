@@ -14,6 +14,7 @@ __declspec(dllimport) void slp_debug_fail_cooks(int);
 __declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, int, float);
 __declspec(dllimport) int slp_character_start(void *, float, float, float, float);
 __declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
+__declspec(dllimport) int slp_terrain_mesh(void *, const float *, int, const uint32_t *, int);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -81,6 +82,16 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F3: a terrain update with a non-finite height is refused before the volumetric terrain it would replace is removed.
+    {
+     void* volume=slp_create();
+     const float quad[12]={-5,0,-5, 5,0,-5, 5,0,5, -5,0,5};const uint32_t tris[6]={0,1,2,0,2,3};
+     require(volume&&slp_terrain_mesh(volume,quad,4,tris,6)==1&&slp_ready(volume)==1,"audit2 F3: A volumetric terrain is installed for the refusal check");
+     std::vector<float> damaged(97*97,0.f);damaged.back()=nan;
+     require(slp_terrain(volume,damaged.data())==0&&std::string(slp_error()).find("terrain")!=std::string::npos,"audit2 F3: A terrain update with a non-finite height is refused");
+     require(slp_ready(volume)==1,"audit2 F3: A refused terrain update leaves the volumetric terrain in place and the world ready");
+     slp_destroy(volume);
+    }
     // audit2 F1: a terrain tile cooked while the world has no free body slot keeps its shape and gets a body once a slot is freed.
     {
      void* full=slp_create();

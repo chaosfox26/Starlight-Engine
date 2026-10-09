@@ -219,8 +219,10 @@ public:
  // Jolt compiles this module with _HAS_EXCEPTIONS=0, so an exception on a std::async worker ends the process. The worker reports a failed cook as a null shape instead.
  static ShapeRefC CookGuarded(const std::array<float,289>& h,int tx,int tz){try{return Cook(h,tx,tz);}catch(const std::exception& e){std::fprintf(stderr,"terrain cook failed: %s\n",e.what());return ShapeRefC();}}
  void Terrain(const float* heights){
+  // Checked before anything is changed: a refused update must not remove the volumetric terrain it was meant to replace (audit2 F3).
+  for(int i=0;i<97*97;++i)if(!std::isfinite(heights[i]))throw std::runtime_error("Invalid terrain height");
   if(!volumeTerrain.IsInvalid()){auto& api=world.GetBodyInterface();api.RemoveBody(volumeTerrain);api.DestroyBody(volumeTerrain);volumeTerrain=BodyID();}
-  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error("Invalid terrain height");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.cooked=ShapeRefC();t.pending=std::async(std::launch::async,[data,tx,tz]{return CookGuarded(data,tx,tz);});cooks++;}
+  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++)data[z*17+x]=heights[(tz*16+z)*97+tx*16+x];t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.cooked=ShapeRefC();t.pending=std::async(std::launch::async,[data,tx,tz]{return CookGuarded(data,tx,tz);});cooks++;}
  }
  void TerrainMesh(const float* points,int count,const uint32_t* indices,int indexCount){
   if(!points || !indices || count<4 || count>1000000 || indexCount<3 || indexCount%3 || indexCount>6000000)throw std::runtime_error("Invalid volumetric terrain mesh");
