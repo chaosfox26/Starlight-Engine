@@ -4,12 +4,16 @@
 #include <numbers>
 #include <mutex>
 namespace starlight::editor {
-inline Mesh build_terrain_volume_geometry(const TerrainData& terrain,int xBegin=0,int xEnd=97,int zBegin=0,int zEnd=97){
-    terrain.validate();
-    constexpr double step=.25,start=-12.125;
-    const int countX=xEnd-xBegin+1,countZ=zEnd-zBegin+1;
+// Highest solid of the whole terrain: the same for every chunk, so a rebuild of all chunks finds it once.
+inline double terrain_volume_top(const TerrainData& terrain){
     double top=*std::max_element(terrain.Heights.begin(),terrain.Heights.end());
     for(const auto& edit:terrain.Volumes)if(!edit.Subtract)top=std::max(top,edit.Y+edit.Radius);
+    return top;
+}
+// One chunk of the terrain surface. The caller has validated the terrain and found its top.
+inline Mesh build_terrain_volume_chunk(const TerrainData& terrain,double top,int xBegin,int xEnd,int zBegin,int zEnd){
+    constexpr double step=.25,start=-12.125;
+    const int countX=xEnd-xBegin+1,countZ=zEnd-zBegin+1;
     double bottom=-21.125;
     int layers=int(std::ceil((top+.375-bottom)/step))+1;
     auto index=[&](int x,int y,int z){return (y*countZ+z)*countX+x;};
@@ -62,6 +66,10 @@ inline Mesh build_terrain_volume_geometry(const TerrainData& terrain,int xBegin=
     refine_terrain_surface(mesh,terrain,surfaceVertex);
     return mesh;
 }
+inline Mesh build_terrain_volume_geometry(const TerrainData& terrain,int xBegin=0,int xEnd=97,int zBegin=0,int zEnd=97){
+    terrain.validate();
+    return build_terrain_volume_chunk(terrain,terrain_volume_top(terrain),xBegin,xEnd,zBegin,zEnd);
+}
 struct TerrainVolumeCache {
     std::optional<TerrainData> terrain;
     std::array<Mesh,169> chunks;
@@ -71,6 +79,7 @@ struct TerrainVolumeCache {
         next.validate();rebuiltChunks=0;
         bool unchangedBase=terrain && terrain->Heights==next.Heights && terrain->Paint==next.Paint;
         if(unchangedBase && terrain->Volumes==next.Volumes)return mesh;
+        const double top=terrain_volume_top(next);
         size_t common=0;
         if(unchangedBase)while(common<std::min(terrain->Volumes.size(),next.Volumes.size()) && terrain->Volumes[common]==next.Volumes[common])++common;
         auto touches=[&](const TerrainVolume& edit,int x,int z){double r=edit.Radius+1.;double loX=-12.125+x*2,loZ=-12.125+z*2,hiX=std::min(12.125,loX+2),hiZ=std::min(12.125,loZ+2);return edit.X+r>=loX && edit.X-r<=hiX && edit.Z+r>=loZ && edit.Z-r<=hiZ;};
@@ -78,7 +87,7 @@ struct TerrainVolumeCache {
         for(int z=0;z<13;++z)for(int x=0;x<13;++x){
             bool dirty=!unchangedBase;
             if(unchangedBase){for(size_t i=common;i<terrain->Volumes.size();++i)dirty=dirty||touches(terrain->Volumes[i],x,z);for(size_t i=common;i<next.Volumes.size();++i)dirty=dirty||touches(next.Volumes[i],x,z);}
-            if(dirty){replacements[z*13+x]=build_terrain_volume_geometry(next,x*8,std::min(97,x*8+8),z*8,std::min(97,z*8+8));++rebuiltChunks;}
+            if(dirty){replacements[z*13+x]=build_terrain_volume_chunk(next,top,x*8,std::min(97,x*8+8),z*8,std::min(97,z*8+8));++rebuiltChunks;}
         }
         struct Position {int64_t x,y,z;bool operator==(const Position&)const=default;};
         struct Hash {size_t operator()(const Position& p)const{return size_t(uint64_t(p.x)*73856093ull)^size_t(uint64_t(p.y)*19349663ull)^size_t(uint64_t(p.z)*83492791ull);}};
@@ -95,8 +104,24 @@ struct TerrainVolumeCache {
         terrain=std::move(savedTerrain);mesh=std::move(assembled);return mesh;
     }
 };
+// Two caches, so that two scenes with different ground (two windows, or an editor beside a player) do not throw each other's meshes away on
+// every call: a call goes to the cache that already holds its heights and paint, otherwise to the one used less recently.
+struct TerrainVolumeCachePool {
+    std::array<TerrainVolumeCache,2> caches;
+    std::array<uint64_t,2> used{};
+    uint64_t clock=0;
+    size_t rebuiltChunks=0; // chunks the last call had to build
+    Mesh get(const TerrainData& terrain){
+        size_t pick=used[1]<used[0]?1:0;
+        for(size_t i=0;i<caches.size();++i)if(caches[i].terrain&&caches[i].terrain->Heights==terrain.Heights&&caches[i].terrain->Paint==terrain.Paint){pick=i;break;}
+        used[pick]=++clock;
+        Mesh mesh=caches[pick].get(terrain);
+        rebuiltChunks=caches[pick].rebuiltChunks;
+        return mesh;
+    }
+};
 inline Mesh terrain_volume_geometry(const TerrainData& terrain){
-    static TerrainVolumeCache cache;static std::mutex mutex;
-    std::lock_guard guard(mutex);return cache.get(terrain);
+    static TerrainVolumeCachePool pool;static std::mutex mutex;
+    std::lock_guard guard(mutex);return pool.get(terrain);
 }
 }

@@ -138,15 +138,34 @@ double TerrainData::surface_at(double x,double z) const {
     std::array<ColumnOperation,128> column;
     const bool prepared=Volumes.size()<=column.size();
     if(prepared)for(size_t i=0;i<Volumes.size();++i){const auto& v=Volumes[i];double dx=x-v.X,dz=z-v.Z;column[i]={dx*dx,dz*dz,v.Y,v.Radius,std::min(.3,v.Radius*.25),v.Subtract};}
+    auto blendMin=[](double a,double b,double width){double h=std::clamp(.5+.5*(b-a)/width,0.,1.);return b+(a-b)*h-width*h*(1-h);};
     auto density=[&](double y){
         if(!prepared)return density_at(x,y,z);
         double value=std::max(y-height,-21.-y);
-        auto blendMin=[](double a,double b,double width){double h=std::clamp(.5+.5*(b-a)/width,0.,1.);return b+(a-b)*h-width*h*(1-h);};
         for(size_t i=0;i<Volumes.size();++i){const auto& v=column[i];double dy=y-v.y;double sphere=std::sqrt(v.dxSquared+dy*dy+v.dzSquared)-v.radius;value=v.subtract?-blendMin(-value,sphere,v.width):blendMin(value,sphere,v.width);}
         return std::max({value,std::abs(x)-Half,std::abs(z)-Half});
     };
+    // The search only ever asks whether the density is at or below zero. A volume whose sphere lies at least its blend width (plus 1e-5)
+    // beyond the running value leaves that value unchanged, up to rounding of about 1e-13, so it is skipped without its root and division.
+    // The answer is trusted only when it is clear of zero by 1e-9, far more than the rounding of 128 skipped blends can reach; a close call
+    // is decided by the full evaluation. Every decision, and with it the search result, is therefore the same as with the full evaluation.
+    auto solid=[&](double y){
+        if(!prepared)return density(y)<=0;
+        double value=std::max(y-height,-21.-y);
+        for(size_t i=0;i<Volumes.size();++i){
+            const auto& v=column[i];double dy=y-v.y;
+            const double reach=v.radius+v.width+(v.subtract?-value:value)+1e-5,squared=v.dxSquared+dy*dy+v.dzSquared;
+            if(reach<=0||squared>=reach*reach)continue;
+            const double sphere=std::sqrt(squared)-v.radius;
+            value=v.subtract?-blendMin(-value,sphere,v.width):blendMin(value,sphere,v.width);
+        }
+        const double clear=std::max({value,std::abs(x)-Half,std::abs(z)-Half});
+        if(clear< -1e-9)return true;
+        if(clear>1e-9)return false;
+        return density(y)<=0;
+    };
     for(double high=top;high> -21.;high-=.125){double low=std::max(-21.,high-.125);
-        if(density(low)<=0){for(int i=0;i<16;++i){double mid=(low+high)*.5;if(density(mid)<=0)low=mid;else high=mid;}return (low+high)*.5;}
+        if(solid(low)){for(int i=0;i<16;++i){double mid=(low+high)*.5;if(solid(mid))low=mid;else high=mid;}return (low+high)*.5;}
     }
     return -21.;
 }

@@ -13,6 +13,7 @@ struct FlowObstacleMask {
     // Vertical extent of every triangle registered in a cell (valid when geometryRevision != 0): lets a query skip a
     // cell whose triangles all lie above or below it, which the per-triangle box test would reject one by one.
     std::vector<double> cellLowY,cellHighY;
+    // Each triangle is listed in the cells its x/z projection (grown by the query tolerances) meets, not in its whole bounding box.
     std::vector<std::vector<unsigned>> triangleCells=std::vector<std::vector<unsigned>>(GeometryN*GeometryN);
     unsigned objectCount=0;
     double clearance(const Vec3&) const;
@@ -51,7 +52,7 @@ struct FlowObstacleMask {
     std::vector<int> occupancy;
     // Compact, cache-friendly copy of every cell registration (same order as triangleCells), built by finish(): conservative
     // extents let a column or triangle query reject most registrations without touching the 128-byte triangle record.
-    struct CellEntry { float yLow,yHigh; uint16_t cellX,cellZ; }; // outward-rounded vertical extent and first registered cell
+    struct CellEntry { float yLow,yHigh; }; // outward-rounded vertical extent
     std::vector<CellEntry> cellEntries;
     // One 64-bit mask per registration (same order as cellEntries): bit (z*8+x) is set when the triangle's padded x/z box
     // can contain a point of that 1/8th-cell block. A column query tests one bit instead of four box comparisons.
@@ -112,6 +113,8 @@ struct LiquidSplash {Vec3 position,velocity;double strength=0;bool lava=false;};
 // Cumulative time inside TerrainFlow::geometry() by stage (milliseconds), for performance diagnosis.
 struct FlowGeometryProfile { double setupMs=0,gridMs=0,refineMs=0,clipMs=0,vertexMs=0,obstacleMs=0,normalsMs=0; uint64_t calls=0,vertices=0,triangles=0; double clipTopologyMs=0,clipCrossingsMs=0,clipClearanceMs=0; };
 FlowGeometryProfile flow_geometry_profile();
+// Number of liquid surfaces left out of a frame because one of their vertices was not finite (the frame is skipped for that liquid; rendering goes on).
+uint64_t flow_nonfinite_parts_dropped();
 struct FlowGeometryScratch;
 // Reusable per-flow buffers of TerrainFlow::geometry(); a copy of a flow starts with empty scratch.
 struct FlowGeometryScratchHolder {
@@ -167,13 +170,13 @@ class TerrainFlow {
     void set_obstacles(FlowObstacleMask mask);
     bool has_obstacles()const{return obstacles_.has_value();}
     template<class Edit> void amend_obstacles(Edit&& edit){settle_async();if(obstacles_)edit(*obstacles_);}
-    // Highest liquid surface (as drawn: displaced by submerged solids, plus the wave height) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
+    // Highest liquid surface (as drawn: displaced by submerged solids, plus the wave height; never below bed plus depth) in each cell (48x48), widened by `margin` cells; -1e9 where no liquid is near. An object
     // that is horizontally outside these cells, or entirely above their surface, cannot change what the liquid does.
     std::vector<double> liquid_top_cells(int margin)const{
         std::vector<double> top(N*N,-1e9);
         for(int z=0;z<N;++z)for(int x=0;x<N;++x){
             const double depth=std::max(water[z*N+x],lava[z*N+x]);if(depth<=1e-5)continue;
-            const double surfaceHeight=surface(z*N+x,depth)+waves_[z*N+x]; // the drawn surface: raised over submerged solids and moved by the waves
+            const double surfaceHeight=std::max(bed_[z*N+x]+depth,surface(z*N+x,depth)+waves_[z*N+x]); // the drawn surface (raised over submerged solids, moved by the waves), never below the still level, so a wave trough does not take a cell out of the filter
             for(int dz=-margin;dz<=margin;++dz)for(int dx=-margin;dx<=margin;++dx){int xx=x+dx,zz=z+dz;if(xx>=0&&xx<N&&zz>=0&&zz<N)top[zz*N+xx]=std::max(top[zz*N+xx],surfaceHeight);}
         }
         return top;

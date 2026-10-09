@@ -43,6 +43,8 @@ std::atomic<uint64_t> geometryCalls{0},geometryVertices{0},geometryTriangles{0};
 using GeometryClock=std::chrono::steady_clock;
 double geometryMs(GeometryClock::time_point a,GeometryClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();}
 }
+static std::atomic<uint64_t>& nonfinite_parts_dropped(){static std::atomic<uint64_t> count{0};return count;}
+uint64_t flow_nonfinite_parts_dropped(){return nonfinite_parts_dropped().load(std::memory_order_relaxed);}
 FlowGeometryProfile flow_geometry_profile(){return {geometrySetupMs.load(),geometryGridMs.load(),geometryRefineMs.load(),geometryClipMs.load(),geometryVertexMs.load(),geometryObstacleMs.load(),geometryNormalsMs.load(),geometryCalls.load(),geometryVertices.load(),geometryTriangles.load(),geometryClipTopologyMs.load(),geometryClipCrossingsMs.load(),geometryClipClearanceMs.load()};}
 namespace {
 // Obstacle columns depend only on (x,z) and the finished mask, so their intervals are cached across frames in one
@@ -88,6 +90,29 @@ void site_store(uint64_t x,uint64_t z,uint64_t revision,const double* bounds,uin
     slot.sequence.store(sequence+2,std::memory_order_release);
 }
 }
+// Calls visit(cell index) for every geometry cell whose rectangle meets the triangle's x/z projection grown by the padding the block
+// masks use (a point the barycentric test accepts, or a contact the separating-axis test reports, always lies inside that), instead of
+// every cell of its bounding box: a long diagonal triangle touches a thin band of cells, not the whole square. Rows are clipped
+// against the triangle, so the cells are a superset of those it overlaps. The outermost rows and columns take everything beyond the
+// domain, as the clamped cell numbers of the queries do.
+template<class Visit> static void visit_triangle_cells(const FlowObstacleMask::ColumnTriangle& t,Visit&& visit){
+    constexpr int G=FlowObstacleMask::GeometryN;
+    const double width=24./G,pad=1e-6+4e-9*std::max(t.boundsHigh.x-t.boundsLow.x,t.boundsHigh.z-t.boundsLow.z);
+    auto cell=[](double v){return int(std::clamp(std::floor((v+12)*G/24),0.,double(G-1)));};
+    const Vec3 corners[3]{t.a,t.b,t.c};
+    for(int z=cell(t.boundsLow.z-pad),z1=cell(t.boundsHigh.z+pad);z<=z1;++z){
+        const double lo=z==0?-INFINITY:-12+z*width-pad,hi=z==G-1?INFINITY:-12+(z+1)*width+pad;
+        double xLow=INFINITY,xHigh=-INFINITY;
+        auto take=[&](double x){xLow=std::min(xLow,x);xHigh=std::max(xHigh,x);};
+        for(int i=0;i<3;++i){
+            const Vec3 p=corners[i],q=corners[(i+1)%3];
+            if(p.z>=lo&&p.z<=hi)take(p.x);
+            if(p.z!=q.z)for(double edge:{lo,hi})if(std::isfinite(edge)&&(edge-p.z)*(edge-q.z)<=0)take(p.x+(edge-p.z)/(q.z-p.z)*(q.x-p.x));
+        }
+        if(xLow>xHigh)continue;
+        for(int x=cell(xLow-pad),x1=cell(xHigh+pad);x<=x1;++x)visit(size_t(z)*G+x);
+    }
+}
 void FlowObstacleMask::add(const Mesh &mesh, const Character &transform) {
     geometryRevision=0;layerRevision=0;lightStatic.reset();mobile.reset();occupancy.clear();cellEntries.clear();cellMasks.clear();cellStart.clear();
     mesh.validate();
@@ -103,10 +128,7 @@ void FlowObstacleMask::add(const Mesh &mesh, const Character &transform) {
             z0 = cell(min3(a.z, b.z, c.z)), z1 = cell(max3(a.z, b.z, c.z));
         unsigned triangle=unsigned(triangles.size());
         triangles.push_back({a,b,c,object});triangles.back().boundsLow={min3(a.x,b.x,c.x),min3(a.y,b.y,c.y),min3(a.z,b.z,c.z)};triangles.back().boundsHigh={max3(a.x,b.x,c.x),max3(a.y,b.y,c.y),max3(a.z,b.z,c.z)};
-        auto geometryCell=[](double value){return std::clamp(int(std::floor((value+12)*GeometryN/24)),0,GeometryN-1);};
-        int gx0=geometryCell(min3(a.x,b.x,c.x)),gx1=geometryCell(max3(a.x,b.x,c.x));
-        int gz0=geometryCell(min3(a.z,b.z,c.z)),gz1=geometryCell(max3(a.z,b.z,c.z));
-        for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x)triangleCells[z*GeometryN+x].push_back(triangle);
+        visit_triangle_cells(triangles.back(),[&](size_t index){triangleCells[index].push_back(triangle);});
         if(std::abs(det)<1e-12)continue;
         rasterize_columns(triangles.back(),x0,x1,z0,z1);
     }
@@ -136,20 +158,17 @@ void FlowObstacleMask::remove_objects(const std::vector<unsigned>& objects) {
     if(objects.empty()||layerRevision==0)return;
     std::vector<char> gone(objectCount,0);
     for(unsigned o:objects)if(o<objectCount)gone[o]=1;
-    auto geometryCell=[](double value){return std::clamp(int(std::floor((value+12)*GeometryN/24)),0,GeometryN-1);};
     auto columnCell=[](double v){return std::clamp(int(std::floor((v+12)/.5)),0,47);};
     int cx0=47,cx1=0,cz0=47,cz1=0;
     const bool compact=cellStart.size()==size_t(GeometryN)*GeometryN+1&&cellMasks.size()==cellEntries.size();
     for(size_t id=0;id<triangles.size();++id){
         auto& t=triangles[id];
         if(t.dead||t.object>=gone.size()||!gone[t.object])continue;
-        const int gx0=geometryCell(t.boundsLow.x),gx1=geometryCell(t.boundsHigh.x),gz0=geometryCell(t.boundsLow.z),gz1=geometryCell(t.boundsHigh.z);
-        for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x){
-            const size_t cell=size_t(z)*GeometryN+x;
+        visit_triangle_cells(t,[&](size_t cell){
             auto& list=triangleCells[cell];
             list.erase(std::remove(list.begin(),list.end(),unsigned(id)),list.end());
             if(compact)for(uint32_t k=cellStart[cell];k<cellStart[cell+1];++k)if(cellMasks[k].id==id)cellMasks[k].mask=0;
-        }
+        });
         cx0=std::min(cx0,columnCell(t.boundsLow.x));cx1=std::max(cx1,columnCell(t.boundsHigh.x));cz0=std::min(cz0,columnCell(t.boundsLow.z));cz1=std::max(cz1,columnCell(t.boundsHigh.z));
         t.dead=true;
     }
@@ -171,9 +190,7 @@ void FlowObstacleMask::remove_objects(const std::vector<unsigned>& objects) {
         triangles=std::move(kept);
         for(auto& list:triangleCells)std::vector<unsigned>().swap(list);
         for(unsigned id=0;id<triangles.size();++id){
-            const auto& t=triangles[id];
-            const int gx0=geometryCell(t.boundsLow.x),gx1=geometryCell(t.boundsHigh.x),gz0=geometryCell(t.boundsLow.z),gz1=geometryCell(t.boundsHigh.z);
-            for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x)triangleCells[size_t(z)*GeometryN+x].push_back(id);
+            visit_triangle_cells(triangles[id],[&](size_t cell){triangleCells[cell].push_back(id);});
         }
         finish();
         return;
@@ -221,12 +238,10 @@ void FlowObstacleMask::set_layers(std::shared_ptr<const FlowObstacleMask> light,
 }
 void FlowObstacleMask::truncate(const Mark& m) {
     geometryRevision=0;layerRevision=0;lightStatic.reset();mobile.reset();occupancy.clear();cellEntries.clear();cellMasks.clear();cellStart.clear();
-    auto geometryCell=[](double value){return std::clamp(int(std::floor((value+12)*GeometryN/24)),0,GeometryN-1);};
     // Triangles were registered in increasing id order, so each cell's last entry is the newest triangle covering it.
     for(size_t id=triangles.size();id>m.triangleCount;){
-        --id;const auto& t=triangles[id];
-        const int gx0=geometryCell(t.boundsLow.x),gx1=geometryCell(t.boundsHigh.x),gz0=geometryCell(t.boundsLow.z),gz1=geometryCell(t.boundsHigh.z);
-        for(int z=gz0;z<=gz1;++z)for(int x=gx0;x<=gx1;++x){auto& cell=triangleCells[z*GeometryN+x];if(!cell.empty()&&cell.back()==unsigned(id))cell.pop_back();}
+        --id;
+        visit_triangle_cells(triangles[id],[&](size_t index){auto& cell=triangleCells[index];if(!cell.empty()&&cell.back()==unsigned(id))cell.pop_back();});
     }
     triangles.resize(m.triangleCount);objectCount=m.objectCount;low=m.low;high=m.high;
 }
@@ -359,9 +374,11 @@ bool FlowObstacleMask::clear_triangle_indexed(Vec3 a,Vec3 b,Vec3 c) const {
     };
     const int qx0=cell(lo.x),qx1=cell(hi.x),qz0=cell(lo.z),qz1=cell(hi.z);
     const bool cellRanges=layerRevision&&cellLowY.size()==triangleCells.size()&&cellHighY.size()==triangleCells.size();
+    // A triangle registered in several scanned cells would be tested once per cell; its answer cannot change, so test it once.
+    thread_local std::vector<uint32_t> visited;thread_local uint32_t visitEpoch=0;
+    if(visited.size()<triangles.size())visited.resize(triangles.size(),0);
+    if(++visitEpoch==0){std::fill(visited.begin(),visited.end(),0u);visitEpoch=1;}
     if(layerRevision&&cellRanges&&cellStart.size()==size_t(GeometryN)*GeometryN+1){
-        // A triangle registered in several scanned cells is tested only in the first of them (its own lowest cell inside
-        // the query rectangle), which replaces the per-query visited marks.
         for(int z=qz0;z<=qz1;++z)for(int x=qx0;x<=qx1;++x){
             const size_t cellIndex=size_t(z)*GeometryN+x;
             if(cellHighY[cellIndex]<lo.y||cellLowY[cellIndex]>hi.y)continue;
@@ -373,17 +390,14 @@ bool FlowObstacleMask::clear_triangle_indexed(Vec3 a,Vec3 b,Vec3 c) const {
             for(uint32_t k=cellStart[cellIndex];k<cellStart[cellIndex+1];++k){
                 if(!(cellMasks[k].mask&queryMask))continue;
                 const CellEntry& e=cellEntries[k];
-                if(x!=std::max(int(e.cellX),qx0)||z!=std::max(int(e.cellZ),qz0))continue;
                 if(double(e.yHigh)<lo.y||double(e.yLow)>hi.y)continue;
-                if(meets(triangles[cellMasks[k].id]))return false;
+                const unsigned id=cellMasks[k].id;
+                if(visited[id]==visitEpoch)continue;visited[id]=visitEpoch;
+                if(meets(triangles[id]))return false;
             }
         }
         return true;
     }
-    // A triangle registered in several cells would be tested once per cell; its answer cannot change, so test it once.
-    thread_local std::vector<uint32_t> visited;thread_local uint32_t visitEpoch=0;
-    if(visited.size()<triangles.size())visited.resize(triangles.size(),0);
-    if(++visitEpoch==0){std::fill(visited.begin(),visited.end(),0u);visitEpoch=1;}
     for(int z=qz0;z<=qz1;++z)for(int x=qx0;x<=qx1;++x){
     const size_t cellIndex=size_t(z)*GeometryN+x;const auto& cellTriangles=triangleCells[cellIndex];
     if(cellTriangles.empty())continue;
@@ -459,7 +473,6 @@ void FlowObstacleMask::finish() {
         // Compact registrations: offsets by cell, then one entry per registration with outward-rounded float boxes.
         auto down=[](double v){float f=float(v);if(double(f)>v)f=std::nextafterf(f,-INFINITY);return f;};
         auto up=[](double v){float f=float(v);if(double(f)<v)f=std::nextafterf(f,INFINITY);return f;};
-        auto geometryCell=[](double value){return std::clamp(int(std::floor((value+12)*GeometryN/24)),0,GeometryN-1);};
         cellStart.assign(size_t(GeometryN)*GeometryN+1,0);
         for(size_t cell=0;cell<triangleCells.size();++cell)cellStart[cell+1]=cellStart[cell]+uint32_t(triangleCells[cell].size());
         cellEntries.resize(cellStart.back());cellMasks.resize(cellStart.back());
@@ -479,7 +492,7 @@ void FlowObstacleMask::finish() {
                         uint64_t mask=0;for(int bz=bz0;bz<=bz1;++bz)mask|=row<<(bz*8);
                         cellMasks[out]={mask,id,0};
                     }
-                    cellEntries[out++]={down(t.boundsLow.y),up(t.boundsHigh.y),uint16_t(geometryCell(t.boundsLow.x)),uint16_t(geometryCell(t.boundsLow.z))};
+                    cellEntries[out++]={down(t.boundsLow.y),up(t.boundsHigh.y)};
                 }
             }
         });
@@ -1438,7 +1451,9 @@ std::vector<MeshPart> TerrainFlow::geometry_unverified() const {
         geometryVertexMs=geometryVertexMs+lap();
         geometryObstacleMs=geometryObstacleMs+lap();
         // ---- normals (Mesh::normals() with the per-vertex sums split across workers; same summation order) ------------------
-        if(!finite.load())throw std::runtime_error("Nonfinite mesh vertex");
+        // One bad vertex costs this liquid for this frame: it is counted and logged, and the next frame builds again. Throwing here would be
+        // rethrown into the render loop by the next change to the flow and end the render worker.
+        if(!finite.load()){nonfinite_parts_dropped().fetch_add(1,std::memory_order_relaxed);starlight_diag::evlog("liquidNonFin",isLava?1.:0.);geometryClipMs=geometryClipMs+lap();return;}
         {
             const size_t triangleCount=keptTotal;
             const unsigned parts=unsigned(std::min<size_t>(kThreads,std::max<size_t>(1,vertexCount/2048)));
