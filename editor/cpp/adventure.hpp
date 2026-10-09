@@ -303,8 +303,9 @@ class AdventurePlayer {
         }
         if(!same_fracture_source(*entry,c)){
             ++runtime_bypass().fractureStaleSource;
-            std::fprintf(stderr,"prefracture: source changed for %s (state %d)\n",c.Name.c_str(),entry->state);
-            std::lock_guard lock(preMutex_);if(entry->state==0)entry->state=3;return {};
+            int state;{std::lock_guard lock(preMutex_);state=entry->state;if(state==0)entry->state=3;} // the worker changes the state under this mutex, so it is read under it too
+            std::fprintf(stderr,"prefracture: source changed for %s (state %d)\n",c.Name.c_str(),state);
+            return {};
         }
         std::unique_lock lock(preMutex_);
         if(entry->state==0){++runtime_bypass().fractureNotStarted;std::fprintf(stderr,"prefracture: not started for %s\n",c.Name.c_str());entry->state=3;lock.unlock();return compute_fracture(c,now,entry->serial);}

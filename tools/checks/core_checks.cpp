@@ -44,6 +44,7 @@ using namespace starlight::editor;
 #include "gameplay_audit_checks.inl"
 #include "missing_asset_save_checks.inl"
 #include "obstacle_removal_checks.inl"
+#include "core_contract_lead_checks.inl"
 #include "liquid_terrain_audit_checks.inl"
 #include "glb_index_budget_checks.inl"
 #include "glb_fuzz_checks.inl"
@@ -132,6 +133,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(gameplay_audit_checks, gameplay_audit_checks(require));
         RUN_GROUP(missing_asset_save_checks, missing_asset_save_checks(require));
         RUN_GROUP(obstacle_removal_checks, obstacle_removal_checks(require));
+        RUN_GROUP(core_contract_lead_checks, core_contract_lead_checks(require));
         RUN_GROUP(liquid_terrain_audit_checks, liquid_terrain_audit_checks(require));
         RUN_GROUP(glb_index_budget_checks, glb_index_budget_checks(require,folder));
         RUN_GROUP(glb_fuzz_checks, glb_fuzz_checks(require,folder,argc>2?fs::absolute(fs::path(argv[2])).parent_path().parent_path().lexically_normal():fs::path()));

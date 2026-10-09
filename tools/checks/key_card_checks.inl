@@ -138,6 +138,34 @@ template<class Require> void model_asset_checks(Require require,const fs::path& 
         require(model_service_stats().evicted>beforeTrim.evicted,"A parsed model nobody uses any more can be evicted");
         const auto beforeReload=model_service_stats();(void)load_model(idA);
         require(model_service_stats().misses==beforeReload.misses+1,"An evicted model is parsed again from the library on its next use");
+        {
+            // Threads that ask at the same moment for a model nobody has parsed yet must share one parse instead of each parsing it and all but one throwing the copy away.
+            // A model of about 120000 vertices keeps the parse long enough for every thread to arrive while it is still running.
+            constexpr uint32_t points=120000;std::vector<float> positions;std::vector<uint32_t> triangles;
+            for(uint32_t i=0;i<points;++i){positions.push_back(float(i%400)*.01f);positions.push_back(float(i/400)*.01f);positions.push_back(float((i*7919u)%1000)*.001f);}
+            for(uint32_t i=0;i<points;++i){triangles.push_back(i);triangles.push_back((i+1)%points);triangles.push_back((i+2)%points);}
+            const uint32_t positionBytes=points*12,indexBytes=uint32_t(triangles.size()*4),binBytes=positionBytes+indexBytes;
+            auto heavy=json{{"asset",{{"version","2.0"}}},{"buffers",json::array({json{{"byteLength",binBytes}}})},
+                {"bufferViews",json::array({json{{"buffer",0},{"byteOffset",0},{"byteLength",positionBytes}},json{{"buffer",0},{"byteOffset",positionBytes},{"byteLength",indexBytes}}})},
+                {"accessors",json::array({json{{"bufferView",0},{"componentType",5126},{"count",points},{"type","VEC3"},{"min",{0,0,0}},{"max",{4,3,1}}},json{{"bufferView",1},{"componentType",5125},{"count",triangles.size()},{"type","SCALAR"}}})},
+                {"meshes",json::array({json{{"primitives",json::array({json{{"attributes",{{"POSITION",0}}},{"indices",1}}})}}})},{"nodes",json::array({json{{"mesh",0}}})},{"scenes",json::array({json{{"nodes",json::array({0})}}})},{"scene",0}}.dump();
+            while(heavy.size()%4)heavy+=' ';
+            std::string heavyBytes;auto word=[&](uint32_t v){heavyBytes.append(reinterpret_cast<const char*>(&v),4);};
+            word(0x46546c67);word(2);word(uint32_t(12+8+heavy.size()+8+binBytes));word(uint32_t(heavy.size()));word(0x4e4f534a);heavyBytes+=heavy;word(binBytes);word(0x004e4942);
+            heavyBytes.append(reinterpret_cast<const char*>(positions.data()),positionBytes);heavyBytes.append(reinterpret_cast<const char*>(triangles.data()),indexBytes);
+            const auto heavyId=import_model_bytes(heavyBytes);
+            bool oneParse=true,oneCopy=true;const int threads=8;
+            for(int round=0;round<12;++round){
+                model_service_trim();
+                const auto before=model_service_stats();
+                std::atomic<bool> go{false};std::vector<std::shared_ptr<const std::vector<MeshPart>>> got(threads);std::vector<std::thread> pool;
+                for(int t=0;t<threads;++t)pool.emplace_back([&,t]{while(!go.load())std::this_thread::yield();got[t]=load_model(heavyId);});
+                go=true;for(auto& worker:pool)worker.join();
+                oneParse&=model_service_stats().misses-before.misses==1;
+                for(const auto& copy:got)oneCopy&=copy&&copy.get()==got[0].get();
+            }
+            require(oneParse&&oneCopy,"Concurrent first requests for one model share a single parse and receive the same geometry");
+        }
     }
     {
         SceneData scene;Character model;model.Id="bundle-model";model.Asset=idA;scene.Characters={model};
