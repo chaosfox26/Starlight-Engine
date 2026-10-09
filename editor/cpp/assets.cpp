@@ -234,7 +234,7 @@ std::vector<MeshPart> parse_glb(std::string_view bytes, std::string *skipped) {
                 if (mat.contains("pbrMetallicRoughness")) {
                     const auto &pbr = mat.at("pbrMetallicRoughness");
                     if (pbr.contains("baseColorFactor")) {
-                        auto f = pbr.at("baseColorFactor");
+                        const auto &f = pbr.at("baseColorFactor");
                         part.color = {srgb(f.at(0).get<double>()), srgb(f.at(1).get<double>()),
                                       srgb(f.at(2).get<double>())};
                     }
