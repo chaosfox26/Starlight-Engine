@@ -121,6 +121,7 @@ template<class Require> void key_card_checks(Require require,const fs::path& fol
         require(error.empty()&&beside==utf8(odd/"card.starscene"),"A card beside the host module is found when the module folder has such characters, and is returned as UTF-8");
         error.clear();
         require(keycard::resolveCardPath(utf8(odd/"missing.starscene"),std::string(),"card.starscene",error).empty()&&error.find("does not exist")!=std::string::npos,"A missing --card file is still reported");
+        std::error_code ignored;fs::remove_all(odd,ignored);   // the placeholder card is not a real scene, so it must not stay for the generated-file read-back guard
     }
 }
 

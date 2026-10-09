@@ -476,8 +476,8 @@ void from_json(const json &j, Character &v) {
     if (!j.is_object())
         throw std::runtime_error("Expected Character object");
     v.JointRuntimePoints.clear();
-    v.GrappleMode=whole(j,"GrappleMode",0,"Object");
-    v.CombatSightRange=j.value("CombatSightRange",60.);v.CombatHealth=j.value("CombatHealth",0.);v.CombatTeam=whole(j,"CombatTeam",2,"Object");v.CombatBoss=j.value("CombatBoss",false);v.CombatAutoAttack=j.value("CombatAutoAttack",false);v.CombatPursuit=j.value("CombatPursuit",false);v.CombatControlEffect=whole(j,"CombatControlEffect",-1,"Object");
+    v.GrappleMode=(j.contains("GrappleMode")?native_int(j.at("GrappleMode")):0);
+    v.CombatSightRange=j.value("CombatSightRange",60.);v.CombatHealth=j.value("CombatHealth",0.);v.CombatTeam=(j.contains("CombatTeam")?native_int(j.at("CombatTeam")):2);v.CombatBoss=j.value("CombatBoss",false);v.CombatAutoAttack=j.value("CombatAutoAttack",false);v.CombatPursuit=j.value("CombatPursuit",false);v.CombatControlEffect=(j.contains("CombatControlEffect")?native_int(j.at("CombatControlEffect")):-1);
     v.GameplayRole=j.value("GameplayRole",std::string("none"));v.GameplayKey=j.value("GameplayKey",std::string{});
     v.Breakable=j.value("Breakable",true);v.DestructionHealth=j.value("DestructionHealth",10.);
     if (j.contains("Id"))

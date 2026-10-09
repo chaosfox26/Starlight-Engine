@@ -166,7 +166,7 @@ template<class Require> void active_scene_guard_checks(Require require,const fs:
     require(exportProblems.empty()&&exported==withModels,exportMessage.c_str());
 }
 template<class Require> void generated_scene_readback_checks(Require require,const fs::path& folder){
-    const auto documents=guard_documents(folder,{L"active-scene-guard"},L"library-");
+    const auto documents=guard_documents(folder,{L"active-scene-guard",L"asset-store-fuzz"},L"library-");
     require(!documents.empty(),"Checks generate scene files for the read-back guard");
     std::string problems;size_t failing=0;
     for(const auto& file:documents)

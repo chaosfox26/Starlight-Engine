@@ -128,5 +128,5 @@ static void editor_state_checks(const auto& require,const fs::path& folder){
         require(named.contains("rulesNamingRemovedObjects")&&named["rulesNamingRemovedObjects"]==json::array({"Press the lever"}),"Editor audit 11: removing an object a rule names lists that rule in the --commands result");
     }
     // The editor's delete handler shows the same list in its status line; this program cannot press Delete in the window.
-    require(source_occurrences("editor/cpp/editor_main.cpp","rules_naming_objects(scene, ids)")==1&&source_occurrences("editor/cpp/editor_main.cpp","These gameplay rules still point at a deleted object")==1,"Editor audit 11: the editor's delete handler reports the rules left pointing at the deleted objects");
+    require(source_occurrences("editor/cpp/editor_main.cpp","rules_naming_objects(scene, removed)")==1&&source_occurrences("editor/cpp/editor_main.cpp","These gameplay rules still point at a deleted object")==1,"Editor audit 11: the editor's delete handler reports the rules left pointing at the deleted objects");
 }
