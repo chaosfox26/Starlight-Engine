@@ -514,7 +514,7 @@ int wmain(int argc, wchar_t **argv) {
       wait(session.status().frames + 15);
       session.playback(false, true);
       wait(session.status().frames + 3);
-      require(true, "Native playback stop resets safely");
+      require(!session.status().playing && session.status().seconds == 0, "Native playback stop resets safely");
       SceneData route;
       Character walker;
       walker.Shape = "cube";
