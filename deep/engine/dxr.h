@@ -3,6 +3,7 @@
 #include <dxr_shader.h>
 #include "ray_reconstruction.h"
 #include "gpu_lifetime.h"
+#include "rt_refit.h"
 
 // Owned by one native render thread. Descriptor tables and upload data are per fence slot.
 struct DxrItem {uint64_t key;const Mesh* mesh;XMFLOAT4X4 world;XMFLOAT4 color;uint64_t motionKey=0;};
@@ -152,7 +153,7 @@ struct DxrPass {
   D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};build.Inputs.Type=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;build.Inputs.DescsLayout=D3D12_ELEMENTS_LAYOUT_ARRAY;build.Inputs.NumDescs=count;build.Inputs.InstanceDescs=descriptionUpload->GetGPUVirtualAddress()+slot*kMaxInstances*sizeof(D3D12_RAYTRACING_INSTANCE_DESC);build.Inputs.Flags=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE|D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
   D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info{};device->GetRaytracingAccelerationStructurePrebuildInfo(&build.Inputs,&info);
   if(count>capacity){Retired old;old.add(tlas,true);old.add(scratch);retire(d,std::move(old));tlas=d.acquireBuffer(info.ResultDataMaxSizeInBytes,D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,true);scratch=d.acquireBuffer(std::max(info.ScratchDataSizeInBytes,info.UpdateScratchDataSizeInBytes),D3D12_RESOURCE_STATE_UNORDERED_ACCESS,true);capacity=count;tlasBuilt=false;}
-  if(tlasBuilt&&previousCount==count){build.Inputs.Flags|=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;build.SourceAccelerationStructureData=tlas->GetGPUVirtualAddress();refits++;}
+  if(tlasBuilt&&previousCount==count&&same_instance_keys(previousItems,items)){build.Inputs.Flags|=D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;build.SourceAccelerationStructureData=tlas->GetGPUVirtualAddress();refits++;}
   for(auto& result:freshBlas)uav(result.Get());freshBlas.clear();uav(tlas.Get());uav(scratch.Get());build.DestAccelerationStructureData=tlas->GetGPUVirtualAddress();build.ScratchAccelerationStructureData=scratch->GetGPUVirtualAddress();command->BuildRaytracingAccelerationStructure(&build,0,nullptr);uav(tlas.Get());previousCount=count;tlasBuilt=true;
   command->EndQuery(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,slot*4+1);
   Constants c{};XMStoreFloat4x4(&c.inverse,XMMatrixInverse(nullptr,d.viewProjNoJit));c.eyeTime={d.camWorld.x,d.camWorld.y,d.camWorld.z,time};c.sun=light.lightDir;c.ambient=light.ambient;for(UINT i=0;i<32;i++)if(light.spots[i].pos.w>0){UINT j=c.settings[3]++;c.pos[j]=light.spots[i].pos;c.color[j]=light.spots[i].color;c.dir[j]=light.spots[i].dir;}for(size_t i=0;i<smoke.size()&&i<16;i++)c.smoke[i]=smoke[i];c.settings[0]=active;c.settings[1]=bounces;c.frame={(float)d.w,(float)d.h,density,(float)smoke.size()};
