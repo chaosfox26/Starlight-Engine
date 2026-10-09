@@ -180,6 +180,19 @@ inline double prepare_limit_ms(const char* text) {
     while (end && (*end == ' ' || *end == '\t')) ++end;
     return end != text && *end == 0 && std::isfinite(value) && value >= 1 ? value : 60000.0;
 }
+// STARLIGHT_EDITOR_PLAY_PREPARE=1 (off by default) makes editor Play of a scene without Game run the preparation a game start runs (audit 04 finding 4).
+inline bool editor_play_prepare_enabled() {
+    char value[8]{};
+    return GetEnvironmentVariableA("STARLIGHT_EDITOR_PLAY_PREPARE", value, 8) && value[0] == '1';
+}
+// Starts the player that prepares a scene without Game. It runs on a copy with default game settings, so the authored scene keeps no Game block.
+inline std::unique_ptr<AdventurePlayer> start_plain_play(const SceneData& scene) {
+    SceneData copy = scene;
+    if (!copy.Game) copy.Game.emplace();
+    auto player = std::make_unique<AdventurePlayer>();
+    player->start(copy);
+    return player;
+}
 struct PreparationStages {
     static constexpr double geometry = .15, collision = .22, fracture = .38, upload = .25;
 };

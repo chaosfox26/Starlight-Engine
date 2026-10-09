@@ -414,9 +414,10 @@ struct Editor {
     #include "classic_completion.inl"
     #undef playback_command
     void playback_command(int id) {
-        if (id == Play && !playing && !scene.Game && verifiedScene != installedScene) {
+        const bool prepareFirst = id == Play && !playing && !scene.Game && editor_play_prepare_enabled();
+        if (id == Play && !playing && !scene.Game && (prepareFirst || verifiedScene != installedScene)) {
             LoadingScreen loading;
-            if (!settle_scene(loading, "Getting your scene ready")) return;
+            if (!settle_scene(loading, "Getting your scene ready", prepareFirst)) return;
         }
         LoadingGuard guard(*this);
         playback_command_prepared(id);
@@ -1363,12 +1364,17 @@ struct Editor {
     void drop_preparation() {
         if (!playing) lastPreparation = PreparationReport{};
     }
-    bool settle_scene(LoadingScreen& loading, const std::string& label) {
+    bool settle_scene(LoadingScreen& loading, const std::string& label, bool prepare = false) {
         loading.show(window, view);
         loading.update(0, label);
         PreparationReport report;
         report.sceneGeneration = installedScene;
         auto idle = std::make_unique<AdventurePlayer>();
+        if (prepare) {
+            idle = start_plain_play(scene);
+            report = prepare_scene(*idle, loading);
+            report.sceneGeneration = installedScene;
+        }
         const auto before = renderer->status();
         {
             LoadingGuard guard(*this);

@@ -54,5 +54,15 @@ static void scene_preparation_checks(const auto& require){
         SetEnvironmentVariableA("STARLIGHT_PREPARE_LIMIT_MS",nullptr);
         require(!report.stopped()&&report.breakablesQueued==2&&report.breakablesPrepared==2,"04#6: An unparsable STARLIGHT_PREPARE_LIMIT_MS does not cut breakable preparation short at 1 ms");
     }
+    {
+        // 04#4: editor Play of a scene without Game can run the breakable preparation a game start runs (STARLIGHT_EDITOR_PLAY_PREPARE, off by default). The copy
+        // that is prepared gets default game settings; the authored scene keeps none.
+        auto authored=std::make_unique<SceneData>();
+        for(int i=0;i<2;++i){Character stone;stone.Shape="boulder";stone.Id="plain-play-boulder-"+std::to_string(i);stone.Size=2;stone.X=i*6;stone.Z=-3;stone.DestructionHealth=10;authored->Characters.push_back(stone);}
+        require(!editor_play_prepare_enabled()&&!authored->Game,"04#4: Editor Play preparation is off unless STARLIGHT_EDITOR_PLAY_PREPARE=1 is set");
+        auto player=start_plain_play(*authored);
+        LoadingScreen screen;auto report=prepare_scene(*player,screen);
+        require(!report.stopped()&&report.breakablesQueued==2&&report.breakablesPrepared==2&&!authored->Game,"04#4: A scene without Game prepares its breakables on a copy with default settings and the authored scene is unchanged");
+    }
 }
 
