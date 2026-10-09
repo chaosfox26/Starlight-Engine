@@ -123,7 +123,7 @@ void FlowObstacleMask::add(const Mesh &mesh, const Character &transform) {
     for (size_t t = 0; t < mesh.indices.size(); t += 3) {
         auto a = points[mesh.indices[t]], b = points[mesh.indices[t + 1]], c = points[mesh.indices[t + 2]];
         double det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
-        auto cell = [](double v) { return std::clamp(int(std::floor((v + 12) / .5)), 0, 47); };
+        auto cell = [](double v) { double c = std::floor((v + 12) / .5); return c >= 47 ? 47 : c > 0 ? int(c) : 0; }; // clamped before the int conversion, so a vast object cannot overflow it
         int x0 = cell(min3(a.x, b.x, c.x)), x1 = cell(max3(a.x, b.x, c.x)),
             z0 = cell(min3(a.z, b.z, c.z)), z1 = cell(max3(a.z, b.z, c.z));
         unsigned triangle=unsigned(triangles.size());
@@ -158,7 +158,7 @@ void FlowObstacleMask::remove_objects(const std::vector<unsigned>& objects) {
     if(objects.empty()||layerRevision==0)return;
     std::vector<char> gone(objectCount,0);
     for(unsigned o:objects)if(o<objectCount)gone[o]=1;
-    auto columnCell=[](double v){return std::clamp(int(std::floor((v+12)/.5)),0,47);};
+    auto columnCell=[](double v){double c=std::floor((v+12)/.5);return c>=47?47:c>0?int(c):0;}; // clamped before the int conversion, as in add()
     int cx0=47,cx1=0,cz0=47,cz1=0;
     const bool compact=cellStart.size()==size_t(GeometryN)*GeometryN+1&&cellMasks.size()==cellEntries.size();
     for(size_t id=0;id<triangles.size();++id){

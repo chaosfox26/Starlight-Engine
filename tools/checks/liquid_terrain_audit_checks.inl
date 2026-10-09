@@ -207,4 +207,9 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         edited.remove_objects({7});
         require(edited.triangles.empty()&&same(edited,build({})),"07#9: Removing the last object leaves an empty layer");
     }
+    {   // 07-T1: a very large obstacle covers the same liquid columns as a moderate one. Cell numbers used to be converted to int before clamping, so a far edge past about 1e9 m wrapped to cell 0.
+        auto covered=[](double size){Character c;c.Shape="cube";c.KeepAboveFloor=false;c.Size=size;FlowObstacleMask mask;mask.add(shape_geometry(c).front().mesh,c);mask.finish();size_t n=0;for(double v:mask.coverage)if(v>0)++n;return n;};
+        const size_t moderate=covered(1e6),vast=covered(1e10);
+        require(moderate>0&&vast==moderate,"07-T1: A vast obstacle occupies the same liquid columns as a moderate one");
+    }
 }
