@@ -1314,7 +1314,12 @@ struct RenderDevice {
         D3D12_ROOT_SIGNATURE_DESC rsd{}; rsd.NumParameters = 6; rsd.pParameters = rp; rsd.NumStaticSamplers = 1; rsd.pStaticSamplers = &ss;
         rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         ComPtr<ID3DBlob> sig, sigErr;
-        must(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &sigErr), "SerializeRootSignature");
+        const HRESULT sigHr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &sigErr);
+        if (FAILED(sigHr)) {
+            std::string why = "SerializeRootSignature";
+            if (sigErr) { std::string detail(static_cast<const char*>(sigErr->GetBufferPointer()), sigErr->GetBufferSize()); detail.erase(detail.find_last_not_of("\r\n") + 1); why += ": " + detail; }
+            drainDebug(); throw std::runtime_error(why);
+        }
         must(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&rootSig)), "CreateRootSignature");
 
         // Shading: one GGX/Cook-Torrance model for everything. CB colours are sRGB (the room's
