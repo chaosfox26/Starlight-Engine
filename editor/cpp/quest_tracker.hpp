@@ -36,7 +36,7 @@ class QuestTracker {
         if(m==WM_PAINT){p->paint();return 0;}
         if(m==WM_PRINTCLIENT){p->paint(reinterpret_cast<HDC>(w));return 0;}
         if(m==WM_ERASEBKGND)return 1;
-        if(m==WM_MOUSEWHEEL){RECT r{};GetClientRect(h,&r);p->scroll_=std::clamp(p->scroll_-GET_WHEEL_DELTA_WPARAM(w)/WHEEL_DELTA*p->px(48),0,std::max(0,p->total_-int(r.bottom)));InvalidateRect(h,nullptr,FALSE);return 0;}
+        if(m==WM_MOUSEWHEEL){RECT r{};GetClientRect(h,&r);p->scroll_=std::clamp(p->scroll_-GET_WHEEL_DELTA_WPARAM(w)*p->px(48)/WHEEL_DELTA,0,std::max(0,p->total_-int(r.bottom)));InvalidateRect(h,nullptr,FALSE);return 0;}
         if(m==WM_LBUTTONDOWN && !p->locked_ && !p->journal_){
             POINT local{GET_X_LPARAM(l),GET_Y_LPARAM(l)};bool action=false;for(const auto& hit:p->hits_)action=action||PtInRect(&hit.rect,local);
             if(!action){p->dragging_=true;p->dragStart_=local;ClientToScreen(h,&p->dragStart_);RECT r{};GetWindowRect(h,&r);p->dragOrigin_={r.left,r.top};ScreenToClient(GetParent(h),&p->dragOrigin_);SetCapture(h);return 0;}
