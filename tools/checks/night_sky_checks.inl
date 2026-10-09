@@ -9,7 +9,7 @@ static json night_sky_checks(void* context,const std::filesystem::path& director
   for(int frame=0;frame<8;++frame)if(!sl_frame(context,0,13))throw std::runtime_error(sl_error());
   // sl_shot queues the next frame; consume it before changing the scene.
   auto shot=directory/(std::string(name)+".png");{std::error_code stale;std::filesystem::remove(shot,stale);}sl_shot(context,shot.c_str());
-  if(!sl_frame(context,0,13)||!std::filesystem::exists(shot)||std::filesystem::file_size(shot)==0)throw std::runtime_error("Night sky capture did not finish");
+  if(!sl_frame(context,0,13)||!std::filesystem::exists(shot)||std::filesystem::file_size(shot)==0)throw ValidationFailure("Night sky capture did not finish");
   rows.push_back({{"name",name},{"image",shot.generic_string()},{"gpuMs",sl_gpu_ms(context)},{"hour",hour},{"renderWidth",sl_render_width(context)}});
  };
  capture("night-forward",24,0,.35f,1);capture("night-stable",24,0,.35f,1);
