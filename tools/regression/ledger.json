@@ -17,7 +17,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "CC-01:",
-     "minChecks": 4
+     "minChecks": 5
     }
    ],
    "testStrength": "Mixed: the nested-URI refusals and the ordinary-model validation are real assertions; the 300000-level case can only fail by crashing the suite (a crash leaves later checks NOT-CHECKED).",
@@ -115,7 +115,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "EL-07:",
-     "minChecks": 19
+     "minChecks": 20
     }
    ],
    "testStrength": "Strong for the refusals it names: with the old code the suite fails at the first EL-07 check, and with the fix all 19 pass and valid calls still succeed. Does not cover EL-07 items it does not list (slp_add_hull poses are covered through AddShape; terrain heights length cannot be checked because the ABI has no length parameter).",
@@ -212,7 +212,7 @@
      "kind": "core-check-prefix",
      "executable": "Starlight.NativeCoreChecks.exe",
      "token": "CC-02:",
-     "minChecks": 1
+     "minChecks": 2
     }
    ],
    "testStrength": "Moderate: a failed fence signal during the destruction flush is injected and must be recorded as a Viewport cleanup error without terminating the process. Only the flush step is injected; failures in the other guarded steps are covered by the guard code but not by a test.",
