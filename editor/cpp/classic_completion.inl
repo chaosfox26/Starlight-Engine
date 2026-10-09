@@ -56,17 +56,17 @@ void playback_command(int id)
         if(adventure){explorer->position=adventure->position;explorer->yaw=adventure->yaw;explorer->pitch=adventure->pitch;}
         explorer->rebuild_for_authoring(scene);
         if(id==Stop)explorer->start(scene,false);
-        renderer->scene(scene);adventure.reset();adventureHint.clear();
+        install_scene(scene);adventure.reset();adventureHint.clear();
     }
     if(!next){adventureLook=false;camera();}
-    if(id==Stop){if(adventure)renderer->scene(scene);adventure.reset();adventureHint.clear();}
+    if(id==Stop){if(adventure)install_scene(scene);adventure.reset();adventureHint.clear();}
     struct PrewarmEnd{NativeSession* session;~PrewarmEnd(){if(session)session->prewarm_play(false);}} prewarmEnd{loading?renderer.get():nullptr}; // an exception in the barrier must not leave the session in prewarm mode
     if(next && adventure){
         if(loading)renderer->prewarm_play(true); // the barrier installs the scene play will use; playback(true) below ends the prewarm
         renderer->gameplay_time(adventure->seconds());
         renderer->camera({adventure->position,adventure->position+adventure->direction(),1});
         adventure->update_rules();
-        const uint64_t installedScene=renderer->scene(adventure->scene());
+        install_scene(adventure->scene());
         if(loading)lastPreparation.sceneGeneration=installedScene;
         SetFocus(view);
     }
@@ -312,7 +312,7 @@ static LRESULT CALLBACK card_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, 
     {
         e.cardDragging = false;
         ReleaseCapture();
-        e.error(ex.what());
+        e.report(ex.what(), m, l);
     }
     return DefSubclassProc(h, m, w, l);
 }
