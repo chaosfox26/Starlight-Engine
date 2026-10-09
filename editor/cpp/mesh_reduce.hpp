@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include "mesh.hpp"
+#include "event_log.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -23,11 +24,17 @@ namespace starlight::editor {
 inline double mesh_detail() {
     static const double value = [] {
         char text[32]{};
-        if (!GetEnvironmentVariableA("STARLIGHT_MESH_DETAIL", text, sizeof(text))) return 0.33;
-        char* end = nullptr;
-        const double v = std::strtod(text, &end);
-        if (end == text || *end || !(v > 0.0)) return 0.33;   // not a positive number: keep the default rather than silently restoring full detail
-        return std::clamp(v, 0.05, 1.0);
+        const bool given = GetEnvironmentVariableA("STARLIGHT_MESH_DETAIL", text, sizeof(text)) != 0;
+        double detail = 0.33;
+        bool rejected = false;
+        if (given) {
+            char* end = nullptr;
+            const double v = std::strtod(text, &end);
+            if (end == text || *end || !(v > 0.0)) rejected = true;   // not a positive number: keep the default rather than silently restoring full detail
+            else detail = std::clamp(v, 0.05, 1.0);
+        }
+        starlight_diag::evlog("cfg.meshdet", detail, rejected ? 1. : 0., given ? 1. : 0.);   // effective value, once per module: a = detail, b = 1 when STARLIGHT_MESH_DETAIL was set but rejected, c = 1 when it was set
+        return detail;
     }();
     return value;
 }
@@ -234,6 +241,14 @@ inline Mesh reduce_mesh(const Mesh& source, double keep, size_t minimumTriangles
         }
     }
     return out;
+}
+
+// reduce_mesh for a mesh that is meant to be smooth-shaded: when triangles were really removed, the vertex normals are recomputed from the surviving faces, because
+// the normals copied from the full mesh belong to vertices that moved or were collapsed away. A mesh that was not reduced keeps its own normals.
+inline Mesh reduce_mesh_smooth(const Mesh& source, double keep, size_t minimumTriangles = 400) {
+    Mesh result = reduce_mesh(source, keep, minimumTriangles);
+    if (result.indices.size() != source.indices.size()) result.normals();
+    return result;
 }
 
 } // namespace starlight::editor

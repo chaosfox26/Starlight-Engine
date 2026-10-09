@@ -43,4 +43,12 @@ static void scene_validation_checks(const auto& require){
         limits.Characters.pop_back();
         require(!refused(limits,why),"CC-04: A scene with exactly 20000 objects is accepted");
     }
+    // CORE-B01: a scene file names its objects in one array; a count over the limit is refused before any object is converted.
+    auto bigJson=nlohmann::json{{"SchemaVersion",16},{"Characters",nlohmann::json::array()}};
+    for(size_t i=0;i<SceneData::MaxCharacters+1;++i)bigJson["Characters"].push_back(nullptr);
+    std::string countWhy;try{(void)SceneData::decode(bigJson.dump());}catch(const std::exception& e){countWhy=e.what();}
+    require(countWhy=="A scene supports at most 20000 objects","CORE-B01: A scene file with more than 20000 objects is refused by count, before any object is converted");
+    SceneData full;full.Characters.reserve(SceneData::MaxCharacters);
+    for(size_t i=0;i<SceneData::MaxCharacters;++i){Character c;c.Id="o"+std::to_string(i);c.Name=c.Id;c.Shape="cube";full.Characters.push_back(c);}
+    require(SceneData::decode(full.encode()).Characters.size()==SceneData::MaxCharacters,"CORE-B01: A scene with exactly 20000 objects still encodes and loads");
 }

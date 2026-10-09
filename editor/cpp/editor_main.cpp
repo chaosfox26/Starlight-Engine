@@ -9,6 +9,7 @@
 
 #include "interactions.hpp"
 #include "mesh.hpp"
+#include "mesh_reduce.hpp"
 #include "music.hpp"
 
 #include "native_session.hpp"
@@ -3560,6 +3561,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     fs::path automatedReport;
     try {
         starlight_diagnostics::initialize(L"NativeEditor");
+        (void)mesh_detail();   // logs the effective STARLIGHT_MESH_DETAIL (event log tag cfg.meshdet) at startup
         int commandArgc = 0;
         auto commandArgv = CommandLineToArgvW(GetCommandLineW(), &commandArgc);
         bool commands = false;

@@ -70,9 +70,9 @@ Mesh nature(std::string_view kind) {
         static const std::array<Mesh,4> stones=[]{
             std::array<Mesh,4> result;
             const double detail=mesh_detail(); // 1 = full meshes; STARLIGHT_MESH_DETAIL lowers the share of triangles kept (see mesh_reduce.hpp)
-            result[0]=reduce_mesh(rock_surface(.62,4,8241,RockForm::Outcrop),detail);result[1]=reduce_mesh(rock_surface(1.05,4,9173,RockForm::Boulder),detail);result[3]=reduce_mesh(rock_surface(.85,4,15317,RockForm::Crystal),detail);
+            result[0]=reduce_mesh_smooth(rock_surface(.62,4,8241,RockForm::Outcrop),detail);result[1]=reduce_mesh_smooth(rock_surface(1.05,4,9173,RockForm::Boulder),detail);result[3]=reduce_mesh_smooth(rock_surface(.85,4,15317,RockForm::Crystal),detail);
             SeededRandom random(8241);
-            for(int i=0;i<9;++i){double scale=.15+random.next()*.2,x=(random.next()-.5)*1.7,z=(random.next()-.5)*1.7;auto pebble=reduce_mesh(rock_surface(.62,3,8241+i*7919,RockForm::Pebble),detail);int base=int(result[2].vertices.size());for(auto v:pebble.vertices){v.position=v.position*scale+Vec3{x,0,z};result[2].vertices.push_back(v);}for(int index:pebble.indices)result[2].indices.push_back(base+index);}
+            for(int i=0;i<9;++i){double scale=.15+random.next()*.2,x=(random.next()-.5)*1.7,z=(random.next()-.5)*1.7;auto pebble=reduce_mesh_smooth(rock_surface(.62,3,8241+i*7919,RockForm::Pebble),detail);int base=int(result[2].vertices.size());for(auto v:pebble.vertices){v.position=v.position*scale+Vec3{x,0,z};result[2].vertices.push_back(v);}for(int index:pebble.indices)result[2].indices.push_back(base+index);}
             for(int i=0;i<4;++i)for(auto& vertex:result[i].vertices)vertex.kind=i==3?10.f:6.f;
             return result;
         }();

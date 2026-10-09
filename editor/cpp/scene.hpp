@@ -343,6 +343,7 @@ struct SceneData {
     bool FreezeRaytracingAnimation = false;
     int SchemaVersion = 16; // Key-card schema: configuration and engine-asset references only (see engine_assets.hpp).
     std::string Name = "My first scene";
+    static constexpr size_t MaxCharacters = 20000; // checked by validate() and, before the objects are converted, by from_json
     std::vector<Character> Characters = {};
     std::vector<LiquidSource> LiquidSources = {};
     std::optional<TerrainData> Terrain = {};

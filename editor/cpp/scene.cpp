@@ -523,7 +523,7 @@ void SceneData::validate() const {
                 "Invalid liquid source");
     int lights = 0;
     std::set<std::string> objectIds;
-    require(Characters.size() <= 20000, "A scene supports at most 20000 objects");
+    require(Characters.size() <= MaxCharacters, "A scene supports at most 20000 objects");
     for (const auto &c : Characters) {
         c.validate();
         require(objectIds.insert(c.Id).second, "Duplicate object id: " + c.Id);
