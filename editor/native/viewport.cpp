@@ -18,6 +18,7 @@
 #include "../../deep/engine/point_shadows.h"
 #include "../../deep/engine/grass_deformation.h"
 #include "../../deep/engine/clip_box.h"
+#include "../../deep/engine/mesh_mix.h"
 
 struct Reader {
  const uint8_t* p; size_t left;
@@ -395,8 +396,8 @@ API int sl_resize(void* handle,int width,int height){
 }
 static_assert(offsetof(Vertex,previousX)==10*sizeof(float));
 static void attach_history(Vertex& vertex,const VertexHistory::Slot* previous){if(previous&&memcmp(&previous->x,&vertex.px,3*sizeof(float))!=0){vertex.previousX=previous->x;vertex.previousY=previous->y;vertex.previousZ=previous->z;vertex.hasPrevious=1;}}
-static uint64_t mesh_geometry_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;auto mix=[&](const void* bytes,size_t count){auto ptr=(const uint8_t*)bytes;for(size_t j=0;j<count;j++){hash^=ptr[j];hash*=1099511628211ull;}};for(const auto& vertex:mesh.verts)mix(&vertex,offsetof(Vertex,previousX));mix(mesh.indices.data(),mesh.indices.size()*sizeof(uint32_t));return hash;}
-static uint64_t mesh_history_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;bool any=false;auto mix=[&](const void* bytes,size_t count){auto ptr=(const uint8_t*)bytes;for(size_t j=0;j<count;j++){hash^=ptr[j];hash*=1099511628211ull;}};for(size_t i=0;i<mesh.verts.size();++i){const auto& vertex=mesh.verts[i];if(vertex.hasPrevious>0){const uint64_t index=i;mix(&index,sizeof(index));mix(&vertex.previousX,4*sizeof(float));any=true;}}return any?hash|1:0;}
+static uint64_t mesh_geometry_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;auto mix=[&](const void* bytes,size_t count){hash=mesh_mix_bytes(hash,bytes,count);};for(const auto& vertex:mesh.verts)mix(&vertex,offsetof(Vertex,previousX));mix(mesh.indices.data(),mesh.indices.size()*sizeof(uint32_t));return hash;}
+static uint64_t mesh_history_hash(const Mesh& mesh){uint64_t hash=1469598103934665603ull;bool any=false;auto mix=[&](const void* bytes,size_t count){hash=mesh_mix_bytes(hash,bytes,count);};for(size_t i=0;i<mesh.verts.size();++i){const auto& vertex=mesh.verts[i];if(vertex.hasPrevious>0){const uint64_t index=i;mix(&index,sizeof(index));mix(&vertex.previousX,4*sizeof(float));any=true;}}return any?hash|1:0;}
 static uint64_t mesh_identity(const Mesh& mesh){const uint64_t geometry=mesh_geometry_hash(mesh),history=mesh_history_hash(mesh);return (history?geometry^(history+0x9e3779b97f4a7c15ull+(geometry<<6)+(geometry>>2)):geometry)&0x7fffffffffffffffull;}
 using SceneClock=std::chrono::steady_clock;
 static double sceneMs(SceneClock::time_point a,SceneClock::time_point b){return std::chrono::duration<double,std::milli>(b-a).count();}
