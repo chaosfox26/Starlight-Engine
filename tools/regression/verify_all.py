@@ -114,6 +114,13 @@ def plan(args, stamp):
             for source in (r'D:\projects\Starlight-Engine-repair\out\classic\Release\nvngx_dlssd.dll',):
                 if os.path.exists(source):
                     import shutil; shutil.copy2(source, dll); print('copied nvngx_dlssd.dll into', args.build_dir)
+        d3d = os.path.join(args.build_dir, 'D3D12')
+        if os.path.isdir(args.build_dir) and not os.path.isdir(d3d):
+            source = r'D:\projects\Starlight-Engine-repair\out\classic\Release\D3D12'
+            if os.path.isdir(source):
+                import shutil; shutil.copytree(source, d3d); print('copied the D3D12 runtime folder into', args.build_dir)
+            else:
+                print('NOT RUN: the D3D12 runtime folder is missing from ' + args.build_dir + ' (the engine cannot create a device without it)'); sys.exit(2)
         if os.path.isdir(args.build_dir) and not os.path.exists(dll):
             print('NOT RUN: nvngx_dlssd.dll is missing from ' + args.build_dir + ' (the GPU denoise step needs it next to the executables)'); sys.exit(2)
         packet = os.path.join(args.repo, 'editor', 'checks', 'denoise', 'regression', 'chaos-rt.packet')
