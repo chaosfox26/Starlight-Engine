@@ -85,5 +85,21 @@
     pendingPour = true; creationGuide.active = true;
     command(New);
     check("EDIT-7: New also disarms a pour", !pendingPour && !creationGuide.active);
+    // EDIT-8: a second mouse button pressed during a gesture is ignored.
+    {
+        fixture();
+        currentMode = "Terrain";
+        history.begin(scene); stroke = true;
+        bool secondPressThrew = false;
+        try { pointer_down(5, 5, WM_RBUTTONDOWN); } catch (const std::exception&) { secondPressThrew = true; }
+        check("EDIT-8: pressing the right button during a left-button brush stroke does not start a second edit", !secondPressThrew && stroke);
+        end_stroke();
+        currentMode = "Select"; orbit = true;
+        pointer_down(5, 5, WM_RBUTTONDOWN);
+        check("EDIT-8: pressing the right button during a middle-button orbit does not start a box selection", !boxSelecting && orbit);
+        end_stroke();
+        check("EDIT-8: releasing the buttons ends the orbit", !orbit && !boxSelecting && !stroke);
+        currentMode = "Select";
+    }
     fixture();
 }

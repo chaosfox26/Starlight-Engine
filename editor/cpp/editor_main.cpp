@@ -457,7 +457,7 @@ struct Editor {
     // Messages that mean a person just did something: their errors are always shown, while a failure on any other message (timer, frame, paint) can repeat by itself and stays throttled (audit ED-06).
     static bool user_action(UINT m, LPARAM l = 0) {
         if (m == WM_KEYDOWN || m == WM_SYSKEYDOWN) return !(l & (LPARAM(1) << 30));   // a held key repeating is not a new action
-        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_LBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
+        return m == WM_COMMAND || m == WM_SYSCOMMAND || m == WM_CLOSE || m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN || m == WM_LBUTTONUP || m == WM_RBUTTONUP || m == WM_DROPFILES;
     }
 
     static LRESULT CALLBACK procedure(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -574,7 +574,7 @@ struct Editor {
             }
         } catch (const std::exception &e) {
             self->history.cancel(self->scene);
-            self->stroke = self->orbit = false;
+            self->stroke = self->orbit = self->boxSelecting = false;
             ReleaseCapture();
             self->report(e.what(), m, l);
         }
@@ -2887,6 +2887,7 @@ struct Editor {
     }
 
     void pointer_down(int x, int y, UINT message) {
+        if (stroke || orbit || boxSelecting) return;   // a second button pressed during a gesture is ignored, not a second gesture (EDIT-8)
         if(!carriedId.empty() && message==WM_LBUTTONDOWN)return;
         if(playing && adventure){last={x,y};adventureLook=message==WM_RBUTTONDOWN || message==WM_LBUTTONDOWN;return;}
         if(explorer && message==WM_RBUTTONDOWN){last={x,y};explorerLook=true;return;}
