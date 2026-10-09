@@ -118,3 +118,17 @@
     add_object_quest(scene,shared.Id);require(scene.Rules.size()==2 && scene.Rules[1].Subject=="gold","Two keys with one name each keep their own objective");
     assign_object_behavior(scene,key.Id,"door");require(scene.Rules[0].Event=="object-opened" && scene.Rules[0].Subject==key.Id,"Changing a named key to a door moves its objective onto the object");
 }
+
+{
+    SceneData scene;scene.Game.emplace();scene.Game->SpawnY=.5;scene.Game->SpawnZ=2;
+    Character key;key.Shape="cube";key.X=3;key.GameplayRole="key";key.GameplayKey="gold";
+    Character door;door.Shape="cube";door.X=6;door.Height=2;door.GameplayRole="door";door.GameplayKey="gold";
+    scene.Characters={key,door};
+    assign_object_behavior(scene,door.Id,"door");
+    require(scene.Characters[1].GameplayKey=="gold","Choosing Open again keeps a locked door's key requirement");
+    auto loaded=SceneData::decode(scene.encode());AdventurePlayer player;player.start(loaded);
+    player.position.x=6;player.interact();
+    require(player.scene().Characters.size()==2,"Locked door stays shut before its key is collected");
+    player.position.x=3;player.interact();player.position.x=6;player.interact();
+    require(player.scene().Characters.empty(),"Locked door opens once its key is collected");
+}

@@ -7,7 +7,7 @@ inline void assign_object_behavior(SceneData& scene,const std::string& id,const 
     auto it=std::find_if(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==id;});
     if(it==scene.Characters.end())throw std::runtime_error("The selected object no longer exists");
     const bool wasKey=it->GameplayRole=="key";
-    const std::string key=role=="key"?(wasKey && !it->GameplayKey.empty()?it->GameplayKey:it->Id):std::string{};
+    const std::string key=role=="key"?(wasKey && !it->GameplayKey.empty()?it->GameplayKey:it->Id):wasKey?std::string{}:it->GameplayKey;
     const std::string ownRule="object-rule-"+id+"-";
     for(auto& rule:scene.Rules)if(rule.Subject==id || rule.Id.starts_with(ownRule)){
         if(rule.Event=="stand-on-object" && role=="key")throw std::runtime_error("Remove the stand-on objective before making this object collectible");
