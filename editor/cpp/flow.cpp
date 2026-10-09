@@ -779,6 +779,8 @@ constexpr int kBlocks=kField-1;                // 47 interpolation blocks per ax
 constexpr int kSubs=96;                        // certificate granularity: a quarter-metre sub-cell (one terrain cell) of a block
 // Liquid surface stages are the longest serial chain of a lava frame; more helpers shorten it (8 -> 12 threads: 3.06 -> 2.65 ms). Half of the machine, at most 12, never fewer than 8 where the CPU has them.
 const unsigned kThreads=[]{const unsigned hardware=std::max(1u,std::thread::hardware_concurrency());unsigned threads=std::min(hardware,std::max(8u,std::min(12u,hardware/2)));const char* text=std::getenv("STARLIGHT_FLOW_THREADS");if(text){long value=std::strtol(text,nullptr,10);if(value>=1&&value<=32)threads=unsigned(value);}return threads;}();
+// Opt-in lava clock period in seconds (see lava_time_clock); unset or 0 keeps the unwrapped clock.
+const double kLavaTimePeriod=[]{const char* text=std::getenv("STARLIGHT_LAVA_TIME_PERIOD");return text?std::strtod(text,nullptr):0.;}();
 constexpr uint64_t kEmptyKey=~0ull;
 inline uint64_t edgeKey(int a,int b){return (uint64_t(std::min(a,b))<<32)|uint32_t(std::max(a,b));}
 inline size_t hashKey(uint64_t k){k^=k>>33;k*=0xff51afd7ed558ccdull;k^=k>>33;k*=0xc4ceb9fe1a85ec53ull;k^=k>>33;return size_t(k);}
@@ -1039,7 +1041,7 @@ std::vector<MeshPart> TerrainFlow::geometry_reference() const {
             const double bedDepth=v.position.y-terrain_.surface_at(v.position.x,v.position.z);
             v.color = {std::clamp(bedDepth*.5,0.,1.),
                        1, 1};
-            if(isLava){double depth=std::max(0.,bedDepth),heat=wetHeat(v.position.x,v.position.z);auto crust=lava_crust(v.position.x,v.position.z,waveTime_,heat,depth,lavaCrustDepth_);v.position.y+=crust.relief;v.kind=8.1f;v.color={waveTime_,heat,crust.cover};}
+            if(isLava){const double lavaTime=lava_time_clock(waveTime_,kLavaTimePeriod);double depth=std::max(0.,bedDepth),heat=wetHeat(v.position.x,v.position.z);auto crust=lava_crust(v.position.x,v.position.z,lavaTime,heat,depth,lavaCrustDepth_);v.position.y+=crust.relief;v.kind=8.1f;v.color={lavaTime,heat,crust.cover};}
         }
         if(obstacles_){
             std::vector<int> clearIndices;clearIndices.reserve(mesh.indices.size());
@@ -1257,7 +1259,7 @@ std::vector<MeshPart> TerrainFlow::geometry_unverified() const {
             const double bedDepth=position.y-terrain_.surface_at(position.x,position.z);
             r.color={std::clamp(bedDepth*.5,0.,1.),1,1};
             r.y=position.y;
-            if(isLava){double depth=std::max(0.,bedDepth),heat=wetHeat(position.x,position.z);auto crust=lava_crust(position.x,position.z,waveTime_,heat,depth,lavaCrustDepth_);r.y=position.y+crust.relief;r.kind=8.1f;r.color={waveTime_,heat,crust.cover};}
+            if(isLava){const double lavaTime=lava_time_clock(waveTime_,kLavaTimePeriod);double depth=std::max(0.,bedDepth),heat=wetHeat(position.x,position.z);auto crust=lava_crust(position.x,position.z,lavaTime,heat,depth,lavaCrustDepth_);r.y=position.y+crust.relief;r.kind=8.1f;r.color={lavaTime,heat,crust.cover};}
             return r;
         };
         LiquidWorkers& pool=LiquidWorkers::get();
