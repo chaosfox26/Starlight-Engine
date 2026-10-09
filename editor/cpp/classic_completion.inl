@@ -519,7 +519,10 @@ void open_project()
                  SWP_NOACTIVATE);
     projectOwnerEnabled = IsWindowEnabled(window);
     EnableWindow(window, FALSE);
+    // If project_form throws, the owner must come back: no dialog is shown to end the modal state.
+    struct OwnerRestore{HWND owner;bool enabled;bool armed=true;~OwnerRestore(){if(armed)EnableWindow(owner,enabled);}} ownerRestore{window,projectOwnerEnabled};
     project_form();
+    ownerRestore.armed=false;
     ShowWindow(projectWindow, projectOwnerEnabled ? SW_SHOW : SW_SHOWNOACTIVATE);
     if (projectOwnerEnabled) SetFocus(GetDlgItem(projectHost, ChooseProject));
 }
