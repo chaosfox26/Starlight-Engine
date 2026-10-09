@@ -9,6 +9,7 @@
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 static const GUID kDxgiDebugAll = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
+static const GUID kBufferStateGuid = { 0x80092227, 0x2a21, 0x498a, { 0xa9, 0xee, 0x5c, 0xcf, 0xdf, 0xa9, 0xc4, 0xbf } };   // last barrier state of a pooled buffer
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
 #include <cstdint>
@@ -736,6 +737,12 @@ struct RenderDevice {
         }
         bufferPoolBytes+=bytes;bufferPool.push_back({std::move(resource),accelerationStructure,desc.Width,bytes,desc.Flags});
     }
+    D3D12_RESOURCE_STATES bufferState(ID3D12Resource* resource) {
+        D3D12_RESOURCE_STATES state=D3D12_RESOURCE_STATE_COMMON;UINT size=sizeof(state);
+        if(FAILED(resource->GetPrivateData(kBufferStateGuid,&size,&state))||size!=sizeof(state))return D3D12_RESOURCE_STATE_COMMON;
+        return state;
+    }
+    void setBufferState(ID3D12Resource* resource,D3D12_RESOURCE_STATES state) { mustHr(resource->SetPrivateData(kBufferStateGuid,sizeof(state),&state),"remember buffer state"); }
     ComPtr<ID3D12Resource> acquireBuffer(UINT64 bytes,D3D12_RESOURCE_STATES state,bool uav=false) {
         const bool accelerationStructure=state==D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
         const auto flags=uav?D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS:D3D12_RESOURCE_FLAG_NONE;
@@ -745,15 +752,17 @@ struct RenderDevice {
                (best==bufferPool.size() || idle.width<bufferPool[best].width))best=i;
         }
         ComPtr<ID3D12Resource> result;
+        D3D12_RESOURCE_STATES before=D3D12_RESOURCE_STATE_COMMON;
         if(best<bufferPool.size()){
             bufferPoolBytes-=bufferPool[best].bytes;result=std::move(bufferPool[best].resource);bufferPool.erase(bufferPool.begin()+best);++bufferReused;
+            before=bufferState(result.Get());
         }else{
             D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
             D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=std::max<UINT64>(256,bytes);desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;desc.Flags=flags;
             must(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,accelerationStructure?state:D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&result)),"create reusable graphics buffer");++bufferCreated;
         }
-        // Ordinary buffers decay to COMMON after completed ExecuteCommandLists.
-        if(!accelerationStructure && state!=D3D12_RESOURCE_STATE_COMMON)barrier(result.Get(),D3D12_RESOURCE_STATE_COMMON,state);
+        // Explicit barriers do not decay to COMMON, so a reused buffer transitions from the state its last barrier left it in.
+        if(!accelerationStructure){if(state!=before)barrier(result.Get(),before,state);setBufferState(result.Get(),state);}
         return result;
     }
     static constexpr UINT64 uploadPoolLimit = 16ull * 1024 * 1024;
@@ -915,7 +924,7 @@ struct RenderDevice {
         bd.DepthOrArraySize = 1; bd.MipLevels = 1; bd.SampleDesc.Count = 1;
         bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-        auto def=acquireBuffer(bytes,D3D12_RESOURCE_STATE_COMMON);
+        auto def=acquireBuffer(bytes,D3D12_RESOURCE_STATE_COPY_DEST);
         UploadStorage up;
         size_t best = uploadPool.size();
         for (size_t i = 0; i < uploadPool.size(); ++i) {
@@ -945,6 +954,7 @@ struct RenderDevice {
         br.Transition.pResource = def.Get(); br.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;   // promoted by the copy above
         br.Transition.StateAfter = finalState; br.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         cmd->ResourceBarrier(1, &br);
+        setBufferState(def.Get(), finalState);
 
         uploadKeepAlive.push_back(std::move(up));
         return def;
