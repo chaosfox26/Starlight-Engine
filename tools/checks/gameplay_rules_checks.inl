@@ -43,12 +43,15 @@
         if(bad==1)data["Rules"][0]["Actions"][0]["Type"]="shell";
         if(bad==2)data["Rules"][0]["Radius"]=-1;
         if(bad==3)data["Rules"][1]["Id"]=data["Rules"][0]["Id"];
-        if(bad==4)data["Rules"]=std::vector<GameplayRule>(65,collection);
+        if(bad==4){std::vector<GameplayRule> many;for(int i=0;i<65;++i){auto copy=collection;copy.Id=new_id();many.push_back(copy);}data["Rules"]=many;}
         if(bad==5)data["Rules"][0]["Conditions"]=std::vector<GameplayCondition>(17,{"has-key","red"});
         if(bad==6)data["Rules"][0]["Actions"]=json::array();
         bool rejected=false;try{SceneData::decode(data.dump());}catch(...){rejected=true;note_rejection(__FILE__,__LINE__);}
         require(rejected,"Malformed or unbounded gameplay rule rejected before Play");
+        if(bad==4)require(last_rejection().find("Too many gameplay rules")!=std::string::npos,"The 64-rule cap refuses 65 distinct rules, not a duplicate identity");
     }
+    {auto data=json(level);std::vector<GameplayRule> exact;for(int i=0;i<64;++i){auto copy=collection;copy.Id=new_id();exact.push_back(copy);}data["Rules"]=exact;
+        require(SceneData::decode(data.dump()).Rules.size()==64,"Exactly 64 distinct gameplay rules are accepted");}
     auto portable=folder/"rules-portable";export_portable_scene(level,portable);verify_portable_scene(portable);
     auto packaged=SceneData::decode(read_file(portable/"scene.starscene"));
     require(json(packaged.Rules)==json(level.Rules),"Portable/export content preserves rule events and linked door identity");
