@@ -1,5 +1,6 @@
 // Regression checks for the liquids, lava, terrain and flow audit findings (audit 07).
 #include "flow.hpp"
+#include "../../editor/cpp/lava_surface.hpp"
 template<class Require> void liquid_terrain_audit_checks(Require require){
     {   // 07#1: the liquid top used to decide which moving objects join the liquid mask is the drawn surface, not bed + depth.
         Character cube;cube.Shape="cube";cube.KeepAboveFloor=false;
@@ -206,5 +207,24 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(same(edited,build({7})),"07#9: Objects keep their numbers across a compaction, so a later removal takes out the right one");
         edited.remove_objects({7});
         require(edited.triangles.empty()&&same(edited,build({})),"07#9: Removing the last object leaves an empty layer");
+    }
+    {   // 10: the lava clock is written to the vertex colour as a float; with STARLIGHT_LAVA_TIME_PERIOD it wraps so the float steps stay fine after days.
+        using starlight::editor::lava_time_clock;
+        const double longRun=129600.0+.0123;
+        require(lava_time_clock(longRun,0)==longRun&&lava_time_clock(7.5,0)==7.5&&lava_time_clock(7.5,-3)==7.5,"10: Without a lava period the clock is the wave time unchanged, so default output stays the same");
+        const double period=600;
+        bool inside=true,congruent=true,fine=true;
+        for(int k=0;k<=2000;++k){
+            const double t=k*(10.0*86400.0/2000)+.0123*k; // about ten days of session time
+            const double c=lava_time_clock(t,period);
+            inside&=c>=0&&c<period;
+            const double whole=(t-c)/period;
+            congruent&=std::abs(whole-std::round(whole))<1e-9;
+            const float f=float(c);
+            fine&=double(std::nextafter(f,HUGE_VALF))-double(f)<=1e-4;
+        }
+        require(inside&&congruent,"10: The wrapped lava clock stays in [0, period) and differs from the wave time only by whole periods");
+        require(fine,"10: The wrapped lava clock keeps float steps under 0.1 ms over ten days of session time");
+        require(double(std::nextafter(float(longRun),HUGE_VALF))-double(float(longRun))>1e-3,"10: Unwrapped, the 36 hour lava clock has float steps far coarser than a frame, which is why the period exists");
     }
 }

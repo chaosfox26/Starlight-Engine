@@ -27,6 +27,9 @@ inline LavaPassageSample lava_passage(double x,double z,double time,double heat)
     double breakup=lava_smooth(.57,.78,islands+.14*folds),heatOpen=lava_smooth(.18,.80,heat);
     return {passage,std::clamp(heatOpen*(1-(1-passage)*(1-breakup*.82)),0.,1.)};
 }
+// The clock is written to a float vertex colour, so its steps coarsen with session age (about 8 ms at 36 hours).
+// STARLIGHT_LAVA_TIME_PERIOD wraps it; the CPU crust and the shader share the wrapped clock, so the jump happens once per period.
+inline double lava_time_clock(double time,double period){return period>0?std::fmod(time,period):time;}
 inline LavaCrustSample lava_crust(double x,double z,double time,double heat,double depth,double thickness){
     // Stable plate cells drift coherently; their coverage drives both real
     // surface relief and shader cracks, rather than two unrelated patterns.
