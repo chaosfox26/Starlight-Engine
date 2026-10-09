@@ -154,7 +154,8 @@ bool reference_main_command(int id) {
         if (!c || (c->Shape != "fire" && c->Shape != "lava" && c->Shape != "light" && c->Shape != "chaos-lightning" && c->Shape != "chaos-rock" && c->Shape != "light-shard"))
             throw std::runtime_error("Select a fire, lava pool or light first");
         auto number = [&](const char* key, double low, double high) {
-            auto input = text(mainInputs.at(key)); size_t used = 0; double v = std::stod(input, &used);
+            auto input = text(mainInputs.at(key)); size_t used = 0; double v = std::nan("");
+            try { v = std::stod(input, &used); } catch (const std::exception &) {}
             if (used != input.size() || !std::isfinite(v) || v < low || v > high) throw std::runtime_error(std::string("Invalid effect ") + key);
             return v;
         };
@@ -169,7 +170,8 @@ bool reference_main_command(int id) {
     auto value = [&](const char* key) { return SendMessage(mainInputs.at(key), TBM_GETPOS, 0, 0) / (std::string_view(key) == "fog" ? 1000. : 100.); };
     if (id == ApplyAtmosphere) {
         auto input = text(mainInputs.at("daylength")); size_t consumed = 0;
-        double seconds = std::stod(input, &consumed);
+        double seconds = std::nan("");
+        try { seconds = std::stod(input, &consumed); } catch (const std::exception &) {}
         if (consumed != input.size() || !std::isfinite(seconds) || seconds <= 0)
             throw std::runtime_error("Day duration must be a positive number of seconds");
         edit([&] { scene.Hour = value("hour"); scene.DayCycle = checked("cycle"); scene.DayLength = seconds; scene.FogDensity = value("fog"); });

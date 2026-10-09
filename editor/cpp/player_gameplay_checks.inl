@@ -82,8 +82,8 @@ int gameplay_checks(const fs::path& output){
         load(empty);auto impactBefore=gameplayAudio.submitted.load();
         step("Launch visibly lifts the player",[&]{gameplay.apply_control(ControlEffect::Launch,{2,true},true);},[&]{return gameplay.position.y>2 && gameplay.presentation().impacts==0;},400);
         step("Launch landing emits one impact sound",[&]{},[&]{return gameplay.presentation().impacts==1 && gameplayAudio.submitted>impactBefore && gameplayAudio.failed==0;},1500);
-        load(empty);bool blocked=false;
-        step("Stun blocks attack and emits chirps",[&]{gameplay.apply_control(ControlEffect::Stun,{2,true},true);key('1');blocked=!gameplay.basic_attack().winding;},[&]{return blocked && gameplay.crowd_control().active==ControlEffect::Stun && gameplayAudio.submitted>0 && gameplayAudio.failed==0;});
+        load(empty);bool blocked=false;uint64_t chirpsBefore=0;
+        step("Stun blocks attack and emits chirps",[&]{chirpsBefore=gameplayAudio.submitted.load();gameplay.apply_control(ControlEffect::Stun,{2,true},true);key('1');blocked=!gameplay.basic_attack().winding;},[&]{return blocked && gameplay.crowd_control().active==ControlEffect::Stun && gameplayAudio.submitted>chirpsBefore && gameplayAudio.failed==0;});
         step("Stun expiry starts player immunity",[&]{},[&]{return !gameplay.crowd_control().active && gameplay.crowd_control().immunity>0;},1700);
         bool friendlyRejected=false;
         step("Friendly control stays rejected",[&]{load(empty);friendlyRejected=gameplay.apply_control(ControlEffect::Stun,{2,true},false)==CombatControl::Result::Rejected;},[&]{return friendlyRejected && !gameplay.crowd_control().active;});
