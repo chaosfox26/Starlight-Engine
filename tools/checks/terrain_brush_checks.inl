@@ -16,4 +16,13 @@ static void terrain_brush_checks(const auto& require){
     paint.brush(0,0,1e300,1,"paint",3,0,1);
     size_t painted=0;for(int v:paint.Paint)if(v==3)++painted;
     require(painted==size_t(TerrainData::N)*TerrainData::N,"ED-21: The paint tool also handles huge values without undefined behaviour");
+    {   // 07-T3: stamping a vast object raises the terrain under all of it, as a moderate one does (the stamp's cell range used the same unclamped int conversion).
+        auto stamped=[](double size){Character c;c.Shape="cube";c.Size=size;TerrainData t;stamp_shape(t,c);size_t n=0;for(double h:t.Heights)if(h==20)++n;return n;};
+        const size_t moderate=stamped(1e6),vast=stamped(1e10);
+        require(moderate==size_t(TerrainData::N)*TerrainData::N&&vast==moderate,"07-T3: A vast stamped object raises the same terrain cells as a moderate one");
+    }
+    {   // 07-T4: a NaN horizontal position gives a NaN height without converting NaN to int (undefined behaviour); far finite positions still clamp to the grid edge.
+        TerrainData flat;
+        require(std::isnan(flat.height_at(NAN,0))&&std::isnan(flat.height_at(0,NAN))&&std::isfinite(flat.height_at(1e300,-1e300)),"07-T4: Height queries with a NaN position return NaN, and finite positions far outside the terrain stay finite");
+    }
 }

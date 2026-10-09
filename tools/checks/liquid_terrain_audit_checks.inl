@@ -229,4 +229,14 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         require(sameSurface(lake->geometry_for_render(),requested),"P2flow: A surface requested before a newer request still shows one frame late, as the one-frame-ahead pipelining documents");
         require(sameSurface(lake->geometry_for_render(),lake->geometry()),"P2flow: The newer request, once taken, shows the present state");
     }
+    {   // 07-T1: a very large obstacle covers the same liquid columns as a moderate one. Cell numbers used to be converted to int before clamping, so a far edge past about 1e9 m wrapped to cell 0.
+        auto covered=[](double size){Character c;c.Shape="cube";c.KeepAboveFloor=false;c.Size=size;FlowObstacleMask mask;mask.add(shape_geometry(c).front().mesh,c);mask.finish();size_t n=0;for(double v:mask.coverage)if(v>0)++n;return n;};
+        const size_t moderate=covered(1e6),vast=covered(1e10);
+        require(moderate>0&&vast==moderate,"07-T1: A vast obstacle occupies the same liquid columns as a moderate one");
+    }
+    {   // 07-T2: a lava patch far larger than the terrain paints every cell of the terrain, as a moderate one does.
+        auto painted=[](double size){Character patch;patch.Shape="lava";patch.Size=size;std::vector<Character> objects{patch};TerrainData flat;TerrainFlow flow(flat,std::vector<LiquidSource>{},objects);size_t n=0;for(double v:flow.lava)if(v>0)++n;return n;};
+        const size_t moderate=painted(1e6),vast=painted(1e10);
+        require(moderate==TerrainFlow::N*TerrainFlow::N&&vast==moderate,"07-T2: A vast lava patch fills the same cells as a moderate one");
+    }
 }

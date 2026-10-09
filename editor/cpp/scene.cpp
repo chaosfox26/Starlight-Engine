@@ -108,6 +108,7 @@ void TerrainData::validate() const {
         require(p >= 0 && p < 5, "Invalid terrain paint");
 }
 double TerrainData::height_at(double x, double z) const {
+    if (std::isnan(x) || std::isnan(z)) return NAN; // NaN has no grid cell; converting it to int below is undefined behaviour
     double u = std::clamp((x + Half) / Step, 0., double(N - 1)),
            v = std::clamp((z + Half) / Step, 0., double(N - 1));
     int a = std::min(int(u), N - 2), b = std::min(int(v), N - 2);

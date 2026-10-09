@@ -358,10 +358,12 @@ void stamp_shape(TerrainData &terrain, const Character &c) {
             double det = (b.z - d.z) * (a.x - d.x) + (d.x - b.x) * (a.z - d.z);
             if (std::abs(det) < 1e-9)
                 continue;
-            int x0 = std::max(0, int(std::floor((std::min({a.x, b.x, d.x}) + 12) / .25))),
-                x1 = std::min(96, int(std::ceil((std::max({a.x, b.x, d.x}) + 12) / .25))),
-                z0 = std::max(0, int(std::floor((std::min({a.z, b.z, d.z}) + 12) / .25))),
-                z1 = std::min(96, int(std::ceil((std::max({a.z, b.z, d.z}) + 12) / .25)));
+            // Clamped in floating point before the int conversion, so a vast object cannot overflow it.
+            auto cellOf = [](double v, int lo, int hi) { return v >= hi ? hi : v > lo ? int(v) : lo; };
+            int x0 = cellOf(std::floor((std::min({a.x, b.x, d.x}) + 12) / .25), 0, 97),
+                x1 = cellOf(std::ceil((std::max({a.x, b.x, d.x}) + 12) / .25), -1, 96),
+                z0 = cellOf(std::floor((std::min({a.z, b.z, d.z}) + 12) / .25), 0, 97),
+                z1 = cellOf(std::ceil((std::max({a.z, b.z, d.z}) + 12) / .25), -1, 96);
             for (int j = z0; j <= z1; j++)
                 for (int i = x0; i <= x1; i++) {
                     double x = i * .25 - 12, z = j * .25 - 12,
