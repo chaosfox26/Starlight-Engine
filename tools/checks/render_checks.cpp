@@ -293,8 +293,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       for(int frame=0;frame<300;++frame){
         if(!sl_environment_lights(context,nullptr,0)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
         uint64_t state[6]{};sl_local_shadow_stats(context,state);
-        if(frame<200&&(state[2]!=held[2]||state[1]!=held[1]))throw std::runtime_error("Empty scene released local shadow resources before the delay: frame="+std::to_string(frame));
-        if(frame==299&&(state[2]!=0||state[1]!=65536))throw std::runtime_error("Empty scene never released local shadow resources: capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1]));
+        if(frame<200&&(state[2]!=held[2]||state[1]!=held[1]))throw ValidationFailure("Empty scene released local shadow resources before the delay: frame="+std::to_string(frame));
+        if(frame==299&&(state[2]!=0||state[1]!=65536))throw ValidationFailure("Empty scene never released local shadow resources: capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1]));
       }
       uint64_t before[6]{},after[6]{};sl_local_shadow_stats(context,before);
       if(sl_environment_lights(context,lamps.data(),33))throw ValidationFailure("Invalid local light count accepted");
