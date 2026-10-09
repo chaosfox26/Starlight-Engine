@@ -48,5 +48,22 @@ static void missing_asset_save_checks(const auto& require){
         require(run(json::object())&&load_scene(target).Characters.empty(),"Editor audit 9: By default 'add' does not find a model that sits beside the request file");
         require(!run({{"correctedAdd",true}})&&load_scene(target).Characters.size()==1,"Editor audit 9: correctedAdd resolves the model against the request file's folder");
     }
+    {
+        // CLI audit 1: verifyAssets:false waives only the cast's library check; it must not let a batch save over a model an object names.
+        const auto folder=work/"cast-waiver";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        save_scene(scene,target,{},true);
+        auto run=[&](json operation,json extra=json::object()){
+            json request={{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({operation})}};
+            for(auto& [key,value]:extra.items())request[key]=value;
+            atomic_write(folder/"request.json",request.dump());
+            std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+            return failure;
+        };
+        const json clearCast{{"op","set-block"},{"block","Cast"},{"value",nullptr},{"verifyAssets",false}};
+        const auto refusedCast=run(clearCast);
+        require(refusedCast.find("not in the asset library")!=std::string::npos&&load_scene(target).Characters[0].Name=="Ghost","CLI audit 1: verifyAssets:false on a cast does not let a batch save over a model an object names");
+        require(run(clearCast,{{"allowMissingAssets",true}}).empty()&&load_scene(target).Cast.Models.empty(),"CLI audit 1: allowMissingAssets still saves the same batch");
+    }
     fs::remove_all(work);
 }

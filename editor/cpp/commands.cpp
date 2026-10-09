@@ -136,6 +136,7 @@ json apply_commands(const fs::path &file) {
     if (!operations.is_array())
         throw std::runtime_error("Expected operations array");
     bool allowMissingAssets = request.value("allowMissingAssets", false);
+    bool castCheckWaived = false;
     const bool correctedAdd = request.value("correctedAdd", false);
     std::vector<std::string> staleRules;
     for (const auto &op : operations) {
@@ -268,7 +269,7 @@ json apply_commands(const fs::path &file) {
             } else if (block == "Cast") {
                 scene.Cast = clear ? SceneCast{} : value.get<SceneCast>();
                 scene.Cast.validate();
-                if (!op.value("verifyAssets", true)) allowMissingAssets = true;
+                if (!op.value("verifyAssets", true)) castCheckWaived = true;
                 if (op.value("verifyAssets", true)) {
                     EngineAssets::discover_near(path.parent_path());
                     const auto missing = cast_missing_assets(scene);
@@ -388,7 +389,16 @@ json apply_commands(const fs::path &file) {
             throw std::runtime_error("Unsupported editor operation: " + kind);
     }
     scene.validate();
-    save_scene(scene, path, expected, allowMissingAssets);
+    try {
+        save_scene(scene, path, expected, allowMissingAssets);
+    } catch (const MissingAssetsError &problem) {
+        // A waived cast check may save over missing cast assets only; a model that an object names still refuses the save.
+        const bool objectMissing = std::any_of(scene.Characters.begin(), scene.Characters.end(), [&](const Character &c) {
+            return !c.Shape && !c.Sculpt && std::find(problem.ids.begin(), problem.ids.end(), c.Asset) != problem.ids.end();
+        });
+        if (!castCheckWaived || objectMissing) throw;
+        save_scene(scene, path, expected, true);
+    }
     json characters = json::array();
     for (const auto &c : scene.Characters)
         characters.push_back({{"Id", c.Id}, {"Name", c.Name}});
