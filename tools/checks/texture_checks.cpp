@@ -1198,6 +1198,14 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(wideSpec)), nullptr, "wide-times.glb", scratch);
         show("GLB whose keyframe times accessor is VEC2", e);
         require(e.code == LoadCode::Malformed && !scratch.loaded, "SKN-1: a keyframe times accessor that is not SCALAR is rejected");
+        GlbSpec noViewKeySpec; noViewKeySpec.noViewKeys = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewKeySpec)), nullptr, "no-view-keys.glb", scratch);
+        show("GLB whose keyframe accessors have no buffer view and 5 million elements", e);
+        require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-5: keyframe accessors without a buffer view cannot ask for millions of zero keys");
+        GlbSpec badIbm; badIbm.badIbmType = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(badIbm)), nullptr, "ibm-vec4.glb", scratch);
+        show("GLB whose inverse bind matrices are VEC4", e);
+        require(e.code == LoadCode::SkeletonInvalid && !scratch.loaded, "SKN-7: inverse bind matrices that are not MAT4 are SkeletonInvalid instead of partly identity");
         {
             const auto bytes = makeSparseGlb(76);
             cgltf_options opts{}; cgltf_data* d = nullptr;
@@ -1248,6 +1256,15 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             };
             require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
             require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
+        }
+        {   // SKN-6: a non-finite query time must give the defined first-key pose, not read past the keyframe arrays. The fixture clip loops, so +infinity reaches fmod and becomes NaN.
+            model::SkinnedModel posed; XMFLOAT4X4 rest[2], notANumber[2], infinite[2];
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb()), nullptr, "query-time.glb", posed).ok() && posed.clips[0].loop && posed.clips[0].duration > 0, "SKN-6: the fixture clip loops with a positive duration");
+            model::evalPose(posed, 0, 0.f, -1, 0.f, 0.f, rest, nullptr);
+            model::evalPose(posed, 0, std::nanf(""), -1, 0.f, 0.f, notANumber, nullptr);
+            model::evalPose(posed, 0, std::numeric_limits<float>::infinity(), -1, 0.f, 0.f, infinite, nullptr);
+            require(std::memcmp(rest, notANumber, sizeof(rest)) == 0, "SKN-6: a NaN query time holds the first key");
+            require(std::memcmp(rest, infinite, sizeof(rest)) == 0, "SKN-6: an infinite query time on a looping clip holds the first key");
         }
         for (int bad : { 1, 2, 3, 4 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
@@ -1317,8 +1334,13 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             auto transformed = [&](const model::SkinnedModel& m, int joint, float x, float y, float z) {
                 XMFLOAT4X4 pal[2]; model::evalPose(m, 0, 0.f, -1, 0.f, 0.f, pal, nullptr);
                 XMFLOAT3 r; XMStoreFloat3(&r, XMVector3Transform(XMVectorSet(x, y, z, 1.f), XMLoadFloat4x4(&pal[joint]))); return r; };
-            model::SkinnedModel plainRig, armRig, midRig;
+            model::SkinnedModel plainRig, armRig, midRig, armOff;
+            const auto setAncestors = [](bool on) { _putenv_s("STARLIGHT_JOINT_ANCESTOR_TRANSFORMS", on ? "1" : ""); };
+            setAncestors(false);
             require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "plain.glb", plainRig).ok(), "R4: baseline rig loads");
+            GlbSpec offSpec; offSpec.armature = 1;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(offSpec)), nullptr, "armature-off.glb", armOff).ok() && armOff.joints[0].parent == -1 && armOff.joints[1].parent == 0 && std::fabs(transformed(armOff, 0, 1.f, 0.f, 0.f).x - 1.f) < 1e-6f && std::fabs(transformed(armOff, 0, 1.f, 0.f, 0.f).y) < 1e-6f, "R4: by default an armature node's transform is not applied, so existing rigs do not move");
+            setAncestors(true);
             GlbSpec armSpec; armSpec.armature = 1;
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(armSpec)), nullptr, "armature.glb", armRig).ok() && armRig.joints[0].parent == -1 && armRig.joints[1].parent == 0, "R4: a rig under a transformed non-joint armature node loads");
             const XMFLOAT3 a0 = transformed(armRig, 0, 1.f, 0.f, 0.f), a1 = transformed(armRig, 1, 1.f, 0.f, 0.f);
@@ -1333,6 +1355,7 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
             const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
             require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
+            setAncestors(false);
         }
         {
             auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };

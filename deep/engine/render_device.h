@@ -827,13 +827,13 @@ struct RenderDevice {
             const UINT64 v = ++fenceVal;
             if (SUCCEEDED(queue->Signal(fence.Get(), v))) {
                 if (fence->GetCompletedValue() >= v) return true;
-                if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) return true;
+                if (SUCCEEDED(fence->SetEventOnCompletion(v, fenceEvent)) && WaitForSingleObject(fenceEvent, 15000) == WAIT_OBJECT_0) return fence->GetCompletedValue() >= v;   // a stale event left by an earlier timed-out wait can end this one early
             }
             return device && FAILED(device->GetDeviceRemovedReason());
         } catch (...) { return false; }
     }
     void waitFence(UINT64 v) {
-        if (fence->GetCompletedValue() < v) {
+        while (fence->GetCompletedValue() < v) {   // re-check: a stale event from a timed-out flushNoFault wakes the wait before v completes
             const double waitStarted=timingNow();
             must(fence->SetEventOnCompletion(v, fenceEvent), "arm GPU completion");
             if (WaitForSingleObject(fenceEvent, INFINITE) != WAIT_OBJECT_0)
@@ -1239,7 +1239,7 @@ struct RenderDevice {
         // RND-2: the new targets are built into locals and swapped in only when all of them exist, so a failure (for example out of memory) keeps the previous state.
         const int oldMode = ups->mode(); const UINT oldRw = rw, oldRh = rh, oldMsaa = msaa;
         UINT nrw = 0, nrh = 0;
-        if (!ups->setMode(m, nrw, nrh)) return;
+        must(ups->setMode(m, nrw, nrh) ? S_OK : E_FAIL, "set upscaler quality mode");   // a refused mode must not leave the scene targets unset or mismatched with the output
         rw = nrw; rh = nrh;
         D3D12_CLEAR_VALUE cc{}; cc.Format = sceneFormat();
         D3D12_CLEAR_VALUE mc{}; mc.Format = DXGI_FORMAT_R16G16_FLOAT;

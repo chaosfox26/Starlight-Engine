@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -177,6 +178,11 @@ bool JsonNestsTooDeep(ByteView glb) {
     }
     return false;
 }
+// Non-joint ancestors (armature nodes) move their joints only when STARLIGHT_JOINT_ANCESTOR_TRANSFORMS=1: existing rigs would move, so the default keeps the old parenting.
+bool JointAncestorTransformsEnabled() {
+    const char* value = std::getenv("STARLIGHT_JOINT_ANCESTOR_TRANSFORMS");
+    return value && value[0] == '1';
+}
 LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
     out = SkinnedModel();
     out.source = label;
@@ -221,14 +227,18 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         if (skin->joints_count > 256) return fail(LoadCode::SkeletonInvalid, "skin has " + std::to_string(skin->joints_count) + " joints; the 8-bit joint index addresses at most 256");
         if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->count < skin->joints_count)
             return fail(LoadCode::Malformed, "inverse bind matrix accessor holds fewer matrices than the skin has joints");
+        if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->type != cgltf_type_mat4)
+            return fail(LoadCode::SkeletonInvalid, "inverse bind matrix accessor is not MAT4");
         for (cgltf_size j = 0; j < skin->joints_count; ++j) jointOf[skin->joints[j]] = (int)j;
         for (cgltf_size j = 0; j < skin->joints_count; ++j) {
             const cgltf_node* n = skin->joints[j];
             Joint jt; jt.name = n->name ? n->name : ("joint" + std::to_string(j));
             XMMATRIX base = XMMatrixIdentity();
+            const bool throughAncestors = JointAncestorTransformsEnabled();
             for (const cgltf_node* a = n->parent; a; a = a->parent) {
                 auto pit = jointOf.find(a);
                 if (pit != jointOf.end()) { jt.parent = pit->second; break; }
+                if (!throughAncestors) break;
                 float local[16]; cgltf_node_transform_local(a, local);
                 base = XMMatrixMultiply(base, FromGltf(local));
             }
@@ -393,6 +403,8 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             if (ch.sampler->input->count == 0) continue;
             if (ch.sampler->input->type != cgltf_type_scalar || ch.sampler->output->type != (comps == 4 ? cgltf_type_vec4 : cgltf_type_vec3))
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' sampler accessors have the wrong element type (keyframe times must be SCALAR, values VEC3 or VEC4)");
+            if ((!ch.sampler->input->buffer_view && ch.sampler->input->count > (1u << 22)) || (!ch.sampler->output->buffer_view && ch.sampler->output->count > (1u << 22)))
+                return fail(LoadCode::TooLarge, "clip '" + c.name + "' keyframe accessor without a buffer view holds more than 4194304 elements");
             k.times.resize(ch.sampler->input->count);
             if (cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size()) != k.times.size())
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times could not be read");
@@ -486,7 +498,7 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
 static void SampleChannel(const Channel& ch, float t, float* out, int comps) {
     const size_t n = ch.times.size();
     if (n == 0) return;
-    if (t <= ch.times.front() || n == 1) { std::memcpy(out, ch.values.data(), sizeof(float) * (size_t)comps); return; }
+    if (!(t > ch.times.front()) || n == 1) { std::memcpy(out, ch.values.data(), sizeof(float) * (size_t)comps); return; }   // NaN also lands here, so the search below only sees ordered times
     if (t >= ch.times.back()) { std::memcpy(out, ch.values.data() + (n - 1) * (size_t)comps, sizeof(float) * (size_t)comps); return; }
     size_t hi = (size_t)(std::upper_bound(ch.times.begin(), ch.times.end(), t) - ch.times.begin());
     size_t lo = hi - 1;
