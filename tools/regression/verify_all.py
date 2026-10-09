@@ -232,6 +232,15 @@ def self_test():
         argv = list(python_step[1])
         argv[argv.index('--test-dir') + 1] = empty
         check('with no py- tests registered the Python step is not PASS', run_step('t', argv, None, 60)['outcome'] != 'PASS')
+    with tempfile.TemporaryDirectory() as fresh_build:
+        A.build_dir, A.gpu, A.python = fresh_build, True, False
+        try:
+            plan(A, 't')
+            stopped = False
+        except SystemExit as error:
+            stopped = error.code == 2
+        staged = os.path.exists(os.path.join(fresh_build, 'nvngx_dlssd.dll')) and os.path.isdir(os.path.join(fresh_build, 'D3D12'))
+        check('--gpu on a fresh build folder copies the vendor DLL and D3D12 folder or stops with NOT RUN (exit 2)', stopped or staged)
     print('SELF-TEST PASSED' if ok else 'SELF-TEST FAILED')
     return 0 if ok else 1
 

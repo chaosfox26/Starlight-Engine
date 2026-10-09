@@ -420,6 +420,41 @@ def self_test():
         ok = first and second and len({clean, first, second}) == 3
         print('  %s two different uncommitted edits at one HEAD get different dirty digests' % ('ok ' if ok else 'BAD'))
         bad += not ok
+    with tempfile.TemporaryDirectory() as plain:
+        ok = dirty_digest(plain) == 'unavailable'
+        print('  %s a folder git cannot read gets an unavailable dirty digest, never the digest of empty output' % ('ok ' if ok else 'BAD'))
+        bad += not ok
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    with tempfile.TemporaryDirectory() as tree:
+        build = os.path.join(tree, 'Release')
+        os.makedirs(build)
+        with open(os.path.join(tree, 'CMakeCache.txt'), 'w') as f:
+            f.write('CMAKE_HOME_DIRECTORY:INTERNAL=' + os.path.join(tree, 'elsewhere').replace('\\', '/') + '\n')
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), '--build-dir', build, '--repo', tree, '--results', os.path.join(tree, 'results')],
+                             capture_output=True, text=True, timeout=120, creationflags=flags)
+        ok = run.returncode == 2 and 'REFUSING TO RUN: the build was configured from' in run.stdout
+        print('  %s a build configured from another checkout is refused before anything runs' % ('ok ' if ok else 'BAD'))
+        bad += not ok
+    with tempfile.TemporaryDirectory() as tree:
+        repo = os.path.join(tree, 'repo')
+        os.makedirs(os.path.join(repo, 'editor'))
+        for args in (['init', '-q'], ['config', 'user.email', 'a@b'], ['config', 'user.name', 'a']):
+            subprocess.run(['git', '-C', repo] + args, creationflags=flags)
+        source = os.path.join(repo, 'editor', 'a.cpp')
+        open(source, 'w').write('int a;\n')
+        subprocess.run(['git', '-C', repo, 'add', '-A'], creationflags=flags)
+        subprocess.run(['git', '-C', repo, 'commit', '-q', '-m', 'x'], creationflags=flags)
+        build = os.path.join(tree, 'build', 'Release')
+        os.makedirs(build)
+        exe = os.path.join(build, 'Starlight.NativeCoreChecks.exe')
+        open(exe, 'w').write('built')
+        os.utime(exe, (time.time() - 3600, time.time() - 3600))
+        open(source, 'w').write('int b;\n')
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), '--build-dir', build, '--repo', repo, '--results', os.path.join(tree, 'results')],
+                             capture_output=True, text=True, timeout=120, creationflags=flags)
+        ok = run.returncode == 2 and 'REFUSING TO RUN: 1 source files are newer than the built checks' in run.stdout
+        print('  %s a build older than its sources is refused before anything runs' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
