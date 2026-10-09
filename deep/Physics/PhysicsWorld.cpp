@@ -171,6 +171,7 @@ public:
  // The adventure world advances only through CharacterStep, which never reached the rolling resistance above (audit 03#7); STARLIGHT_ROLLING_RESISTANCE=1 applies it there too. Default off keeps the shipped roll-out behaviour.
  static bool RollingResistanceInCharacterStep(){char v[8]{};size_t n=0;return getenv_s(&n,v,sizeof v,"STARLIGHT_ROLLING_RESISTANCE")==0&&v[0]=='1';}
  void CharacterStep(float dt,Vec3 feet,Vec3 input,bool jump,float* output,bool overrideMotion=false){
+  if(!output)throw std::runtime_error("Missing character output buffer");
   if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f || !std::isfinite(feet.GetX()+feet.GetY()+feet.GetZ()) || !std::isfinite(input.GetX()+input.GetY()+input.GetZ()))throw std::runtime_error("Invalid character step");
   if((character->GetPosition()-RVec3(feet)).LengthSq()>1.e-6){
    character->SetPosition(RVec3(feet));character->SetLinearVelocity(Vec3::sZero());
@@ -442,6 +443,7 @@ public:
  }
  // Presentation interpolates completed fixed ticks; collision state stays authoritative.
  int Present(BodyState* output,int capacity){
+  if(capacity>0&&!output)throw std::runtime_error("Missing physics output buffer");
   auto& api=world.GetBodyInterface();float alpha=std::clamp(float(accumulator*60),0.f,1.f);int n=0;
   for(auto id:bodies){if(n>=capacity)break;RVec3 p;Quat q;api.GetPositionAndRotation(id,p,q);
    BodyState current{id.GetIndexAndSequenceNumber(),(float)p.GetX(),(float)p.GetY(),(float)p.GetZ(),q.GetX(),q.GetY(),q.GetZ(),q.GetW()};
@@ -455,6 +457,7 @@ public:
   }return n;
  }
  int Step(double elapsed,const Liquid* liquid,int liquidCount,BodyState* output,int capacity){
+  if(liquidCount>0&&!liquid)throw std::runtime_error("Missing liquid list");if(capacity>0&&!output)throw std::runtime_error("Missing physics output buffer");
   if(!std::isfinite(elapsed)||elapsed<0||elapsed>1)throw std::runtime_error("Invalid physics elapsed time");if(!Poll())return 0;accumulator+=elapsed;auto& api=world.GetBodyInterface();int steps=0;
   while(accumulator>=1.0/60&&steps++<12){
    for(auto& cable:cables)cable.previous=CablePoints(cable);
@@ -505,11 +508,11 @@ API int slp_hull_points(void* hull,float* out,int capacity){
  return n;
 }
 // out[0..8] = hulls requested, exact, exact after finer retry, reduced to the vertex limit, of those beyond the accepted bound, replaced by a box, rejected (non-finite), worst reduced deviation relative to the hull diagonal, rebuilt from the builder's own vertices.
-API void slp_hull_stats(double* out){auto& s=starlight::HullCounters();out[0]=double(s.requested.load());out[1]=double(s.exact.load());out[2]=double(s.finer.load());out[3]=double(s.reduced.load());out[4]=double(s.reducedOverBound.load());out[5]=double(s.boxed.load());out[6]=double(s.rejected.load());out[7]=double(s.worstRelative.load());out[8]=double(s.rebuilt.load());}
+API void slp_hull_stats(double* out){if(!out)return;auto& s=starlight::HullCounters();out[0]=double(s.requested.load());out[1]=double(s.exact.load());out[2]=double(s.finer.load());out[3]=double(s.reduced.load());out[4]=double(s.reducedOverBound.load());out[5]=double(s.boxed.load());out[6]=double(s.rejected.load());out[7]=double(s.worstRelative.load());out[8]=double(s.rebuilt.load());}
 API int slp_hull_last_box(char* buffer,int capacity){auto& s=starlight::HullCounters();std::lock_guard<std::mutex> guard(s.lock);if(!buffer||capacity<=0)return 0;const int n=int(std::min<size_t>(s.lastBox.size(),size_t(capacity-1)));std::memcpy(buffer,s.lastBox.data(),size_t(n));buffer[n]=0;return n;}
 API void slp_hull_reset_stats(){auto& s=starlight::HullCounters();s.requested=s.exact=s.finer=s.reduced=s.reducedOverBound=s.boxed=s.rejected=s.rebuilt=0;s.worstDeviationBits=0;s.worstRelative=0;std::lock_guard<std::mutex> guard(s.lock);s.lastBox.clear();}
 // out[0..4] = cooked shapes held, bytes held, shared hits, misses, entries dropped for room.
-API void slp_shape_cache_stats(double* out){auto& s=starlight::SharedShapeCache();std::lock_guard<std::mutex> guard(s.lock);out[0]=double(s.shapes.size());out[1]=double(s.bytes);out[2]=double(s.hits.load());out[3]=double(s.misses.load());out[4]=double(s.trimmed.load());}
+API void slp_shape_cache_stats(double* out){if(!out)return;auto& s=starlight::SharedShapeCache();std::lock_guard<std::mutex> guard(s.lock);out[0]=double(s.shapes.size());out[1]=double(s.bytes);out[2]=double(s.hits.load());out[3]=double(s.misses.load());out[4]=double(s.trimmed.load());}
 API uint32_t slp_add_hull(void* p,void* hull,float x,float y,float z,float qx,float qy,float qz,float qw){try{if(!hull)throw std::runtime_error("Missing collision hull");return static_cast<starlight::PhysicsWorld*>(p)->AddShape(static_cast<HullHandle*>(hull)->shape,true,Vec3(x,y,z),Quat(qx,qy,qz,qw));}catch(const std::exception& e){error=e.what();return 0xffffffff;}}
 API int slp_step(void* p,double dt,const starlight::Liquid* liquid,int count,starlight::BodyState* output,int capacity){try{return static_cast<starlight::PhysicsWorld*>(p)->Step(dt,liquid,count,output,capacity);}catch(const std::exception& e){error=e.what();return -1;}}
 API int slp_present(void* p,starlight::BodyState* output,int capacity){try{return static_cast<starlight::PhysicsWorld*>(p)->Present(output,capacity);}catch(const std::exception& e){error=e.what();return -1;}}
@@ -526,7 +529,7 @@ API int slp_body_impulse(void* p,uint32_t raw,float x,float y,float z,float ix,f
 API int slp_body_material(void* p,uint32_t raw,float friction,float restitution){try{if(!std::isfinite(friction)||!std::isfinite(restitution)||friction<0||friction>2||restitution<0||restitution>1)throw std::runtime_error("Invalid physical material");auto& api=static_cast<starlight::PhysicsWorld*>(p)->world.GetBodyInterface();api.SetFriction(BodyID(raw),friction);api.SetRestitution(BodyID(raw),restitution);return 1;}catch(const std::exception& e){error=e.what();return 0;}}
 API void slp_body_velocity(void* p,uint32_t raw,float x,float y,float z,float ax,float ay,float az){try{for(float value:{x,y,z,ax,ay,az})if(!std::isfinite(value))throw std::runtime_error("Invalid body velocity");auto& w=*static_cast<starlight::PhysicsWorld*>(p);{BodyLockRead lock(w.world.GetBodyLockInterface(),BodyID(raw));if(!lock.Succeeded())throw std::runtime_error("Body no longer exists");}w.world.GetBodyInterface().SetLinearAndAngularVelocity(BodyID(raw),Vec3(x,y,z),Vec3(ax,ay,az));}catch(const std::exception& e){error=e.what();}}
 API int slp_body_motion(void* p,uint32_t raw,float x,float y,float z,float* output){try{if(!p||!output||!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z))throw std::runtime_error("Invalid body motion sample");auto& w=*static_cast<starlight::PhysicsWorld*>(p);BodyLockRead lock(w.world.GetBodyLockInterface(),BodyID(raw));if(!lock.Succeeded())throw std::runtime_error("Body no longer exists");const auto& body=lock.GetBody();auto velocity=body.GetPointVelocity(RVec3(x,y,z));auto spin=body.GetAngularVelocity();output[0]=velocity.GetX();output[1]=velocity.GetY();output[2]=velocity.GetZ();output[3]=spin.GetX();output[4]=spin.GetY();output[5]=spin.GetZ();return 1;}catch(const std::exception& e){error=e.what();return 0;}}
-API int slp_body_pose(void* p,uint32_t raw,float* output){try{auto& w=*static_cast<starlight::PhysicsWorld*>(p);BodyLockRead lock(w.world.GetBodyLockInterface(),BodyID(raw));if(!lock.Succeeded())throw std::runtime_error("Body no longer exists");auto at=lock.GetBody().GetPosition();auto q=lock.GetBody().GetRotation();output[0]=(float)at.GetX();output[1]=(float)at.GetY();output[2]=(float)at.GetZ();output[3]=q.GetX();output[4]=q.GetY();output[5]=q.GetZ();output[6]=q.GetW();return 1;}catch(const std::exception& e){error=e.what();return 0;}}
+API int slp_body_pose(void* p,uint32_t raw,float* output){try{if(!output)throw std::runtime_error("Missing body pose buffer");auto& w=*static_cast<starlight::PhysicsWorld*>(p);BodyLockRead lock(w.world.GetBodyLockInterface(),BodyID(raw));if(!lock.Succeeded())throw std::runtime_error("Body no longer exists");auto at=lock.GetBody().GetPosition();auto q=lock.GetBody().GetRotation();output[0]=(float)at.GetX();output[1]=(float)at.GetY();output[2]=(float)at.GetZ();output[3]=q.GetX();output[4]=q.GetY();output[5]=q.GetZ();output[6]=q.GetW();return 1;}catch(const std::exception& e){error=e.what();return 0;}}
 API int slp_character_start(void* p,float radius,float x,float y,float z){try{static_cast<starlight::PhysicsWorld*>(p)->StartCharacter(radius,Vec3(x,y,z));return 1;}catch(const std::exception& e){error=e.what();return 0;}}
 API int slp_character_traverse(void* p,float x,float y,float z,float dx,float dy,float dz){try{return static_cast<starlight::PhysicsWorld*>(p)->CharacterTraverse(Vec3(x,y,z),Vec3(dx,dy,dz))?1:0;}catch(const std::exception& e){error=e.what();return -1;}}
 API int slp_character_height(void* p,float height){try{return static_cast<starlight::PhysicsWorld*>(p)->CharacterHeight(height)?1:0;}catch(const std::exception& e){error=e.what();return -1;}}

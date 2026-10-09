@@ -17,6 +17,11 @@ __declspec(dllimport) int slp_character_step(void *, float, float, float, float,
 __declspec(dllimport) int slp_terrain_mesh(void *, const float *, int, const uint32_t *, int);
 __declspec(dllimport) int slp_rope_path(void *, uint32_t, float *, int, int);
 __declspec(dllimport) void *slp_hull_create(const float *, int, float);
+__declspec(dllimport) int slp_step(void *, double, const void *, int, void *, int);
+__declspec(dllimport) int slp_present(void *, void *, int);
+__declspec(dllimport) int slp_body_pose(void *, uint32_t, float *);
+__declspec(dllimport) void slp_hull_stats(double *);
+__declspec(dllimport) void slp_shape_cache_stats(double *);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -84,6 +89,30 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F4: a needed output or liquid buffer that is missing is refused as an error; these functions used to write through a null pointer.
+    {
+     void* stepping=slp_create();
+     const std::vector<float> flatHeights(97*97,0.f);
+     int ready=0;
+     if(stepping&&slp_terrain(stepping,flatHeights.data())==1)for(int i=0;i<5000&&ready==0;++i){ready=slp_ready(stepping);if(ready==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(stepping&&ready==1,"audit2 F4: A physics world is ready for the buffer checks");
+     if(stepping&&ready==1){
+      const uint32_t body=slp_add(stepping,cube,8,faces,36,1,1,0,5,0,0,0,0,1);
+      const uint32_t anchor=slp_add(stepping,cube,8,faces,36,1,1,3,5,0,0,0,0,1);
+      const float ropeSettings[10]={3,5,0, 5,5,0, 0,0,0, 3};
+      require(body!=refused&&anchor!=refused&&slp_rope(stepping,anchor,UINT32_MAX,ropeSettings,8,.05f)==1&&slp_character_start(stepping,.3f,0,0,0)==1,"audit2 F4: Bodies, a rope and a character are created for the buffer checks");
+      float pose[8]{};float character[4]{};
+      require(slp_step(stepping,1./60,nullptr,0,nullptr,1)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A physics step with no output buffer is refused");
+      require(slp_step(stepping,1./60,nullptr,1,pose,1)==-1&&std::string(slp_error()).find("liquid")!=std::string::npos,"audit2 F4: A physics step that names liquids without a liquid list is refused");
+      require(slp_present(stepping,nullptr,1)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A presentation with no output buffer is refused");
+      require(slp_body_pose(stepping,body,nullptr)==0&&std::string(slp_error()).find("pose")!=std::string::npos,"audit2 F4: A body pose with no output buffer is refused");
+      require(slp_rope_path(stepping,anchor,nullptr,65,0)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A rope path with no output buffer is refused");
+      require(slp_character_step(stepping,1.f/60,0,0,0,0,0,0,nullptr)==0&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A character step with no output buffer is refused");
+      slp_hull_stats(nullptr);slp_shape_cache_stats(nullptr);
+      require(slp_step(stepping,1./60,nullptr,0,pose,1)==1&&slp_character_step(stepping,1.f/60,0,0,0,0,0,0,character)==1,"audit2 F4: The world and the character still step after every refused call");
+     }
+     slp_destroy(stepping);
+    }
     // audit2 F5: a character cannot start from a non-finite position or radius; a NaN start used to leave the controller at NaN for good.
     {
      float afterRefusal[4]{};
