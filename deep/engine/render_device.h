@@ -1653,7 +1653,6 @@ struct RenderDevice {
             const uint8_t* original=(const uint8_t*)verts;
             for(size_t i=0;i<count;++i) {
                 memcpy(alignedVertices.data()+i*96,original+i*68,68);
-                if(memcmp(alignedVertices.data()+i*96,original+i*68,68))throw std::runtime_error("Vertex padding changed data");
             }
             verts=alignedVertices.data();vbytes=alignedVertices.size();stride=96;
             logLine("vertex stride: 96");
