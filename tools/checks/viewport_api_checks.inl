@@ -239,3 +239,26 @@ static void viewport_resize_failure_checks(const auto &require) {
     }
     require(failures >= 1, "VWP-4: The failure sweep failed at least one resize on purpose");
 }
+
+// VWP-5: a frame that throws after grass was queued leaves no stale grass entries behind.
+static void viewport_grass_pending_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport grass pending checks")) return;
+    const auto &api = session.api;
+    const auto scene = api.get<int (*)(void *, const uint8_t *, int)>("sl_scene");
+    require(scene != nullptr, "VWP-5: The viewport module exports the scene call");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-5: A viewport is created");
+    std::vector<VwpPart> overfull{{11, 1.36f, 0}};   // one grass part is queued first, then 25 dust volumes exceed the 24 allowed
+    for (int i = 0; i < 25; ++i) overfull.push_back({0, 13.2f, float(i)});
+    const auto first = vwp_scene(overfull);
+    const auto second = vwp_scene({{0, 0, 0}});
+    const bool installed = scene(viewport, first.data(), int(first.size())) == 1;
+    const bool failed = installed && api.frame(viewport, 0, 13) == 0;
+    const std::string failure = api.error();
+    const bool replaced = scene(viewport, second.data(), int(second.size())) == 1;   // the grass part goes away
+    const bool framed = replaced && api.frame(viewport, 0, 13) == 1 && api.frame(viewport, 0, 13) == 1;
+    api.destroy(viewport);
+    require(installed && failed && failure.find("Dust volume capacity exceeded") != std::string::npos, "VWP-5: Too many dust volumes fail the frame");
+    require(replaced && framed, "VWP-5: Frames after the failed frame and a scene without grass render without touching freed grass entries");
+}
