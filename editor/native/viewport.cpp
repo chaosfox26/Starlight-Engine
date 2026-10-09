@@ -644,14 +644,13 @@ API int sl_telegraphs(void* handle,const float* data,int count){
   auto& v=*static_cast<Viewport*>(handle);require_draw_slots(v.parts.size(),v.instanceParts.size(),size_t(count));std::vector<Viewport::TelegraphInstance> next(count);
   static_assert(sizeof(Viewport::TelegraphInstance)==11*sizeof(float));
   if(count)memcpy(next.data(),data,size_t(count)*sizeof(Viewport::TelegraphInstance));
-  for(const auto& e:next)for(int i=0;i<11;++i)if(!std::isfinite(reinterpret_cast<const float*>(&e)[i]))throw std::runtime_error("Non-finite GPU telegraph");
+  for(const auto& e:next){for(int i=0;i<11;++i)if(!std::isfinite(reinterpret_cast<const float*>(&e)[i]))throw std::runtime_error("Non-finite GPU telegraph");if(e.range<=0 || e.range>32 || e.progress<0 || e.progress>1 || e.halfAngle<=0 || e.halfAngle>3.1415928f || e.aimX*e.aimX+e.aimZ*e.aimZ<.25f)throw std::runtime_error("Invalid GPU telegraph parameters");}
   std::vector<std::pair<float,int>> required;
   for(const auto& e:next){auto key=std::make_pair(e.halfAngle,std::max(1,int(ceilf(std::clamp(e.range,0.f,32.f)/.5f))));if(std::find(required.begin(),required.end(),key)==required.end())required.push_back(key);}
   if(required.size()>64)throw std::runtime_error("Too many distinct GPU effect templates");
   size_t missing=0;for(auto key:required)if(std::none_of(v.telegraphTemplates.begin(),v.telegraphTemplates.end(),[&](const auto& t){return t.halfAngle==key.first && t.rings==key.second;}))++missing;
   if(v.telegraphTemplates.size()+missing>64){for(auto& evicted:v.telegraphTemplates)v.retiredResident.push_back({std::move(evicted.gpu),v.renderer->fenceVal});v.telegraphTemplates.clear();v.telegraphBytes=0;recycle_retired_resident(v,false);}
   for(const auto& e:next){for(int i=0;i<11;++i)if(!std::isfinite(reinterpret_cast<const float*>(&e)[i]))throw std::runtime_error("Non-finite GPU telegraph");
-   if(e.range<=0 || e.range>32 || e.progress<0 || e.progress>1 || e.halfAngle<=0 || e.halfAngle>3.1415928f || e.aimX*e.aimX+e.aimZ*e.aimZ<.25f)throw std::runtime_error("Invalid GPU telegraph parameters");
    v.prepareTelegraph(e.halfAngle,std::max(1,int(ceilf(e.range/.5f))));
   }
   v.telegraphs=std::move(next);return 1;
