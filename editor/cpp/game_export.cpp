@@ -34,6 +34,6 @@ json export_playable_game(const SceneData& source,const fs::path& destination,co
         atomic_write(stage/L"game-manifest.json",json{{"format","starlight-playable-game"},{"version",1},{"platform","windows-x64"},{"files",files},{"scope","Shared adventure movement and combat runtime; native resolution"}}.dump(2));
         atomic_write(stage/L"gameplay-check.json",json{{"findings",findings},{"scope","Missing key links, finish presence, moving interactions and spawn overlap; not a solvability proof"}}.dump(2));
         fs::rename(stage,target);return {{"success",true},{"folder",utf8(target.wstring())},{"runtimeFiles",files.size()},{"gameplayFindings",findings}};
-    }catch(...){std::error_code ignored;fs::remove_all(stage,ignored);throw;}
+    }catch(...){std::error_code ignored;fs::remove_all(native_file_path(stage),ignored);throw;}
 }
 }

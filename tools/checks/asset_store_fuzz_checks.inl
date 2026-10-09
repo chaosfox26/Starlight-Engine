@@ -3,7 +3,7 @@
 // STARLIGHT_CHECK_GROUPS=asset_store_fuzz_checks.
 #include <fstream>
 template<class Require> void asset_store_fuzz_checks(Require require,const fs::path& folder){
-    const auto work=fs::absolute(folder/"asset-store-fuzz").lexically_normal();std::error_code cleared;fs::remove_all(work,cleared);fs::create_directories(work);
+    const auto work=fs::absolute(folder/"asset-store-fuzz").lexically_normal();std::error_code cleared;fs::remove_all(native_file_path(work),cleared);fs::create_directories(work);
     EngineAssets::ScopedRoot library(work/"library");
     enum class Result{Accepted,AssetMissingError,OtherError,Unknown};
     auto outcome=[](auto&& action){try{action();return Result::Accepted;}catch(const AssetMissing&){return Result::AssetMissingError;}catch(const std::exception&){return Result::OtherError;}catch(...){return Result::Unknown;}};
@@ -309,6 +309,42 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
             require(hostileWrong==0,"Fuzz: a hash-consistent scene naming hostile asset ids (traversal, streams, wrong kind) fails verification");
             require(read_file(decoy)==pristine,"Fuzz: verification never changes a file outside the bundle");
         }
+        {
+            // A scene asset that the manifest does not list is refused with the manifest message, whether or not its file is still in the folder.
+            std::string terrainPath;for(const auto& asset:manifest.at("assets"))if(asset.at("path").get<std::string>().starts_with("assets/terrain-"))terrainPath=asset.at("path").get<std::string>();
+            auto unlisted=[&](auto&& prepare){
+                const auto copy=work/("variant-"+std::to_string(++variant));fs::copy(bundle,copy,fs::copy_options::recursive);
+                auto edited=manifest;json kept=json::array();for(const auto& asset:manifest.at("assets"))if(asset.at("path").get<std::string>()!=terrainPath)kept.push_back(asset);edited["assets"]=kept;
+                atomic_write(copy/"manifest.json",edited.dump());prepare(copy);
+                try{(void)verify_portable_scene(copy);return std::string("accepted");}catch(const std::exception& e){return std::string(e.what());}};
+            const std::string intended="Scene references an engine asset missing from its manifest";
+            require(!terrainPath.empty()&&unlisted([](const fs::path&){}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list is refused with the manifest message while its file is still in the folder");
+            require(unlisted([&](const fs::path& c){fs::remove(c/terrainPath);}).find(intended)!=std::string::npos,"Fuzz: a scene asset the manifest does not list and is absent from the folder is refused with the manifest message, not a filesystem error");
+        }
+    }
+    {
+        // An export and its verification must work when the full path of a file passes MAX_PATH (a staging folder inside a deep folder). The folder is always this deep, so the long case runs from any scratch path.
+        const auto deep=work/std::string(70,'d')/std::string(70,'e')/"deep-export";
+        SceneData scene;scene.Characters={tree};scene.Terrain.emplace();scene.Terrain->brush(0,0,2,1,"raise",0,0,.05);
+        export_portable_scene(scene,deep);
+        require(verify_portable_scene(deep).at("success").get<bool>(),"Fuzz: an export whose asset paths pass 260 characters verifies");
+        const fs::path asset=deep/fs::path(json::parse(read_file(deep/"manifest.json")).at("assets").at(0).at("path").get<std::string>());
+        require(asset.wstring().size()>260,"Fuzz: the long-path export really has asset paths longer than 260 characters");
+        auto bytes=read_file(asset);bytes.back()^=1;atomic_write(asset,bytes);
+        require(refused([&]{(void)verify_portable_scene(deep);}),"Fuzz: a damaged asset in an export whose paths pass 260 characters is refused");
+    }
+
+    {
+        // An exported game whose folder path passes 260 characters is still verified at launch: a damaged file is refused, never skipped as a plain scene run.
+        const auto game=work/std::string(70,'g')/std::string(70,'h')/std::string(70,'i')/"game";
+        const std::string runtime="runtime file for the deep game";
+        json entry{{"path","Starlight.NativePlayer.exe"},{"sha256",hash_bytes(runtime)}};
+        atomic_write(game/"Starlight.NativePlayer.exe",runtime);
+        atomic_write(game/"game-manifest.json",json{{"format","starlight-playable-game"},{"version",1},{"platform","windows-x64"},{"files",json::array({entry})}}.dump(2));
+        require((game/"game-manifest.json").wstring().size()>260,"Fuzz: the deep game manifest really has a path longer than 260 characters");
+        require(outcome([&]{verify_game_files(game);})==Result::Accepted,"Fuzz: a deep exported game whose files pass 260 characters verifies");
+        atomic_write(game/"Starlight.NativePlayer.exe","tampered runtime file");
+        require(refused([&]{verify_game_files(game);}),"Fuzz: a damaged file in a deep exported game is refused, not skipped as a plain scene run");
     }
 
     // Exports write only inside their own new folder, never over an existing one, and a failed export leaves nothing behind.

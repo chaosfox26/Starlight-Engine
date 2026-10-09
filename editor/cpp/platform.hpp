@@ -28,6 +28,8 @@ std::wstring wide(std::string_view);
 // For text shown while reporting an error: never throws. Text that is not valid UTF-8 (an ANSI-code-page path in a filesystem_error, raw bytes in a parse error) is read in the ANSI code page.
 std::wstring wide_lossy(std::string_view);
 std::string utf8(std::wstring_view);
+// The path in the form Win32 file calls accept beyond MAX_PATH (\\?\ prefixed, absolute, normalized). Use it for every file-system call on a path that may be long; std::filesystem calls on the plain path fail past 260 characters.
+fs::path native_file_path(const fs::path &);
 std::string read_file(const fs::path &);
 // Same, but refuses a file larger than `maxBytes` before allocating anything for it.
 std::string read_file(const fs::path &, std::uintmax_t maxBytes);
