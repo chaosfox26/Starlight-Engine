@@ -2634,7 +2634,7 @@ struct Editor {
             if(playing)throw std::runtime_error("Stop playing before creating a new scene");
             if (!discard())
                 return;
-            creationGuide.active=false;questTracker.hide();
+            reset_document_state();
             scene = id==NewQuestAdventure ? quest_template() : id==NewAdventure ? adventure_template() : SceneData{};
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             history.clear();
@@ -2660,6 +2660,7 @@ struct Editor {
             auto next = open_scene_data(files[0], repaired, &loading, &loadedHash);
             if (!next) return;
             open_with_context(files[0], "scene", [&] { render_scene(*next); });
+            reset_document_state();
             scene = std::move(*next);
             explorer.reset();explorerLook=false;ShowWindow(adventureHudPanel,SW_HIDE);
             filename = files[0];
@@ -3053,6 +3054,12 @@ struct Editor {
         if (!selectionIds.contains(scene.Characters[hit].Id))
             selectionIds = {scene.Characters[hit].Id};
     }
+    // What belongs to the scene that was open (a creation lesson, an armed pour) must not follow a different scene (EDIT-7).
+    void reset_document_state() {
+        creationGuide.active = false;
+        questTracker.hide();
+        pendingPour.reset();
+    }
     void begin_group() {
         dragOriginals.clear();
         if (!actor())
@@ -3197,7 +3204,7 @@ struct Editor {
                                 error(failure.what());
                             }
                             if (next) {
-                                creationGuide.active=false;questTracker.hide();
+                                reset_document_state();
                                 scene = std::move(*next);
                                 diskHash = hash;
                                 history.clear();

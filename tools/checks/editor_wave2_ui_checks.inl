@@ -77,5 +77,13 @@
         check("EDIT-6: with STARLIGHT_SNAP_ONLY_MOVED a Route stroke leaves the selected object where it was", routeStroke("1") == .3);
         currentMode = "Select";
     }
+    // EDIT-7: per-scene state (creation lesson, armed pour) does not follow a different scene.
+    fixture();
+    creationGuide.active = true; pendingPour = true;
+    reset_document_state();
+    check("EDIT-7: replacing the scene ends the creation lesson and disarms a pour", !creationGuide.active && !pendingPour);
+    pendingPour = true; creationGuide.active = true;
+    command(New);
+    check("EDIT-7: New also disarms a pour", !pendingPour && !creationGuide.active);
     fixture();
 }
