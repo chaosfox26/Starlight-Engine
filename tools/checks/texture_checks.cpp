@@ -1144,6 +1144,17 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         require(!softErr.empty(), "legacy path loader keeps the soft atlas fallback and reports it");
         std::string missingErr; model::SkinnedModel softMissing;
         require(model::loadSkinned(glbPath.string(), (work / "absent_atlas_uv.bin").string(), softMissing, missingErr) && softMissing.loaded && !softMissing.atlasUV && !missingErr.empty(), "legacy path loader reports a missing atlas file and keeps the GLB UVs");
+        {
+            const fs::path lockedUv = work / "locked_atlas_uv.bin";
+            writeBytes(lockedUv, atlas);
+            HANDLE lock = CreateFileW(lockedUv.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            require(lock != INVALID_HANDLE_VALUE, "the test can hold the atlas file open exclusively");
+            std::string lockedErr; model::SkinnedModel lockedModel;
+            const bool lockedLoaded = model::loadSkinned(glbPath.string(), lockedUv.string(), lockedModel, lockedErr);
+            CloseHandle(lock);
+            std::cout << "  unreadable atlas keeps GLB UVs with reason: " << lockedErr << '\n';
+            require(lockedLoaded && lockedModel.loaded && !lockedModel.atlasUV && lockedErr.find("not found") == std::string::npos && lockedErr.find("could not be opened") != std::string::npos, "an atlas that exists but cannot be read is not reported as not found");
+        }
 
         for (size_t cut = 0; cut < glb.size(); ++cut) {
             if (model::loadSkinnedFromMemory(ByteView(glb.data(), cut), nullptr, "cut.glb", scratch).ok()) { std::cout << "  GLB truncation at " << cut << " was accepted\n"; require(false, "every truncation of a GLB is rejected"); }
@@ -1236,6 +1247,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             const auto header = readBytes(root / "deep/engine/render_device.h");
             const std::string text(header.begin(), header.end());
             require(text.find("static const UINT kBktVariants = 8, kBktMaxSubs = 32;") != std::string::npos, "CORE-12: the instance bucket table keeps 8 variants and 32 submesh slots, 30 of them for a model's own primitives");
+            require(text.find("std::string why = \"SerializeRootSignature\";") != std::string::npos, "a failed root signature serialize reports the driver's error blob text");
+            require(text.find("Back faces are\n        // not culled (CullMode NONE, as in the main pipeline above).") != std::string::npos && text.find("Back faces are\n        // culled") == std::string::npos, "the skinned pipeline comment says back faces are not culled, matching its CullMode NONE");
+            const auto sessionSource = readBytes(root / "tools/checks/session_checks.cpp");
+            const std::string sessionText(sessionSource.begin(), sessionSource.end());
+            require(sessionText.find("if (idleControlOnly) std::cout << \"NOT RUN lifecycle scene soak") != std::string::npos && sessionText.find("else std::cout << \"PASS \" << checks.size()") != std::string::npos, "the idle lifecycle control prints NOT RUN instead of PASS, because it does no scene swaps");
         }
         {   // The benchmark's multicore proof writes one palette entry per joint of models[0], so its scratch palette must be sized from that model, not from the per-character cap.
             const auto header = readBytes(root / "deep/engine/render_device.h");
