@@ -276,6 +276,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       sl_freeze(context,0);grassEvidence=grass_gpu_checks(context,grassPacket.empty()?bytes:grassPacket);sl_freeze(context,animated?0:1);
       if(!grassPacket.empty()){if(!sl_scene(context,bytes.data(),int(bytes.size())))throw std::runtime_error(sl_error());sl_camera(context,camera[0],camera[1],camera[2],camera[3],camera[4],camera[5]);}
     }
+    // The soot and chaos probes read the fog field, so the scene needs the emitter each one is about; verify_all's ordinary scene has none. Soot is a fire emitter (type 0), chaos a cloud emitter (type 1).
+    {const bool soot=GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_SOOT",nullptr,0)>0,chaos=GetEnvironmentVariableW(L"STARLIGHT_VALIDATE_FOG",nullptr,0)>0;
+     if(soot&&chaos)throw std::runtime_error("STARLIGHT_VALIDATE_SOOT and STARLIGHT_VALIDATE_FOG need separate runs: each is about a different kind of emitter");
+     if(soot||chaos){const float source[4]{4,.5f,-3,1.5f},type=soot?0.f:1.f;if(!sl_fog_sources(context,source,1)||!sl_fog_source_types(context,&type,1))throw std::runtime_error(sl_error());}}
     wchar_t grassBodySetting[256]{};
     if(GetEnvironmentVariableW(L"STARLIGHT_BENCH_GRASS_BODY",grassBodySetting,256)){
       std::array<float,6> box{};std::wistringstream input(grassBodySetting);std::wstring extra;for(auto& value:box)if(!(input>>value))throw std::runtime_error("Invalid grass showcase contact");if(input>>extra||!sl_grass_contacts(context,box.data(),1))throw std::runtime_error("Invalid grass showcase contact");
