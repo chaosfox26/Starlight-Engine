@@ -15,6 +15,7 @@ __declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, in
 __declspec(dllimport) int slp_character_start(void *, float, float, float, float);
 __declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
 __declspec(dllimport) int slp_terrain_mesh(void *, const float *, int, const uint32_t *, int);
+__declspec(dllimport) int slp_rope_path(void *, uint32_t, float *, int, int);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -82,6 +83,20 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F2: removing the "no body" id must not remove every rope anchored to the world (an invalid id compares equal to the world anchor).
+    {
+     void* anchors=slp_create();
+     require(anchors!=nullptr,"audit2 F2: A physics world is created for the anchor check");
+     if(anchors){
+      uint32_t anchored=slp_add(anchors,cube,8,faces,36,1,1,0,1,0,0,0,0,1);
+      const float ropeSettings[10]={0,1,0, 2,1,0, 0,0,0, 3};
+      require(anchored!=refused&&slp_rope(anchors,anchored,UINT32_MAX,ropeSettings,8,.05f)==1,"audit2 F2: A rope anchored to the world is built for the removal check");
+      slp_character_remove(anchors,UINT32_MAX);
+      float path[65*3]{};
+      require(slp_rope_path(anchors,anchored,path,65,0)==9,"audit2 F2: Removing the invalid body id leaves the world-anchored rope in place");
+      slp_destroy(anchors);
+     }
+    }
     // audit2 F3: a terrain update with a non-finite height is refused before the volumetric terrain it would replace is removed.
     {
      void* volume=slp_create();
