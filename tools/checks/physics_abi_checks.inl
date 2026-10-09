@@ -84,6 +84,13 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F5: a character cannot start from a non-finite position or radius; a NaN start used to leave the controller at NaN for good.
+    {
+     float afterRefusal[4]{};
+     require(slp_character_start(terrainWorld,.3f,nan,0,0)==0&&std::string(slp_error()).find("character start")!=std::string::npos,"audit2 F5: A character cannot start at a non-finite position");
+     require(slp_character_start(terrainWorld,nan,0,0,0)==0&&slp_character_start(terrainWorld,0,0,0,0)==0&&slp_character_start(terrainWorld,3.f,0,0,0)==0,"audit2 F5: A character radius that is not finite or is outside 0.05 to 2 metres is refused");
+     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,afterRefusal)==1&&std::isfinite(afterRefusal[0]+afterRefusal[1]+afterRefusal[2]),"audit2 F5: A refused start leaves the existing character stepping normally");
+    }
     // audit2 F6: a dynamic body or prebuilt hull cannot be made from a non-finite vertex; the hull builder used to accept it and the body got a NaN shape.
     {
      void* hulls=slp_create();
