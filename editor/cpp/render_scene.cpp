@@ -161,6 +161,8 @@ std::shared_ptr<const ResidentBody> resident_body(const Character& c){
         for(auto& v:part.mesh.vertices){
             v.position={v.position.x*sx,v.position.y*sy,v.position.z*sz};
             const Vec3 n{v.normal.x/sx,v.normal.y/sy,v.normal.z/sz};const double length=n.length();if(length>1e-12)v.normal=n/length;
+            // The same GPU tags as the whole-packet writer: raw 12/13 would be read as a fire or dust volume and the part would not be drawn (RS-1).
+            if(c.Surface==12&&v.kind==12)v.kind=-40.f;else if(c.Surface==13&&v.kind==13)v.kind=-41.f;
         }
         bytes+=part.mesh.vertices.size()*sizeof(Vertex)+part.mesh.indices.size()*sizeof(int);
         body->parts.push_back(std::make_shared<const MeshPart>(std::move(part)));
