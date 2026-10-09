@@ -513,6 +513,7 @@ API int sl_resident_mesh(void* handle,const uint8_t* bytes,int length){
    mesh->indices=r.array<uint32_t>(r.get<uint32_t>());
    if(r.left)throw std::runtime_error("Unexpected resident mesh data");
    if(mesh->verts.empty()||mesh->indices.empty()||mesh->indices.size()%3)throw std::runtime_error("Invalid resident mesh");
+   if(GrassDeformation::accepts(mesh->verts.front().kind))throw std::runtime_error("Resident meshes cannot use the GPU grass vertex kind");
    for(auto index:mesh->indices)if(index>=mesh->verts.size())throw std::runtime_error("Invalid resident mesh index");
    incoming.push_back({key,std::move(mesh),lo,hi});
   }

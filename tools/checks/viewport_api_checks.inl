@@ -262,3 +262,26 @@ static void viewport_grass_pending_checks(const auto &require) {
     require(installed && failed && failure.find("Dust volume capacity exceeded") != std::string::npos, "VWP-5: Too many dust volumes fail the frame");
     require(replaced && framed, "VWP-5: Frames after the failed frame and a scene without grass render without touching freed grass entries");
 }
+
+// VWP-6: a resident mesh that uses the GPU grass vertex kind is rejected up front.
+static void viewport_resident_mesh_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport resident mesh checks")) return;
+    const auto &api = session.api;
+    const auto residentMesh = api.get<int (*)(void *, const uint8_t *, int)>("sl_resident_mesh");
+    const auto instances = api.get<int (*)(void *, const uint8_t *, int)>("sl_instances");
+    require(residentMesh && instances, "VWP-6: The viewport module exports the resident mesh calls");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-6: A viewport is created");
+    const auto grassMesh = vwp_resident(1, 1.36f);
+    const auto plainMesh = vwp_resident(2, 0.f);
+    const bool grassRejected = residentMesh(viewport, grassMesh.data(), int(grassMesh.size())) == 0;
+    const std::string grassError = api.error();
+    const bool plainAccepted = residentMesh(viewport, plainMesh.data(), int(plainMesh.size())) == 1;
+    const VwpInstance instance{2, 6, 0, 0, 0, 0, 0, 0, 1, .5f, .5f, .5f, 0, 0};
+    const bool listed = plainAccepted && instances(viewport, reinterpret_cast<const uint8_t *>(&instance), 1) == 1;
+    const bool framed = listed && api.frame(viewport, 0, 13) == 1;
+    api.destroy(viewport);
+    require(grassRejected && !grassError.empty(), "VWP-6: A resident mesh with the GPU grass vertex kind is rejected with a reason");
+    require(plainAccepted && listed && framed, "VWP-6: An ordinary resident mesh and its instance still render");
+}
