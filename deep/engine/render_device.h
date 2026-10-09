@@ -906,9 +906,9 @@ struct RenderDevice {
         std::exception_ptr idleFailure;
         try { flush(); drainDebug(); } catch (...) { idleFailure = std::current_exception(); }
         if (swap) swap->SetFullscreenState(FALSE, nullptr);   // must leave exclusive before releasing the swapchain
+        if (ups) { ups->shutdown(); ups.reset(); }   // before the swapchain goes: frame generation is switched off through that swapchain (FSR-2)
         for (UINT i = 0; i < kFrameCount; ++i) targets[i].Reset();
         swap.Reset();
-        if (ups) { ups->shutdown(); ups.reset(); }
         antilag.shutdown();
         if (idleFailure) {
             if (device && FAILED(device->GetDeviceRemovedReason())) logLine("teardown: the device was removed, skipping the GPU idle wait");

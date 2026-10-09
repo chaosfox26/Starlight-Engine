@@ -100,7 +100,7 @@ def suite_failure(results):
         suite = registry.dict_of(registry.read_json_object(os.path.join(results, 'latest.json')).get('suite'))
     except (OSError, ValueError):
         return 'the ledger wrote no readable latest.json'
-    if suite.get('success') is True and suite.get('exitCode') in (None, 0) and not suite.get('timedOut'):
+    if suite.get('success') is True and suite.get('exitCode') == 0 and suite.get('timedOut') is False:
         return None
     return 'the core suite did not pass: %s' % str(suite.get('error') or 'a check failed')[:300]
 
@@ -194,8 +194,11 @@ def self_test():
         def suite_with(suite):
             json.dump({'suite': suite}, open(os.path.join(folder, 'latest.json'), 'w'))
             return suite_failure(folder)
-        check('a passing suite is not a failure', suite_with({'success': True}) is None)
+        check('a passing suite is not a failure', suite_with({'success': True, 'exitCode': 0, 'timedOut': False}) is None)
         check('a failed suite is a failure even when the ledger finished', 'did not pass' in (suite_with({'success': False, 'error': 'boom'}) or ''))
+        check('a suite that exits nonzero is a failure even when result.json says success', suite_with({'success': True, 'exitCode': 1, 'timedOut': False}) is not None)
+        check('a suite that timed out is a failure even when result.json says success', suite_with({'success': True, 'exitCode': 0, 'timedOut': True}) is not None)
+        check('a suite that exited 0 without timing out still passes', suite_with({'success': True, 'exitCode': 0, 'timedOut': False}) is None)
         check('a missing latest.json is a failure', suite_failure(os.path.join(folder, 'nowhere')) is not None)
         check('a passing suite whose process exited nonzero is a failure', suite_with({'success': True, 'exitCode': 3, 'timedOut': False}) is not None)
         check('a passing suite that timed out after its result is a failure', suite_with({'success': True, 'exitCode': None, 'timedOut': True}) is not None)

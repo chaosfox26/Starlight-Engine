@@ -273,6 +273,26 @@ def self_test():
           and exit_code(set(), {'success': True}) == 2)
     print('  %s every entry VERIFIED still exits 2 when the suite did not pass' % ('ok ' if ok else 'BAD'))
     bad += not ok
+    crashed = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['a', 'X: 1', 'X: 2', 'X: 3'], 'exitCode': -1073741819, 'timedOut': False}
+    settle_exit(crashed)
+    ok = crashed['success'] is False and 'exited with code -1073741819' in crashed['error']
+    print('  %s a suite that exits nonzero after writing a pass is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    killed = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['X: 1', 'X: 2', 'X: 3'], 'exitCode': None, 'timedOut': True}
+    settle_exit(killed)
+    ok = killed['success'] is False and 'timed out' in killed['error']
+    print('  %s a suite that times out after writing a pass is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    regressed = {'started': True, 'completed': True, 'success': False, 'error': 'X: 2 broke', 'checks': ['X: 1'], 'exitCode': 1, 'timedOut': False}
+    settle_exit(regressed)
+    ok = regressed['error'] == 'X: 2 broke' and evaluate_entry(entry, regressed)[0] == 'REGRESSED'
+    print('  %s a nonzero exit keeps the failing check name, so the entry is still REGRESSED' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    clean = {'started': True, 'completed': True, 'success': True, 'error': None, 'checks': ['X: 1', 'X: 2', 'X: 3'], 'exitCode': 0, 'timedOut': False}
+    settle_exit(clean)
+    ok = clean['success'] is True and clean['error'] is None
+    print('  %s a clean exit 0 pass is left as a pass' % ('ok ' if ok else 'BAD'))
+    bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
     del os.environ['STARLIGHT_CHECK_GROUPS']
