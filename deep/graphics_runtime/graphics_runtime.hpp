@@ -32,6 +32,7 @@ std::string sha256_file(const fs::path&);
 std::uint32_t crc32_bytes(std::string_view data);
 std::string read_text(const fs::path&);
 bool safe_relative_path(std::string_view path, std::string& why);
+std::string fold_name(std::string_view utf8Name);
 bool is_reparse_or_link(const fs::path&);
 void atomic_replace_file(const fs::path& target, std::string_view data, const FaultHook& fault, std::string_view stepPrefix, bool keepBackup);
 

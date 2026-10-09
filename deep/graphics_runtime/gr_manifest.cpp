@@ -14,6 +14,11 @@ static void only_keys(const json& j, std::initializer_list<const char*> allowed,
         if (!known) throw GrError(std::string("Unknown key '") + it.key() + "' in " + where);
     }
 }
+static bool fits_int(const json& v) {
+    if (!v.is_number_integer()) return false;
+    double d = v.get<double>();
+    return d >= -2147483648.0 && d <= 2147483647.0;
+}
 static std::string str_of(const json& j, const char* key, const char* where, bool required = true) {
     if (!j.contains(key)) {
         if (required) throw GrError(std::string("Missing '") + key + "' in " + where);
@@ -38,7 +43,7 @@ SetManifest parse_manifest(std::string_view text) {
     try { j = json::parse(text); } catch (const std::exception& e) { throw GrError(std::string("Manifest is not valid JSON: ") + e.what()); }
     only_keys(j, {"schema", "set_id", "family", "category", "channel", "version", "components"}, "manifest");
     SetManifest m;
-    if (!j.contains("schema") || !j["schema"].is_number_integer()) throw GrError("Missing 'schema' in manifest");
+    if (!j.contains("schema") || !fits_int(j["schema"])) throw GrError("Missing 'schema' in manifest");
     m.schema = j["schema"].get<int>();
     m.set_id = str_of(j, "set_id", "manifest");
     m.family = str_of(j, "family", "manifest");
@@ -58,7 +63,7 @@ SetManifest parse_manifest(std::string_view text) {
         k.version = str_of(c, "version", "component");
         k.release = str_of(c, "release", "component");
         k.api_family = str_of(c, "api_family", "component");
-        if (!c.contains("api_major") || !c["api_major"].is_number_integer()) throw GrError("Missing 'api_major' in component " + k.id);
+        if (!c.contains("api_major") || !fits_int(c["api_major"])) throw GrError("Missing 'api_major' in component " + k.id);
         k.api_major = c["api_major"].get<int>();
         k.matched_set = str_of(c, "matched_set", "component");
         k.signer = str_of(c, "signer", "component");
@@ -110,10 +115,6 @@ static bool hex64(const std::string& s) {
     for (unsigned char c : s) if (!(std::isdigit(c) || (c >= 'a' && c <= 'f'))) return false;
     return true;
 }
-static std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
 
 void validate_manifest(const SetManifest& m) {
     if (m.schema != 1) throw GrError("Unsupported manifest schema " + std::to_string(m.schema));
@@ -141,7 +142,7 @@ void validate_manifest(const SetManifest& m) {
         for (auto& f : c.files) {
             std::string why;
             if (!safe_relative_path(f.path, why)) throw GrError("Unsafe path '" + f.path + "' (" + why + ")");
-            if (!paths.insert(lower(f.path)).second) throw GrError("Duplicate or case-colliding path " + f.path);
+            if (!paths.insert(fold_name(f.path)).second) throw GrError("Duplicate or case-colliding path " + f.path);
             if (!hex64(f.sha256)) throw GrError("File " + f.path + " needs a lowercase SHA-256");
             own.insert(f.path);
         }
@@ -173,7 +174,7 @@ Result verify_set_folder(const fs::path& dir, const SetManifest& m) {
         for (auto& c : m.components) {
             for (auto& f : c.files) {
                 auto p = dir / from_utf8(f.path);
-                expected.insert(lower(f.path));
+                expected.insert(fold_name(f.path));
                 if (is_reparse_or_link(p)) return Result::fail("File is a link: " + f.path);
                 std::error_code ec;
                 if (!fs::is_regular_file(p, ec)) return Result::fail("File is missing: " + f.path);
@@ -185,7 +186,7 @@ Result verify_set_folder(const fs::path& dir, const SetManifest& m) {
         for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
             if (is_reparse_or_link(it->path())) return Result::fail("Unexpected link in set folder");
             if (!it->is_regular_file()) continue;
-            auto rel = lower(utf8(fs::relative(it->path(), dir)));
+            auto rel = fold_name(utf8(fs::relative(it->path(), dir)));
             std::replace(rel.begin(), rel.end(), '\\', '/');
             if (rel != "set.json" && !expected.count(rel)) return Result::fail("Unexpected file in set folder: " + rel);
         }

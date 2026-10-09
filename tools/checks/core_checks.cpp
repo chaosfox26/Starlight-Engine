@@ -62,6 +62,7 @@ using namespace starlight::editor;
 #include "cache_pin_checks.inl"
 #include "key_card_checks.inl"
 #include "graphics_runtime_checks.inl"
+#include "adversarial_parser_checks.inl"
 #include "club_schema_checks.inl"
 #include "asset_root_checks.inl"
 #include "asset_store_fuzz_checks.inl"
@@ -149,6 +150,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(object_cache_checks, object_cache_checks(require,folder));
         RUN_GROUP(key_card_checks, key_card_checks(require,folder));
         RUN_GROUP(graphics_runtime_checks, graphics_runtime_checks(require,folder));
+        RUN_GROUP(adversarial_parser_checks, adversarial_parser_checks(require,folder));
         RUN_GROUP(club_schema_checks, club_schema_checks(require,folder));
         RUN_GROUP(model_asset_checks, model_asset_checks(require,folder));
         RUN_GROUP(asset_root_checks, asset_root_checks(require,folder));

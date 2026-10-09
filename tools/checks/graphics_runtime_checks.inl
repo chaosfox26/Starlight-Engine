@@ -279,6 +279,237 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
     }
 
     {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
+        auto m = gr::parse_manifest(gr::read_text(pkgs / "sl-2.13.0" / "set.json"));
+        auto j = nlohmann::json::parse(gr::manifest_to_json(m));
+        auto wrapSchema = j; wrapSchema["schema"] = 4294967297ull;
+        auto wrapApi = j; wrapApi["components"][0]["api_major"] = 4294967297ull;
+        int refused = 0;
+        for (auto* b : {&wrapSchema, &wrapApi}) try { gr::validate_manifest(gr::parse_manifest(b->dump())); } catch (const gr::GrError&) { ++refused; }
+        require(refused == 2, "GFX manifest integers outside the 32-bit range are refused instead of wrapping to a small number");
+    }
+    {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
+        auto m = gr::parse_manifest(gr::read_text(pkgs / "sl-2.13.0" / "set.json"));
+        auto j = nlohmann::json::parse(gr::manifest_to_json(m));
+        auto wrapSchema = j; wrapSchema["schema"] = 4294967297ull;
+        auto wrapApi = j; wrapApi["components"][0]["api_major"] = 4294967297ull;
+        int refused = 0;
+        for (auto* b : {&wrapSchema, &wrapApi}) try { gr::validate_manifest(gr::parse_manifest(b->dump())); } catch (const gr::GrError&) { ++refused; }
+        require(refused == 2, "GFX manifest integers outside the 32-bit range are refused instead of wrapping to a small number");
+    }
+    {
+        const auto kp = gr::testing::generate_test_keypair();
+        gr::TrustStore trust;
+        trust.keys["test-1"] = kp.publicBlob;
+        gr::Catalog c;
+        c.serial = 5;
+        c.entries = {entry_for(pkgs, "sl-2.13.0", true)};
+        auto payload = nlohmann::json::parse(gr::testing::catalog_payload_json(c));
+        auto negative = payload; negative["serial"] = -1;
+        auto wrapped = payload; wrapped["sets"][0]["api_major"] = 4294967297ull;
+        auto fractional = payload; fractional["serial"] = 5.5;
+        int refused = 0;
+        for (auto* b : {&negative, &wrapped, &fractional}) if (!gr::verify_catalog(gr::testing::sign_catalog_payload(kp, "test-1", b->dump()), trust).ok) ++refused;
+        require(refused == 3, "GFX a signed catalog with a negative, fractional or out-of-range number is refused instead of wrapping");
+    }
+    {
+        for (const char* name : {"bad\xff.txt", "over\xC0\xAF.txt", "sur\xED\xA0\x80.txt"}) {
+            auto dest = work / "zip-utf8";
+            fs::remove_all(dest);
+            bool threw = false;
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(make_zip({ze_store(name, "x")}), dest); } catch (...) { threw = true; }
+            require(!threw && !r.ok && !fs::exists(dest), "GFX zip refuses an entry name that is not valid UTF-8 without throwing or leaving a folder");
+        }
+    }
+    {
+        auto dest = work / "zip-unicode-case";
+        fs::remove_all(dest);
+        auto r = gr::extract_zip_bytes(make_zip({ze_store("\xC3\x89.txt", "1"), ze_store("\xC3\xA9.txt", "2")}), dest);
+        require(!r.ok && !fs::exists(dest), "GFX zip refuses names that differ only by non-ASCII letter case");
+    }
+    {
+        std::string why;
+        for (const char* name : {"CONOUT$", "conin$", "con .txt", "NUL  .txt", "COM\xC2\xB9", "lpt\xC2\xB2.dat"})
+            require(!gr::safe_relative_path(name, why), (std::string("GFX path guard rejects the device name ") + name).c_str());
+        require(gr::safe_relative_path("console.txt", why) && gr::safe_relative_path("com10.txt", why), "GFX path guard still accepts names that merely start like a device");
+    }
+    {
+        const auto text = sample_text();
+        ZE d; d.name = "docs/text.txt"; d.method = 8; d.data = text_deflate(); d.crc = gr::crc32_bytes(text); d.usize = std::uint32_t(text.size());
+        ZE dir; dir.name = "empty/"; dir.madeBy = 20;
+        const std::string zip = make_zip({ze_store("a/b.txt", "stored content"), d, dir});
+        const std::size_t eocd = zip.size() - 22;
+        auto put16 = [](std::string z, std::size_t at, unsigned v) { z[at] = char(v & 255); z[at + 1] = char(v >> 8 & 255); return z; };
+        auto put32 = [&](std::string z, std::size_t at, std::uint32_t v) { z = put16(z, at, v & 0xFFFF); return put16(z, at + 2, v >> 16); };
+        const std::uint32_t cdOff = std::uint32_t(zip[eocd + 16] & 255) | std::uint32_t(zip[eocd + 17] & 255) << 8 | std::uint32_t(zip[eocd + 18] & 255) << 16;
+        bool anyThrew = false;
+        auto attempt = [&](const std::string& tag, const std::string& z) {
+            auto dest = work / ("zip-damage-" + tag);
+            fs::remove_all(dest);
+            gr::Result r;
+            try { r = gr::extract_zip_bytes(z, dest); } catch (...) { anyThrew = true; r = gr::Result::fail("threw"); }
+            return std::make_pair(r, dest);
+        };
+        const std::pair<const char*, std::string> damaged[] = {
+            {"counts-disagree", put16(put16(zip, eocd + 8, 4), eocd + 10, 4)},
+            {"zip64-count", put16(put16(zip, eocd + 8, 0xFFFF), eocd + 10, 0xFFFF)},
+            {"zip64-size", put32(zip, eocd + 12, 0xFFFFFFFFu)},
+            {"zip64-offset", put32(zip, eocd + 16, 0xFFFFFFFFu)},
+            {"directory-past-end", put32(zip, eocd + 16, std::uint32_t(zip.size()))},
+            {"directory-too-big", put32(zip, eocd + 12, std::uint32_t(zip.size()))},
+            {"directory-signature", put16(zip, cdOff, 0)},
+            {"local-signature", put16(zip, 0, 0)},
+            {"entry-offset-huge", put32(zip, cdOff + 42, 0x7FFFFFFFu)},
+            {"entry-offset-zip64", put32(zip, cdOff + 42, 0xFFFFFFFFu)},
+            {"entry-size-zip64", put32(zip, cdOff + 20, 0xFFFFFFFFu)},
+            {"stored-size-differs", put32(zip, cdOff + 20, 3)},
+            {"name-length-huge", put16(zip, cdOff + 28, 0xFFFF)},
+            {"extra-length-huge", put16(zip, cdOff + 30, 0xFFFF)},
+            {"comment-length-huge", put16(zip, cdOff + 32, 0xFFFF)},
+            {"directory-with-data", put32(zip, zip.size() - 22 - 46 - 6 + 20, 5)},
+        };
+        for (const auto& [tag, z] : damaged) {
+            auto [r, dest] = attempt(tag, z);
+            require(!r.ok && !fs::exists(dest), ("GFX zip refuses a damaged archive and leaves nothing behind: " + std::string(tag)).c_str());
+        }
+        attempt("no-entries", make_zip({}));
+        int refused = 0, extracted = 0;
+        bool leftover = false, escaped = false;
+        for (std::size_t at = 0; at < zip.size(); ++at)
+            for (unsigned char value : {0x00, 0xFF, 0x80, 0x2F}) {
+                if (static_cast<unsigned char>(zip[at]) == value) continue;
+                auto z = zip;
+                z[at] = static_cast<char>(value);
+                auto [r, dest] = attempt("flip", z);
+                if (!r.ok) { ++refused; leftover = leftover || fs::exists(dest); continue; }
+                ++extracted;
+                for (auto& entry : fs::recursive_directory_iterator(dest)) {
+                    auto rel = fs::relative(entry.path(), dest).generic_string();
+                    escaped = escaped || rel.empty() || rel.rfind("..", 0) == 0 || fs::path(rel).is_absolute();
+                }
+                fs::remove_all(dest);
+            }
+        require(!anyThrew, "GFX zip never throws on a damaged archive");
+        require(!leftover && !escaped, "GFX zip leaves no folder after refusing and never writes outside its target folder, whatever single byte is damaged");
+        require(refused > 100 && extracted > 0, "GFX zip: single-byte damage is refused or extracted safely");
+    }
+    {
+        auto m = gr::parse_manifest(gr::read_text(pkgs / "sl-2.13.0" / "set.json"));
+        auto j = nlohmann::json::parse(gr::manifest_to_json(m));
+        auto wrapSchema = j; wrapSchema["schema"] = 4294967297ull;
+        auto wrapApi = j; wrapApi["components"][0]["api_major"] = 4294967297ull;
+        int refused = 0;
+        for (auto* b : {&wrapSchema, &wrapApi}) try { gr::validate_manifest(gr::parse_manifest(b->dump())); } catch (const gr::GrError&) { ++refused; }
+        require(refused == 2, "GFX manifest integers outside the 32-bit range are refused instead of wrapping to a small number");
+    }
+    {
+        const auto kp = gr::testing::generate_test_keypair();
+        gr::TrustStore trust;
+        trust.keys["test-1"] = kp.publicBlob;
+        gr::Catalog c;
+        c.serial = 5;
+        c.entries = {entry_for(pkgs, "sl-2.13.0", true)};
+        auto payload = nlohmann::json::parse(gr::testing::catalog_payload_json(c));
+        auto negative = payload; negative["serial"] = -1;
+        auto wrapped = payload; wrapped["sets"][0]["api_major"] = 4294967297ull;
+        auto fractional = payload; fractional["serial"] = 5.5;
+        int refused = 0;
+        for (auto* b : {&negative, &wrapped, &fractional}) if (!gr::verify_catalog(gr::testing::sign_catalog_payload(kp, "test-1", b->dump()), trust).ok) ++refused;
+        require(refused == 3, "GFX a signed catalog with a negative, fractional or out-of-range number is refused instead of wrapping");
+    }
+    {
         const auto kp = gr::testing::generate_test_keypair();
         const auto other = gr::testing::generate_test_keypair();
         gr::TrustStore trust;

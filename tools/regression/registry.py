@@ -18,6 +18,7 @@ IMPLEMENTED_PLACEHOLDERS = ('repo', 'buildDir', 'runFolder')
 RESULT_FILES = ['result.json', 'progress.log']
 BRACE = re.compile(r'\{([A-Za-z]+)\}')
 ID = re.compile(r'^[A-Za-z0-9._:+-]{1,80}$')
+ENTRY_ID = re.compile(r'^[A-Za-z0-9_+-][A-Za-z0-9._+-]{0,79}$')   # also used as a packet file name: no separators, drive colon or leading dot
 
 
 class RegistryError(Exception):
@@ -34,6 +35,24 @@ def load(path=REGISTRY_PATH):
     if problems:
         raise RegistryError('registry is invalid: ' + '; '.join(problems))
     return registry
+
+
+def read_json_object(path):
+    """The JSON object stored at path. Raises OSError for an unreadable file and ValueError for text that is not JSON or not an object, so a caller
+    that already handles those two never meets an AttributeError from a result file that holds a list, a string or null."""
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError('%s does not hold a JSON object' % os.path.basename(path))
+    return data
+
+
+def dict_of(value):
+    return value if isinstance(value, dict) else {}
+
+
+def list_of(value):
+    return value if isinstance(value, list) else []
 
 
 def bare_name(value):
@@ -100,6 +119,33 @@ def validate(registry):
     return found
 
 
+def ledger_problems(ledger):
+    """Shape errors that would make the runner fail with a traceback or write a packet outside its folder; empty when the ledger can be read safely."""
+    entries = ledger.get('entries') if isinstance(ledger, dict) else None
+    if not isinstance(entries, list) or not entries:
+        return ['ledger needs a non-empty entries list']
+    found, seen = [], set()
+    for number, entry in enumerate(entries):
+        if not isinstance(entry, dict) or not isinstance(entry.get('id'), str) or not ENTRY_ID.match(entry['id']):
+            found.append('ledger entry %d has a missing or unsafe id' % number)
+            continue
+        if entry['id'] in seen:
+            found.append('duplicate ledger entry id %s' % entry['id'])
+        seen.add(entry['id'])
+        if not isinstance(entry.get('title'), str) or not isinstance(entry.get('class'), str):
+            found.append('ledger entry %s needs a title and a class' % entry['id'])
+        tests = entry.get('tests')
+        if not isinstance(tests, list) or not tests:
+            found.append('ledger entry %s lists no tests' % entry['id'])
+            continue
+        for test in tests:
+            if not isinstance(test, dict) or not isinstance(test.get('token'), str) or not test['token']:
+                found.append('ledger entry %s has a test without a token' % entry['id'])
+            elif 'minChecks' in test and (not isinstance(test['minChecks'], int) or isinstance(test['minChecks'], bool) or test['minChecks'] < 1):
+                found.append('ledger entry %s: minChecks must be a whole number of at least 1' % entry['id'])
+    return found
+
+
 def fill(text, values):
     return BRACE.sub(lambda m: values[m.group(1)], text)
 
@@ -152,7 +198,13 @@ def check_ledger(ledger_path=None, registry=None):
     problems = validate(registry)
     if problems:
         return ['registry is invalid: ' + '; '.join(problems)]
-    ledger = json.load(open(ledger_path or os.path.join(HERE, 'ledger.json'), encoding='utf-8'))
+    try:
+        ledger = read_json_object(ledger_path or os.path.join(HERE, 'ledger.json'))
+    except (OSError, ValueError) as error:
+        return ['ledger could not be read: %s' % error]
+    shape = ledger_problems(ledger)
+    if shape:
+        return shape
     found, used, commands_used = [], set(), set()
     by_id = {c['checkId']: c for c in registry['checks']}
     entry_ids = {e['id'] for e in ledger['entries']}
@@ -189,6 +241,8 @@ def undercounted(ledger, repo=None):
     """Ledger tests whose minChecks is below the number of check-name literals that carry their token in the core suite sources. A run that stops after minChecks
     matching checks reads VERIFIED, so a minimum below what the author wrote leaves the remaining checks unprotected. Names built in a loop make the real count higher
     than the literal count, never lower, so this can only under-report. Names on a require(false, ...) line run only when something already went wrong and are not counted."""
+    if ledger_problems(ledger):
+        return []   # check_ledger reports the shape errors
     folder = os.path.join(repo or REPO_ROOT, 'tools', 'checks')
     text = ''
     for name in sorted(os.listdir(folder)):
@@ -294,6 +348,28 @@ def self_test():
     fmt = copy.deepcopy(registry)
     fmt['commands']['core-suite']['evidenceFiles'] = ['result.json']
     expect('an unsupported result format is refused', any('fixed result format' in p for p in check_ledger(registry=fmt)))
+    broken_ledgers = [('empty file', ''), ('truncated JSON', json.dumps(ledger)[:100]), ('a list', '[]'), ('null', 'null'), ('no entries key', '{}'),
+                      ('entries as text', '{"entries": "x"}'), ('entries holding numbers', '{"entries": [1]}'), ('an empty entry', '{"entries": [{}]}')]
+    for label, mutate in (('a path-climbing entry id', lambda x: x['entries'][0].__setitem__('id', '..\\..\\escape')), ('a slash in an entry id', lambda x: x['entries'][0].__setitem__('id', 'a/b')),
+                          ('an absolute entry id', lambda x: x['entries'][0].__setitem__('id', 'C:\\x')), ('tests as a number', lambda x: x['entries'][0].__setitem__('tests', 5)),
+                          ('a null test', lambda x: x['entries'][0].__setitem__('tests', [None])), ('text minChecks', lambda x: x['entries'][0]['tests'][0].__setitem__('minChecks', 'x')),
+                          ('a duplicate entry id', lambda x: x['entries'].append(copy.deepcopy(x['entries'][0]))), ('a missing title', lambda x: x['entries'][0].pop('title'))):
+        damaged = copy.deepcopy(ledger)
+        mutate(damaged)
+        broken_ledgers.append((label, json.dumps(damaged)))
+    for label, text in broken_ledgers:
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
+            f.write(text)
+            path = f.name
+        try:
+            try:
+                problems = check_ledger(path, registry)
+            except Exception as error:
+                problems = None
+                label += ' (raised %s)' % type(error).__name__
+            expect('a damaged ledger (%s) is reported as a problem, not a traceback' % label, bool(problems))
+        finally:
+            os.remove(path)
     expect('every ledger minChecks covers the check names in the sources: %s' % (undercounted(ledger) or 'no differences'), not undercounted(ledger))
     low = copy.deepcopy(ledger)
     low['entries'][0]['tests'][0]['minChecks'] = 1
@@ -306,7 +382,9 @@ if __name__ == '__main__':
     if '--self-test' in sys.argv:
         sys.exit(self_test())
     if '--check-ledger' in sys.argv:
-        problems = check_ledger() + undercounted(json.load(open(os.path.join(HERE, 'ledger.json'), encoding='utf-8')))
+        problems = check_ledger()
+        if not problems:
+            problems = undercounted(read_json_object(os.path.join(HERE, 'ledger.json')))
         print('\n'.join(problems) if problems else 'registry and ledger agree')
         sys.exit(1 if problems else 0)
     print(__doc__)

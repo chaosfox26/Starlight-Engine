@@ -40,6 +40,11 @@ struct Key {
     BCRYPT_KEY_HANDLE h = nullptr;
     ~Key() { if (h) BCryptDestroyKey(h); }
 };
+bool fits_int(const json& v) {
+    if (!v.is_number_integer()) return false;
+    double d = v.get<double>();
+    return d >= -2147483648.0 && d <= 2147483647.0;
+}
 void check_keys(const json& j, std::initializer_list<const char*> allowed, const char* where) {
     if (!j.is_object()) throw GrError(std::string(where) + " must be an object");
     for (auto it = j.begin(); it != j.end(); ++it) {
@@ -111,6 +116,7 @@ CatalogResult verify_catalog(std::string_view text, const TrustStore& trust) {
         auto j = json::parse(payload);
         check_keys(j, {"schema", "serial", "sets", "revoked", "min_safe"}, "catalog payload");
         if (!j.contains("schema") || j["schema"] != 1) throw GrError("Unsupported catalog schema");
+        if (!j.at("serial").is_number_unsigned()) throw GrError("Catalog serial must be a whole number of zero or more");
         r.catalog.serial = j.at("serial").get<std::uint64_t>();
         for (auto& s : j.at("sets")) {
             check_keys(s, {"set_id", "family", "category", "channel", "version", "release", "api_family", "api_major", "manifest_sha256", "auto_ok"}, "catalog entry");
@@ -126,6 +132,7 @@ CatalogResult verify_catalog(std::string_view text, const TrustStore& trust) {
             if (!parse_version(e.version)) throw GrError("Catalog entry has a bad version");
             e.release = s.at("release").get<std::string>();
             e.api_family = s.at("api_family").get<std::string>();
+            if (!fits_int(s.at("api_major"))) throw GrError("Catalog entry has an api_major that is not a 32-bit whole number");
             e.api_major = s.at("api_major").get<int>();
             e.manifest_sha256 = s.at("manifest_sha256").get<std::string>();
             e.auto_ok = s.at("auto_ok").get<bool>();

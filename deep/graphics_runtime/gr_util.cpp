@@ -80,6 +80,21 @@ std::uint32_t crc32_bytes(std::string_view data) {
     return c ^ 0xFFFFFFFFu;
 }
 
+std::string fold_name(std::string_view s) {
+    std::string folded(s);
+    std::transform(folded.begin(), folded.end(), folded.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    int n = s.empty() ? 0 : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    if (n <= 0) return folded;
+    std::wstring wide(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), wide.data(), n);
+    CharLowerBuffW(wide.data(), static_cast<DWORD>(n));
+    int m = WideCharToMultiByte(CP_UTF8, 0, wide.data(), n, nullptr, 0, nullptr, nullptr);
+    if (m <= 0) return folded;
+    std::string out(static_cast<std::size_t>(m), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide.data(), n, out.data(), m, nullptr, nullptr);
+    return out;
+}
+
 bool safe_relative_path(std::string_view path, std::string& why) {
     if (path.empty()) { why = "empty path"; return false; }
     if (path.size() > 240) { why = "path too long"; return false; }
@@ -97,10 +112,14 @@ bool safe_relative_path(std::string_view path, std::string& why) {
             }
         }
         std::string stem(seg.substr(0, seg.find('.')));
+        while (!stem.empty() && stem.back() == ' ') stem.pop_back();
         std::transform(stem.begin(), stem.end(), stem.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-        static const char* reserved[] = {"CON", "PRN", "AUX", "NUL"};
+        static const char* reserved[] = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"};
         for (auto r : reserved) if (stem == r) { why = "reserved device name"; return false; }
         if (stem.size() == 4 && (stem.rfind("COM", 0) == 0 || stem.rfind("LPT", 0) == 0) && stem[3] >= '1' && stem[3] <= '9') {
+            why = "reserved device name"; return false;
+        }
+        if (stem.size() == 5 && (stem.rfind("COM", 0) == 0 || stem.rfind("LPT", 0) == 0) && stem[3] == '\xC2' && (stem[4] == '\xB9' || stem[4] == '\xB2' || stem[4] == '\xB3')) {
             why = "reserved device name"; return false;
         }
         if (end == std::string_view::npos) break;
