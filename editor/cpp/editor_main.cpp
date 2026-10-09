@@ -1466,8 +1466,8 @@ struct Editor {
         if (sliders.contains(key)) return SendMessage(inputs.at(key), TBM_GETPOS, 0, 0) / sliders.at(key);
         auto s = text(inputs.at(key));
         size_t consumed = 0;
-        double v = std::stod(s, &consumed);
-        if (consumed != s.size() || !std::isfinite(v))
+        double v = 0;bool parsed = true;try { v = std::stod(s, &consumed); } catch (const std::logic_error &) { parsed = false; }
+        if (!parsed || consumed != s.size() || !std::isfinite(v))
             throw std::runtime_error("Enter a valid number for " + key);
         return v;
     }
@@ -1667,7 +1667,7 @@ struct Editor {
                 field("breakable","Can be broken",c->Breakable?"1":"0",true);
                 field("destructionHealth","Durability (scenery)",c->DestructionHealth);
                 field("combatHealth","Combat health (0 = scenery)",std::to_string(c->CombatHealth));field("combatSight","Sight range (m)",c->CombatSightRange);
-                choice("combatTeam","Combat affiliation",c->CombatTeam==1?1:c->CombatTeam==0?0:2,{L"Neutral",L"Friendly",L"Enemy"});
+                if(c->CombatTeam>2)choice("combatTeam","Combat affiliation",3,{L"Neutral",L"Friendly",L"Enemy",L"Keep current team"});else choice("combatTeam","Combat affiliation",c->CombatTeam==1?1:c->CombatTeam==0?0:2,{L"Neutral",L"Friendly",L"Enemy"});
                 field("combatBoss","Boss break bar",c->CombatBoss?"1":"0",true);
                 field("CombatProjectileSpeed","Shot speed (0 = contact attack)",c->CombatProjectileSpeed);
                 field("CombatProjectileGravity","Shot gravity (m/s squared)",c->CombatProjectileGravity);
@@ -2149,7 +2149,7 @@ struct Editor {
             auto candidate=*actor();int role=integer("gameRole");
             if(role<0||role>4)throw std::runtime_error("Choose an interaction");
             candidate.GameplayRole=std::array<std::string,5>{"none","key","door","exit","breakable"}[role];
-            candidate.Breakable=checked("breakable");candidate.DestructionHealth=number("destructionHealth");candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");candidate.CombatTeam=integer("combatTeam");candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.CombatProjectileSpeed=number("CombatProjectileSpeed");candidate.CombatProjectileGravity=number("CombatProjectileGravity");candidate.CombatProjectileMass=number("CombatProjectileMass");candidate.validate();
+            candidate.Breakable=checked("breakable");candidate.DestructionHealth=number("destructionHealth");candidate.GameplayKey=text(inputs.at("gameKey"));candidate.GrappleMode=integer("grappleMode");candidate.CombatHealth=number("combatHealth");candidate.CombatSightRange=number("combatSight");if(const int team=integer("combatTeam");team!=3)candidate.CombatTeam=team;candidate.CombatBoss=checked("combatBoss");candidate.CombatAutoAttack=checked("combatAutoAttack");candidate.CombatPursuit=checked("combatPursuit");candidate.CombatControlEffect=integer("combatControl")-1;candidate.CombatProjectileSpeed=number("CombatProjectileSpeed");candidate.CombatProjectileGravity=number("CombatProjectileGravity");candidate.CombatProjectileMass=number("CombatProjectileMass");candidate.validate();
             edit([&]{*actor()=candidate;});return;
         }
         if (id == ApplyExact || id == ApplyBuild || id == ApplyBody || id == ApplyLightning || id == ApplyParticles || id == ApplyExtras) {
