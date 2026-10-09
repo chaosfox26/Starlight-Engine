@@ -116,18 +116,18 @@ std::optional<MeshHit> mesh_hit(const Mesh &m, const Character &c, Vec3 origin, 
              e2 = world_point(c, m.vertices[m.indices[t + 2]].position) - a;
         auto h = ray.cross(e2);
         double det = e1.dot(h);
-        if (std::abs(det) < 1e-10)
+        if (!(std::abs(det) >= 1e-10))
             continue;
         auto s = origin - a;
         double u = s.dot(h) / det;
-        if (u < 0 || u > 1)
+        if (!(u >= 0 && u <= 1))
             continue;
         auto q = s.cross(e1);
         double v = ray.dot(q) / det;
-        if (v < 0 || u + v > 1)
+        if (!(v >= 0 && u + v <= 1))
             continue;
         double d = e2.dot(q) / det;
-        if (d <= 0 || d >= hit.distance)
+        if (!(d > 0 && d < hit.distance))
             continue;
         hit = {origin + ray * d, e1.cross(e2).unit(), d};
         if (hit.normal.dot(ray) > 0)
@@ -228,15 +228,15 @@ std::optional<MeshHit> mesh_hit(const Mesh &m, const MeshAccel &accel, const Obj
             const Vec3 a = m.vertices[m.indices[3 * t]].position, e1 = m.vertices[m.indices[3 * t + 1]].position - a, e2 = m.vertices[m.indices[3 * t + 2]].position - a;
             const Vec3 h = direction.cross(e2);
             const double det = e1.dot(h);
-            if (std::abs(det) < 1e-14) continue;
+            if (!(std::abs(det) >= 1e-14)) continue;
             const Vec3 s = localOrigin - a;
             const double u = s.dot(h) / det;
-            if (u < 0 || u > 1) continue;
+            if (!(u >= 0 && u <= 1)) continue;
             const Vec3 q = s.cross(e1);
             const double v = direction.dot(q) / det;
-            if (v < 0 || u + v > 1) continue;
+            if (!(v >= 0 && u + v <= 1)) continue;
             const double distance = e2.dot(q) / det;
-            if (distance <= 0 || distance > best || (distance == best && int64_t(t) > bestTriangle)) continue;
+            if (!(distance > 0 && distance <= best) || (distance == best && int64_t(t) > bestTriangle)) continue;
             best = distance; bestTriangle = t;
         }
     }
