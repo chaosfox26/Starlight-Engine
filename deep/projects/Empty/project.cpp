@@ -141,4 +141,4 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     }catch(const std::exception& error){ready.fail(std::string("graphics initialisation failed: ")+error.what());report();device.teardown();DestroyWindow(h);return 2;}
 }
 
-extern "C" __declspec(dllexport) int WINAPI StarlightRunProject(HINSTANCE i, LPWSTR c, int s) { int result=RunProjectBody(i,c,s); delete &device; return result; }
+extern "C" __declspec(dllexport) int WINAPI StarlightRunProject(HINSTANCE i, LPWSTR c, int s) { int result=RunProjectBody(i,c,s); device.editorDraw=nullptr; roomParts.clear(); delete &device; return result; }
