@@ -68,6 +68,7 @@ extern "C" __declspec(dllimport) uint64_t sl_water_scene_bytes(void *);
 extern "C" __declspec(dllimport) int sl_resize(void *,int,int);
 extern "C" __declspec(dllimport) int sl_grass_contacts(void*,const float*,int);
 extern "C" __declspec(dllimport) int sl_grass_readback(void*,int,float*,int);
+extern "C" __declspec(dllimport) int sl_grass_reach(void*,int,float*);
 extern "C" __declspec(dllimport) int sl_grass_stats(void*,uint64_t*);
 extern "C" __declspec(dllimport) int sl_motion_readback(void*,double*);
 

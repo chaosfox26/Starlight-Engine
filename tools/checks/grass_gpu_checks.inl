@@ -44,5 +44,19 @@ static json grass_gpu_checks(void* context,const std::vector<unsigned char>& pac
  std::vector<float> other(count*14);require(sl_grass_readback(context,1,other.data(),int(count))==int(count),sl_error());double isolationError=0;double response=1-(1+12*.2)*exp(-12*.2);
  for(size_t i=0;i<count;++i){const float* source=rest.data()+i*14;auto w=worldPoint(source);w[0]+=20;double bend=std::clamp(double(source[1])/.6,0.,1.);bend*=bend;std::array<double,3> expected{response*bend*(.10*sin(.2*1.7+w[0]*.4+w[2]*.25)+.025*sin(.2*4.1+w[2])),0,response*bend*.07*cos(.2*1.3+w[2]*.3)};auto offset=worldOffset(other.data()+i*14,source);for(int j=0;j<3;++j)isolationError=std::max(isolationError,std::abs(offset[j]-expected[j]));}require(isolationError<.00015,"One grass placement leaked contact state into another");
  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());require(sl_grass_contacts(context,nullptr,0),sl_error());sl_environment_reset(context);frame(0);
+ // Shadow reach: held while the blade spring settles after any change in contact count, then relaxed to what the current contacts need, never below it.
+ {
+  auto reachNow=[&]{float r=0;require(sl_grass_reach(context,0,&r),"Grass reach unavailable");return double(r);};
+  sl_environment_reset(context);frame(0);
+  std::vector<float> crowd(30*6);for(int i=0;i<30;++i)std::copy(body.begin(),body.end(),crowd.begin()+i*6);
+  require(sl_grass_contacts(context,crowd.data(),30),sl_error());frame(.01);require(std::abs(reachNow()-24.16)<.01,"Thirty contacts did not widen the grass shadow reach");
+  require(sl_grass_contacts(context,body.data(),1),sl_error());frame(.1);frame(.4);require(reachNow()>24,"Grass shadow reach shrank while the blades were still settling");
+  frame(.9);double relaxed=reachNow();require(relaxed<5&&relaxed>=.96-1e-4,"Grass shadow reach did not relax toward the remaining contact");
+  frame(3);require(std::abs(reachNow()-.96)<.002,"Grass shadow reach dropped below, or stayed above, what one active contact needs");
+  require(sl_grass_contacts(context,nullptr,0),sl_error());frame(3.1);frame(3.4);require(reachNow()>.95,"Grass shadow reach shrank while the blades were still settling after the contact left");
+  frame(4);double tail=reachNow();require(tail>.16&&tail<.2,"Grass shadow reach did not relax after the contact left");
+  frame(6);require(std::abs(reachNow()-.16)<.002,"Grass shadow reach never returned to its base");
+  sl_environment_reset(context);frame(0);
+ }
  return {{"success",true},{"vertices",count},{"movingContactAndRecoverySteps",120},{"peakTrajectoryError",peakError},{"peakRootError",peakRoot},{"peakNormalLengthError",peakNormal},{"peakNormalReferenceError",peakNormalReference},{"peakHistoryError",peakHistory},{"renderedMotionPeak",motion[0]},{"movingPixels",motion[2]},{"lateContactOffset",latePeak},{"instanceIsolationError",isolationError},{"resetVerified",true},{"unloadReloadVerified",true},{"pausedClockVerified",true}};
 }
