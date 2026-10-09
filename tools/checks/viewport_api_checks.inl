@@ -148,3 +148,32 @@ static void viewport_rt_instance_checks(const auto &require) {
     require(uploaded && listed, "VWP-1: A resident mesh and an instance of it are accepted while ray tracing is requested");
     require(framed, "VWP-1: Frames render while a resident instance exists and ray tracing is active");
 }
+
+// VWP-2: a rejected fog obstacle list and a failed GPU wait report their own reason through sl_error.
+static void viewport_error_text_checks(const auto &require) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport error text checks")) return;
+    const auto &api = session.api;
+    const auto fogSources = api.get<int (*)(void *, const float *, int)>("sl_fog_sources");
+    const auto fogObstacles = api.get<int (*)(void *, const float *, int)>("sl_fog_obstacles");
+    const auto waitGpu = api.get<int (*)(void *)>("sl_wait_gpu");
+    const auto fault = api.get<int (*)(int)>("sl_debug_fail_hresult");
+    require(fogSources && fogObstacles && waitGpu && fault, "VWP-2: The viewport module exports the fog obstacle, wait and failure hook calls");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-2: A viewport is created");
+    const float noRadius[4]{0, 0, 0, -1};
+    const bool staleSet = fogSources(viewport, noRadius, 1) == 0;   // leaves an unrelated reason behind as the last error
+    float obstacle[9]{};
+    obstacle[0] = std::numeric_limits<float>::quiet_NaN();
+    const bool obstacleRejected = fogObstacles(viewport, obstacle, 1) == 0;
+    const std::string obstacleError = api.error();
+    const bool staleAgain = fogSources(viewport, noRadius, 1) == 0;
+    fault(1);
+    const bool waitFailed = waitGpu(viewport) == 0;
+    fault(0);
+    const std::string waitError = api.error();
+    api.destroy(viewport);
+    require(staleSet && staleAgain && obstacleRejected, "VWP-2: A nonfinite fog obstacle list is rejected");
+    require(obstacleError.find("fog obstacle") != std::string::npos, "VWP-2: The rejected fog obstacle list reports its own reason");
+    require(waitFailed && waitError.find("GPU completion") != std::string::npos, "VWP-2: A failed GPU wait returns 0 and reports its own reason");
+}

@@ -164,7 +164,6 @@ struct Viewport {
  size_t baseCount=0;uint64_t baseToken=0;
  struct SceneStats{double parse=0,hash=0,bounds=0,upload=0,tail=0,total=0;uint64_t calls=0,deltaCalls=0,bytes=0,vertices=0;} sceneStats;
  HWND window=nullptr;
- std::string error;
  double drawSegments[5]{};
  void draw(){
  using DrawClock=std::chrono::steady_clock;const auto segT0=DrawClock::now();
@@ -327,9 +326,10 @@ API int sl_fog_terrain(void* handle,const float* heights){
  try{if(!handle||!heights)throw std::runtime_error("Invalid fog terrain");auto& a=static_cast<Viewport*>(handle)->atmosphere;for(int i=0;i<4096;++i){if(!std::isfinite(heights[i]))throw std::runtime_error("Nonfinite fog terrain");a.terrainHeights[i]=heights[i];}return 1;}catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_fog_obstacles(void* handle,const float* data,int count){
- try{if(!handle||count<0||count>128||(count&&!data))throw std::runtime_error("Invalid fog obstacles");auto& v=*static_cast<Viewport*>(handle);v.externalFogObstacles=true;auto& a=v.atmosphere;a.obstacleLow.clear();a.obstacleHigh.clear();a.obstacleVelocity.clear();
- for(int i=0;i<count;++i){const auto* p=data+i*9;for(int j=0;j<9;++j)if(!std::isfinite(p[j]))throw std::runtime_error("Nonfinite fog obstacle");a.obstacleLow.emplace_back(p[0],p[1],p[2],0);a.obstacleHigh.emplace_back(p[3],p[4],p[5],0);a.obstacleVelocity.emplace_back(p[6],p[7],p[8],0);}return 1;
- }catch(const std::exception& e){if(handle)static_cast<Viewport*>(handle)->error=e.what();return 0;}
+ try{if(!handle||count<0||count>128||(count&&!data))throw std::runtime_error("Invalid fog obstacles");auto& v=*static_cast<Viewport*>(handle);std::vector<XMFLOAT4> low,high,velocity;
+ for(int i=0;i<count;++i){const auto* p=data+i*9;for(int j=0;j<9;++j)if(!std::isfinite(p[j]))throw std::runtime_error("Nonfinite fog obstacle");low.emplace_back(p[0],p[1],p[2],0);high.emplace_back(p[3],p[4],p[5],0);velocity.emplace_back(p[6],p[7],p[8],0);}
+ v.externalFogObstacles=true;v.atmosphere.obstacleLow=std::move(low);v.atmosphere.obstacleHigh=std::move(high);v.atmosphere.obstacleVelocity=std::move(velocity);return 1;
+ }catch(const std::exception& e){failure=e.what();return 0;}
 }
 API void sl_environment_reset(void* handle){auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();}
 API int sl_surface_weather(void* handle,float moisture,float rain,float windX,float windZ,const float* boxes,int count){
@@ -547,7 +547,7 @@ static void recycle_retired_resident(Viewport& v,bool all){
 // Returns once the graphics card has finished every command submitted so far (signals the GPU fence and waits on it). Render thread only.
 API int sl_wait_gpu(void* handle){
  try{if(!handle)throw std::runtime_error("Missing viewport");auto& v=*static_cast<Viewport*>(handle);v.renderer->flush();v.rt.drainRetired(*v.renderer,true);recycle_retired_resident(v,true);return 1;}
- catch(const std::exception& e){if(handle)static_cast<Viewport*>(handle)->error=e.what();return 0;}
+ catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_resident_release(void* handle,const uint64_t* keys,int count){
  try{
