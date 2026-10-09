@@ -1,4 +1,5 @@
 """Staging refuses a missing ray-reconstruction DLL or licence before it creates anything in out/native-package-checks."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -36,6 +37,11 @@ class RefusesMissingExternalInputs(unittest.TestCase):
             dll.write_bytes(b'dll')
             run = self.run_staging('--rr-dll', str(dll), '--rr-license', str(Path(temp) / 'missing-license.txt'))
             self.assertIn('missing-license.txt', run.stderr + run.stdout)
+
+class PreviewManifest(unittest.TestCase):
+    def test_the_package_requires_the_scene_migration_tool_the_editor_tells_users_to_run(self):
+        manifest = json.loads((HERE / 'windows-preview.json').read_text(encoding='utf-8'))
+        self.assertIn('Starlight.SceneMigration.exe', manifest['required'])
 
 if __name__ == '__main__':
     unittest.main()
