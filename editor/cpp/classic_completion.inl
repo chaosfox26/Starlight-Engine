@@ -34,11 +34,13 @@ void playback_command(int id)
     // Keep the same session so entering full screen cannot restart simulation.
     bool next = id == Play ? !playing : false;
     std::optional<LoadingScreen> loading;RenderStatus statusBeforeInstall{};
+    // A throw after adventure was created must not leave it set: the next Play would skip the readiness barrier.
+    struct PreparationRollback{Editor* self;int exceptions;bool owned=false;~PreparationRollback(){if(owned&&std::uncaught_exceptions()>exceptions){self->adventure.reset();self->adventureHint.clear();self->questTracker.hide();}}} preparationRollback{this,std::uncaught_exceptions()};
     if(scene.Game && next && !adventure){
         // Every scene starts through the same preparation: loading screen, cache warm-up, collision, break-ahead fracture, upload.
         loading.emplace();loading->show(window,view);loading->update(0,"Starting your scene");statusBeforeInstall=renderer->status();
         renderer->playback(false);
-        questTracker.reset();adventure.emplace();adventure->start(scene);
+        questTracker.reset();adventure.emplace();preparationRollback.owned=true;adventure->start(scene);
         lastPreparation=prepare_scene(*adventure,*loading);
         if(lastPreparation.stopped()){ // never reveal a scene that did not finish preparing
             loading->update(loading->fraction(),"Loading did not finish: "+lastPreparation.reason);
@@ -517,7 +519,10 @@ void open_project()
                  SWP_NOACTIVATE);
     projectOwnerEnabled = IsWindowEnabled(window);
     EnableWindow(window, FALSE);
+    // If project_form throws, the owner must come back: no dialog is shown to end the modal state.
+    struct OwnerRestore{HWND owner;bool enabled;bool armed=true;~OwnerRestore(){if(armed)EnableWindow(owner,enabled);}} ownerRestore{window,projectOwnerEnabled};
     project_form();
+    ownerRestore.armed=false;
     ShowWindow(projectWindow, projectOwnerEnabled ? SW_SHOW : SW_SHOWNOACTIVATE);
     if (projectOwnerEnabled) SetFocus(GetDlgItem(projectHost, ChooseProject));
 }
