@@ -114,9 +114,14 @@ Result write_export(const ExportPlan& plan, const fs::path& dest) {
     if (!plan.ok) return Result::fail("The export plan is not complete: " + plan.message);
     std::error_code ec;
     if (fs::exists(dest, ec)) return Result::fail("Export destination already exists.");
-    auto staging = dest;
-    staging += L".staging";
-    fs::remove_all(staging, ec);
+    // The staging folder is claimed with a fresh name; a folder the user already has next to the destination is never touched (audit GR-8).
+    fs::path staging;
+    for (int n = 0;; ++n) {
+        staging = dest;
+        staging += L".staging-" + std::to_wstring(n);
+        if (fs::create_directories(staging, ec)) break;
+        if (ec || n >= 1000) return Result::fail("Could not create a staging folder for the export.");
+    }
     try {
         for (auto& f : plan.files) {
             if (sha256_file(f.source) != f.sha256) throw GrError("Source file changed: " + f.relativePath);

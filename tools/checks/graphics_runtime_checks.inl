@@ -720,6 +720,10 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto w = gr::write_export(planRr2, dest);
         require(w.ok && fs::exists(dest / "bin" / "nvidia.ngx.dlss-d.dll") && fs::exists(dest / "licenses" / "nvidia.ngx.dlss-d.txt"), "GFX the export is written with licence files");
         require(!gr::write_export(planRr2, dest).ok, "GFX an export never overwrites an existing folder");
+        auto dest2 = work / "export-out2";
+        put(work / "export-out2.staging" / "mine.txt", "not ours");
+        auto w2 = gr::write_export(planRr2, dest2);
+        require(w2.ok && fs::exists(dest2 / "bin" / "nvidia.ngx.dlss-d.dll") && gr::read_text(work / "export-out2.staging" / "mine.txt") == "not ours", "GFX an export never deletes an unrelated folder named like its staging folder");
         auto planFsr = gr::plan_export(s, {"fsr-sr"});
         require(!planFsr.ok && planFsr.missing.size() == 2, "GFX missing AMD components are listed individually");
         put(s.set_dir("dlss-rr-310.7") / "bin" / "nvidia.ngx.dlss-d.dll", "tampered");
