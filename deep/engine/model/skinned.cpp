@@ -221,6 +221,8 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         if (skin->joints_count > 256) return fail(LoadCode::SkeletonInvalid, "skin has " + std::to_string(skin->joints_count) + " joints; the 8-bit joint index addresses at most 256");
         if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->count < skin->joints_count)
             return fail(LoadCode::Malformed, "inverse bind matrix accessor holds fewer matrices than the skin has joints");
+        if (skin->inverse_bind_matrices && skin->inverse_bind_matrices->type != cgltf_type_mat4)
+            return fail(LoadCode::SkeletonInvalid, "inverse bind matrix accessor is not MAT4");
         for (cgltf_size j = 0; j < skin->joints_count; ++j) jointOf[skin->joints[j]] = (int)j;
         for (cgltf_size j = 0; j < skin->joints_count; ++j) {
             const cgltf_node* n = skin->joints[j];

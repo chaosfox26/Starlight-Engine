@@ -1202,6 +1202,10 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         e = model::loadSkinnedFromMemory(ByteView(makeGlb(noViewKeySpec)), nullptr, "no-view-keys.glb", scratch);
         show("GLB whose keyframe accessors have no buffer view and 5 million elements", e);
         require(e.code == LoadCode::TooLarge && !scratch.loaded, "SKN-5: keyframe accessors without a buffer view cannot ask for millions of zero keys");
+        GlbSpec badIbm; badIbm.badIbmType = true;
+        e = model::loadSkinnedFromMemory(ByteView(makeGlb(badIbm)), nullptr, "ibm-vec4.glb", scratch);
+        show("GLB whose inverse bind matrices are VEC4", e);
+        require(e.code == LoadCode::SkeletonInvalid && !scratch.loaded, "SKN-7: inverse bind matrices that are not MAT4 are SkeletonInvalid instead of partly identity");
         {
             const auto bytes = makeSparseGlb(76);
             cgltf_options opts{}; cgltf_data* d = nullptr;
