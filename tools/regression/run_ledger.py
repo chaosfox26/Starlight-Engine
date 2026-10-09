@@ -347,6 +347,17 @@ def self_test():
         ok = first and second and len({clean, first, second}) == 3
         print('  %s two different uncommitted edits at one HEAD get different dirty digests' % ('ok ' if ok else 'BAD'))
         bad += not ok
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    with tempfile.TemporaryDirectory() as tree:
+        build = os.path.join(tree, 'Release')
+        os.makedirs(build)
+        with open(os.path.join(tree, 'CMakeCache.txt'), 'w') as f:
+            f.write('CMAKE_HOME_DIRECTORY:INTERNAL=' + os.path.join(tree, 'elsewhere').replace('\\', '/') + '\n')
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), '--build-dir', build, '--repo', tree, '--results', os.path.join(tree, 'results')],
+                             capture_output=True, text=True, timeout=120, creationflags=flags)
+        ok = run.returncode == 2 and 'REFUSING TO RUN: the build was configured from' in run.stdout
+        print('  %s a build configured from another checkout is refused before anything runs' % ('ok ' if ok else 'BAD'))
+        bad += not ok
     print('SELF-TEST', 'PASSED' if not bad else 'FAILED (%d)' % bad)
     return 1 if bad else 0
 
