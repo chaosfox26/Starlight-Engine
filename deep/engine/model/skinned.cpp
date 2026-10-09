@@ -393,6 +393,11 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             if (ch.sampler->input->count == 0) continue;
             if (ch.sampler->input->type != cgltf_type_scalar || ch.sampler->output->type != (comps == 4 ? cgltf_type_vec4 : cgltf_type_vec3))
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' sampler accessors have the wrong element type (keyframe times must be SCALAR, values VEC3 or VEC4)");
+            const cgltf_accessor* const keyed[2] = { ch.sampler->input, ch.sampler->output };
+            for (const cgltf_accessor* a : keyed) if (!a->buffer_view) {
+                dataLessElements += a->count;
+                if (dataLessElements > (1u << 22)) return fail(LoadCode::TooLarge, "clip '" + c.name + "' keyframe accessors without a buffer view hold " + std::to_string(dataLessElements) + " all-zero elements; the limit is 4194304");
+            }
             k.times.resize(ch.sampler->input->count);
             if (cgltf_accessor_unpack_floats(ch.sampler->input, k.times.data(), k.times.size()) != k.times.size())
                 return fail(LoadCode::Malformed, "clip '" + c.name + "' keyframe times could not be read");
