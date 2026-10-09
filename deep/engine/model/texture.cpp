@@ -218,9 +218,25 @@ struct Huffman {
     }
 };
 
+struct FixedTables {
+    Huffman lit, dist;
+    FixedTables() {
+        uint8_t lengths[288];
+        for (int i = 0; i < 144; ++i) lengths[i] = 8;
+        for (int i = 144; i < 256; ++i) lengths[i] = 9;
+        for (int i = 256; i < 280; ++i) lengths[i] = 7;
+        for (int i = 280; i < 288; ++i) lengths[i] = 8;
+        lit.build(lengths, 288);
+        uint8_t fixedDist[30];
+        for (auto& d : fixedDist) d = 5;
+        dist.build(fixedDist, 30);
+    }
+};
+
 struct Inflater {
     const uint8_t* in = nullptr;
     size_t inSize = 0, inPos = 0;
+    uint64_t tableWork = 0, tableLimit = UINT64_MAX;   // Huffman table entries built so far, and the most the stream's size can justify (real encoders stay under 2 per input byte).
     uint64_t buffer = 0;
     int have = 0;
     uint8_t* out = nullptr;
@@ -296,17 +312,13 @@ struct Inflater {
                 inPos += len; outPos += len;
             } else if (type == 1 || type == 2) {
                 Huffman lit, dist;
-                uint8_t lengths[320]{};
+                const Huffman* useLit = &lit;
+                const Huffman* useDist = &dist;
                 if (type == 1) {
-                    for (int i = 0; i < 144; ++i) lengths[i] = 8;
-                    for (int i = 144; i < 256; ++i) lengths[i] = 9;
-                    for (int i = 256; i < 280; ++i) lengths[i] = 7;
-                    for (int i = 280; i < 288; ++i) lengths[i] = 8;
-                    lit.build(lengths, 288);
-                    uint8_t fixedDist[30];
-                    for (auto& d : fixedDist) d = 5;
-                    dist.build(fixedDist, 30);
+                    static const FixedTables fixed;
+                    useLit = &fixed.lit; useDist = &fixed.dist;
                 } else {
+                    uint8_t lengths[320]{};
                     uint32_t nlit, ndist, ncode;
                     if (!take(5, nlit) || !take(5, ndist) || !take(4, ncode)) return false;
                     nlit += 257; ndist += 1; ncode += 4;
@@ -333,8 +345,10 @@ struct Inflater {
                     }
                     if (!lengths[256]) { failure = "block has no end-of-block code"; return false; }
                     if (!lit.build(lengths, int(nlit)) || !dist.build(lengths + nlit, int(ndist))) { failure = "invalid Huffman table"; return false; }
+                    tableWork += lenCode.table.size() + lit.table.size() + dist.table.size();
+                    if (tableWork > tableLimit) { failure = "the block headers need far more table building than the data size can justify"; return false; }
                 }
-                if (!codes(lit, dist)) return false;
+                if (!codes(*useLit, *useDist)) return false;
             } else { failure = "invalid block type"; return false; }
             if (last) return true;
         }
@@ -376,6 +390,7 @@ LoadError VerifyPngPixelStream(ByteView b, const PngInfo& info, const std::strin
     std::unique_ptr<uint8_t[]> raw(new uint8_t[size_t(expected)]);
     Inflater z;
     z.in = joined.data() + 2; z.inSize = joined.size() - 2; z.out = raw.get(); z.outCap = size_t(expected);
+    z.tableLimit = (uint64_t(1) << 20) + 32 * uint64_t(z.inSize);
     if (!z.run())
         return makeLoadError(LoadCode::DecodeFailed, label, "PNG image data does not decompress: " + z.failure);
     if (z.outPos != expected)
@@ -736,6 +751,42 @@ LoadError CheckDecodedSize(uint64_t w, uint64_t h, const std::string& label) {
     return makeLoadError(code, label, starlight::texture_limits::explain(fit, w, h, starlight::texture_limits::DecodedChannels, starlight::texture_limits::DecodedBytesPerChannel));
 }
 
+// Smallest file a baseline Huffman JPEG of the declared geometry can be: every 8x8 block codes at least a DC code and an end-of-block code, one bit each.
+// 0 when the header is not one this can bound (progressive, arithmetic, lossless, or a walk that does not reach a frame header).
+uint64_t JpegMinimumBytes(ByteView b, uint32_t& width, uint32_t& height) {
+    size_t pos = 2;
+    while (pos + 4 <= b.size) {
+        if (b.data[pos] != 0xFF) return 0;
+        const uint8_t marker = b.data[pos + 1];
+        if (marker == 0xFF) { ++pos; continue; }
+        if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) { pos += 2; continue; }
+        const size_t length = (size_t(b.data[pos + 2]) << 8) | b.data[pos + 3];
+        if (length < 2 || length > b.size - pos - 2) return 0;
+        if (marker == 0xC0 || marker == 0xC1) {
+            const uint8_t* s = b.data + pos + 4;
+            const size_t count = length >= 8 ? s[5] : 0;
+            if (count < 1 || count > 4 || length < 8 + 3 * count) return 0;
+            height = (uint32_t(s[1]) << 8) | s[2]; width = (uint32_t(s[3]) << 8) | s[4];
+            if (!width || !height) return 0;
+            uint32_t hMax = 1, vMax = 1;
+            for (size_t c = 0; c < count; ++c) {
+                const uint32_t h = s[7 + 3 * c] >> 4, v = s[7 + 3 * c] & 15u;
+                if (h < 1 || h > 4 || v < 1 || v > 4) return 0;
+                hMax = std::max(hMax, h); vMax = std::max(vMax, v);
+            }
+            uint64_t blocks = 0;
+            for (size_t c = 0; c < count; ++c) {
+                const uint32_t h = s[7 + 3 * c] >> 4, v = s[7 + 3 * c] & 15u;
+                blocks += uint64_t((uint64_t(width) * h + hMax - 1) / hMax + 7) / 8 * (uint64_t((uint64_t(height) * v + vMax - 1) / vMax + 7) / 8);
+            }
+            return (blocks * 2 + 7) / 8;
+        }
+        if (marker == 0xDA || marker == 0xD9 || (marker >= 0xC2 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)) return 0;
+        pos += 2 + length;
+    }
+    return 0;
+}
+
 LoadError DecodeEncoded(ByteView encoded, const std::string& label, bool verifyPngStream, DecodedImage& out) {
     out = DecodedImage();
     if (encoded.size == 0) return makeLoadError(LoadCode::Truncated, label, "encoded image is empty");
@@ -762,6 +813,10 @@ LoadError DecodeEncoded(ByteView encoded, const std::string& label, bool verifyP
         while (end > 2 && encoded.data[end - 1] == 0) --end;
         if (end < 4 || encoded.data[end - 2] != 0xFF || encoded.data[end - 1] != 0xD9)
             return makeLoadError(LoadCode::Truncated, label, "JPEG ends without an EOI marker");
+        uint32_t jpegWidth = 0, jpegHeight = 0;
+        const uint64_t jpegFloor = JpegMinimumBytes(encoded, jpegWidth, jpegHeight);
+        if (jpegFloor > encoded.size)
+            return makeLoadError(LoadCode::Truncated, label, "JPEG header declares " + std::to_string(jpegWidth) + "x" + std::to_string(jpegHeight) + " pixels, which needs at least " + std::to_string(jpegFloor) + " bytes of image data, but the file is only " + std::to_string(encoded.size) + " bytes");
     }
     struct ComScope {
         HRESULT result;

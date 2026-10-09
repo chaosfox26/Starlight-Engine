@@ -23,6 +23,8 @@
 #include <set>
 #include <thread>
 #include <wincodec.h>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 using Microsoft::WRL::ComPtr;
 namespace memload {
 namespace fs = std::filesystem;
@@ -236,6 +238,154 @@ template <class R> void fuzzSkinned(const fs::path& dir, const fs::path& root, R
     require(report.failures == 0, "GLB fuzz: the skinned loader never crashes, hangs, over-allocates, or accepts an invalid model");
     require(report.accepted > 0 && report.rejected > 0, "GLB fuzz: the skinned corpus exercises both outcomes");
 }
+struct FuzzRng {
+    uint64_t s;
+    uint64_t next() { s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s; }
+    uint32_t below(uint32_t n) { return n ? uint32_t(next() % n) : 0; }
+};
+const uint32_t kFuzzWords[] = { 0, 1, 2, 3, 0xFFFF, 0x4000, 0x4001, 0x7FFFFFFF, 0x80000000u, 0xFFFFFFFFu, 65536, 1u << 20 };
+// Re-computes every PNG chunk CRC that still lies inside the buffer, so that mutations reach the code behind the CRC gate.
+void fixPngCrcs(std::vector<uint8_t>& v) {
+    size_t pos = 8;
+    while (v.size() >= 8 && pos + 12 <= v.size()) {
+        const size_t len = (size_t(v[pos]) << 24) | (size_t(v[pos + 1]) << 16) | (size_t(v[pos + 2]) << 8) | v[pos + 3];
+        if (len > v.size() - pos - 12) return;
+        const uint32_t c = crc32(v.data() + pos + 4, len + 4);
+        for (int i = 0; i < 4; ++i) v[pos + 8 + len + i] = uint8_t(c >> (24 - 8 * i));
+        pos += len + 12;
+std::vector<uint8_t> fuzzMutate(std::vector<uint8_t> v, FuzzRng& r, uint32_t kind, int container) {
+    if (v.empty()) return v;
+    auto at = [&] { return size_t(r.below(uint32_t(v.size()))); };
+    auto put32 = [&](size_t pos, uint32_t w, bool big) {
+        for (int i = 0; i < 4 && pos + i < v.size(); ++i) v[pos + i] = uint8_t(big ? w >> (24 - 8 * i) : w >> (8 * i));
+    };
+    switch (kind % 9) {
+    case 0: for (uint32_t n = 1 + r.below(4); n--;) v[at()] ^= uint8_t(1u << r.below(8)); break;
+    case 1: { static const uint8_t sp[] = { 0, 0xFF, 0x7F, 0x80, 1 }; v[at()] = sp[r.below(5)]; break; }
+    case 2: v.resize(at()); break;
+    case 3: { const size_t p = at(), n = std::min<size_t>(1 + r.below(16), v.size() - p); v.erase(v.begin() + p, v.begin() + p + n); break; }
+    case 4: { const size_t p = at(); const uint32_t n = 1 + r.below(64); const bool run = r.below(2); std::vector<uint8_t> ins(n); for (auto& b : ins) b = run ? 0xFF : uint8_t(r.next()); v.insert(v.begin() + p, ins.begin(), ins.end()); break; }
+    case 5: { const size_t p = at(), n = std::min<size_t>(1 + r.below(64), v.size() - p); std::vector<uint8_t> copy(v.begin() + p, v.begin() + p + n); v.insert(v.begin() + p, copy.begin(), copy.end()); break; }
+    case 6: put32(at(), kFuzzWords[r.below(12)], container != 3); break;
+    case 7:
+        if (container == 1) {
+            const uint32_t field = r.below(5);
+            if (v.size() >= 33) {
+                if (field == 0) put32(16, kFuzzWords[r.below(12)], true);
+                else if (field == 1) put32(20, kFuzzWords[r.below(12)], true);
+                else v[24 + field - 2 + (field > 2 ? 1 : 0)] = uint8_t(r.below(20));
+            }
+        } else if (container == 2) {
+            for (size_t p = 2; p + 9 < v.size(); ++p)
+                if (v[p] == 0xFF && ((v[p + 1] >= 0xC0 && v[p + 1] <= 0xC2) || r.below(64) == 0)) {
+                    if (r.below(3) == 0) v[p + 1] = uint8_t(0xC0 + r.below(16));
+                    else { const uint32_t w = kFuzzWords[r.below(12)]; v[p + 5] = uint8_t(w >> 8); v[p + 6] = uint8_t(w); v[p + 7] = uint8_t(w >> 8); v[p + 8] = uint8_t(w); }
+                    break;
+                }
+        } else if (container == 3) {
+            if (v.size() >= 148) put32(4 * r.below(37), kFuzzWords[r.below(12)], false);
+        } else v[at()] ^= 0xFF;
+        break;
+    default:
+        if (container == 1) {
+            std::vector<size_t> starts;
+            for (size_t p = 8; p + 12 <= v.size();) {
+                starts.push_back(p);
+                const size_t len = (size_t(v[p]) << 24) | (size_t(v[p + 1]) << 16) | (size_t(v[p + 2]) << 8) | v[p + 3];
+                if (len > v.size() - p - 12) break;
+                p += len + 12;
+            }
+            if (!starts.empty()) {
+                const size_t p = starts[r.below(uint32_t(starts.size()))];
+                const uint32_t what = r.below(4);
+                if (what == 0) put32(p, kFuzzWords[r.below(12)], true);
+                else if (what == 1) { for (int i = 0; i < 4; ++i) v[p + 4 + i] = uint8_t(r.below(2) ? 'A' + r.below(26) : 'a' + r.below(26)); }
+                else if (what == 2) { const size_t len = (size_t(v[p]) << 24) | (size_t(v[p + 1]) << 16) | (size_t(v[p + 2]) << 8) | v[p + 3]; if (p + 12 + len <= v.size()) v.erase(v.begin() + p, v.begin() + p + len + 12); }
+                else v[p + 8 + r.below(uint32_t(std::min<size_t>(v.size() - p - 8, 13)))] = uint8_t(r.below(256));
+            }
+        } else if (container == 2) {
+            for (size_t p = 2; p + 4 < v.size(); ++p)
+                if (v[p] == 0xFF && v[p + 1] != 0 && v[p + 1] != 0xFF && r.below(8) == 0) { const uint32_t w = kFuzzWords[r.below(12)]; v[p + 2] = uint8_t(w >> 8); v[p + 3] = uint8_t(w); break; }
+        } else v[at()] = uint8_t(r.next());
+        break;
+    if (container == 1 && r.below(4) != 0) fixPngCrcs(v);
+    if (container == 2 && r.below(5) != 0 && v.size() >= 2 && !(v[v.size() - 2] == 0xFF && v.back() == 0xD9)) { v.push_back(0xFF); v.push_back(0xD9); }
+    return v;
+std::vector<uint8_t> fuzzDds(uint32_t format, uint32_t w, uint32_t h, uint32_t levels) {
+    std::array<uint32_t, 37> header{};
+    header[0] = 0x20534444; header[1] = 124; header[3] = h; header[4] = w; header[7] = levels;
+    header[19] = 32; header[20] = 4; header[21] = 0x30315844; header[32] = format; header[33] = 3; header[35] = 1;
+    std::vector<uint8_t> out(reinterpret_cast<const uint8_t*>(header.data()), reinterpret_cast<const uint8_t*>(header.data()) + sizeof(header));
+    for (uint32_t l = 0; l < levels; ++l) { out.insert(out.end(), size_t((w + 3) / 4) * ((h + 3) / 4) * 16, uint8_t(l + 1)); w = std::max(1u, w / 2); h = std::max(1u, h / 2); }
+    return out;
+// Deterministic mutation fuzz of the PNG, JPEG and DDS readers. Every mutant must come back with a clean error or a sane image,
+// quickly, and without a large allocation. STARLIGHT_TEXTURE_FUZZ_ITERS (mutants per seed) and STARLIGHT_TEXTURE_FUZZ_SEED widen the run.
+template <class R> void fuzzDecoders(const fs::path& work, const fs::path& root, R& require) {
+    uint32_t iterations = 120; uint64_t seed = 0x5EEDF00Dull;
+    if (const char* text = std::getenv("STARLIGHT_TEXTURE_FUZZ_ITERS")) iterations = std::max<uint32_t>(1, uint32_t(std::strtoul(text, nullptr, 10)));
+    if (const char* text = std::getenv("STARLIGHT_TEXTURE_FUZZ_SEED")) seed = std::strtoull(text, nullptr, 10) | 1;
+    struct Seed { std::string name; std::vector<uint8_t> bytes; int container; };
+    std::vector<Seed> seeds;
+    seeds.push_back({ "gradient.png", makePng(8, 6, gradient(8, 6)), 1 });
+    PngSpec adam7; adam7.interlaced = true;
+    seeds.push_back({ "adam7.png", makePng(8, 6, gradient(8, 6), adam7), 1 });
+    for (const char* name : { "editor/checks/corner-controls/left-controls.png", "editor/checks/corner-controls/top-edge.png", "editor/checks/bottom-bar/shapes-bar.png" }) {
+        if (bytes.empty()) { std::cout << "  NOT RUN, repo fixture missing: " << name << '\n'; require(false, "fuzz PNG fixture present"); }
+        seeds.push_back({ fs::path(name).filename().string(), std::move(bytes), 1 });
+    {
+        auto bytes = readBytes(root / "migration/classic-advanced.jpg");
+        if (bytes.empty()) { std::cout << "  NOT RUN, repo fixture missing: migration/classic-advanced.jpg\n"; require(false, "fuzz JPEG fixture present"); }
+        seeds.push_back({ "classic-advanced.jpg", std::move(bytes), 2 });
+    seeds.push_back({ "bc7.dds", fuzzDds(DXGI_FORMAT_BC7_UNORM, 16, 16, 5), 3 });
+    seeds.push_back({ "bc5.dds", fuzzDds(DXGI_FORMAT_BC5_UNORM, 12, 8, 4), 3 });
+    PROCESS_MEMORY_COUNTERS before{}; GetProcessMemoryInfo(GetCurrentProcess(), &before, sizeof(before));
+    size_t cases = 0, accepted = 0, failures = 0; double slowest = 0; std::string slowestWhat;
+    auto fail = [&](const Seed& s, uint32_t i, const std::vector<uint8_t>& bytes, const std::string& why) {
+        const fs::path saved = work / ("fuzz-fail-" + std::to_string(failures++) + "-" + s.name + ".bin");
+        writeBytes(saved, bytes);
+        std::cout << "  FUZZ FAILURE " << s.name << " #" << i << ": " << why << " (saved " << saved.string() << ")\n";
+    };
+    for (const Seed& s : seeds) {
+        FuzzRng r{ seed ^ (uint64_t(s.container) << 56) ^ (std::hash<std::string>{}(s.name) | 1) };
+        for (uint32_t i = 0; i < iterations; ++i) {
+            std::vector<uint8_t> m = fuzzMutate(s.bytes, r, i, s.container);
+            if (i % 5 == 4) m = fuzzMutate(std::move(m), r, r.below(1000), s.container);
+            ++cases;
+            model::TextureProbe probe; model::TexImage img;
+            model::TextureLoadOptions options; options.maxRes = 64; options.label = s.name;
+            options.verifyPngStream = s.container != 1 || (i % 2) == 0;
+            const auto t0 = std::chrono::steady_clock::now();
+            const LoadError pe = model::probeTextureDecode(ByteView(m), s.name, probe);
+            const LoadError le = model::loadTextureFromMemory(ByteView(m), options, img);
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            if (ms > slowest) { slowest = ms; slowestWhat = s.name + " #" + std::to_string(i); }
+            auto bad = [&](const LoadError& e) { return e.code == LoadCode::Internal || e.code == LoadCode::OutOfMemory || e.message.empty(); };
+            if (ms > 5000.0) fail(s, i, m, "took " + std::to_string(ms) + " ms");
+            else if (pe.failed() && bad(pe)) fail(s, i, m, "probe error " + pe.text());
+            else if (le.failed() && bad(le)) fail(s, i, m, "load error " + le.text());
+            else if (pe.ok()) {
+                ++accepted;
+                const bool sane = probe.width >= 1 && probe.height >= 1 && probe.width <= starlight::texture_limits::MaxSide && probe.height <= starlight::texture_limits::MaxSide && probe.mipLevels >= 1 && probe.decodedBytes > 0;
+                if (!sane) fail(s, i, m, "probe accepted with an impossible size");
+                else if (le.failed() && s.container != 3) fail(s, i, m, "probe accepted but load failed: " + le.text());
+            }
+            else if (le.ok() && s.container == 1 && options.verifyPngStream) fail(s, i, m, "load accepted what probe rejected: " + pe.text());
+            if (le.ok()) {
+                bool sane = !img.mips.empty() && img.w >= 1 && img.h >= 1 && img.w <= 64 + (s.container == 3 ? 0 : 0) && img.h <= 64;
+                uint32_t mw = img.w, mh = img.h;
+                for (size_t l = 0; sane && l < img.mips.size(); ++l) {
+                    const bool bc = img.format != DXGI_FORMAT_R8G8B8A8_UNORM;
+                    sane = img.mips[l].size() == (bc ? size_t((mw + 3) / 4) * ((mh + 3) / 4) * 16 : size_t(mw) * mh * 4);
+                    mw = std::max(1u, mw / 2); mh = std::max(1u, mh / 2);
+                }
+                if (!sane) fail(s, i, m, "load accepted with inconsistent mip sizes");
+            }
+            else if (!img.mips.empty()) fail(s, i, m, "load failed but left pixels behind");
+    PROCESS_MEMORY_COUNTERS after{}; GetProcessMemoryInfo(GetCurrentProcess(), &after, sizeof(after));
+    const double grewMiB = (double(after.PeakWorkingSetSize) - double(before.PeakWorkingSetSize)) / 1048576.0;
+    std::cout << "  decoder mutation fuzz: " << cases << " mutants over " << seeds.size() << " seeds, " << accepted << " accepted, slowest " << slowest << " ms (" << slowestWhat << "), peak working set grew " << grewMiB << " MiB\n";
+    require(failures == 0, "decoder mutation fuzz: every mutant gets a clean error or a sane image, quickly");
+    require(grewMiB < double(starlight::texture_limits::decodedBudget()) * 1.75 / 1048576.0, "decoder mutation fuzz: mutants never allocate much beyond the decoded-memory budget");
 template <class R> void run(const fs::path& dir, const fs::path& root, R& require) {
     const fs::path work = dir / "memload";
     fs::create_directories(work);
@@ -457,6 +607,33 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(e.code == LoadCode::Truncated && e.message.find("cannot hold") != std::string::npos, "a header declaring about 1 GB of pixels over a tiny stream is rejected by the size check, before any buffer is allocated");
             require(verdict(build({ { "IHDR", ihdrOf(16384, 16384, 8, 6) }, { "IDAT", zlibZeros(1000) }, { "IEND", {} } }), "over-cap").code == LoadCode::TooLarge, "a header whose pixel stream exceeds 1 GiB is rejected as too large");
             require(verdict(build({ { "IHDR", ihdrOf(70000, 70000, 8, 0) }, { "IDAT", zlibZeros(1000) }, { "IEND", {} } }), "over-side").code == LoadCode::TooLarge, "a header with a side above 16384 is rejected as too large");
+            {
+                auto emptyBlocks = [](uint32_t count, bool fixed) {
+                    Bytes out; uint32_t acc = 0; int used = 0;
+                    auto bits = [&](uint32_t v, int n) { for (int i = 0; i < n; ++i) { acc |= ((v >> i) & 1u) << used; if (++used == 8) { out.push_back(uint8_t(acc)); acc = 0; used = 0; } } };
+                    auto code = [&](uint32_t v, int len) { for (int i = len - 1; i >= 0; --i) bits(v >> i, 1); };
+                    for (uint32_t b = 0; b < count && fixed; ++b) { bits(0, 1); bits(1, 2); code(0, 7); }
+                    for (uint32_t b = 0; b < count && !fixed; ++b) {
+                        bits(0, 1); bits(2, 2); bits(0, 5); bits(0, 5); bits(15, 4);
+                        for (int k = 0; k < 19; ++k) bits(k == 2 || k == 18 ? 1 : 0, 3);
+                        code(1, 1); bits(127, 7); code(1, 1); bits(107, 7); code(0, 1); code(0, 1); code(0, 15);
+                    }
+                    bits(1, 1); bits(1, 2); code(0x30, 8); code(0x30, 8); code(0, 7);
+                    if (used) out.push_back(uint8_t(acc));
+                    Bytes z{ 0x78, 0x01 }; z.insert(z.end(), out.begin(), out.end()); putBE(z, 0x00020001u);
+                    return z;
+                };
+                for (const bool fixed : { false, true })
+                    for (uint32_t count : { 1u, 1000u, 200000u }) {
+                        const auto z = emptyBlocks(count, fixed);
+                        const auto start = std::chrono::steady_clock::now();
+                        const auto e = verdict(build({ { "IHDR", ihdrOf(1, 1, 8, 0) }, { "IDAT", z }, { "IEND", {} } }), "empty-blocks");
+                        std::cout << "  " << count << " empty " << (fixed ? "fixed" : "dynamic") << " blocks (" << z.size() << " bytes): " << model::loadCodeName(e.code) << " in " << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() << " ms\n";
+                        const bool flood = !fixed && count > 1;
+                        require(flood ? e.failed() && e.message.find("table building") != std::string::npos : e.ok(),
+                                flood ? "a zlib stream of thousands of empty blocks that each build maximum-size Huffman tables is rejected instead of burning CPU" : "a short zlib stream of empty blocks, or any number of empty fixed-code blocks, is still accepted");
+                    }
+            }
             require(verdict(build({ { "IHDR", ihdrOf(0, 4, 8, 0) }, { "IDAT", zlibZeros(5) }, { "IEND", {} } }), "zero-side").failed(), "a zero-sized image is rejected");
         }
         {
@@ -494,7 +671,20 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
         LoadError e = model::probeTextureDecode(ByteView(bytes.data(), bytes.size() / 2), "half.jpg", probe);
         show("truncated JPEG", e);
         require(e.failed(), "truncated JPEG is rejected");
+        {
+            size_t sof = 2;
+            while (sof + 9 < bytes.size() && !(bytes[sof] == 0xFF && (bytes[sof + 1] == 0xC0 || bytes[sof + 1] == 0xC1))) sof += 2 + ((size_t(bytes[sof + 2]) << 8) | bytes[sof + 3]);
+            require(sof + 9 < bytes.size(), "the JPEG fixture has a baseline frame header");
+            auto lie = bytes;
+            lie[sof + 5] = lie[sof + 7] = 0x40; lie[sof + 6] = lie[sof + 8] = 0x00;
+            e = model::probeTextureDecode(ByteView(lie), "lie.jpg", probe);
+            show("98 KB JPEG whose header claims 16384x16384", e);
+            require(e.code == LoadCode::Truncated && e.message.find("needs at least") != std::string::npos, "a baseline JPEG whose header claims far more image than its bytes can hold is rejected before any pixel buffer is allocated");
+            lie[sof + 5] = lie[sof + 7] = 0; lie[sof + 6] = lie[sof + 8] = 0;
+            require(model::probeTextureDecode(ByteView(lie), "zero.jpg", probe).failed(), "a JPEG with a zero-sized frame is rejected");
+        }
     }
+    fuzzDecoders(work, root, require);
     {
         const auto png = makePng(8, 6, gradient(8, 6));
         const fs::path cache = work / "mipcache";
