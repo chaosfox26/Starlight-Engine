@@ -1,4 +1,4 @@
-// Gameplay audit repairs (08#1 camera boom, 08#4 lightning chain, 08#5 tab-targeting of routed breakables).
+// Gameplay audit repairs (08#1 camera boom, 08#2 boom smoothing, 08#4 lightning chain, 08#5 tab-targeting of routed breakables, 08#7 deterministic rubble, 08#8 presentation cube).
 static void gameplay_audit_checks(const auto& require){
     {
         // 08#1: effect shapes are not solid, so the camera boom ignores them as it ignores keys; a real wall still stops it.
@@ -39,5 +39,67 @@ static void gameplay_audit_checks(const auto& require){
             auto pair=trace_lightning(single,storm,0);
             require(pair.size()==2&&pair[0].hit==first.Id&&pair[1].hit==closer.Id,"08#4: With two reachable bodies the chain hop goes to the nearer one");
         }
+    }
+    {
+        // 08#2: with STARLIGHT_CAMERA_BOOM_SMOOTHING=1 the boom closes at once, opens over about 0.15 s, and keeps a minimum length; unset, it is exactly as before.
+        require(AdventurePlayer::eased_boom_length(-1,3,1./60,5)==3,"08#2: The first boom sample is taken as it is");
+        require(AdventurePlayer::eased_boom_length(4,1,1./60,5)==1,"08#2: A boom that has to shorten does so at once");
+        require(AdventurePlayer::eased_boom_length(1,5,0,5)==1,"08#2: No time passing means no outward easing");
+        require(AdventurePlayer::eased_boom_length(1,5,5,5)==5,"08#2: A long gap restarts at the target");
+        require(AdventurePlayer::eased_boom_length(-1,0,1./60,5)==.25&&AdventurePlayer::eased_boom_length(-1,0,1./60,.1)==.1,"08#2: The boom never drops below 0.25 m, or below the requested length when that is shorter");
+        double length=1;bool rising=true;
+        for(int tick=0;tick<9;++tick){const double next=AdventurePlayer::eased_boom_length(length,5,1./60,5);rising&=next>length&&next<5;length=next;}
+        require(rising&&length>1+.94*4&&length<5,"08#2: The boom opens smoothly and is nearly open after 0.15 s");
+        auto wall_at=[](double z){SceneData level;level.Game.emplace();level.Game->SpawnZ=0;Character wall;wall.Shape="cube";wall.Width=5;wall.Height=5;wall.Depth=.2;wall.Z=z;level.Characters={wall};return level;};
+        auto boom=[](AdventurePlayer& p){return (p.camera_eye()-p.view_position()).length();};
+        for(const char* setting:{"","1"}){
+            _putenv_s("STARLIGHT_CAMERA_BOOM_SMOOTHING",setting);
+            const bool on=setting[0]=='1';
+            AdventurePlayer close;close.start(wall_at(.25));
+            const double collapsed=boom(close);
+            require(on?collapsed>=.25-1e-9:collapsed<1e-9,on?"08#2: With smoothing on, a wall almost touching the player leaves a 0.25 m boom":"08#2: With smoothing off, a wall almost touching the player collapses the boom as before");
+            AdventurePlayer turning;turning.start(wall_at(2));
+            const double blocked=boom(turning);
+            turning.cameraYaw=3.14159265358979;turning.move(0,0,1./60);
+            const double first=boom(turning);
+            for(int tick=0;tick<60;++tick)turning.move(0,0,1./60);
+            const double settled=boom(turning);
+            require(blocked<2&&std::abs(settled-5)<1e-6,"08#2: The boom reaches its full length once the wall is no longer behind the camera");
+            require(on?first>blocked+.01&&first<4.9:std::abs(first-5)<1e-9,on?"08#2: With smoothing on, the boom opens gradually after the wall is passed":"08#2: With smoothing off, the boom opens in one frame as before");
+        }
+        _putenv_s("STARLIGHT_CAMERA_BOOM_SMOOTHING","");
+    }
+    {
+        // 08#7: STARLIGHT_DETERMINISTIC_RUBBLE=1 gives the same pieces for the same break id in every run; unset, each run still differs.
+        auto rubble_signature=[](const char* setting){
+            _putenv_s("STARLIGHT_DETERMINISTIC_RUBBLE",setting);
+            auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=0;
+            Character stone;stone.Shape="boulder";stone.Id="deterministic-boulder";stone.Size=2;stone.Z=-3;stone.Color="#555D67";stone.DestructionHealth=10;scene->Characters={stone};
+            auto player=std::make_unique<AdventurePlayer>();player->start(*scene);player->move(0,0,1./120.);
+            player->apply_attack_hits({stone.Id},1000);
+            double sum=0;size_t pieces=0;
+            for(const auto& f:player->presentation().fragments)if(f.part){++pieces;for(const auto& v:f.part->mesh.vertices)sum+=v.position.x*1.3+v.position.y*1.7+v.position.z*1.9;}
+            _putenv_s("STARLIGHT_DETERMINISTIC_RUBBLE","");
+            return std::pair<size_t,double>{pieces,sum};
+        };
+        const auto first=rubble_signature("1"),second=rubble_signature("1"),varied=rubble_signature("0"),other=rubble_signature("0");
+        require(first.first>0&&first==second,"08#7: With STARLIGHT_DETERMINISTIC_RUBBLE=1 the same break gives the same pieces in every run");
+        require(varied!=other,"08#7: By default the same break still gives different pieces from run to run");
+    }
+    {
+        // 08#8: the shared unit cube equals a freshly built one, and building presentation boxes does not alter it.
+        Character c;c.Shape="cube";const auto fresh=shape_geometry(c);const auto& cached=unit_cube_parts();
+        bool same=fresh.size()==cached.size();
+        for(size_t i=0;same&&i<fresh.size();++i){
+            const auto &a=fresh[i],&b=cached[i];
+            same&=a.mesh.indices==b.mesh.indices&&a.mesh.vertices.size()==b.mesh.vertices.size()&&a.color.x==b.color.x&&a.color.y==b.color.y&&a.color.z==b.color.z&&a.emissive==b.emissive&&!a.gpuTelegraph&&!b.gpuTelegraph;
+            for(size_t k=0;same&&k<a.mesh.vertices.size();++k){const auto &u=a.mesh.vertices[k],&v=b.mesh.vertices[k];
+                same&=u.position.x==v.position.x&&u.position.y==v.position.y&&u.position.z==v.position.z&&u.normal.x==v.normal.x&&u.normal.y==v.normal.y&&u.normal.z==v.normal.z&&u.color.x==v.color.x&&u.color.y==v.color.y&&u.color.z==v.color.z&&u.kind==v.kind&&u.motionIdentity==v.motionIdentity&&u.materialCoordinate.has_value()==v.materialCoordinate.has_value();}
+        }
+        require(same&&!cached.empty(),"08#8: The cached presentation cube is identical to a freshly built one");
+        AdventurePlayer::Presentation p;p.showBody=true;p.showWeapons=true;p.showTether=true;p.shotFlash=.5;p.feet={1,2,3};p.facing=.7;p.eye={1,3.5,3};p.viewAim={0,0,-1};p.viewUp={0,1,0};p.attackAim={0,0,-1};p.tetherAnchor={4,5,6};
+        auto digest=[](const std::vector<MeshPart>& parts){double sum=0;size_t count=0;for(const auto& part:parts){count+=part.mesh.vertices.size();for(const auto& v:part.mesh.vertices)sum+=v.position.x*1.3+v.position.y*1.7+v.position.z*1.9+v.normal.x*.3+double(v.motionIdentity%977);}return std::pair<size_t,double>{count,sum};};
+        const auto once=digest(player_presentation(p)),again=digest(player_presentation(p));
+        require(once.first>0&&once==again,"08#8: Presenting twice gives identical geometry, so the shared cube is never altered");
     }
 }

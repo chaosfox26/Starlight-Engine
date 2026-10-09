@@ -134,6 +134,8 @@ class AdventurePlayer {
     int breakOrdinal_=0;
     std::string lastPursuitBlocker_;uint64_t pursuitBlocked_=0;uint64_t turnApplied_=0,turnBlocked_=0,astarCalls_=0,astarFails_=0;double astarMs_=0;std::string lastTurnBlocker_; // boss diagnostics
     uint32_t fracturePatternSerial_=[](){uint32_t value=2166136261u;for(unsigned char byte:new_id())value=(value^byte)*16777619u;return value;}();
+    // Audit 08#7: the pattern serial starts from a fresh GUID, so the same break differs between runs. STARLIGHT_DETERMINISTIC_RUBBLE=1 uses one fixed serial instead; the seed still mixes in the broken object's id, so each break id gets the same pieces every run. Default off keeps the varied rubble.
+    uint32_t next_fracture_serial(){char v[8]{};return GetEnvironmentVariableA("STARLIGHT_DETERMINISTIC_RUBBLE",v,8)&&v[0]=='1'?1u:uint32_t(++fracturePatternSerial_);}
     ProjectilePhysics projectiles_;
     std::unordered_map<std::string,std::pair<Bounds,uint64_t>> projectileBounds_;uint64_t projectileBoundsPass_=0;
     std::shared_ptr<const LiquidSnapshot> liquidSnapshot_;
@@ -240,7 +242,7 @@ class AdventurePlayer {
             std::lock_guard lock(preMutex_);
             for(size_t k=0;k<ranked.size()&&k<room;++k){
                 const auto* c=ranked[k].second;
-                auto entry=std::make_shared<PreFracture>();entry->source=*c;entry->pose=route_pose_of(*c,seconds_);entry->key=fracture_source_key(*c);entry->serial=uint32_t(++fracturePatternSerial_);
+                auto entry=std::make_shared<PreFracture>();entry->source=*c;entry->pose=route_pose_of(*c,seconds_);entry->key=fracture_source_key(*c);entry->serial=next_fracture_serial();
                 preFractures_.emplace(c->Id,entry);preQueue_.push_back(entry);preTried_.insert(c->Id);
             }
         }
@@ -985,7 +987,7 @@ class AdventurePlayer {
             auto moved=route_pose_of(c,seconds_);
             FractureResult fracture;
             if(auto ready=obtain_prefracture(c,moved))fracture=std::move(*ready);
-            else{++runtime_bypass().fractureComputedAtBreak;fracture=compute_fracture(c,moved,uint32_t(++fracturePatternSerial_));}
+            else{++runtime_bypass().fractureComputedAtBreak;fracture=compute_fracture(c,moved,next_fracture_serial());}
             auto physicalPieces=std::move(fracture.pieces);const bool fractureSupported=fracture.supported;uint32_t fractureSeed=fracture.seed;
             lastDestruction.fractureMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-destructionStart).count();
             if(fractureSupported){
@@ -1287,10 +1289,14 @@ class AdventurePlayer {
         const double angle=dodgeRollSign_*6.283185307179586*(phase*phase*(3-2*phase));
         return up*std::cos(angle)+right*std::sin(angle);
     }
+    // Audit 08#2: with STARLIGHT_CAMERA_BOOM_SMOOTHING=1 the boom closes at once when geometry gets in the way but opens again over about 0.15 s, and never shrinks below 0.25 m (or the requested distance if that is shorter), so the eye cannot sit inside the drawn body. Default off keeps the exact current boom.
+    static bool boom_smoothing(){char v[8]{};return GetEnvironmentVariableA("STARLIGHT_CAMERA_BOOM_SMOOTHING",v,8)&&v[0]=='1';}
+    static double eased_boom_length(double eased,double target,double dt,double requested){target=std::max(target,std::min(requested,.25));if(!(eased>=0)||!(dt>=0)||dt>1||target<=eased)return target;return eased+(target-eased)*(1-std::exp(-dt/.05));}
+    mutable double boomLength_=0,boomStamp_=-1;
     Vec3 camera_eye() const {
         const double camT0=starlight_diag::events_enabled()?starlight_diag::evnow():0;
         struct CamLog{double t0;~CamLog(){if(t0>0){const double ms=starlight_diag::evnow()-t0;if(ms>.2)starlight_diag::evlog("cam",ms,0,0);}}} camLog{camT0};
-        if(cameraDistance<=.001)return view_position();
+        if(cameraDistance<=.001){if(boom_smoothing())boomStamp_=-1;return view_position();}
         auto backward=camera_direction()*-1.;double distance=cameraDistance;
         each_ray_candidate(view_position(),backward,cameraDistance+.2,[&](const Character& object){
             if(!blocks_movement(object))return; // keys, exits, grass, lights, fire, lava, lightning and smoke never pull the boom in
@@ -1326,6 +1332,7 @@ class AdventurePlayer {
         // Sample the short camera boom against terrain to avoid looking through hills.
         for(double d=.1;d<=distance;d+=.1){auto p=view_position()+backward*d;
             if(terrain_ && (terrain_->Volumes.empty()?p.y<terrain_->height_at(p.x,p.z)+.15:terrain_->density_at(p.x,p.y,p.z)<.15)){distance=std::max(0.,d-.1);break;}}
+        if(boom_smoothing()){const double dt=boomStamp_<0||seconds_<boomStamp_?-1:seconds_-boomStamp_;distance=eased_boom_length(dt<0?-1:boomLength_,distance,dt,cameraDistance);boomLength_=distance;boomStamp_=seconds_;}
         return view_position()+backward*distance;
     }
     bool standing_inside_solid() const {return blocked(position);}
@@ -1453,7 +1460,7 @@ class AdventurePlayer {
         for(size_t i=0;i<solids_.size();++i){solidSlot_[solids_[i].first]=uint32_t(i);solidIndex_.set(uint32_t(i),spatial_box(solids_[i].second));}
         solidIndex_.end_bulk();
         position={settings_.SpawnX,settings_.SpawnY,settings_.SpawnZ};yaw=pitch=0;
-        cameraYaw=cameraPitch=0;cameraDistance=5;
+        cameraYaw=cameraPitch=0;cameraDistance=5;boomStamp_=-1;
         // The first dust update needs the bounds of every immutable solid; computing them lazily cost about 15 ms in the middle of the
         // first break. Same objects, same calculation, done while the scene is being prepared.
         if(GetEnvironmentVariableA("STARLIGHT_DISABLE_PREWARM",nullptr,0)==0){const double w0=starlight_diag::events_enabled()?starlight_diag::evnow():0;

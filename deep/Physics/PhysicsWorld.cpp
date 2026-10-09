@@ -159,6 +159,15 @@ public:
   world.GetNarrowPhaseQuery().CastShape(cast,settings,RVec3::sZero(),hits,world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1));
   return !hits.HadHit();
  }
+ // Coulomb-style rolling resistance acts only on bodies with recent contacts.
+ // Damping above remains a separate, small aerodynamic/numerical loss.
+ void ApplyRollingResistance(){
+  auto& api=world.GetBodyInterface();
+  for(auto raw:contacts.touching){BodyID id(raw);float torque=0;Vec3 omega=api.GetAngularVelocity(id);float speed=omega.Length();if(speed<.001f)continue;{BodyLockRead lock(world.GetBodyLockInterface(),id);if(lock.Succeeded()){auto& b=lock.GetBody();float inv=b.GetMotionProperties()->GetInverseMass();float radius=b.GetShape()->GetLocalBounds().GetExtent().Length();if(inv>0)torque=.012f/inv*9.81f*radius*std::min(1.f,speed);}}if(torque>0)api.AddTorque(id,-omega/speed*torque);}
+  contacts.touching.clear();
+ }
+ // The adventure world advances only through CharacterStep, which never reached the rolling resistance above (audit 03#7); STARLIGHT_ROLLING_RESISTANCE=1 applies it there too. Default off keeps the shipped roll-out behaviour.
+ static bool RollingResistanceInCharacterStep(){char v[8]{};size_t n=0;return getenv_s(&n,v,sizeof v,"STARLIGHT_ROLLING_RESISTANCE")==0&&v[0]=='1';}
  void CharacterStep(float dt,Vec3 feet,Vec3 input,bool jump,float* output,bool overrideMotion=false){
   if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f)throw std::runtime_error("Invalid character step");
   if((character->GetPosition()-RVec3(feet)).LengthSq()>1.e-6){
@@ -190,6 +199,7 @@ public:
   settings.mStickToFloorStepDown=(overrideMotion || jump || submerged>.2f || velocity.GetY()>ground.GetY()+.1f)?Vec3::sZero():Vec3(0,-.4f,0);
   if(overrideMotion)settings.mWalkStairsStepUp=Vec3::sZero();
   character->ExtendedUpdate(dt,world.GetGravity(),settings,world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
+  if(RollingResistanceInCharacterStep())ApplyRollingResistance();
   if(world.Update(dt,1,&temp,&jobs)!=EPhysicsUpdateError::None)throw std::runtime_error("Character world capacity exceeded");
   auto p=character->GetPosition();output[0]=(float)p.GetX();output[1]=(float)p.GetY();output[2]=(float)p.GetZ();output[3]=character->GetGroundState()==CharacterBase::EGroundState::OnGround?1.f:0.f;
  }
@@ -444,10 +454,7 @@ public:
    for(auto& cable:cables)cable.previous=CablePoints(cable);
    previousBodies.clear();for(auto id:bodies){RVec3 p;Quat q;api.GetPositionAndRotation(id,p,q);previousBodies.push_back({id.GetIndexAndSequenceNumber(),(float)p.GetX(),(float)p.GetY(),(float)p.GetZ(),q.GetX(),q.GetY(),q.GetZ(),q.GetW()});}
    for(int i=0;i<liquidCount;i++){auto f=liquid[i];BodyID id(f.id);if(f.ratio>0)api.ApplyBuoyancyImpulse(id,RVec3(0,f.height,0),Vec3::sAxisY(),f.ratio,.9f,.3f,liquidCurrents.count(f.id)?liquidCurrents.at(f.id):Vec3::sZero(),world.GetGravity(),1.f/60);}
-   // Coulomb-style rolling resistance acts only on bodies with recent contacts.
-   // Damping above remains a separate, small aerodynamic/numerical loss.
-   for(auto raw:contacts.touching){BodyID id(raw);float torque=0;Vec3 omega=api.GetAngularVelocity(id);float speed=omega.Length();if(speed<.001f)continue;{BodyLockRead lock(world.GetBodyLockInterface(),id);if(lock.Succeeded()){auto& b=lock.GetBody();float inv=b.GetMotionProperties()->GetInverseMass();float radius=b.GetShape()->GetLocalBounds().GetExtent().Length();if(inv>0)torque=.012f/inv*9.81f*radius*std::min(1.f,speed);}}if(torque>0)api.AddTorque(id,-omega/speed*torque);}
-   contacts.touching.clear();
+   ApplyRollingResistance();
    const bool injected=InjectedUpdateFailures().load()>0&&InjectedUpdateFailures().fetch_sub(1)>0;auto error=injected?EPhysicsUpdateError::ManifoldCacheFull:world.Update(1.f/60,1,&temp,&jobs);
    // A failed update must not leave its time behind: the backlog would be replayed on the next call (and grow while the failure lasts) instead of the step simply failing again or recovering.
    if(error!=EPhysicsUpdateError::None){accumulator=0;throw std::runtime_error("Jolt capacity exceeded during step");}accumulator-=1.0/60;ticks++;
