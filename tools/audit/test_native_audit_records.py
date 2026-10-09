@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -7,7 +8,7 @@ import audit_engine
 import feature_evidence
 
 ROOT=Path(__file__).resolve().parents[2]
-PROGRAM=ROOT/'out/classic/Release/Starlight.NativeAuditRecords.exe'
+PROGRAM=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')/'Starlight.NativeAuditRecords.exe'
 
 class AuditRecords(unittest.TestCase):
     def test_build_inputs_discovered(self):

@@ -16,13 +16,15 @@ for path in subprocess.check_output(['rg','--files','--hidden','--no-ignore',str
         t=p.read_text(encoding='utf-8',errors='replace')
         if 'Microsoft.NET.Sdk' in t or 'NuGet' in t: reason='Managed build import'
     if p.suffix.lower() in ('.exe','.dll'):
-        with p.open('rb') as f: b=f.read(4096)
+        with p.open('rb') as f:
+            b=f.read(64)
+            pe=struct.unpack_from('<I',b,0x3c)[0] if b[:2]==b'MZ' and len(b)>=0x40 else None
+            if pe is not None: f.seek(pe); h=f.read(24+240)
         if b[:2]==b'MZ':
             try:
-                pe=struct.unpack_from('<I',b,0x3c)[0]; opt=pe+24
-                if b[pe:pe+4]!=b'PE\0\0': continue
-                directories=opt+(112 if struct.unpack_from('<H',b,opt)[0]==0x20b else 96)
-                if struct.unpack_from('<I',b,directories+14*8)[0]: reason='CLR assembly'
+                if pe is None or h[:4]!=b'PE\0\0': raise struct.error
+                directories=24+(112 if struct.unpack_from('<H',h,24)[0]==0x20b else 96)
+                if struct.unpack_from('<I',h,directories+14*8)[0]: reason='CLR assembly'
                 images+=1
             except struct.error: reason='Unable to verify PE header'
     if reason:

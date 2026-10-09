@@ -33,7 +33,7 @@ std::string hash(const fs::path& p) { auto s=read(p); require(s.size()<ULONG_MAX
 fs::path safe(const fs::path& root,const std::string& relative) {
     require(root.is_absolute(),"Package root must be absolute");
     for(auto parent=root;!parent.empty();){auto flags=GetFileAttributesW(parent.c_str());require(flags==INVALID_FILE_ATTRIBUTES || !(flags&FILE_ATTRIBUTE_REPARSE_POINT),"Package root links are not allowed");auto next=parent.parent_path();if(next==parent)break;parent=next;}
-    auto p=fs::u8path(relative); require(!p.empty() && !p.is_absolute() && !p.has_root_name(),"Unsafe package path");
+    auto p=fs::u8path(relative); require(!p.empty() && !p.is_absolute() && !p.has_root_name() && !p.has_root_directory(),"Unsafe package path");
     require(relative.find(':')==std::string::npos,"Unsafe package stream");
     fs::path out=root;
     for(const auto& part:p) { require(part!=L".." && part!=L".","Unsafe package traversal");auto name=part.wstring();require(!name.empty() && name.back()!=L'.' && name.back()!=L' ',"Ambiguous package path");for(auto& c:name)c=towupper(c);auto stem=name.substr(0,name.find(L'.'));require(stem!=L"CON" && stem!=L"PRN" && stem!=L"AUX" && stem!=L"NUL" && !(stem.size()==4 && (stem.substr(0,3)==L"COM" || stem.substr(0,3)==L"LPT") && stem[3]>=L'0' && stem[3]<=L'9'),"Reserved package filename");out/=part; auto a=GetFileAttributesW(out.c_str()); require(a==INVALID_FILE_ATTRIBUTES || !(a&FILE_ATTRIBUTE_REPARSE_POINT),"Package links are not allowed"); }
@@ -158,7 +158,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
             bool blocked=false;try{safe(root,"../escape");}catch(...){blocked=true;}require(blocked,"Traversal check failed");
             blocked=false;try{safe(root,"C:/escape");}catch(...){blocked=true;}require(blocked,"Root check failed");
             require(safe(root,"bin/editor.exe")==root/L"bin/editor.exe","Relative path check failed");
-            for(auto name:{"file:stream","CON.txt","name. ","data/../escape"}){blocked=false;try{safe(root,name);}catch(...){blocked=true;}require(blocked,"Unsafe filename accepted");}
+            for(auto name:{"file:stream","CON.txt","name. ","data/../escape","/escape","\\escape"}){blocked=false;try{safe(root,name);}catch(...){blocked=true;}require(blocked,"Unsafe filename accepted");}
             auto test=fs::temp_directory_path()/(L"Starlight-launcher-check-"+std::to_wstring(GetCurrentProcessId()));require(!fs::exists(test),"Test directory collision");fs::create_directories(test/L"source");
             auto source=test/L"source",target=test/L"installed";fs::copy_file(self(),source/L"Starlight.exe");
             json m={{"format","starlight-portable-v1"},{"publisher","ChaosFox"},{"editor","Starlight.exe"},{"files",json::array({{{"path","Starlight.exe"},{"sha256",hash(source/L"Starlight.exe")}}})}};

@@ -45,4 +45,17 @@ with tempfile.TemporaryDirectory(prefix='starlight-native-guard-') as tmp:
     archive.write_bytes(binary)
     (archive.parent / 'unexpected.cs').write_text('class Unexpected {}')
     assert len(run(1)['violations']) == 1
-print('PASS: pinned archive, active copy, changed archive, unexpected archived source')
+    (archive.parent / 'unexpected.cs').unlink()
+    late = bytearray(8192)
+    late[:2] = b'MZ'
+    struct.pack_into('<I', late, 0x3c, 0x1800)
+    late[0x1800:0x1804] = b'PE\0\0'
+    struct.pack_into('<H', late, 0x1800 + 24, 0x20b)
+    struct.pack_into('<I', late, 0x1800 + 24 + 112 + 14*8, 0x1000)
+    managed = root / 'out/Release/late-header.dll'
+    managed.write_bytes(late)
+    assert len(run(1)['violations']) == 1
+    late[0x1800:0x1804] = b'XX\0\0'
+    managed.write_bytes(late)
+    assert len(run(1)['violations']) == 1
+print('PASS: pinned archive, active copy, changed archive, unexpected archived source, late and invalid PE headers')

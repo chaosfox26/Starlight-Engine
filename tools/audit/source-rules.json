@@ -486,7 +486,7 @@
           "BuildRaytracingAccelerationStructure"
         ],
         [
-          "tools/build/cmake_shaders.py",
+          "tools/build/native_shaders.cpp",
           "cs_6_5"
         ]
       ],

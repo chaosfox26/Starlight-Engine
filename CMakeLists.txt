@@ -106,14 +106,19 @@ enable_testing()
 # verify_all.py --gpu runs the denoise and fallback ones, and nothing runs the render checks yet.
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
- foreach(py_test test_artifact_cleanup test_audit_engine_contracts test_engine_comparison test_native_analysis test_native_audit test_native_audit_records test_native_cleanup_bridge test_native_knowledge test_native_reports test_source_lookup)
+ foreach(py_test test_artifact_cleanup test_audit_engine_contracts test_engine_comparison test_source_lookup test_source_rules_markers)
   add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
+ endforeach()
+ # These run the native executables of the tree under test (STARLIGHT_BUILD_DIR), not whatever sits in out/classic.
+ foreach(py_test test_native_analysis test_native_audit test_native_audit_records test_native_cleanup_bridge test_native_knowledge test_native_reports test_scene_migration_paths)
+  add_test(NAME py-${py_test} COMMAND "${CMAKE_COMMAND}" -E env "STARLIGHT_BUILD_DIR=${CMAKE_BINARY_DIR}/$<CONFIG>" "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
  endforeach()
  # The four known-failing tests are listed but disabled, so ctest reports them as "Not Run (Disabled)" instead of leaving them invisible.
  foreach(py_test test_analysis_gui_source_build test_audit_engine test_deep_analysis)
   add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
   set_tests_properties(py-${py_test} PROPERTIES DISABLED TRUE LABELS known-failing)
  endforeach()
+ add_test(NAME py-test_prepare_graphics_validation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/packaging/test_prepare_graphics_validation.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/packaging")
  add_test(NAME py-test_verify_no_managed COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/checks/test_verify_no_managed.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
  set_tests_properties(py-test_verify_no_managed PROPERTIES DISABLED TRUE LABELS known-failing)
  # The regression tooling decides what counts as VERIFIED, so its own self-tests are gated too.

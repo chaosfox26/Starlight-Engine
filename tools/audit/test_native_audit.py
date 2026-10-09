@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
-RUNTIME=ROOT/'out/classic/Release'
+RUNTIME=Path(os.environ.get('STARLIGHT_BUILD_DIR') or ROOT/'out/classic/Release')
 
 class NativeAudit(unittest.TestCase):
     def test_prebuilt_runtime_outcomes(self):
@@ -48,6 +48,16 @@ class NativeAudit(unittest.TestCase):
             summary=json.loads((out/'audit-summary.json').read_text())
             self.assertEqual(summary['stages'][0]['exitCode'],0xc0000135)
             self.assertIn('required runtime DLL',(out/'final-status.txt').read_text())
+
+    def test_rooted_runtime_entries_are_rejected_without_hanging(self):
+        for entry in ('\\x.exe','/x.exe','C:x.exe'):
+            with self.subTest(entry=entry),tempfile.TemporaryDirectory(prefix='starlight-rooted-entry-') as temp:
+                root=Path(temp);plan=root/'plan.json'
+                plan.write_text(json.dumps(dict(format='starlight-runtime-checks-v1',profile='prebuilt-runtime',stages=[dict(name='rooted',executable=entry,arguments=[],timeoutSeconds=5,features=['diagnostics-and-existing-audits'])])))
+                out=root/'analysis/result'
+                result=subprocess.run([str(RUNTIME/'Starlight.NativeAudit.exe'),'--root',str(root),'--output',str(out),'--runtime-dir',str(RUNTIME),'--rules',str(ROOT/'tools/audit'),'--audit-mode','errors','--test-plan',str(plan)],capture_output=True,timeout=30)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertIn(b'Runtime entry',result.stderr)
 
     def test_automatic_capture_retention(self):
         with tempfile.TemporaryDirectory(prefix='starlight-retention-coordinator-') as temp:
