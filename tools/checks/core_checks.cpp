@@ -33,6 +33,7 @@ using namespace starlight::editor;
 #include "physics_abi_checks.inl"
 #include "physics_step_checks.inl"
 #include "device_fault_checks.inl"
+#include "viewport_api_checks.inl"
 #include "scene_preparation_checks.inl"
 #include "scene_validation_checks.inl"
 #include "file_io_checks.inl"
@@ -123,6 +124,14 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(physics_abi_checks, physics_abi_checks(require));
         RUN_GROUP(physics_step_checks, physics_step_checks(require));
         RUN_GROUP(device_fault_checks, device_fault_checks(require));
+        RUN_GROUP(viewport_rt_instance_checks, viewport_rt_instance_checks(require));
+        RUN_GROUP(viewport_error_text_checks, viewport_error_text_checks(require));
+        RUN_GROUP(viewport_scene_failure_checks, viewport_scene_failure_checks(require));
+        RUN_GROUP(viewport_resize_failure_checks, viewport_resize_failure_checks(require));
+        RUN_GROUP(viewport_grass_pending_checks, viewport_grass_pending_checks(require));
+        RUN_GROUP(viewport_resident_mesh_checks, viewport_resident_mesh_checks(require));
+        RUN_GROUP(viewport_log_path_checks, viewport_log_path_checks(require,folder));
+        RUN_GROUP(viewport_null_argument_checks, viewport_null_argument_checks(require));
         RUN_GROUP(scene_preparation_checks, scene_preparation_checks(require));
         RUN_GROUP(scene_validation_checks, scene_validation_checks(require));
         RUN_GROUP(file_io_checks, file_io_checks(require,folder));

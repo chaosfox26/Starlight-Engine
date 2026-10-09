@@ -1122,9 +1122,9 @@ struct RenderDevice {
 
     // Native editor resize: preserve device, pipelines, geometry and frame counters.
     // Called only between frames on the owning render thread.
-    void resizeNativeOutput(UINT width, UINT height) {
+    void resizeNativeOutput(UINT width, UINT height, bool force = false) {
         if (!width || !height) throw std::runtime_error("Invalid resize dimensions");
-        if (width == w && height == h) return;
+        if (!force && width == w && height == h) return;   // force redoes a resize that failed after the size was recorded
         if (ups->path() != up::Path::Off) throw std::runtime_error("Native resize requires native backend");
         flush();
         DXGI_SWAP_CHAIN_DESC1 desc{};

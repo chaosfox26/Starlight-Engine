@@ -123,7 +123,7 @@ struct GrassDeformation {
   {std::vector<ContactIndex::Box> boxes;boxes.reserve(contacts.size());for(const auto& b:contacts)boxes.push_back({b.low.x,b.low.y,b.low.z,b.high.x,b.high.y,b.high.z});contactIndex.build(std::move(boxes));}
  }
  void begin(RenderDevice& d,float time){
-  entryCursor=0;
+  entryCursor=0;pending.clear();pendingEntries.clear(); // a frame that threw after queueing grass must not leave pointers to entries a later install erases
   if(entries.empty())return;
   if(!contacts.empty())memcpy(bodyMapped+size_t(d.slot)*bodyCapacity*sizeof(Body),contacts.data(),contacts.size()*sizeof(Body));
   if(hasTime&&time<previousTime)reset();
