@@ -73,10 +73,14 @@ def stale_reason(repo, build_dir, targets=('Starlight.NativeCoreChecks',)):
     if not os.path.exists(exe):
         return None
     built = os.path.getmtime(exe)
+    cannot = 'git could not list the sources, so the built checks cannot be compared with them: fix git or rebuild first'
     try:
-        listed = subprocess.run(['git', '-C', repo, 'ls-files', '-z'], capture_output=True, timeout=120, creationflags=FLAGS).stdout.decode('utf-8', 'replace').split(chr(0))
+        listing = subprocess.run(['git', '-C', repo, 'ls-files', '-z'], capture_output=True, timeout=120, creationflags=FLAGS)
     except (OSError, subprocess.SubprocessError):
-        return None
+        return cannot
+    if listing.returncode != 0:
+        return cannot
+    listed = listing.stdout.decode('utf-8', 'replace').split(chr(0))
     newer = []
     for name in listed:
         if name.endswith(SOURCE_SUFFIXES) and name.startswith(SOURCE_FOLDERS):
@@ -177,6 +181,15 @@ def self_test():
     check('a failed step gives 1', summarize([{'step': 'ledger', 'outcome': 'PASS', 'exitCode': 0}, {'step': 'python', 'outcome': 'FAIL'}]) == 1)
     check('a ledger run that is not all VERIFIED gives 1 even though the process finished', summarize([{'step': 'ledger', 'outcome': 'FAIL', 'exitCode': 2}]) == 1)
     check('a stale build is reported as NOT RUN and is never PASS', (lambda r: r is not None and 'rebuild' in r)(stale_reason_for_test()))
+    with tempfile.TemporaryDirectory() as plain:
+        build = os.path.join(plain, 'build')
+        os.makedirs(build)
+        exe = os.path.join(build, 'Starlight.NativeCoreChecks.exe')
+        open(exe, 'w').write('x')
+        os.utime(exe, (time.time() - 100, time.time() - 100))
+        os.makedirs(os.path.join(plain, 'editor'))
+        open(os.path.join(plain, 'editor', 'a.cpp'), 'w').write('int a;')
+        check('a build that git cannot compare with the sources is a reason, never clean', stale_reason(plain, build) is not None)
     with tempfile.TemporaryDirectory() as folder:
         def suite_with(suite):
             json.dump({'suite': suite}, open(os.path.join(folder, 'latest.json'), 'w'))
@@ -187,7 +200,7 @@ def self_test():
         check('a passing suite whose process exited nonzero is a failure', suite_with({'success': True, 'exitCode': 3, 'timedOut': False}) is not None)
         check('a passing suite that timed out after its result is a failure', suite_with({'success': True, 'exitCode': None, 'timedOut': True}) is not None)
         import briefing
-        for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}'):
+        for text in ('[]', 'null', '"x"', '{"suite": [1], "identity": "x", "entries": "abc", "items": null}', '{"suite": {"error": 5}, "entries": [1, 2], "items": [1]}', '{"entries": [{"state": []}], "items": [{"state": {}}]}'):
             open(os.path.join(folder, 'latest.json'), 'w').write(text)
             open(os.path.join(folder, 'AUDIT-TRACKER.json'), 'w').write(text)
             try:

@@ -66,18 +66,23 @@ def archive_report(results_dir, report):
     return path
 
 def git(repo, *args):
+    """Output of a git command, or '' when it fails (git can print a word such as HEAD to stdout and still exit with an error)."""
     try:
-        return subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60).stdout.strip()
+        run = subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True, timeout=60)
     except Exception:
         return ''
+    return run.stdout.strip() if run.returncode == 0 else ''
 
 def child_environment(extra):
     return {k: v for k, v in dict(os.environ, **extra).items() if k != 'STARLIGHT_CHECK_GROUPS'}
 
 def apply_result(suite, data):
     suite['completed'] = True
-    suite['success'] = bool(data.get('success')) and not data.get('filtered')
+    suite['success'] = data.get('success') is True and not data.get('filtered')
     suite['error'] = data.get('error') or ('filtered run (STARLIGHT_CHECK_GROUPS): not a full pass' if data.get('filtered') else None)
+    if suite['success'] and suite.get('exitCode') != 0:
+        suite['success'] = False
+        suite['error'] = 'the suite wrote success but exited with code %s' % suite.get('exitCode')
     suite['checks'] = data.get('checks', [])
     suite['schema'] = data.get('schema')
 
@@ -113,6 +118,12 @@ def evaluate_test(test, suite):
     return 'NOT-CHECKED', 'the suite stopped on another check (%s) before these ran: %d of %d matching checks' % (suite['error'], len(matched), need), len(matched)
 
 ORDER = ['REGRESSED', 'COVERAGE-ERROR', 'NOT-CHECKED', 'SKIPPED', 'VERIFIED']
+
+def exit_code(states, suite):
+    """0 only when every entry is VERIFIED and the suite itself passed: a suite that timed out or crashed after its checks is not a pass."""
+    if 'REGRESSED' in states or 'COVERAGE-ERROR' in states:
+        return 1
+    return 0 if states == {'VERIFIED'} and suite.get('success') is True else 2
 
 def evaluate_entry(entry, suite):
     states = []
@@ -247,6 +258,21 @@ def self_test():
     ok = filtered['success'] is False and 'not a full pass' in filtered['error'] and got == 'NOT-CHECKED'
     print('  %s a filtered result.json is never a success: %s' % ('ok ' if ok else 'BAD', got))
     bad += not ok
+    texted = {'started': True, 'exitCode': 0}
+    apply_result(texted, {'success': 'false', 'checks': ['a']})
+    ok = texted['success'] is False
+    print('  %s a result.json that says "false" as text is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    crashed_after = {'started': True, 'exitCode': 3}
+    apply_result(crashed_after, {'success': True, 'checks': ['a']})
+    ok = crashed_after['success'] is False and 'exited with code 3' in crashed_after['error']
+    print('  %s a suite that wrote success and then exited non-zero is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    ok = (exit_code({'VERIFIED'}, {'success': True}) == 0 and exit_code({'VERIFIED'}, {'success': None}) == 2
+          and exit_code({'VERIFIED', 'REGRESSED'}, {'success': True}) == 1 and exit_code({'NOT-CHECKED'}, {'success': True}) == 2
+          and exit_code(set(), {'success': True}) == 2)
+    print('  %s every entry VERIFIED still exits 2 when the suite did not pass' % ('ok ' if ok else 'BAD'))
+    bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
     del os.environ['STARLIGHT_CHECK_GROUPS']
@@ -337,6 +363,18 @@ def self_test():
         print('  %s history keeps every run and never replaces one' % ('ok ' if kept and refused and json.load(open(one))['marker'] == 'full run' else 'BAD'))
         bad += not (kept and refused and json.load(open(one))['marker'] == 'full run')
     with tempfile.TemporaryDirectory() as tree:
+        build = os.path.join(tree, 'build', 'Release')
+        os.makedirs(build)
+        open(os.path.join(build, 'Starlight.NativeCoreChecks.exe'), 'w').write('x')
+        repo = os.path.join(tree, 'repo')
+        os.makedirs(os.path.join(repo, 'tools', 'checks'))
+        subprocess.run(['git', '-C', repo, 'init', '-q'], creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        run = subprocess.run([sys.executable, os.path.abspath(__file__), '--repo', repo, '--build-dir', build, '--results', os.path.join(tree, 'results'),
+                              '--ledger', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ledger.json')], capture_output=True, text=True, timeout=300)
+        ok = run.returncode == 2 and 'REFUSING TO RUN' in run.stdout and not os.path.exists(os.path.join(tree, 'results', 'latest.json'))
+        print('  %s a checkout git cannot read the HEAD of is refused, not recorded as a clean build' % ('ok ' if ok else 'BAD'))
+        bad += not ok
+    with tempfile.TemporaryDirectory() as tree:
         build = os.path.join(tree, 'Release')
         os.makedirs(build)
         before = configured_from(build)
@@ -403,6 +441,9 @@ def main():
         'dirtyTrackedFiles': len([l for l in git(args.repo, 'status', '--porcelain', '--untracked-files=no').splitlines() if l.strip()]),
         'binaries': {},
     }
+    if not identity['gitHead']:
+        print('REFUSING TO RUN: git cannot read the HEAD of %s, so the build identity cannot say which sources it was built from' % args.repo)
+        return 2
     if identity['dirtyTrackedFiles']:
         identity['dirtyDiffSha256'] = dirty_digest(args.repo)
     for name in registered['binaries']:
@@ -476,10 +517,7 @@ def main():
         print('  %-14s %-14s %s' % (e['id'], e['state'], e['tests'][0]['reason']))
     for t in report['transitions']:
         print('NOTICE:', t)
-    states = {e['state'] for e in entries}
-    if 'REGRESSED' in states or 'COVERAGE-ERROR' in states:
-        return 1
-    return 0 if states == {'VERIFIED'} else 2
+    return exit_code({e['state'] for e in entries}, suite)
 
 if __name__ == '__main__':
     sys.exit(main())
