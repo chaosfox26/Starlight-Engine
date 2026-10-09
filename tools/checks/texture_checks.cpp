@@ -378,6 +378,7 @@ template <class R> void fuzzDecoders(const fs::path& work, const fs::path& root,
     }
     seeds.push_back({ "bc7.dds", fuzzDds(DXGI_FORMAT_BC7_UNORM, 16, 16, 5), 3 });
     seeds.push_back({ "bc5.dds", fuzzDds(DXGI_FORMAT_BC5_UNORM, 12, 8, 4), 3 });
+    seeds.push_back({ "bc7-srgb.dds", fuzzDds(DXGI_FORMAT_BC7_UNORM_SRGB, 20, 12, 3), 3 });
 
     PROCESS_MEMORY_COUNTERS before{}; GetProcessMemoryInfo(GetCurrentProcess(), &before, sizeof(before));
     size_t cases = 0, accepted = 0, failures = 0; double slowest = 0; std::string slowestWhat;
