@@ -1229,6 +1229,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             const std::string text(header.begin(), header.end());
             require(text.find("static const UINT kBktVariants = 8, kBktMaxSubs = 32;") != std::string::npos, "CORE-12: the instance bucket table keeps 8 variants and 32 submesh slots, 30 of them for a model's own primitives");
         }
+        {   // The benchmark's multicore proof writes one palette entry per joint of models[0], so its scratch palette must be sized from that model, not from the per-character cap.
+            const auto header = readBytes(root / "deep/engine/render_device.h");
+            const std::string text(header.begin(), header.end());
+            require(text.find("std::vector<XMFLOAT4X4> pal(d.joints.size());") != std::string::npos, "MT-PROOF: the evalPose scratch palette holds one entry per joint of the measured model");
+        }
         GlbSpec stepSpec; stepSpec.step = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(stepSpec)), nullptr, "step.glb", scratch).ok() && scratch.clips[0].channels[0].step, "R3: STEP interpolation is kept on the channel");
         require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "linear.glb", scratch).ok() && !scratch.clips[0].channels[0].step, "R3: LINEAR interpolation is not held");
