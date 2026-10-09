@@ -81,6 +81,20 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F1: a terrain tile cooked while the world has no free body slot keeps its shape and gets a body once a slot is freed.
+    {
+     void* full=slp_create();
+     std::vector<uint32_t> filler;
+     for(int i=0;i<9000;++i){uint32_t id=slp_add(full,cube,8,faces,36,0,1,float(i)*.01f,-5,0,0,0,0,1);if(id==refused)break;filler.push_back(id);}
+     const std::vector<float> flatHeights(97*97,0.f);
+     require(full&&filler.size()>1000&&filler.size()<9000&&slp_terrain(full,flatHeights.data())==1,"audit2 F1: The world is filled to its body capacity before the terrain cooks");
+     int failures=0;for(int i=0;i<5000&&failures==0;++i){if(slp_ready(full)==-1)++failures;else std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(failures>=1&&std::string(slp_error()).find("capacity")!=std::string::npos,"audit2 F1: A terrain tile with no free body slot is reported as a capacity error");
+     for(int i=0;i<40;++i){slp_character_remove(full,filler.back());filler.pop_back();}
+     int state=0;for(int i=0;i<5000&&state!=1;++i){state=slp_ready(full);if(state==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(state==1,"audit2 F1: The terrain becomes ready once a body slot is freed, instead of staying not ready for good");
+     slp_destroy(full);
+    }
     slp_destroy(terrainWorld);
     slp_destroy(world);
 }

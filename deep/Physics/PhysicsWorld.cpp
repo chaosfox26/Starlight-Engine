@@ -87,7 +87,7 @@ public:
   void OnContactPersisted(const Body& a,const Body& b,const ContactManifold&,ContactSettings&)override{Collect(a,b);}
  } contacts;
  BroadLayers broad;PairFilter pairs;BroadFilter filter;TempAllocatorImpl temp{32*1024*1024};JobSystemThreadPool jobs{cMaxPhysicsJobs,cMaxPhysicsBarriers,4};PhysicsSystem world;
- struct Tile {BodyID body;std::array<float,289> heights{},requested{};std::future<ShapeRefC> pending;bool valid=false;};
+ struct Tile {BodyID body;std::array<float,289> heights{},requested{};std::future<ShapeRefC> pending;ShapeRefC cooked;bool valid=false;};
  BodyID volumeTerrain;
  uint64_t sharedShapeHits=0; // see Add()
  std::array<Tile,36> tiles;std::vector<BodyID> bodies,allProps;double accumulator=0;uint64_t ticks=0,cooks=0,droppedTicks=0;
@@ -220,7 +220,7 @@ public:
  static ShapeRefC CookGuarded(const std::array<float,289>& h,int tx,int tz){try{return Cook(h,tx,tz);}catch(const std::exception& e){std::fprintf(stderr,"terrain cook failed: %s\n",e.what());return ShapeRefC();}}
  void Terrain(const float* heights){
   if(!volumeTerrain.IsInvalid()){auto& api=world.GetBodyInterface();api.RemoveBody(volumeTerrain);api.DestroyBody(volumeTerrain);volumeTerrain=BodyID();}
-  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error("Invalid terrain height");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.pending=std::async(std::launch::async,[data,tx,tz]{return CookGuarded(data,tx,tz);});cooks++;}
+  Poll();for(int tz=0;tz<6;tz++)for(int tx=0;tx<6;tx++){auto& t=tiles[tz*6+tx];std::array<float,289> data;for(int z=0;z<17;z++)for(int x=0;x<17;x++){float h=heights[(tz*16+z)*97+tx*16+x];if(!std::isfinite(h))throw std::runtime_error("Invalid terrain height");data[z*17+x]=h;}t.requested=data;if(t.pending.valid()||(t.valid&&t.heights==data))continue;t.heights=data;t.valid=true;t.cooked=ShapeRefC();t.pending=std::async(std::launch::async,[data,tx,tz]{return CookGuarded(data,tx,tz);});cooks++;}
  }
  void TerrainMesh(const float* points,int count,const uint32_t* indices,int indexCount){
   if(!points || !indices || count<4 || count>1000000 || indexCount<3 || indexCount%3 || indexCount>6000000)throw std::runtime_error("Invalid volumetric terrain mesh");
@@ -236,7 +236,7 @@ public:
   // Retain their bodies, velocities and constraints, then let them settle.
   for(auto id:bodies)api.ActivateBody(id);
  }
- bool Poll(){if(!volumeTerrain.IsInvalid())return true;bool ready=true;auto& api=world.GetBodyInterface();for(auto& t:tiles){if(t.pending.valid()){if(t.pending.wait_for(std::chrono::seconds(0))==std::future_status::ready){auto shape=t.pending.get();if(!shape){t.valid=false;t.heights={};throw std::runtime_error("Terrain tile cook failed; the tile is cooked again on the next terrain update");}if(t.body.IsInvalid()){BodyCreationSettings settings(shape,RVec3::sZero(),Quat::sIdentity(),EMotionType::Static,0);settings.mFriction=.72f;t.body=api.CreateAndAddBody(settings,EActivation::DontActivate);if(t.body.IsInvalid())throw std::runtime_error("Terrain body capacity reached");}else api.SetShape(t.body,shape,true,EActivation::Activate);}else ready=false;}if(t.valid&&!t.pending.valid()&&t.requested!=t.heights){t.heights=t.requested;auto data=t.heights;int index=(int)(&t-tiles.data());t.pending=std::async(std::launch::async,[data,index]{return CookGuarded(data,index%6,index/6);});cooks++;ready=false;}if(t.body.IsInvalid())ready=false;}return ready;}
+ bool Poll(){if(!volumeTerrain.IsInvalid())return true;bool ready=true;auto& api=world.GetBodyInterface();for(auto& t:tiles){if(t.pending.valid()){if(t.pending.wait_for(std::chrono::seconds(0))==std::future_status::ready){t.cooked=t.pending.get();if(!t.cooked){t.valid=false;t.heights={};throw std::runtime_error("Terrain tile cook failed; the tile is cooked again on the next terrain update");}}else ready=false;}if(t.cooked){if(t.body.IsInvalid()){BodyCreationSettings settings(t.cooked,RVec3::sZero(),Quat::sIdentity(),EMotionType::Static,0);settings.mFriction=.72f;t.body=api.CreateAndAddBody(settings,EActivation::DontActivate);if(t.body.IsInvalid())throw std::runtime_error("Terrain body capacity reached");}else api.SetShape(t.body,t.cooked,true,EActivation::Activate);t.cooked=ShapeRefC();}if(t.valid&&!t.pending.valid()&&t.requested!=t.heights){t.heights=t.requested;auto data=t.heights;int index=(int)(&t-tiles.data());t.pending=std::async(std::launch::async,[data,index]{return CookGuarded(data,index%6,index/6);});cooks++;ready=false;}if(t.body.IsInvalid())ready=false;}return ready;}
  struct HullInfo {int kind=0,inputPoints=0,hullPoints=0;float deviation=0,diagonal=0;}; // kind: 0 exact, 1 exact after a finer-tolerance retry, 2 reduced to the 256-vertex limit (deviation measured), 3 bounding box, 4 rebuilt from the builder's own hull vertices (deviation measured)
  // Distance from a point to a triangle (closest point on the triangle), in double precision.
  static double PointTriangleDistance(const Vec3& p,const Vec3& a,const Vec3& b,const Vec3& c){
