@@ -582,8 +582,10 @@ int wmain(int argc, wchar_t **argv) {
     }
     atomic_write(output / L"session-results.json",
                  json{{"success", true}, {"checks", checks}}.dump(2));
-    std::cout << "PASS " << checks.size() << " native session checks\n";
-    if(visibleLifecycle)MessageBoxW(nullptr,L"The full session test passed. All 80 measured load/unload cycles completed. Results have been saved.",L"Starlight memory test - PASS",MB_OK|MB_ICONINFORMATION);
+    const bool idleControlOnly = GetEnvironmentVariableW(L"STARLIGHT_LIFECYCLE_IDLE_CONTROL", nullptr, 0) != 0;
+    if (idleControlOnly) std::cout << "NOT RUN lifecycle scene soak: the idle control does no scene swaps; " << checks.size() << " native session checks ran\n";
+    else std::cout << "PASS " << checks.size() << " native session checks\n";
+    if(visibleLifecycle && !idleControlOnly)MessageBoxW(nullptr,L"The full session test passed. All 80 measured load/unload cycles completed. Results have been saved.",L"Starlight memory test - PASS",MB_OK|MB_ICONINFORMATION);
     return 0;
   } catch (const std::exception &e) {
     atomic_write(
