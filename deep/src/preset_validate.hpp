@@ -28,6 +28,6 @@ inline void validate(const json&p){
     std::string mode=s.at("displayMode"),up=s.at("upscaler"),quality=s.at("quality");
     if(mode!="fullscreen"&&mode!="windowed"&&mode!="borderless")throw std::runtime_error("Unknown display mode");
     if(up!="off"&&up!="dlss"&&up!="fsr"&&up!="xess"&&up!="auto")throw std::runtime_error("Unknown upscaler");
-    if(quality!="native"&&quality!="quality"&&quality!="balanced"&&quality!="performance"&&quality!="ultraperformance")throw std::runtime_error("Unknown quality");
+    if(quality!="native"&&quality!="quality"&&quality!="balanced"&&quality!="performance"&&quality!="ultraperf"&&quality!="ultraperformance")throw std::runtime_error("Unknown quality");
 }
 }
