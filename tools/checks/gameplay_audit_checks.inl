@@ -175,4 +175,13 @@ static void gameplay_audit_checks(const auto& require){
         bool threw=false;try{p.start(bad);}catch(...){threw=true;}
         require(threw&&p.combat_actors().size()==1&&p.seconds()>0&&p.scene().Characters.size()==1,"GAME-9: A scene that fails validation does not reset the running session");
     }
+    {
+        // P2A3-1: without collision there is no airborne state, so walking reports Walk and standing still reports Idle, not Fall.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);
+        for(int i=0;i<60;++i)p.move(0,1,1./120.);
+        require(p.presentation().motion==AdventurePlayer::Presentation::Motion::Walk,"P2A3-1: Walking without collision reports Walk, not Fall");
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.presentation().motion==AdventurePlayer::Presentation::Motion::Idle,"P2A3-1: Standing still without collision reports Idle, not Fall");
+    }
 }

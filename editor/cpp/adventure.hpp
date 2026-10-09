@@ -1235,7 +1235,7 @@ class AdventurePlayer {
         else if(grapple_.state==GrappleMotion::State::Pulling)p.motion=M::GrapplePull;
         else if(grapple_.state==GrappleMotion::State::Swing)p.motion=M::Swing;
         else if(grapple_.state==GrappleMotion::State::Wall)p.motion=std::abs(p.velocity.y)>.1?M::Climb:M::WallHold;
-        else if(!grounded())p.motion=p.velocity.y>.1?M::Jump:M::Fall;
+        else if(settings_.Collision && !grounded())p.motion=p.velocity.y>.1?M::Jump:M::Fall; // without collision there is no controller to be airborne in
         else if(posture_==3)p.motion=M::Slide;
         else if(posture_==2)p.motion=M::Crawl;
         else if(posture_==1)p.motion=M::Crouch;
