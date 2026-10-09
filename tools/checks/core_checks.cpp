@@ -124,6 +124,7 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(viewport_resize_failure_checks, viewport_resize_failure_checks(require));
         RUN_GROUP(viewport_grass_pending_checks, viewport_grass_pending_checks(require));
         RUN_GROUP(viewport_resident_mesh_checks, viewport_resident_mesh_checks(require));
+        RUN_GROUP(viewport_log_path_checks, viewport_log_path_checks(require,folder));
         RUN_GROUP(scene_preparation_checks, scene_preparation_checks(require));
         RUN_GROUP(scene_validation_checks, scene_validation_checks(require));
         RUN_GROUP(file_io_checks, file_io_checks(require,folder));

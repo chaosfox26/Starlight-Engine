@@ -285,3 +285,31 @@ static void viewport_resident_mesh_checks(const auto &require) {
     require(grassRejected && !grassError.empty(), "VWP-6: A resident mesh with the GPU grass vertex kind is rejected with a reason");
     require(plainAccepted && listed && framed, "VWP-6: An ordinary resident mesh and its instance still render");
 }
+
+// VWP-7: an overlong STARLIGHT_STALL_LOG or STARLIGHT_PASS_LOG value is ignored instead of aborting the process or opening a garbage path.
+static void viewport_log_path_checks(const auto &require, const fs::path &folder) {
+    VwpSession session;
+    if (!vwp_open(require, session, "viewport log path checks")) return;
+    // Both logs are opened once per module load, so the frames run in a private copy of the module with fresh statics.
+    wchar_t original[MAX_PATH * 4]{};
+    require(GetModuleFileNameW(session.api.module, original, DWORD(std::size(original))) > 0, "VWP-7: The viewport module path is known");
+    const fs::path directory = folder / "viewport-log-path";
+    fs::create_directories(directory);
+    const fs::path copy = directory / "Starlight.Viewport.dll";
+    std::error_code copied;
+    fs::copy_file(original, copy, fs::copy_options::overwrite_existing, copied);
+    require(!copied, "VWP-7: A private copy of the viewport module is made");
+    VwpApi isolated;
+    require(isolated.open(copy.c_str()), "VWP-7: The private copy of the viewport module loads");
+    SetEnvironmentVariableA("STARLIGHT_STALL_LOG", std::string(510, 'a').c_str());
+    SetEnvironmentVariableA("STARLIGHT_PASS_LOG", std::string(600, 'b').c_str());
+    void *viewport = isolated.create(session.window, 640, 360);
+    const bool framed = viewport && isolated.frame(viewport, 0, 13) == 1 && isolated.frame(viewport, 0, 13) == 1;
+    const std::string why = framed || !viewport ? "" : isolated.error();
+    if (viewport) isolated.destroy(viewport);
+    SetEnvironmentVariableA("STARLIGHT_STALL_LOG", nullptr);
+    SetEnvironmentVariableA("STARLIGHT_PASS_LOG", nullptr);
+    FreeLibrary(isolated.module);
+    if (!why.empty()) std::cout << "viewport log path checks: frame failed with: " << why << std::endl;
+    require(viewport != nullptr && framed, "VWP-7: Frames render when the stall and pass log paths are too long to use");
+}
