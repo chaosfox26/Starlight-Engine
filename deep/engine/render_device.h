@@ -1239,7 +1239,7 @@ struct RenderDevice {
         // RND-2: the new targets are built into locals and swapped in only when all of them exist, so a failure (for example out of memory) keeps the previous state.
         const int oldMode = ups->mode(); const UINT oldRw = rw, oldRh = rh, oldMsaa = msaa;
         UINT nrw = 0, nrh = 0;
-        if (!ups->setMode(m, nrw, nrh)) return;
+        must(ups->setMode(m, nrw, nrh) ? S_OK : E_FAIL, "set upscaler quality mode");   // a refused mode must not leave the scene targets unset or mismatched with the output
         rw = nrw; rh = nrh;
         D3D12_CLEAR_VALUE cc{}; cc.Format = sceneFormat();
         D3D12_CLEAR_VALUE mc{}; mc.Format = DXGI_FORMAT_R16G16_FLOAT;
