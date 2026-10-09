@@ -3092,6 +3092,12 @@ struct Editor {
             }
         refresh();
     }
+    // Default: every stroke snaps the selected object. STARLIGHT_SNAP_ONLY_MOVED=1: only strokes that move, turn or scale it do, not Terrain, Sculpt or Route strokes (EDIT-6).
+    bool stroke_snaps_selection() const {
+        char value[8]{};
+        const bool onlyMoved = GetEnvironmentVariableA("STARLIGHT_SNAP_ONLY_MOVED", value, 8) && value[0] == '1';
+        return !onlyMoved || (currentMode != "Terrain" && currentMode != "Sculpt" && currentMode != "Route");
+    }
     void end_stroke() {
         adventureLook=false;
         explorerLook=false;
@@ -3105,14 +3111,14 @@ struct Editor {
         if (stroke) {
             stroke = false;
             terrainStrokeSurface.reset();
-            if (auto c = actor()) {
+            if (auto c = stroke_snaps_selection() ? actor() : nullptr) {
                 if(rotationSnap && currentMode=="Rotate" && finishedAxis>=0){
                     double& angle=finishedAxis==0 ? c->RotationX : finishedAxis==1 ? c->RotationY : c->RotationZ;
                     angle=snap_increment(angle,rotationStep);
                 }
                 snap_object(scene, *c, gridSnap, objectSnap, groundSnap,gridStep);
             }
-            if (auto c = actor())
+            if (auto c = stroke_snaps_selection() ? actor() : nullptr)
                 move_group(scene, *c, dragOriginals);
             dragOriginals.clear();
             history.commit();

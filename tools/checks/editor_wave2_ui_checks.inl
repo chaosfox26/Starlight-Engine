@@ -61,5 +61,21 @@
         check("EDIT-5: pasting keeps a joint to an object that is in this scene", pastedKept.Name == "kept" && pastedKept.JointKind == 1 && pastedKept.JointTargetId == scene.Characters[0].Id);
         copiedObjects.clear();
     }
+    // EDIT-6: a Route stroke snaps the selected object by default; with STARLIGHT_SNAP_ONLY_MOVED=1 it leaves an object it did not move alone.
+    {
+        auto routeStroke = [&](const char *only) {
+            fixture();
+            _putenv_s("STARLIGHT_SNAP_ONLY_MOVED", only);
+            const bool oldGrid = gridSnap; gridSnap = true;
+            scene.Characters[0].X = .3; selected = 0; selectionIds.clear(); currentMode = "Route";
+            history.begin(scene); begin_group(); stroke = true;
+            end_stroke();
+            gridSnap = oldGrid; _putenv_s("STARLIGHT_SNAP_ONLY_MOVED", "");
+            return scene.Characters[0].X;
+        };
+        check("EDIT-6: by default a Route stroke still snaps the selected object to the grid", routeStroke("") == .5);
+        check("EDIT-6: with STARLIGHT_SNAP_ONLY_MOVED a Route stroke leaves the selected object where it was", routeStroke("1") == .3);
+        currentMode = "Select";
+    }
     fixture();
 }
