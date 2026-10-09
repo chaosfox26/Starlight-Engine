@@ -512,6 +512,7 @@ class AdventurePlayer {
         bool clear=true;
         each_ray_candidate(origin,direction,distance,[&](const Character& c){
             if(!clear || c.Id==caster || c.Id==target || rules_.removed.contains(c.Id))return;
+            if(repair_solids()&&!blocks_movement(c))return; // grass, fire, lights, lava, lightning, smoke, keys and exits never block sight, as they never block movement
             if(repair_bounds()&&!ray_reaches_bounds(origin,direction,distance,posed_bounds(c)))return; // cannot be hit; skip building its mesh
             // Scenery that does not move on its own uses the engine-wide prepared collision mesh instead of rebuilding it per query.
             auto hit=object_hit(c,route_pose_of(c,seconds_),origin,direction);
@@ -714,7 +715,7 @@ class AdventurePlayer {
                 else if(!victim)victim=ActorTarget{"",origin};
             }
             if(!victim){actor.steering.stop();continue;}auto target=victim->feet;target.y=c.Y;
-            if(actor.health<=0 || (actor.control.blocks_mobility() && !fleeing && !displaced && !launched) || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered) || (target-origin).length()>20){actor.steering.stop();continue;}
+            if(actor.health<=0 || (actor.control.blocks_mobility() && !fleeing && !displaced && !launched) || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered) || (!followingRoute && (target-origin).length()>20)){actor.steering.stop();continue;}
             auto bounds=object_bounds(c);double radius=std::max(bounds.high.x-bounds.low.x,bounds.high.z-bounds.low.z)*.5;
             double spacing=std::max(2.,radius+settings_.PlayerRadius+.2);
             auto routeClear=[&](Vec3 from,Vec3 to){
@@ -778,7 +779,7 @@ class AdventurePlayer {
             };
             Vec3 allowed{};bool landed=false;const double mlA=starlight_diag::evnow();
             for(int axis=0;axis<3;axis++){
-                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,volumeTerrain&&!launched?delta.y-allowed.y:delta.y,0};
+                Vec3 portion=axis==0?Vec3{delta.x,0,0}:axis==1?Vec3{0,0,delta.z}:Vec3{0,volumeTerrain&&!launched?delta.y-allowed.y:terrain_&&!launched?terrain_->height_at(c.X+allowed.x,c.Z+allowed.z)-terrain_->height_at(c.X,c.Z):delta.y,0};
                 int steps=std::max(1,int(std::ceil(portion.length()/.025)));auto increment=portion*(1./steps);
                 for(int i=0;i<steps;i++){
                     auto next=allowed+increment;double floor=terrain_?terrain_->height_at(c.X+next.x,c.Z+next.z):0;
@@ -1434,12 +1435,15 @@ class AdventurePlayer {
             std::vector<std::string> supports;
             for(const auto& object:playScene_.Characters){const auto& b=interactionBounds_.at(object.Id);
                 if(position.x>=b.low.x && position.x<=b.high.x && position.z>=b.low.z && position.z<=b.high.z && std::abs(position.y-1.7-b.high.y)<.15)supports.push_back(object.Id);}
-            for(const auto& id:supports)rules_.emit("stand-on-object",id,playScene_);
+            auto kept=rules_.message; // emit() clears the message first; keep the one the area rules (or an earlier object) produced this frame
+            for(const auto& id:supports){rules_.emit("stand-on-object",id,playScene_);if(!rules_.message.empty())kept=rules_.message;}
+            rules_.message=kept;
         }
         finished=rules_.finished;
     }}
     void start(const SceneData& scene,bool gameplayRules=true){
         if(!scene.Game)throw std::runtime_error("Choose an adventure preset first");
+        scene.validate(); // before any state is torn down, so a scene that fails leaves the running session intact
         ObjectCache::shared().begin_preparation();release_pins();spatial_=SpatialState{};solidIndex_.clear();solidSlot_.clear();geometryReport_={};
         lightningCycles_.clear();lightningSerial_=0;lightningSounds_.clear();
         ++presentationEpoch_;shotSerial_=shatterSerial_=impactSerial_=0;lastShotTime_=-1;
@@ -1454,13 +1458,14 @@ class AdventurePlayer {
         cancel_mobility_input();attack_={};hitChance_={};lastDisplayControl_.reset();lastVisibleIds_.clear();control_={};control_.player=true;health_=100;controlOrigin_=controlVelocity_={};launchAirborne_=false;tetherPull_=tetherCooldown_=0;selectedTarget_.clear();fragments_.clear();dust_.clear();destruction_.reset();terrainDestruction_.reset();combatActors_.clear();healingCasts_.clear();lunging_=false;
         for(const auto& c:scene.Characters)if(c.CombatHealth>0){CombatActor actor;actor.health=actor.maximum=c.CombatHealth;actor.team=c.CombatTeam;actor.boss=c.CombatBoss;actor.attack.cycleSeconds=1.5;combatActors_.emplace(c.Id,actor);}
         posture_=0;controlHeld_=controlConsumed_=false;controlTime_=slideRemaining_=0;slideVelocity_={};
-        scene.validate();playScene_=scene;actorRoutes_.clear();actorRouteTimes_.clear();
+        playScene_=scene;actorRoutes_.clear();actorRouteTimes_.clear();
         if(gameplayRules)for(auto& c:playScene_.Characters)if(c.CombatHealth>0 && !c.Route.empty()){actorRoutes_.emplace(c.Id,c);actorRouteTimes_.emplace(c.Id,0);c.Route.clear();}
         rules_.reset(scene.Rules);rulesEnabled_=gameplayRules;finished=false;settings_=*scene.Game;terrain_=scene.Terrain;solids_.clear();interactionBounds_.clear();
         for(const auto& object:scene.Characters){
             auto bounds=object_bounds(object);
             interactionBounds_.emplace(object.Id,bounds);
             if(object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="craxis-smoke"))continue;
+            if(repair_solids()&&!blocks_movement(object))continue; // grass, lava, lightning and light shards never block the player controller either
             if(object.GameplayRole!="key" && object.GameplayRole!="exit")solids_.push_back({object.Id,bounds});
         }
         solidIndex_.begin_bulk();
@@ -1562,7 +1567,9 @@ class AdventurePlayer {
         jumpRequested_=false;if(rulesEnabled_)seconds_+=dt;
         spatial_.fresh=false;
         presentationVelocity_={};
-        if(right==0 && forward==0 && dodgeFraction==0){update_rules();return;}
+        // Without collision there is no controller to land a launch, so the arc is flown here: up at 6 m/s, back to launch height when the vertical speed reaches -6 m/s.
+        if(launchAirborne_){controlVelocity_.y-=9.81*dt;velocity.x=controlVelocity_.x;velocity.z=controlVelocity_.z;if(controlVelocity_.y<=-6){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}}
+        if(velocity.x==0 && velocity.z==0){update_rules();return;}
         const auto presentationStart=position;
         Vec3 delta=velocity*dt;
         // Bounded substeps prevent tunnelling through thin walls at high speed.

@@ -239,5 +239,15 @@
     player.start(level,false);advance(player,120);
     require(std::abs(player.position.x)<.05 && player.seconds()==0,"Authoring exploration keeps route platforms stationary");
     atomic_write(folder/"character-controller-measurements.json",motion.dump(2));
+    {
+        // GAME-3: standing on an object must not erase the message an enter-area rule produced in the same frame.
+        SceneData stand;stand.Game.emplace();stand.Game->SpawnZ=0;
+        Character floor;floor.Shape="cube";floor.Width=20;floor.Depth=20;floor.Height=1;floor.Y=-1;
+        GameplayRule finish;finish.Event="enter-area";finish.X=3;finish.Y=1.7;finish.Z=0;finish.Radius=.5;finish.Actions={{"finish-game",""}};
+        stand.Characters={floor};stand.Rules={finish};
+        AdventurePlayer p;p.start(stand);advance(p,30);
+        bool shown=false;for(int i=0;i<240&&!shown;++i){p.move(1,0,1./120);shown=p.rules().message=="Adventure complete!";}
+        require(p.finished&&shown,"GAME-3: The message from an area rule survives standing on an object");
+    }
 }
 #endif

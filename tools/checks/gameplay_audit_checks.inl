@@ -102,4 +102,77 @@ static void gameplay_audit_checks(const auto& require){
         const auto once=digest(player_presentation(p)),again=digest(player_presentation(p));
         require(once.first>0&&once==again,"08#8: Presenting twice gives identical geometry, so the shared cube is never altered");
     }
+    {
+        // GAME-1: without collision a Launch must still end.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);
+        p.apply_control(ControlEffect::Launch,{1,true},true,false,{0,1.7,-3});
+        for(int i=0;i<720;++i)p.move(0,0,1./120.);
+        require(!p.crowd_control().active,"GAME-1: A launch on a player in a no-collision scene ends instead of freezing the player");
+    }
+    {
+        // GAME-2: forced movement (knockback, pull) must move the player when collision is off.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);auto start=p.position;
+        p.apply_control(ControlEffect::Knockback,{1,true},true,false,{0,1.7,-3});
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.position.z>start.z+2.5,"GAME-2: Knockback moves the player in a no-collision scene");
+        p.start(level);start=p.position;
+        p.apply_control(ControlEffect::Pull,{1,true},true,false,{0,1.7,-5});
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.position.z<start.z-3,"GAME-2: Pull moves the player in a no-collision scene");
+    }
+    {
+        // GAME-4: line of sight ignores objects that never block movement; a real wall still blocks it.
+        for(const char* shape:{"grass","fire","light","lava","craxis-smoke","key"}){
+            SceneData level;level.Game.emplace();
+            Character c;c.Shape=std::string(shape)=="key"?"cube":shape;if(std::string(shape)=="key"){c.GameplayRole="key";c.GameplayKey="k";}c.Width=c.Height=c.Depth=2;c.Z=-3;level.Characters={c};
+            AdventurePlayer p;p.start(level);
+            require(p.unobstructed({0,1,0},{0,1,-6},"","far"),(std::string("GAME-4: Line of sight passes through a non-blocking ")+shape+" object").c_str());
+        }
+        SceneData level;level.Game.emplace();
+        Character wall;wall.Shape="cube";wall.Width=wall.Height=wall.Depth=2;wall.Z=-3;level.Characters={wall};
+        AdventurePlayer p;p.start(level);
+        require(!p.unobstructed({0,1,0},{0,1,-6},"","far"),"GAME-4: Line of sight is still blocked by a solid cube");
+    }
+    {
+        // GAME-5: a routed actor that fell far behind its route point keeps walking back to it.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=200;
+        Character a;a.Shape="cube";a.Id="lagging-npc";a.CombatHealth=100;a.Speed=30;a.Route={{100,0}};level.Characters={a};
+        AdventurePlayer p;p.start(level);
+        for(int i=0;i<120*15;++i)p.move(0,0,1./120.);
+        require(p.scene().Characters[0].X>90,"GAME-5: A fast routed actor is not stranded once it lags more than twenty metres behind its route point");
+    }
+    {
+        // GAME-6: a heightmap actor pushing uphill into a wall stays on the terrain.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;level.Terrain.emplace();
+        for(int z=0;z<TerrainData::N;z++)for(int x=0;x<TerrainData::N;x++)level.Terrain->Heights[z*TerrainData::N+x]=2+(x*TerrainData::Step-TerrainData::Half)*.1;
+        Character enemy;enemy.Shape="cube";enemy.Id="wall-pusher";enemy.X=-5;enemy.Y=1.5;enemy.CombatHealth=100;enemy.CombatPursuit=true;
+        Character wall;wall.Shape="cube";wall.X=-3.5;wall.Y=0;wall.Width=.2;wall.Depth=60;wall.Height=10;level.Characters={enemy,wall};
+        AdventurePlayer p;p.start(level);for(int i=0;i<600;i++)p.move(0,0,1./120.);
+        const auto& c=p.scene().Characters[0];
+        require(c.X<-3.5&&std::abs(c.Y-level.Terrain->height_at(c.X,c.Z))<.03,"GAME-6: An actor blocked by a wall on a slope does not climb off the terrain");
+    }
+    {
+        // GAME-7: effect shapes do not block the player, so they cannot make the start position invalid.
+        for(const char* shape:{"grass","lava","chaos-lightning","light-shard"}){
+            SceneData level;level.Game.emplace();
+            Character c;c.Shape=shape;c.Width=c.Height=c.Depth=4;c.Z=6;level.Characters={c};
+            bool inside=false;for(const auto& f:adventure_readiness(level))inside=inside||f.find("starts inside a solid")!=std::string::npos;
+            require(!inside,(std::string("GAME-7: Spawning inside a ")+shape+" object is not reported as standing in a solid").c_str());
+        }
+        SceneData level;level.Game.emplace();
+        Character c;c.Shape="cube";c.Width=c.Height=c.Depth=4;c.Z=6;level.Characters={c};
+        bool inside=false;for(const auto& f:adventure_readiness(level))inside=inside||f.find("starts inside a solid")!=std::string::npos;
+        require(inside,"GAME-7: Spawning inside a solid cube is still reported");
+    }
+    {
+        // GAME-9: a scene that fails validation leaves the running session untouched.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;
+        Character enemy;enemy.Shape="cube";enemy.CombatHealth=100;enemy.Z=-3;level.Characters={enemy};
+        AdventurePlayer p;p.start(level);for(int i=0;i<30;++i)p.move(0,0,1./120.);
+        auto bad=level;bad.Characters.clear();bad.Game->MoveSpeed=0;
+        bool threw=false;try{p.start(bad);}catch(...){threw=true;}
+        require(threw&&p.combat_actors().size()==1&&p.seconds()>0&&p.scene().Characters.size()==1,"GAME-9: A scene that fails validation does not reset the running session");
+    }
 }
