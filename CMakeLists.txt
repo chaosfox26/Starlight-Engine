@@ -103,7 +103,7 @@ enable_testing()
 # verify_all.py --gpu runs the denoise and fallback ones, and nothing runs the render checks yet.
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
- foreach(py_test test_artifact_cleanup test_audit_engine_contracts test_engine_comparison test_source_lookup)
+ foreach(py_test test_artifact_cleanup test_audit_engine_contracts test_engine_comparison test_source_lookup test_source_rules_markers)
   add_test(NAME py-${py_test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/audit/${py_test}.py" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tools/audit")
  endforeach()
  # These run the native executables of the tree under test (STARLIGHT_BUILD_DIR), not whatever sits in out/classic.
