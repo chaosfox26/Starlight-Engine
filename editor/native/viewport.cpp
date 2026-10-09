@@ -459,9 +459,10 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
   std::unordered_set<uint64_t> nextKeys;nextKeys.reserve(next.size()+(delta?v.baseCount:0));for(const auto& p:next)nextKeys.insert(p.meshKey);if(delta)for(size_t i=0;i<v.baseCount;++i)nextKeys.insert(v.parts[i].meshKey);
   bool removed=false;for(const auto& old:v.parts)if(!old.streaming && !nextKeys.count(old.meshKey))removed=true;
   if(removed){if(!rasterOnly)v.rt.retireGeometry(d);v.rtItems.clear();}
-  for(auto& old:cache)if(!nextKeys.count(old.first)){
-   auto original=std::find_if(v.parts.begin(),v.parts.end(),[&](const Part& p){return p.meshKey==old.first;});
-   if(original!=v.parts.end() && original->streaming)v.streams.push_back({old.second,d.fenceVal,starlight_resource_desc(old.second.vb).Width,starlight_resource_desc(old.second.ib).Width});
+  std::unordered_map<uint64_t,bool> streamingByKey;bool indexed=false; // first part per key decides, as the search this replaces did; built only when something is retired
+  for(auto& old:cache)if(!nextKeys.count(old.first)){if(!indexed){indexed=true;for(const auto& p:v.parts)streamingByKey.emplace(p.meshKey,p.streaming);}
+   auto original=streamingByKey.find(old.first);
+   if(original!=streamingByKey.end() && original->second)v.streams.push_back({old.second,d.fenceVal,starlight_resource_desc(old.second.vb).Width,starlight_resource_desc(old.second.ib).Width});
    else v.retiredResident.push_back({old.second,d.fenceVal});
   }
   if(delta){v.parts.erase(v.parts.begin()+v.baseCount,v.parts.end());for(auto& p:next)v.parts.push_back(std::move(p));}else{v.parts=std::move(next);v.baseCount=0;v.baseToken=0;}
