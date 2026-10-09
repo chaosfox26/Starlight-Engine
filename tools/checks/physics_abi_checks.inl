@@ -14,6 +14,14 @@ __declspec(dllimport) void slp_debug_fail_cooks(int);
 __declspec(dllimport) int slp_rope(void *, uint32_t, uint32_t, const float *, int, float);
 __declspec(dllimport) int slp_character_start(void *, float, float, float, float);
 __declspec(dllimport) int slp_character_step(void *, float, float, float, float, float, float, int, float *);
+__declspec(dllimport) int slp_terrain_mesh(void *, const float *, int, const uint32_t *, int);
+__declspec(dllimport) int slp_rope_path(void *, uint32_t, float *, int, int);
+__declspec(dllimport) void *slp_hull_create(const float *, int, float);
+__declspec(dllimport) int slp_step(void *, double, const void *, int, void *, int);
+__declspec(dllimport) int slp_present(void *, void *, int);
+__declspec(dllimport) int slp_body_pose(void *, uint32_t, float *);
+__declspec(dllimport) void slp_hull_stats(double *);
+__declspec(dllimport) void slp_shape_cache_stats(double *);
 }
 static void physics_abi_checks(const auto& require){
     const uint32_t refused=0xffffffffu;
@@ -81,6 +89,83 @@ static void physics_abi_checks(const auto& require){
     float stepped[4]{};const float infinity=std::numeric_limits<float>::infinity();
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,nan,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,nan,0,0,0,0,0,stepped)==0&&slp_character_step(terrainWorld,1.f/60,0,infinity,0,0,0,0,stepped)==0&&std::string(slp_error()).find("character step")!=std::string::npos,"TERR CHAR-1: A character step with non-finite feet or input is refused");
     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,stepped)==1&&std::isfinite(stepped[0]+stepped[1]+stepped[2]),"TERR CHAR-1: A finite step still works after a refused one");
+    // audit2 F4: a needed output or liquid buffer that is missing is refused as an error; these functions used to write through a null pointer.
+    {
+     void* stepping=slp_create();
+     const std::vector<float> flatHeights(97*97,0.f);
+     int ready=0;
+     if(stepping&&slp_terrain(stepping,flatHeights.data())==1)for(int i=0;i<5000&&ready==0;++i){ready=slp_ready(stepping);if(ready==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(stepping&&ready==1,"audit2 F4: A physics world is ready for the buffer checks");
+     if(stepping&&ready==1){
+      const uint32_t body=slp_add(stepping,cube,8,faces,36,1,1,0,5,0,0,0,0,1);
+      const uint32_t anchor=slp_add(stepping,cube,8,faces,36,1,1,3,5,0,0,0,0,1);
+      const float ropeSettings[10]={3,5,0, 5,5,0, 0,0,0, 3};
+      require(body!=refused&&anchor!=refused&&slp_rope(stepping,anchor,UINT32_MAX,ropeSettings,8,.05f)==1&&slp_character_start(stepping,.3f,0,0,0)==1,"audit2 F4: Bodies, a rope and a character are created for the buffer checks");
+      float pose[8]{};float character[4]{};
+      require(slp_step(stepping,1./60,nullptr,0,nullptr,1)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A physics step with no output buffer is refused");
+      require(slp_step(stepping,1./60,nullptr,1,pose,1)==-1&&std::string(slp_error()).find("liquid")!=std::string::npos,"audit2 F4: A physics step that names liquids without a liquid list is refused");
+      require(slp_present(stepping,nullptr,1)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A presentation with no output buffer is refused");
+      require(slp_body_pose(stepping,body,nullptr)==0&&std::string(slp_error()).find("pose")!=std::string::npos,"audit2 F4: A body pose with no output buffer is refused");
+      require(slp_rope_path(stepping,anchor,nullptr,65,0)==-1&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A rope path with no output buffer is refused");
+      require(slp_character_step(stepping,1.f/60,0,0,0,0,0,0,nullptr)==0&&std::string(slp_error()).find("output")!=std::string::npos,"audit2 F4: A character step with no output buffer is refused");
+      slp_hull_stats(nullptr);slp_shape_cache_stats(nullptr);
+      require(slp_step(stepping,1./60,nullptr,0,pose,1)==1&&slp_character_step(stepping,1.f/60,0,0,0,0,0,0,character)==1,"audit2 F4: The world and the character still step after every refused call");
+     }
+     slp_destroy(stepping);
+    }
+    // audit2 F5: a character cannot start from a non-finite position or radius; a NaN start used to leave the controller at NaN for good.
+    {
+     float afterRefusal[4]{};
+     require(slp_character_start(terrainWorld,.3f,nan,0,0)==0&&std::string(slp_error()).find("character start")!=std::string::npos,"audit2 F5: A character cannot start at a non-finite position");
+     require(slp_character_start(terrainWorld,nan,0,0,0)==0&&slp_character_start(terrainWorld,0,0,0,0)==0&&slp_character_start(terrainWorld,3.f,0,0,0)==0,"audit2 F5: A character radius that is not finite or is outside 0.05 to 2 metres is refused");
+     require(slp_character_step(terrainWorld,1.f/60,0,0,0,0,0,0,afterRefusal)==1&&std::isfinite(afterRefusal[0]+afterRefusal[1]+afterRefusal[2]),"audit2 F5: A refused start leaves the existing character stepping normally");
+    }
+    // audit2 F6: a dynamic body or prebuilt hull cannot be made from a non-finite vertex; the hull builder used to accept it and the body got a NaN shape.
+    {
+     void* hulls=slp_create();
+     float holed[24];std::memcpy(holed,cube,sizeof(cube));holed[3]=nan;
+     require(hulls&&slp_add(hulls,holed,8,faces,36,1,1,0,1,0,0,0,0,1)==refused&&std::string(slp_error()).find("vertex")!=std::string::npos,"audit2 F6: A dynamic body with a non-finite vertex is refused");
+     require(slp_hull_create(holed,8,1)==nullptr&&std::string(slp_error()).find("vertex")!=std::string::npos,"audit2 F6: A prebuilt hull with a non-finite vertex is refused");
+     slp_destroy(hulls);
+    }
+    // audit2 F2: removing the "no body" id must not remove every rope anchored to the world (an invalid id compares equal to the world anchor).
+    {
+     void* anchors=slp_create();
+     require(anchors!=nullptr,"audit2 F2: A physics world is created for the anchor check");
+     if(anchors){
+      uint32_t anchored=slp_add(anchors,cube,8,faces,36,1,1,0,1,0,0,0,0,1);
+      const float ropeSettings[10]={0,1,0, 2,1,0, 0,0,0, 3};
+      require(anchored!=refused&&slp_rope(anchors,anchored,UINT32_MAX,ropeSettings,8,.05f)==1,"audit2 F2: A rope anchored to the world is built for the removal check");
+      slp_character_remove(anchors,UINT32_MAX);
+      float path[65*3]{};
+      require(slp_rope_path(anchors,anchored,path,65,0)==9,"audit2 F2: Removing the invalid body id leaves the world-anchored rope in place");
+      slp_destroy(anchors);
+     }
+    }
+    // audit2 F3: a terrain update with a non-finite height is refused before the volumetric terrain it would replace is removed.
+    {
+     void* volume=slp_create();
+     const float quad[12]={-5,0,-5, 5,0,-5, 5,0,5, -5,0,5};const uint32_t tris[6]={0,1,2,0,2,3};
+     require(volume&&slp_terrain_mesh(volume,quad,4,tris,6)==1&&slp_ready(volume)==1,"audit2 F3: A volumetric terrain is installed for the refusal check");
+     std::vector<float> damaged(97*97,0.f);damaged.back()=nan;
+     require(slp_terrain(volume,damaged.data())==0&&std::string(slp_error()).find("terrain")!=std::string::npos,"audit2 F3: A terrain update with a non-finite height is refused");
+     require(slp_ready(volume)==1,"audit2 F3: A refused terrain update leaves the volumetric terrain in place and the world ready");
+     slp_destroy(volume);
+    }
+    // audit2 F1: a terrain tile cooked while the world has no free body slot keeps its shape and gets a body once a slot is freed.
+    {
+     void* full=slp_create();
+     std::vector<uint32_t> filler;
+     for(int i=0;i<9000;++i){uint32_t id=slp_add(full,cube,8,faces,36,0,1,float(i)*.01f,-5,0,0,0,0,1);if(id==refused)break;filler.push_back(id);}
+     const std::vector<float> flatHeights(97*97,0.f);
+     require(full&&filler.size()>1000&&filler.size()<9000&&slp_terrain(full,flatHeights.data())==1,"audit2 F1: The world is filled to its body capacity before the terrain cooks");
+     int failures=0;for(int i=0;i<5000&&failures==0;++i){if(slp_ready(full)==-1)++failures;else std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(failures>=1&&std::string(slp_error()).find("capacity")!=std::string::npos,"audit2 F1: A terrain tile with no free body slot is reported as a capacity error");
+     for(int i=0;i<40;++i){slp_character_remove(full,filler.back());filler.pop_back();}
+     int state=0;for(int i=0;i<5000&&state!=1;++i){state=slp_ready(full);if(state==0)std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+     require(state==1,"audit2 F1: The terrain becomes ready once a body slot is freed, instead of staying not ready for good");
+     slp_destroy(full);
+    }
     slp_destroy(terrainWorld);
     slp_destroy(world);
 }
