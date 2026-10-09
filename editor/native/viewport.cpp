@@ -401,7 +401,7 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
  try{
   if(!handle||!bytes||length<8)throw std::runtime_error("Missing viewport scene");
   auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;
-  const auto sceneBegin=SceneClock::now();const uint64_t uploadsBefore=reinterpret_cast<Viewport*>(handle)->uploads;auto lap=sceneBegin;double hashMs=0,boundsMs=0;uint64_t vertexTotal=0;
+  const auto sceneBegin=SceneClock::now();const uint64_t uploadsBefore=reinterpret_cast<Viewport*>(handle)->uploads;auto lap=sceneBegin;double hashMs=0,boundsMs=0;uint64_t vertexTotal=0;size_t biggestMesh=0;
   Reader r{bytes,(size_t)length};auto version=r.get<uint32_t>();if(delta){if(version!=0x43564c53)throw std::runtime_error("Unsupported viewport delta version");auto token=r.get<uint64_t>();if(!token||token!=v.baseToken||token!=deltaToken||v.baseCount>v.parts.size())throw std::runtime_error("Viewport delta does not match the resident base scene");version=0x42564c53;}else if(version!=0x31564c53&&version!=0x32564c53&&version!=0x33564c53&&version!=0x34564c53&&version!=0x35564c53&&version!=0x36564c53&&version!=0x37564c53&&version!=0x38564c53&&version!=0x39564c53&&version!=0x41564c53&&version!=0x42564c53)throw std::runtime_error("Unsupported viewport scene version");
   auto count=r.get<uint32_t>();require_draw_slots((delta?v.baseCount:0)+size_t(count),0,0);
   std::vector<SpotLight> localLights;if(!delta&&version>=0x32564c53){auto lightCount=r.get<uint32_t>();if(lightCount>32)throw std::runtime_error("Too many lights");localLights=r.array<SpotLight>(lightCount);}
@@ -431,7 +431,7 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
    float kind=in.mesh.verts.front().kind;
    in.part.fogSolid=in.part.speed>0 && in.part.emissive==0 && (kind==0 || kind==6 || kind==10 || kind==-40);
    if(in.part.fogSolid){in.part.fogLow={1e20f,1e20f,1e20f};in.part.fogHigh={-1e20f,-1e20f,-1e20f};for(const auto& q:in.mesh.verts){auto& lo=in.part.fogLow;auto& hi=in.part.fogHigh;lo.x=std::min(lo.x,q.px);lo.y=std::min(lo.y,q.py);lo.z=std::min(lo.z,q.pz);hi.x=std::max(hi.x,q.px);hi.y=std::max(hi.y,q.py);hi.z=std::max(hi.z,q.pz);}}
-   vertexTotal+=in.mesh.verts.size();incoming.push_back(std::move(in));
+   vertexTotal+=in.mesh.verts.size();biggestMesh=std::max(biggestMesh,in.mesh.verts.size());incoming.push_back(std::move(in));
   }
   if(r.left)throw std::runtime_error("Unexpected viewport scene data");
   {std::set<uint64_t> identities;const size_t first=delta?v.baseCount:0; // rejected before anything is replaced, so a failed scene leaves the resident base and its token intact
@@ -467,7 +467,7 @@ static int install_scene(void* handle,const uint8_t* bytes,int length,bool delta
   bool grassRemoved=false;for(const auto& entry:v.grass.entries)grassRemoved|=!grassKeys.count(entry.first);
   if(grassChanged||grassRemoved){if(grassChanged){if(!v.grass.bodyRing)v.grass.bodies(d,{});Viewport::SideScope grassSide(v);grassSide.begin();for(size_t i=0;i<v.parts.size();++i){const auto& p=v.parts[i];if(GrassDeformation::accepts(p.source->verts.front().kind))v.grass.prepare(d,GrassDeformation::identity(p.motionKey,i),p.meshKey,*p.source,p.gpu);}grassSide.submit();}v.grass.retain(d,grassKeys);}
   v.geometryFresh=true;if(!delta)v.warmStreams();
-  {auto& st=v.sceneStats;const auto end=SceneClock::now();if(starlight_diag::events_enabled()){starlight_diag::evlog("scn",sceneMs(sceneBegin,end),parseMs+hashMs+boundsMs,double(v.uploads-uploadsBefore));starlight_diag::evlog("scn2",changed?1.0:0.0,delta?1.0:0.0,double(incoming.size()));starlight_diag::evlog("scn3",flushMs,v.streamMs,v.streamCreateMs);starlight_diag::evlog("scn4",double(v.streamCreated),double(v.streamReused),double(v.streams.size()));{size_t biggest=0;for(const auto& in:incoming)biggest=std::max(biggest,in.mesh.verts.size());starlight_diag::evlog("scn5",double(vertexTotal),double(biggest),double(length));}v.streamMs=0;v.streamCreateMs=0;}st.parse+=parseMs;st.hash+=hashMs;st.bounds+=boundsMs;st.tail+=sceneMs(lap,end);st.total+=sceneMs(sceneBegin,end);++st.calls;if(delta)++st.deltaCalls;st.bytes+=uint64_t(length);st.vertices+=vertexTotal;}
+  {auto& st=v.sceneStats;const auto end=SceneClock::now();if(starlight_diag::events_enabled()){starlight_diag::evlog("scn",sceneMs(sceneBegin,end),parseMs+hashMs+boundsMs,double(v.uploads-uploadsBefore));starlight_diag::evlog("scn2",changed?1.0:0.0,delta?1.0:0.0,double(incoming.size()));starlight_diag::evlog("scn3",flushMs,v.streamMs,v.streamCreateMs);starlight_diag::evlog("scn4",double(v.streamCreated),double(v.streamReused),double(v.streams.size()));starlight_diag::evlog("scn5",double(vertexTotal),double(biggestMesh),double(length));v.streamMs=0;v.streamCreateMs=0;}st.parse+=parseMs;st.hash+=hashMs;st.bounds+=boundsMs;st.tail+=sceneMs(lap,end);st.total+=sceneMs(sceneBegin,end);++st.calls;if(delta)++st.deltaCalls;st.bytes+=uint64_t(length);st.vertices+=vertexTotal;}
   return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
