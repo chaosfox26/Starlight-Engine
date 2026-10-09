@@ -883,6 +883,7 @@ void NativeSession::run(std::stop_token stop) {
                 play = false;
                 std::lock_guard lock(mutex_);
                 playing_ = false;
+                tools_dirty_ = true;
             }
             double routeTime = repeat && duration > 0 ? std::fmod(seconds, duration) : seconds;
             if(gameplayTime)routeTime=*gameplayTime;
