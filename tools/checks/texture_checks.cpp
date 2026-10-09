@@ -1011,6 +1011,13 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB whose unweighted vertex names joint 7", e);
             require(e.code == LoadCode::SkeletonInvalid && !scratch.loaded, "GLB fuzz: a vertex whose weights sum to zero is held to the same joint range as a weighted one");
         }
+        {   // GLB fuzz finding: an animation channel with no keys was kept, and sampling it read an uninitialised pose
+            const std::string emptyAccessor = "{\"bufferView\":7,\"componentType\":5126,\"count\":0,\"type\":\"SCALAR\"}";
+            const auto keyless = editJson(editJson(glb, "{\"bufferView\":7,\"componentType\":5126,\"count\":2,\"type\":\"SCALAR\"}", emptyAccessor), "\"input\":7,\"output\":8", "\"input\":7,\"output\":7");
+            e = model::loadSkinnedFromMemory(ByteView(keyless), nullptr, "keyless.glb", scratch);
+            show("GLB with an animation channel that has no keys", e);
+            require(e.ok() && scratch.clips.size() == 1 && scratch.clips[0].channels.empty() && modelProblem(scratch).empty(), "GLB fuzz: an animation channel with no keys is dropped instead of leaving the pose uninitialised");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

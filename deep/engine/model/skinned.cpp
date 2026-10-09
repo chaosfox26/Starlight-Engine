@@ -310,13 +310,13 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                 const bool finite = std::isfinite(p[0]) && std::isfinite(p[1]) && std::isfinite(p[2]) && std::isfinite(nn[0]) && std::isfinite(nn[1]) && std::isfinite(nn[2]) &&
                                     std::isfinite(t[0]) && std::isfinite(t[1]) && std::isfinite(w[0]) && std::isfinite(w[1]) && std::isfinite(w[2]) && std::isfinite(w[3]);
                 if (!finite) return bad(LoadCode::Malformed, pi, "vertex " + std::to_string(v) + " has a non-finite position, normal, UV or weight");
+                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
                 if (jn) for (int k = 0; k < 4; ++k)
                     if (w[k] > 0.0f && j[k] >= out.joints.size())
                         return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
                 XMFLOAT3 fp, fn;
                 XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
                 XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
-                float ws = w[0] + w[1] + w[2] + w[3]; if (ws <= 0.0f) { ws = 1.0f; w[0] = 1.0f; }
                 SkinVertex sv{};
                 sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
                 sv.u = t[0]; sv.v = t[1];
@@ -358,6 +358,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             const cgltf_animation_channel& ch = an.channels[ci];
             auto it = jointOf.find(ch.target_node);
             if (it == jointOf.end() || !ch.sampler || !ch.sampler->input || !ch.sampler->output) continue;
+            if (ch.sampler->input->count == 0) continue;
             Channel k; k.joint = it->second;
             int comps = 0;
             if (ch.target_path == cgltf_animation_path_type_translation) { k.path = 0; comps = 3; }
