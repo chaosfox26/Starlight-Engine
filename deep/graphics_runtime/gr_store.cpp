@@ -820,6 +820,11 @@ Inventory Store::inventory() const {
     for (auto& e : fs::directory_iterator(options_.root / "sets", ec)) {
         if (!e.is_directory()) continue;
         auto name = utf8(e.path().filename());
+        if (name.rfind(".staging-", 0) == 0) {
+            // Staging that a live process is still filling is never listed for removal (audit GR-4); this process's own staging is also in progress, since sweep() already removed the leftovers at start.
+            const unsigned long pid = std::strtoul(name.c_str() + 9, nullptr, 10);
+            if (pid && (pid == GetCurrentProcessId() || process_alive(pid))) { inv.keep.push_back(name); inv.reason[name] = "staging in progress"; continue; }
+        }
         if (!fs::exists(e.path() / "set.json")) { inv.keep.push_back(name); inv.reason[name] = "not a Starlight set folder; never touched"; continue; }
         if (why.count(name)) { inv.keep.push_back(name); inv.reason[name] = why[name]; }
         else if (!state_.sets.count(name)) { inv.removable.push_back(name); inv.reason[name] = "unrecorded folder left by an interrupted stage"; }

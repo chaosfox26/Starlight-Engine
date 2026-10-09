@@ -786,6 +786,29 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         auto done = s.prune(true);
         require(done.ok && !fs::exists(o.root / "sets" / "plain-1.2.0-exp") && fs::exists(o.root / "sets" / "plain-1.1.0") && fs::exists(o.root / "sets" / "user-notes" / "readme.txt"), "GFX confirmed prune removes only unreferenced Starlight sets and never other content");
         require(fs::exists(bundled / "plain-1.0.0" / "set.json") && s.resolve().find("plain")->version == "1.1.0", "GFX prune never removes pinned, active or bundled sets");
+
+        std::wstring command = L"ping.exe -n 60 127.0.0.1";
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION child{};
+        const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &child);
+        require(started, "GFX GR-4 the check could start a long-running child process");
+        if (started) {
+            const auto live = o.root / "sets" / (".staging-" + std::to_string(child.dwProcessId) + "-1");
+            const auto dead = o.root / "sets" / ".staging-2000000000-1";
+            for (auto* dir : {&live, &dead}) { fs::create_directories(*dir); put(*dir / "set.json", "{}"); }
+            auto inv2 = s.inventory();
+            auto pr = s.prune(true);
+            const bool liveKept = fs::exists(live / "set.json") && std::find(inv2.keep.begin(), inv2.keep.end(), live.filename().string()) != inv2.keep.end();
+            const bool deadRemoved = !fs::exists(dead);
+            TerminateProcess(child.hProcess, 0);
+            WaitForSingleObject(child.hProcess, 5000);
+            CloseHandle(child.hThread);
+            CloseHandle(child.hProcess);
+            fs::remove_all(live);
+            require(liveKept, "GFX prune and the inventory leave another live process's staging folder alone");
+            require(pr.ok && deadRemoved, "GFX prune still removes a staging folder whose process is gone");
+        }
     }
 
     {
