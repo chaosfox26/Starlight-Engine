@@ -57,6 +57,16 @@ template<class Require> void physics_fracture_audit_checks(Require require){
         auto object=compute_fracture(rock,rock,7,stopped.get_token());
         require(!object.supported&&object.pieces.empty(),"03#4: A stopped object fracture is reported as unsupported with no pieces, not completed another way");
     }
+    {   // TEST-1: a stop requested while a fracture is running (not before the call) ends it early with "Stopped" instead of letting it run to completion.
+        Character rock;rock.Shape="boulder";auto source=shape_geometry(rock).front();
+        const auto began=std::chrono::steady_clock::now();auto whole=fracture_rock(source.mesh,source.color,false,117);
+        const auto wholeTime=std::chrono::steady_clock::now()-began;
+        std::stop_source stop;std::string reason;
+        auto running=std::async(std::launch::async,[&]{return fracture_rock(source.mesh,source.color,false,117,&reason,stop.get_token());});
+        std::this_thread::sleep_for(wholeTime/4);stop.request_stop();
+        auto cut=running.get();
+        require(!whole.empty()&&cut.empty()&&reason=="Stopped","TEST-1: A fracture stopped part-way through returns no pieces and says it was stopped, rather than finishing the whole rock");
+    }
     {   // 03#3: a scene with very many breakables does not hold a prepared fracture for every one of them at once.
         auto scene=std::make_unique<SceneData>();scene->Game.emplace();scene->Game->SpawnZ=40;
         for(int i=0;i<300;++i){Character crate;crate.Shape="cube";crate.Id="held-crate-"+std::to_string(i);crate.X=-30+(i%20)*3.;crate.Z=-30+(i/20)*3.;crate.Width=.5;crate.Height=.5;crate.Depth=.5;crate.DestructionHealth=10;scene->Characters.push_back(crate);}

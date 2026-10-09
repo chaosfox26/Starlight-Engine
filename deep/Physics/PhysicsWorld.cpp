@@ -169,7 +169,7 @@ public:
  // The adventure world advances only through CharacterStep, which never reached the rolling resistance above (audit 03#7); STARLIGHT_ROLLING_RESISTANCE=1 applies it there too. Default off keeps the shipped roll-out behaviour.
  static bool RollingResistanceInCharacterStep(){char v[8]{};size_t n=0;return getenv_s(&n,v,sizeof v,"STARLIGHT_ROLLING_RESISTANCE")==0&&v[0]=='1';}
  void CharacterStep(float dt,Vec3 feet,Vec3 input,bool jump,float* output,bool overrideMotion=false){
-  if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f)throw std::runtime_error("Invalid character step");
+  if(!character || !std::isfinite(dt) || dt<=0 || dt>.051f || !std::isfinite(feet.GetX()+feet.GetY()+feet.GetZ()) || !std::isfinite(input.GetX()+input.GetY()+input.GetZ()))throw std::runtime_error("Invalid character step");
   if((character->GetPosition()-RVec3(feet)).LengthSq()>1.e-6){
    character->SetPosition(RVec3(feet));character->SetLinearVelocity(Vec3::sZero());
    character->RefreshContacts(world.GetDefaultBroadPhaseLayerFilter(1),world.GetDefaultLayerFilter(1),{},{},temp);
