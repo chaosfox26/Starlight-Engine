@@ -1987,7 +1987,7 @@ struct RenderDevice {
         unsigned hw = std::thread::hardware_concurrency(); if (!hw) hw = 1;
         auto run = [&](int N, unsigned T) -> double {
             auto work = [&](int lo, int hi) {
-                std::vector<XMFLOAT4X4> pal((size_t)kMaxJoints);
+                std::vector<XMFLOAT4X4> pal(d.joints.size());
                 for (int i = lo; i < hi; ++i) model::evalPose(d, 0, (float)i * 0.0001f, -1, 0.0f, 0.0f, pal.data(), nullptr);
             };
             auto t0 = std::chrono::steady_clock::now();
