@@ -171,6 +171,7 @@ template<class Require> void graphics_runtime_checks(Require require, const fs::
         require(reject("dup id", [](auto& x) { x.components[1].id = x.components[0].id; }), "GFX manifest rejects duplicate component ids");
         require(reject("no signer", [](auto& x) { x.components[0].signer.clear(); }), "GFX manifest rejects a missing signer");
         require(reject("bad version", [](auto& x) { x.components[0].version = "x"; }), "GFX manifest rejects a bad component version");
+        require(reject("id trailing dot", [](auto& x) { x.set_id = "plain-1.1."; }) && reject("id device", [](auto& x) { x.set_id = "con"; }) && reject("id device ext", [](auto& x) { x.set_id = "nul.1"; }) && reject("id com", [](auto& x) { x.set_id = "com1"; }), "GFX manifest rejects a set id that Windows would rename as a folder (trailing dot or device name)");
         require(reject("intel dev", [](auto& x) { x.components[0].vendor = "intel"; x.components[0].version = "3.0.95"; }), "GFX manifest rejects an Intel development build (patch 90 or higher)");
         require(reject("self requires", [](auto& x) { x.components[0].requires_.push_back(rq(x.components[0].id, "")); }), "GFX manifest rejects a component requiring itself");
         require(reject("bad origin", [](auto& x) { x.components[0].requires_.push_back(rq("other.thing", "", "rumour")); }), "GFX manifest labels every rule as vendor or Starlight policy");

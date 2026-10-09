@@ -117,7 +117,7 @@ static std::string lower(std::string s) {
 
 void validate_manifest(const SetManifest& m) {
     if (m.schema != 1) throw GrError("Unsupported manifest schema " + std::to_string(m.schema));
-    if (!ident_ok(m.set_id)) throw GrError("Set id must be lowercase letters, digits, dot, dash or underscore");
+    if (std::string idWhy; !ident_ok(m.set_id) || !safe_relative_path(m.set_id, idWhy)) throw GrError("Set id must be lowercase letters, digits, dot, dash or underscore, may not end in a dot, and may not be a device name");   // the id becomes a folder name (audit GR-5)
     if (!ident_ok(m.family)) throw GrError("Family name is not valid");
     if (!parse_version(m.version)) throw GrError("Set version must be numeric like 1.2.3");
     if (m.components.empty()) throw GrError("A set needs at least one component");
