@@ -313,3 +313,108 @@ static void viewport_log_path_checks(const auto &require, const fs::path &folder
     if (!why.empty()) std::cout << "viewport log path checks: frame failed with: " << why << std::endl;
     require(viewport != nullptr && framed, "VWP-7: Frames render when the stall and pass log paths are too long to use");
 }
+
+// VWP-8: exported calls answer a null handle or a null output pointer with a default instead of an access violation.
+static bool vwp_survives(void (*call)(void *), void *context) {
+    __try {
+        call(context);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+static void viewport_null_argument_checks(const auto &require) {
+    VwpSession session;
+    vwp_load(require, session);   // a null handle needs no device
+    const auto &api = session.api;
+    struct Call {
+        const char *name;
+        std::function<void()> run;
+    };
+    auto symbol = [&](const char *name) { return reinterpret_cast<void *>(GetProcAddress(api.module, name)); };
+#define VWP_CALL(NAME, SIGNATURE, ...) Call{NAME, [&] { reinterpret_cast<SIGNATURE>(symbol(NAME))(__VA_ARGS__); }}
+    uint64_t u64s[4]{};
+    unsigned long long ulls[4]{};
+    double doubles[16]{};
+    const std::vector<Call> nullHandle = {
+        VWP_CALL("sl_environment_reset", void (*)(void *), nullptr),
+        VWP_CALL("sl_effect_time", float (*)(void *), nullptr),
+        VWP_CALL("sl_surface_texture_stats", void (*)(void *, uint64_t *), nullptr, u64s),
+        VWP_CALL("sl_water_scene_bytes", uint64_t (*)(void *), nullptr),
+        VWP_CALL("sl_benchmark", void (*)(void *, int), nullptr, 1),
+        VWP_CALL("sl_benchmark_flush", void (*)(void *), nullptr),
+        VWP_CALL("sl_scene_resources", void (*)(void *, unsigned long long *, unsigned long long *, unsigned long long *), nullptr, ulls, ulls + 1, ulls + 2),
+        VWP_CALL("sl_upload_pool_stats", void (*)(void *, unsigned long long *, unsigned long long *, unsigned long long *, unsigned long long *), nullptr, ulls, ulls + 1, ulls + 2, ulls + 3),
+        VWP_CALL("sl_telegraph_stats", void (*)(void *, unsigned long long *, unsigned long long *), nullptr, ulls, ulls + 1),
+        VWP_CALL("sl_multicore_begin", void (*)(void *, int), nullptr, 1),
+        VWP_CALL("sl_multicore_read", int (*)(void *, double *, int), nullptr, doubles, 16),
+        VWP_CALL("sl_wait_timings", void (*)(void *, double *, double *, double *), nullptr, doubles, doubles + 1, doubles + 2),
+        VWP_CALL("sl_gpu_ms", double (*)(void *), nullptr),
+        VWP_CALL("sl_render_width", int (*)(void *), nullptr),
+        VWP_CALL("sl_render_height", int (*)(void *), nullptr),
+        VWP_CALL("sl_debug_active", int (*)(void *), nullptr),
+        VWP_CALL("sl_native_contract", int (*)(void *), nullptr),
+        VWP_CALL("sl_output_width", int (*)(void *), nullptr),
+        VWP_CALL("sl_camera", void (*)(void *, float, float, float, float, float, float), nullptr, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f),
+        VWP_CALL("sl_camera_up", void (*)(void *, float, float, float), nullptr, 0.f, 1.f, 0.f),
+        VWP_CALL("sl_uploads", uint64_t (*)(void *), nullptr),
+        VWP_CALL("sl_parts", int (*)(void *), nullptr),
+        VWP_CALL("sl_captured", int (*)(void *), nullptr),
+        VWP_CALL("sl_shot", void (*)(void *, const wchar_t *), nullptr, L"shot.png"),
+        VWP_CALL("sl_rt", void (*)(void *, int, int), nullptr, 1, 2),
+        VWP_CALL("sl_freeze", void (*)(void *, int), nullptr, 1),
+        VWP_CALL("sl_rt_supported", int (*)(void *), nullptr),
+        VWP_CALL("sl_rt_active", int (*)(void *), nullptr),
+        VWP_CALL("sl_ray_ms", double (*)(void *), nullptr),
+        VWP_CALL("sl_as_ms", double (*)(void *), nullptr),
+        VWP_CALL("sl_blas_builds", uint64_t (*)(void *), nullptr),
+        VWP_CALL("sl_tlas_refits", uint64_t (*)(void *), nullptr),
+        VWP_CALL("sl_rt_samples", int (*)(void *), nullptr),
+        VWP_CALL("sl_rt_status", const char *(*)(void *), nullptr),
+        VWP_CALL("sl_denoise_ms", double (*)(void *), nullptr),
+        VWP_CALL("sl_history_resets", uint64_t (*)(void *), nullptr),
+        VWP_CALL("sl_rr_active", int (*)(void *), nullptr),
+        VWP_CALL("sl_rr_status", const char *(*)(void *), nullptr),
+        VWP_CALL("sl_denoiser", void (*)(void *, int), nullptr, 1),
+        VWP_CALL("sl_denoise_history_index", int (*)(void *), nullptr),
+        VWP_CALL("sl_denoise_capture", int (*)(void *, int, const wchar_t *), nullptr, 0, L"capture.bin"),
+    };
+    std::string crashed;
+    for (const auto &call : nullHandle) {
+        require(symbol(call.name) != nullptr, "VWP-8: The viewport module exports every call the null argument checks use");
+        std::function<void()> run = call.run;
+        if (!vwp_survives([](void *context) { (*static_cast<std::function<void()> *>(context))(); }, &run)) crashed += std::string(" ") + call.name;
+    }
+    if (!crashed.empty()) std::cout << "viewport null argument checks: crashed with a null handle:" << crashed << std::endl;
+    require(crashed.empty(), "VWP-8: Every exported call returns a default for a null handle");
+    if (std::getenv("STARLIGHT_SKIP_GPU_CHECKS")) {
+        std::cout << "viewport null argument checks (output pointers): NOT RUN (STARLIGHT_SKIP_GPU_CHECKS is set)" << std::endl;
+        return;
+    }
+    session.window = vwp_window();
+    require(session.window != nullptr, "VWP: A window exists for the viewport api checks");
+    void *viewport = api.create(session.window, 640, 360);
+    require(viewport != nullptr, "VWP-8: A viewport is created");
+    const std::vector<Call> nullOutput = {
+        VWP_CALL("sl_surface_texture_stats", void (*)(void *, uint64_t *), viewport, nullptr),
+        VWP_CALL("sl_scene_resources", void (*)(void *, unsigned long long *, unsigned long long *, unsigned long long *), viewport, nullptr, nullptr, nullptr),
+        VWP_CALL("sl_upload_pool_stats", void (*)(void *, unsigned long long *, unsigned long long *, unsigned long long *, unsigned long long *), viewport, nullptr, nullptr, nullptr, nullptr),
+        VWP_CALL("sl_telegraph_stats", void (*)(void *, unsigned long long *, unsigned long long *), viewport, nullptr, nullptr),
+        VWP_CALL("sl_multicore_read", int (*)(void *, double *, int), viewport, nullptr, 1000),
+        VWP_CALL("sl_wait_timings", void (*)(void *, double *, double *, double *), viewport, nullptr, nullptr, nullptr),
+        VWP_CALL("sl_shot", void (*)(void *, const wchar_t *), viewport, nullptr),
+        VWP_CALL("sl_denoise_capture", int (*)(void *, int, const wchar_t *), viewport, 0, nullptr),
+    };
+    std::string crashedOutput;
+    for (const auto &call : nullOutput) {
+        std::function<void()> run = call.run;
+        if (!vwp_survives([](void *context) { (*static_cast<std::function<void()> *>(context))(); }, &run)) crashedOutput += std::string(" ") + call.name;
+    }
+    unsigned long long parts = 7, blas = 7, uploads = 7;
+    reinterpret_cast<void (*)(void *, unsigned long long *, unsigned long long *, unsigned long long *)>(symbol("sl_scene_resources"))(viewport, &parts, &blas, &uploads);
+    api.destroy(viewport);
+#undef VWP_CALL
+    if (!crashedOutput.empty()) std::cout << "viewport null argument checks: crashed with a null output pointer:" << crashedOutput << std::endl;
+    require(crashedOutput.empty(), "VWP-8: Exported calls with output pointers return for a null output pointer");
+    require(parts == 0 && blas == 0, "VWP-8: A call with valid arguments still reports the viewport state");
+}

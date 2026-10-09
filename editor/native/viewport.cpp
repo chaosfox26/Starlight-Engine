@@ -332,7 +332,7 @@ API int sl_fog_obstacles(void* handle,const float* data,int count){
  v.externalFogObstacles=true;v.atmosphere.obstacleLow=std::move(low);v.atmosphere.obstacleHigh=std::move(high);v.atmosphere.obstacleVelocity=std::move(velocity);return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
-API void sl_environment_reset(void* handle){auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();}
+API void sl_environment_reset(void* handle){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();}
 API int sl_surface_weather(void* handle,float moisture,float rain,float windX,float windZ,const float* boxes,int count){
  try{
   if(!handle||!std::isfinite(moisture)||moisture<0||moisture>1||!std::isfinite(rain)||rain<0||rain>1||!std::isfinite(windX)||!std::isfinite(windZ)||std::abs(windX)>20||std::abs(windZ)>20||count<0||count>64||(count&&!boxes))throw std::runtime_error("Invalid surface weather");
@@ -342,21 +342,21 @@ API int sl_surface_weather(void* handle,float moisture,float rain,float windX,fl
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_effect_clock(void* handle,double seconds){if(!handle||!std::isfinite(seconds)||seconds<0||seconds>FLT_MAX)return 0;auto& v=*static_cast<Viewport*>(handle);v.externalEffectClock=true;v.effectClock=float(seconds);return 1;}
-API float sl_effect_time(void* handle){return static_cast<Viewport*>(handle)->previousEffectTime;}
+API float sl_effect_time(void* handle){return handle?static_cast<Viewport*>(handle)->previousEffectTime:0;}
 API const char* sl_error(){return failure.c_str();}
 API int sl_debug_fail_hresult(int n){const int remaining=RenderDevice::hrFaultCountdown;RenderDevice::hrFaultCountdown=n<0?0:n;return remaining;}
 // Optional ABI: old DLLs can be tested without importing unavailable symbols.
-API void sl_surface_texture_stats(void* handle,uint64_t* output){auto& maps=static_cast<Viewport*>(handle)->surfaces;output[0]=maps.resolution;output[1]=maps.levels;output[2]=maps.residentBytes;output[3]=SurfaceTextures::count;}
-API uint64_t sl_water_scene_bytes(void* handle){return static_cast<Viewport*>(handle)->surfaces.waterSceneBytes;}
+API void sl_surface_texture_stats(void* handle,uint64_t* output){if(!handle||!output)return;auto& maps=static_cast<Viewport*>(handle)->surfaces;output[0]=maps.resolution;output[1]=maps.levels;output[2]=maps.residentBytes;output[3]=SurfaceTextures::count;}
+API uint64_t sl_water_scene_bytes(void* handle){return handle?static_cast<Viewport*>(handle)->surfaces.waterSceneBytes:0;}
 API int sl_surface_texture_tail(void* handle,uint8_t* output){try{if(!handle||!output)throw std::runtime_error("Invalid surface readback");auto& v=*static_cast<Viewport*>(handle);v.surfaces.tail(*v.renderer,output);return 1;}catch(const std::exception& e){failure=e.what();return 0;}}
 API int sl_local_shadow_stats(void* handle,uint64_t* stats){if(!handle||!stats)return 0;auto& s=static_cast<Viewport*>(handle)->pointShadows;stats[0]=s.resolution;stats[1]=s.bytes;stats[2]=s.capacity;stats[3]=s.draws;stats[4]=s.culled;stats[5]=s.enabled?1:0;return 1;}
 API int sl_shadow_settings(void* handle,int quality){try{if(!handle||quality<0||quality>3)throw std::runtime_error("Shadow quality must be Off, Low, Medium or High");auto& v=*static_cast<Viewport*>(handle);if(v.shadowQuality==quality)return 1;v.sunShadows.setQuality(*v.renderer,v.surfaces.heap.Get(),quality);v.pointShadows.setQuality(*v.renderer,v.surfaces.heap.Get(),quality);v.shadowQuality=quality;v.renderer->resetHistory=true;return 1;}catch(const std::exception& e){failure=e.what();return 0;}}
 API int sl_sun_shadow_stats(void* handle,uint64_t* stats){if(!handle||!stats)return 0;auto& s=static_cast<Viewport*>(handle)->sunShadows;stats[0]=s.resolution;stats[1]=s.bytes;stats[2]=s.draws;stats[3]=s.enabled?1:0;return 1;}
 API int sl_benchmark_contract(){return 2;} // owned offscreen target; no swapchain writes
-API void sl_benchmark(void* handle,int enable){auto& d=*static_cast<Viewport*>(handle)->renderer;d.setAuditOffscreen(enable!=0);}
-API void sl_benchmark_flush(void* handle){static_cast<Viewport*>(handle)->renderer->flush();}
-API void sl_scene_resources(void* handle,unsigned long long* parts,unsigned long long* blas,unsigned long long* uploads){auto& v=*static_cast<Viewport*>(handle);*parts=v.parts.size();*blas=v.rt.cache.size();*uploads=v.renderer->uploadKeepAlive.size();}
-API void sl_upload_pool_stats(void* handle,unsigned long long* count,unsigned long long* bytes,unsigned long long* created,unsigned long long* reused){auto& d=*static_cast<Viewport*>(handle)->renderer;*count=d.uploadPool.size();*bytes=d.uploadPoolBytes;*created=d.uploadCreated;*reused=d.uploadReused;}
+API void sl_benchmark(void* handle,int enable){if(!handle)return;auto& d=*static_cast<Viewport*>(handle)->renderer;d.setAuditOffscreen(enable!=0);}
+API void sl_benchmark_flush(void* handle){if(!handle)return;static_cast<Viewport*>(handle)->renderer->flush();}
+API void sl_scene_resources(void* handle,unsigned long long* parts,unsigned long long* blas,unsigned long long* uploads){if(!handle||!parts||!blas||!uploads)return;auto& v=*static_cast<Viewport*>(handle);*parts=v.parts.size();*blas=v.rt.cache.size();*uploads=v.renderer->uploadKeepAlive.size();}
+API void sl_upload_pool_stats(void* handle,unsigned long long* count,unsigned long long* bytes,unsigned long long* created,unsigned long long* reused){if(!handle||!count||!bytes||!created||!reused)return;auto& d=*static_cast<Viewport*>(handle)->renderer;*count=d.uploadPool.size();*bytes=d.uploadPoolBytes;*created=d.uploadCreated;*reused=d.uploadReused;}
 API int sl_lifetime_stats(void* handle,uint64_t* values,int count){
  if(!handle||!values||count<16)return 0;auto& v=*static_cast<Viewport*>(handle);
  const auto& rt=v.rt.retired.stats;const auto& gr=v.grass.retired.stats;
@@ -654,21 +654,22 @@ API int sl_telegraphs(void* handle,const float* data,int count){
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
 API int sl_telegraph_ids(void* handle,const uint64_t* ids,int count){if(!handle||count<0||(count&&!ids))return 0;auto& v=*static_cast<Viewport*>(handle);if(size_t(count)!=v.telegraphs.size())return 0;v.telegraphIdentities.clear();if(count)v.telegraphIdentities.assign(ids,ids+count);return 1;}
-API void sl_telegraph_stats(void* handle,unsigned long long* count,unsigned long long* bytes){auto& v=*static_cast<Viewport*>(handle);*count=v.telegraphs.size();*bytes=v.telegraphBytes;}
+API void sl_telegraph_stats(void* handle,unsigned long long* count,unsigned long long* bytes){if(!handle||!count||!bytes)return;auto& v=*static_cast<Viewport*>(handle);*count=v.telegraphs.size();*bytes=v.telegraphBytes;}
 API int sl_frame(void* handle,double seconds,float distance){
  try{if(!handle||!std::isfinite(seconds)||!std::isfinite(distance))throw std::runtime_error("Invalid frame input");auto& v=*static_cast<Viewport*>(handle);recycle_retired_resident(v,false);v.seconds=seconds;v.renderer->editorTime=v.visualTime();v.renderer->editorCameraDistance=distance;std::vector<DxrItem> geometry;for(auto& p:v.parts)if(p.effect!=4)geometry.push_back({p.meshKey,p.source.get(),{}, {}});for(auto& p:v.instanceParts)geometry.push_back({p.meshKey,p.source.get(),{}, {}});try{v.rt.prepare(*v.renderer,geometry);}catch(const std::exception& ex){v.rt.active=0;v.rt.supported=false;v.rt.status=std::string("DXR initialization failed; raster fallback: ")+ex.what();}v.renderer->editorRaytracing=v.rt.active>0;v.pointShadows.prepare(*v.renderer,v.surfaces.heap.Get(),v.rt.active>0?0:PointShadows::count(v.localLights));{static FILE* stall=[]()->FILE*{char path[512]{};const DWORD length=GetEnvironmentVariableA("STARLIGHT_STALL_LOG",path,512);if(!length||length>=sizeof(path)-10)return nullptr;strcat_s(path,".viewport");FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();const auto renderBegin=std::chrono::steady_clock::now();v.renderer->renderEmpty(v.window);if(starlight_diag::events_enabled()){auto& m=v.renderer->stageMarks;starlight_diag::evlog("vf",1000*(m[9]-m[0]),1000*(m[4]-m[3]),1000*(m[5]-m[4]));starlight_diag::evlog("vf2",1000*(m[7]-m[6]),1000*(m[8]-m[7]),1000*(m[9]-m[8]));starlight_diag::evlog("vf3",v.drawSegments[0],v.drawSegments[1],v.drawSegments[4]);starlight_diag::evlog("vf4",1000*(m[1]-m[0]),1000*(m[2]-m[1]),1000*(m[3]-m[2]));starlight_diag::evlog("vf5",1000*(m[6]-m[5]),v.drawSegments[2],v.drawSegments[3]);}{static FILE* passLog=[]()->FILE*{char path[512]{};const DWORD length=GetEnvironmentVariableA("STARLIGHT_PASS_LOG",path,512);if(!length||length>=sizeof(path))return nullptr;FILE* file=nullptr;fopen_s(&file,path,"w");return file;}();if(passLog){static uint64_t lines=0;fprintf(passLog,"%.3f %.3f %.3f %.3f %.3f\n",std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(),v.renderer->lastPassMs[0],v.renderer->lastPassMs[1],v.renderer->lastPassMs[2],v.renderer->lastPassMs[3]);if((++lines&1023)==0)fflush(passLog);}}if(stall){const double total=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-renderBegin).count();if(total>12){fprintf(stall,"sl_frame render %.1f ms: classify %.1f grass.end %.1f sunShadows %.1f pointShadows %.1f solids+liquids %.1f | latencyWait %.1f pace %.1f slotFence+reset %.1f scenePass %.1f evalPost %.1f submit %.1f present %.1f\n",total,v.drawSegments[0],v.drawSegments[1],v.drawSegments[2],v.drawSegments[3],v.drawSegments[4],1000*(v.renderer->stageMarks[1]-v.renderer->stageMarks[0]),1000*(v.renderer->stageMarks[2]-v.renderer->stageMarks[1]),1000*(v.renderer->stageMarks[3]-v.renderer->stageMarks[2]),1000*(v.renderer->stageMarks[4]-v.renderer->stageMarks[3]),1000*(v.renderer->stageMarks[5]-v.renderer->stageMarks[4]),1000*(v.renderer->stageMarks[6]-v.renderer->stageMarks[5]),1000*(v.renderer->stageMarks[7]-v.renderer->stageMarks[6]));fflush(stall);}}}if(FAILED(v.renderer->device->GetDeviceRemovedReason())){v.renderer->reportDeviceLoss();throw std::runtime_error("Native graphics device lost");}return 1;}
  catch(const std::exception& e){failure=e.what();return 0;}
 }
 // Read on the render owner thread; no cross-DLL containers or borrowed pointers.
-API void sl_multicore_begin(void* handle,int enabled){auto& p=static_cast<Viewport*>(handle)->renderer->parallelMetrics;p.enabled=enabled!=0;p.reset();}
+API void sl_multicore_begin(void* handle,int enabled){if(!handle)return;auto& p=static_cast<Viewport*>(handle)->renderer->parallelMetrics;p.enabled=enabled!=0;p.reset();}
 API int sl_multicore_read(void* handle,double* output,int capacity){
+ if(!handle)return 0;
  auto& r=static_cast<Viewport*>(handle)->renderer->parallelMetrics.reading;
- int required=6+int(r.chunkMs.size());if(capacity<required)return required;
+ int required=6+int(r.chunkMs.size());if(capacity<required)return required;if(!output)return 0;
  output[0]=r.parallelBatches;output[1]=r.serialBatches;output[2]=r.participants;output[3]=double(r.items);output[4]=r.wallMs;output[5]=r.callerWaitMs;
  for(size_t i=0;i<r.chunkMs.size();++i)output[6+i]=r.chunkMs[i];return required;
 }
-API void sl_wait_timings(void* handle,double* fence,double* pacing,double* present){auto& d=*static_cast<Viewport*>(handle)->renderer;*fence=d.measuredFenceWaitMs;*pacing=d.measuredPacingWaitMs;*present=d.measuredPresentWaitMs;}
-API double sl_gpu_ms(void* handle){return static_cast<Viewport*>(handle)->renderer->lastGpuMs;}
+API void sl_wait_timings(void* handle,double* fence,double* pacing,double* present){if(!handle||!fence||!pacing||!present)return;auto& d=*static_cast<Viewport*>(handle)->renderer;*fence=d.measuredFenceWaitMs;*pacing=d.measuredPacingWaitMs;*present=d.measuredPresentWaitMs;}
+API double sl_gpu_ms(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->lastGpuMs:0;}
 API int sl_gpu_memory(void* handle,uint64_t* output){
  if(!handle||!output)return 0;auto& d=*static_cast<Viewport*>(handle)->renderer;ComPtr<IDXGIAdapter3> adapter;DXGI_QUERY_VIDEO_MEMORY_INFO info{};
  if(FAILED(d.adapter.As(&adapter))||FAILED(adapter->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info)))return 0;
@@ -686,46 +687,46 @@ API int sl_hdr_post_settings(void* handle,int quality,float strength){
   post.strength=strength;return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
-API int sl_render_width(void* handle){return static_cast<Viewport*>(handle)->renderer->rw;}
-API int sl_render_height(void* handle){return static_cast<Viewport*>(handle)->renderer->rh;}
-API int sl_debug_active(void* handle){return static_cast<Viewport*>(handle)->renderer->d3dq ? 1 : 0;}
-API int sl_native_contract(void* handle){auto& d=*static_cast<Viewport*>(handle)->renderer;return d.rw==d.w&&d.rh==d.h&&d.ups->path()==up::Path::Off&&!d.ups->fgEnabled();}
-API int sl_output_width(void* handle){return static_cast<Viewport*>(handle)->renderer->w;}
-API void sl_camera(void* handle,float x,float y,float z,float tx,float ty,float tz){auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorEye=XMFLOAT3(x,y,z);d.editorTarget=XMFLOAT3(tx,ty,tz);}
-API void sl_camera_up(void* handle,float x,float y,float z){auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorUp=XMFLOAT3(x,y,z);}
-API uint64_t sl_uploads(void* handle){return static_cast<Viewport*>(handle)->uploads;}
-API int sl_parts(void* handle){return (int)static_cast<Viewport*>(handle)->parts.size();}
-API int sl_captured(void* handle){return static_cast<Viewport*>(handle)->renderer->shotDone?1:0;}
-API void sl_shot(void* handle,const wchar_t* path){auto& d=*static_cast<Viewport*>(handle)->renderer;d.shotPath=path;d.shotAtMs=0;d.shotDone=false;if(!g_logFile){auto log=std::wstring(path)+L".log";_wfopen_s(&g_logFile,log.c_str(),L"w");}}
+API int sl_render_width(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->rw:0;}
+API int sl_render_height(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->rh:0;}
+API int sl_debug_active(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->d3dq ? 1 : 0:0;}
+API int sl_native_contract(void* handle){if(!handle)return 0;auto& d=*static_cast<Viewport*>(handle)->renderer;return d.rw==d.w&&d.rh==d.h&&d.ups->path()==up::Path::Off&&!d.ups->fgEnabled();}
+API int sl_output_width(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->w:0;}
+API void sl_camera(void* handle,float x,float y,float z,float tx,float ty,float tz){if(!handle)return;auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorEye=XMFLOAT3(x,y,z);d.editorTarget=XMFLOAT3(tx,ty,tz);}
+API void sl_camera_up(void* handle,float x,float y,float z){if(!handle)return;auto& d=*static_cast<Viewport*>(handle)->renderer;d.editorUp=XMFLOAT3(x,y,z);}
+API uint64_t sl_uploads(void* handle){return handle?static_cast<Viewport*>(handle)->uploads:0;}
+API int sl_parts(void* handle){return handle?(int)static_cast<Viewport*>(handle)->parts.size():0;}
+API int sl_captured(void* handle){return handle?static_cast<Viewport*>(handle)->renderer->shotDone?1:0:0;}
+API void sl_shot(void* handle,const wchar_t* path){if(!handle||!path)return;auto& d=*static_cast<Viewport*>(handle)->renderer;d.shotPath=path;d.shotAtMs=0;d.shotDone=false;if(!g_logFile){auto log=std::wstring(path)+L".log";_wfopen_s(&g_logFile,log.c_str(),L"w");}}
 API void sl_destroy(void* handle){if(!handle)return;auto v=static_cast<Viewport*>(handle);std::string first;auto step=[&](auto&& body){try{body();}catch(const std::exception& e){if(first.empty())first=e.what();}catch(...){if(first.empty())first="unknown error during viewport destruction";}};step([&]{v->renderer->flush();});step([&]{v->rt.drainRetired(*v->renderer,true);});step([&]{recycle_retired_resident(*v,true);});step([&]{v->rt.shutdown();});step([&]{v->renderer->teardown();});step([&]{delete v;});if(!first.empty())failure="Viewport cleanup: "+first;}
 
 
 
-API void sl_rt(void* handle,int tier,int bounces){auto& rt=static_cast<Viewport*>(handle)->rt;rt.requested=std::clamp(tier,0,4);rt.bounces=std::clamp(bounces,2,4);rt.samples=0;}
-API void sl_freeze(void* handle,int freeze){auto& v=*static_cast<Viewport*>(handle);v.freeze=freeze!=0;v.frozenTime=v.externalEffectClock?v.effectClock:0;}
-API int sl_rt_supported(void* handle){return static_cast<Viewport*>(handle)->rt.supported;}
-API int sl_rt_active(void* handle){return static_cast<Viewport*>(handle)->rt.active;}
-API double sl_ray_ms(void* handle){return static_cast<Viewport*>(handle)->rt.rayMs;}
-API double sl_as_ms(void* handle){return static_cast<Viewport*>(handle)->rt.asMs;}
-API uint64_t sl_blas_builds(void* handle){return static_cast<Viewport*>(handle)->rt.builds;}
-API uint64_t sl_tlas_refits(void* handle){return static_cast<Viewport*>(handle)->rt.refits;}
-API int sl_rt_samples(void* handle){return static_cast<Viewport*>(handle)->rt.samples;}
-API const char* sl_rt_status(void* handle){return static_cast<Viewport*>(handle)->rt.status.c_str();}
+API void sl_rt(void* handle,int tier,int bounces){if(!handle)return;auto& rt=static_cast<Viewport*>(handle)->rt;rt.requested=std::clamp(tier,0,4);rt.bounces=std::clamp(bounces,2,4);rt.samples=0;}
+API void sl_freeze(void* handle,int freeze){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.freeze=freeze!=0;v.frozenTime=v.externalEffectClock?v.effectClock:0;}
+API int sl_rt_supported(void* handle){return handle?static_cast<Viewport*>(handle)->rt.supported:0;}
+API int sl_rt_active(void* handle){return handle?static_cast<Viewport*>(handle)->rt.active:0;}
+API double sl_ray_ms(void* handle){return handle?static_cast<Viewport*>(handle)->rt.rayMs:0;}
+API double sl_as_ms(void* handle){return handle?static_cast<Viewport*>(handle)->rt.asMs:0;}
+API uint64_t sl_blas_builds(void* handle){return handle?static_cast<Viewport*>(handle)->rt.builds:0;}
+API uint64_t sl_tlas_refits(void* handle){return handle?static_cast<Viewport*>(handle)->rt.refits:0;}
+API int sl_rt_samples(void* handle){return handle?static_cast<Viewport*>(handle)->rt.samples:0;}
+API const char* sl_rt_status(void* handle){return handle?static_cast<Viewport*>(handle)->rt.status.c_str():"";}
 
-API double sl_denoise_ms(void* handle){return static_cast<Viewport*>(handle)->rt.denoiseMs;}
+API double sl_denoise_ms(void* handle){return handle?static_cast<Viewport*>(handle)->rt.denoiseMs:0;}
 
-API uint64_t sl_history_resets(void* handle){return static_cast<Viewport*>(handle)->rt.historyResets;}
+API uint64_t sl_history_resets(void* handle){return handle?static_cast<Viewport*>(handle)->rt.historyResets:0;}
 
-API int sl_rr_active(void* handle){return static_cast<Viewport*>(handle)->rt.rrActive?1:0;}
-API const char* sl_rr_status(void* handle){return static_cast<Viewport*>(handle)->rt.rr.status.c_str();}
+API int sl_rr_active(void* handle){return handle?static_cast<Viewport*>(handle)->rt.rrActive?1:0:0;}
+API const char* sl_rr_status(void* handle){return handle?static_cast<Viewport*>(handle)->rt.rr.status.c_str():"";}
 // Stable ABI: 0 = native temporal wavelet, 1 = optional native-resolution RR.
 // Do not invert this mapping: existing projects and editor controls persist it.
-API void sl_denoiser(void* handle,int mode){auto& rt=static_cast<Viewport*>(handle)->rt;rt.denoiserMode=mode==1?1:0;rt.historyValid=false;}
-API int sl_denoise_history_index(void* handle){auto& rt=static_cast<Viewport*>(handle)->rt;return 11+(1-rt.historyParity)*4;}
+API void sl_denoiser(void* handle,int mode){if(!handle)return;auto& rt=static_cast<Viewport*>(handle)->rt;rt.denoiserMode=mode==1?1:0;rt.historyValid=false;}
+API int sl_denoise_history_index(void* handle){if(!handle)return 0;auto& rt=static_cast<Viewport*>(handle)->rt;return 11+(1-rt.historyParity)*4;}
 // Explicit offline validation only. Never called by the interactive frame loop.
 API int sl_denoise_capture(void* handle,int index,const wchar_t* path){
  try{
-  auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;auto& rt=v.rt;
+  if(!handle||!path)return 0;auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;auto& rt=v.rt;
   if(index<0||index>=(int)DxrPass::imageCount||!rt.images[index])return 0;
   d.flush();auto description=starlight_resource_desc(rt.images[index]);D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout{};UINT rows;UINT64 rowBytes,bytes;
   d.device->GetCopyableFootprints(&description,0,1,0,&layout,&rows,&rowBytes,&bytes);
