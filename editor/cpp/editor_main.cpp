@@ -2176,6 +2176,14 @@ struct Editor {
                 candidate.RotationX = number("rx"); candidate.RotationY = number("ry");
                 candidate.RotationZ = number("rz"); candidate.Color = text(inputs.at("color"));
                 candidate.Surface = integer("surface"); candidate.KeepAboveFloor = checked("floor");
+                if (candidate.Surface == 12 || candidate.Surface == 13) {
+                    auto f = candidate.Foliage.value_or(FoliageMaterial{});
+                    auto n = [&](const char* key, double& value) { if (inputs.contains(key)) value = number(key); };
+                    n("barkScale", f.BarkScale); n("barkRelief", f.BarkRelief); n("barkRough", f.BarkRoughness);
+                    n("leafTransmission", f.LeafTransmission); n("leafVeins", f.LeafVeins); n("leafRough", f.LeafRoughness);
+                    f.validate();
+                    candidate.Foliage = f;
+                } else candidate.Foliage.reset();
                 candidate.validate();
                 snap_object(scene, candidate, false, false, false);
             } else if (id == ApplyBody) {
