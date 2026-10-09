@@ -43,6 +43,9 @@ target_sources(starlight_editor_core PRIVATE editor/cpp/asset_library.cpp editor
 target_link_libraries(starlight_editor_core PUBLIC ole32 shell32 bcrypt windowscodecs)
 add_executable(Starlight.NativeCoreChecks tools/checks/core_checks.cpp)
 target_link_libraries(Starlight.NativeCoreChecks PRIVATE starlight_editor_core)
+# CPU micro-benchmarks of the performance changes; built only when asked for (--target Starlight.NativeBench), never registered with CTest.
+add_executable(Starlight.NativeBench EXCLUDE_FROM_ALL tools/checks/native_bench.cpp)
+target_link_libraries(Starlight.NativeBench PRIVATE starlight_editor_core)
 add_executable(Starlight.NativeCommands editor/cpp/cli.cpp)
 add_executable(Starlight.NativeBuild tools/build/native_build.cpp)
 target_link_libraries(Starlight.NativeBuild PRIVATE starlight_editor_core)
