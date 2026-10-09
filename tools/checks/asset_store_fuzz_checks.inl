@@ -334,6 +334,19 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         require(refused([&]{(void)verify_portable_scene(deep);}),"Fuzz: a damaged asset in an export whose paths pass 260 characters is refused");
     }
 
+    {
+        // An exported game whose folder path passes 260 characters is still verified at launch: a damaged file is refused, never skipped as a plain scene run.
+        const auto game=work/std::string(70,'g')/std::string(70,'h')/std::string(70,'i')/"game";
+        const std::string runtime="runtime file for the deep game";
+        json entry{{"path","Starlight.NativePlayer.exe"},{"sha256",hash_bytes(runtime)}};
+        atomic_write(game/"Starlight.NativePlayer.exe",runtime);
+        atomic_write(game/"game-manifest.json",json{{"format","starlight-playable-game"},{"version",1},{"platform","windows-x64"},{"files",json::array({entry})}}.dump(2));
+        require((game/"game-manifest.json").wstring().size()>260,"Fuzz: the deep game manifest really has a path longer than 260 characters");
+        require(outcome([&]{verify_game_files(game);})==Result::Accepted,"Fuzz: a deep exported game whose files pass 260 characters verifies");
+        atomic_write(game/"Starlight.NativePlayer.exe","tampered runtime file");
+        require(refused([&]{verify_game_files(game);}),"Fuzz: a damaged file in a deep exported game is refused, not skipped as a plain scene run");
+    }
+
     // Exports write only inside their own new folder, never over an existing one, and a failed export leaves nothing behind.
     {
         const auto exports=work/"exports";fs::create_directories(exports);
