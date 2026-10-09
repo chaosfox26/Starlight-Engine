@@ -111,8 +111,7 @@ def plan(args, stamp):
         # The denoise step loads this vendor DLL from the executables folder; a fresh build folder does not have it. Copy it from the known good build, or fail loudly instead of a confusing 'Win32 126'.
         dll = os.path.join(args.build_dir, 'nvngx_dlssd.dll')
         if not os.path.exists(dll):
-            for source in (r'D:\projects\Starlight-Engine-repair\out\classic\Release
-vngx_dlssd.dll',):
+            for source in (r'D:\projects\Starlight-Engine-repair\out\classic\Release\nvngx_dlssd.dll',):
                 if os.path.exists(source):
                     import shutil; shutil.copy2(source, dll); print('copied nvngx_dlssd.dll into', args.build_dir)
         if not os.path.exists(dll):
