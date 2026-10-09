@@ -488,7 +488,7 @@ bool loadSkinned(const std::string& glbPath, const std::string& atlasUvBin, Skin
 static void SampleChannel(const Channel& ch, float t, float* out, int comps) {
     const size_t n = ch.times.size();
     if (n == 0) return;
-    if (t <= ch.times.front() || n == 1) { std::memcpy(out, ch.values.data(), sizeof(float) * (size_t)comps); return; }
+    if (!(t > ch.times.front()) || n == 1) { std::memcpy(out, ch.values.data(), sizeof(float) * (size_t)comps); return; }   // NaN also lands here, so the search below only sees ordered times
     if (t >= ch.times.back()) { std::memcpy(out, ch.values.data() + (n - 1) * (size_t)comps, sizeof(float) * (size_t)comps); return; }
     size_t hi = (size_t)(std::upper_bound(ch.times.begin(), ch.times.end(), t) - ch.times.begin());
     size_t lo = hi - 1;

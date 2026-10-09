@@ -1248,6 +1248,15 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(std::fabs(halfwayCos(true) - 1.f) < 1e-4f, "R3: a STEP channel holds the earlier key until the next key time");
             require(std::fabs(halfwayCos(false) - 0.70710678f) < 1e-3f, "R3: a LINEAR channel at the same time is blended halfway");
         }
+        {   // SKN-6: a non-finite query time must give the defined first-key pose, not read past the keyframe arrays. The fixture clip loops, so +infinity reaches fmod and becomes NaN.
+            model::SkinnedModel posed; XMFLOAT4X4 rest[2], notANumber[2], infinite[2];
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb()), nullptr, "query-time.glb", posed).ok() && posed.clips[0].loop && posed.clips[0].duration > 0, "SKN-6: the fixture clip loops with a positive duration");
+            model::evalPose(posed, 0, 0.f, -1, 0.f, 0.f, rest, nullptr);
+            model::evalPose(posed, 0, std::nanf(""), -1, 0.f, 0.f, notANumber, nullptr);
+            model::evalPose(posed, 0, std::numeric_limits<float>::infinity(), -1, 0.f, 0.f, infinite, nullptr);
+            require(std::memcmp(rest, notANumber, sizeof(rest)) == 0, "SKN-6: a NaN query time holds the first key");
+            require(std::memcmp(rest, infinite, sizeof(rest)) == 0, "SKN-6: an infinite query time on a looping clip holds the first key");
+        }
         for (int bad : { 1, 2, 3, 4 }) { GlbSpec timeSpec; timeSpec.badTimes = bad; e = model::loadSkinnedFromMemory(ByteView(makeGlb(timeSpec)), nullptr, "times.glb", scratch);
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
         { GlbSpec nanSpec; nanSpec.nanKey = true; e = model::loadSkinnedFromMemory(ByteView(makeGlb(nanSpec)), nullptr, "nankey.glb", scratch);
