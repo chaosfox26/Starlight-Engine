@@ -164,7 +164,7 @@ bool sameModel(const model::SkinnedModel& a, const model::SkinnedModel& b) {
     }
     for (size_t i = 0; i < a.joints.size(); ++i) {
         const auto &x = a.joints[i], &y = b.joints[i];
-        if (x.name != y.name || x.parent != y.parent || std::memcmp(&x.ibm, &y.ibm, sizeof(x.ibm)) || std::memcmp(&x.t, &y.t, sizeof(x.t)) || std::memcmp(&x.r, &y.r, sizeof(x.r)) || std::memcmp(&x.s, &y.s, sizeof(x.s))) return false;
+        if (x.name != y.name || x.parent != y.parent || std::memcmp(&x.ibm, &y.ibm, sizeof(x.ibm)) || std::memcmp(&x.base, &y.base, sizeof(x.base)) || std::memcmp(&x.t, &y.t, sizeof(x.t)) || std::memcmp(&x.r, &y.r, sizeof(x.r)) || std::memcmp(&x.s, &y.s, sizeof(x.s))) return false;
     }
     for (size_t i = 0; i < a.clips.size(); ++i) {
         const auto &x = a.clips[i], &y = b.clips[i];
@@ -1265,6 +1265,42 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(loaded && std::fabs(j.t.x) < 1e-4f && std::fabs(j.t.y - 1.f) < 1e-4f && std::fabs(j.t.z) < 1e-4f, "R4: a matrix joint keeps its translation next to a rotation and a scale");
             require(std::fabs(j.s.x - 2.f) < 1e-4f && std::fabs(j.s.y - 3.f) < 1e-4f && std::fabs(j.s.z - 4.f) < 1e-4f, "R4: a matrix joint keeps its scale");
             require(std::fabs(j.r.x) < 1e-4f && std::fabs(j.r.y) < 1e-4f && std::fabs(j.r.z - 0.70710678f) < 1e-4f && std::fabs(j.r.w - 0.70710678f) < 1e-4f, "R4: a matrix joint keeps its rotation");
+        {
+            auto transformed = [&](const model::SkinnedModel& m, int joint, float x, float y, float z) {
+                XMFLOAT4X4 pal[2]; model::evalPose(m, 0, 0.f, -1, 0.f, 0.f, pal, nullptr);
+                XMFLOAT3 r; XMStoreFloat3(&r, XMVector3Transform(XMVectorSet(x, y, z, 1.f), XMLoadFloat4x4(&pal[joint]))); return r; };
+            model::SkinnedModel plainRig, armRig, midRig;
+            require(model::loadSkinnedFromMemory(ByteView(glb), nullptr, "plain.glb", plainRig).ok(), "R4: baseline rig loads");
+            GlbSpec armSpec; armSpec.armature = 1;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(armSpec)), nullptr, "armature.glb", armRig).ok() && armRig.joints[0].parent == -1 && armRig.joints[1].parent == 0, "R4: a rig under a transformed non-joint armature node loads");
+            const XMFLOAT3 a0 = transformed(armRig, 0, 1.f, 0.f, 0.f), a1 = transformed(armRig, 1, 1.f, 0.f, 0.f);
+            require(std::fabs(a0.x - 5.f) < 1e-4f && std::fabs(a0.y - 2.f) < 1e-4f && std::fabs(a0.z) < 1e-4f && std::fabs(a1.x - 5.f) < 1e-4f && std::fabs(a1.y - 2.f) < 1e-4f && std::fabs(a1.z) < 1e-4f,
+                    "R4: the armature's translation, rotation and scale reach the root joint and its child (hand-computed (1,0,0) -> (5,2,0))");
+            require(!std::memcmp(&armRig.bbMin, &plainRig.bbMin, sizeof(XMFLOAT3)) && !std::memcmp(&armRig.bbMax, &plainRig.bbMax, sizeof(XMFLOAT3)) &&
+                    std::memcmp(&armRig.joints[0].base, &plainRig.joints[0].base, sizeof(XMFLOAT4X4)) && !std::memcmp(&plainRig.joints[1].base, &plainRig.joints[0].base, sizeof(XMFLOAT4X4)),
+                    "R4: the skinned mesh bounds do not move with the armature, and a rig with no non-joint ancestor keeps an identity base");
+            const XMFLOAT3 p0 = transformed(plainRig, 0, 1.f, 0.f, 0.f);
+            require(std::fabs(p0.x - 1.f) < 1e-6f && std::fabs(p0.y) < 1e-6f && std::fabs(p0.z) < 1e-6f, "R4: with identity ancestors the palette is unchanged");
+            GlbSpec midSpec; midSpec.armature = 2;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid.glb", midRig).ok() && midRig.joints[1].parent == 0, "R4: a joint below a non-joint node keeps its joint ancestor as parent");
+            const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
+            require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
+        {
+            auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
+            model::SkinnedModel strip, fan, points, lines, onlyLines;
+            const std::vector<uint32_t> wantStrip{ 4, 5, 6, 5, 7, 6 }, wantFan{ 5, 6, 4, 6, 7, 4 };
+            require(loadWith(1, 5, strip).ok() && strip.subs.size() == 2 && strip.verts.size() == 8 && strip.warnings.empty() && std::vector<uint32_t>(strip.indices.begin() + 6, strip.indices.end()) == wantStrip && strip.subs[1].firstIndex == 6 && strip.subs[1].indexCount == 6,
+                    "06#11: a TRIANGLE_STRIP primitive is expanded with the spec winding (v0 v1 v2, v1 v3 v2) next to a TRIANGLES primitive");
+            require(loadWith(1, 6, fan).ok() && fan.subs.size() == 2 && std::vector<uint32_t>(fan.indices.begin() + 6, fan.indices.end()) == wantFan && fan.warnings.empty(),
+                    "06#11: a TRIANGLE_FAN primitive is expanded with the spec winding (v1 v2 v0, v2 v3 v0)");
+            require(loadWith(1, 0, points).ok() && points.subs.size() == 1 && points.verts.size() == 4 && points.warnings.find("1 POINTS") != std::string::npos, "06#11: a POINTS primitive is skipped and reported in the load result");
+            require(loadWith(1, 1, lines).ok() && lines.subs.size() == 1 && lines.warnings.find("1 LINES") != std::string::npos, "06#11: a LINES primitive is skipped and reported in the load result");
+            const fs::path modesPath = work / "modes.glb";
+            { GlbSpec s; s.extraMode = 0; writeBytes(modesPath, makeGlb(s)); }
+            model::SkinnedModel viaPath; std::string note;
+            require(model::loadSkinned(modesPath.string(), "", viaPath, note) && note.find("1 POINTS") != std::string::npos, "06#11: the path loader returns the skipped-primitive note in its message");
+            e = loadWith(0, 1, onlyLines);
+            require(e.code == LoadCode::NoGeometry && e.message.find("1 LINES") != std::string::npos, "06#11: a model whose only primitive is not a triangle type fails with a message that names what was skipped");
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

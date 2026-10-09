@@ -12,6 +12,19 @@ inline std::string asset_checks_uv_glb(bool plainPrimitive){
  word(0x46546c67);word(2);word(uint32_t(12+8+text.size()+8+bin.size()));word(uint32_t(text.size()));word(0x4e4f534a);bytes+=text;word(uint32_t(bin.size()));word(0x004e4942);bytes+=bin;
  return bytes;
 }
+inline std::string asset_checks_mode_glb(int mode,bool withTriangle){
+ const std::string attributes=R"({"POSITION":0,"TEXCOORD_0":1})";
+ std::string primitives=withTriangle?R"({"attributes":)"+attributes+R"(,"indices":2},)":std::string();
+ primitives+=R"({"attributes":)"+attributes+R"(,"mode":)"+std::to_string(mode)+"}";
+ json description=json::parse(R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[]}],"buffers":[{"byteLength":88}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":48},{"buffer":0,"byteOffset":48,"byteLength":32},{"buffer":0,"byteOffset":80,"byteLength":6}],"accessors":[{"bufferView":0,"componentType":5126,"count":4,"type":"VEC3"},{"bufferView":1,"componentType":5126,"count":4,"type":"VEC2"},{"bufferView":2,"componentType":5123,"count":3,"type":"SCALAR"}]})");
+ description["meshes"][0]["primitives"]=json::parse("["+primitives+"]");
+ const std::array<float,12> points{0,0,0,1,0,0,1,1,0,0,1,0};const std::array<float,8> coordinates{0,0,1,0,1,1,0,1};const std::array<uint16_t,4> indices{0,1,2,0};
+ auto text=description.dump();while(text.size()%4)text+=' ';
+ std::string bin;bin.append(reinterpret_cast<const char*>(points.data()),48);bin.append(reinterpret_cast<const char*>(coordinates.data()),32);bin.append(reinterpret_cast<const char*>(indices.data()),8);
+ std::string bytes;auto word=[&](uint32_t v){bytes.append(reinterpret_cast<const char*>(&v),4);};
+ word(0x46546c67);word(2);word(uint32_t(12+8+text.size()+8+bin.size()));word(uint32_t(text.size()));word(0x4e4f534a);bytes+=text;word(uint32_t(bin.size()));word(0x004e4942);bytes+=bin;
+ return bytes;
+}
 inline std::string asset_checks_atlas(size_t pairs){
  std::string bytes;for(size_t i=0;i<pairs;++i){const float u=float(i%7+1)/8.f,v=float(i%5+1)/6.f;bytes.append(reinterpret_cast<const char*>(&u),4);bytes.append(reinterpret_cast<const char*>(&v),4);}return bytes;
 }
@@ -244,6 +257,16 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
    require(import_blob_bytes(UvAtlasType,atlas)==id&&check_asset_ready(id).ready,"Importing the blob again repairs the damaged file");
   }
 
+  {
+   const std::vector<int> wantStrip{0,1,2,1,3,2},wantFan{1,2,0,2,3,0};
+   const auto strip=parse_glb(asset_checks_mode_glb(5,false)),fan=parse_glb(asset_checks_mode_glb(6,false)),both=parse_glb(asset_checks_mode_glb(5,true));
+   require(strip.size()==1&&strip[0].mesh.indices==wantStrip&&fan.size()==1&&fan[0].mesh.indices==wantFan,"06#11: Triangle strips and fans in a model are converted to triangle lists with the glTF winding");
+   require(both.size()==2&&both[0].mesh.indices==std::vector<int>({0,1,2})&&both[1].mesh.indices==wantStrip&&model_uv_vertex_count(asset_checks_mode_glb(5,true))==8,"06#11: A strip next to a triangle primitive adds its own part and its vertices count towards the UV atlas size");
+   std::string note;const auto points=parse_glb(asset_checks_mode_glb(0,true),&note);
+   require(points.size()==1&&note.find("1 POINTS")!=std::string::npos&&model_skipped_note(asset_checks_mode_glb(1,true)).find("1 LINES")!=std::string::npos&&model_skipped_note(asset_checks_mode_glb(5,true)).empty(),"06#11: Point and line primitives are skipped but named in the import note, and a strip is not reported as skipped");
+   const auto onlyLines=text_of([&]{(void)parse_glb(asset_checks_mode_glb(1,false));});
+   require(has(onlyLines,"no triangle geometry")&&has(onlyLines,"1 LINES")&&model_uv_vertex_count(asset_checks_mode_glb(1,false))==0,"06#11: A model with only line primitives is refused with a message that names them");
+  }
   const auto glb=asset_checks_uv_glb(false),mixed=asset_checks_uv_glb(true);
   const auto uvModel=import_model_bytes(glb),mixedModel=import_model_bytes(mixed),plainModel=import_model(solid_glb_fixture(work));
   require(*load_model_bytes(uvModel)==glb&&model_uv_vertex_count(glb)==4&&model_uv_vertex_count(mixed)==4,"The model bytes are available in memory exactly as authored and the UV-bearing vertices are counted");

@@ -103,7 +103,7 @@ std::vector<MeshPart> load_glb(const fs::path &path) {
         throw std::runtime_error("Preview GLB exceeds 256 MiB");
     return parse_glb(read_file(path));
 }
-std::vector<MeshPart> parse_glb(std::string_view bytes) {
+std::vector<MeshPart> parse_glb(std::string_view bytes, std::string *skipped) {
     if (bytes.size() > MaxImportBytes)
         throw std::runtime_error("Preview GLB exceeds 256 MiB");
     if (read_at<uint32_t>(bytes, 0) != 0x46546c67 || read_at<uint32_t>(bytes, 4) != 2 ||
@@ -160,12 +160,15 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
         return Access{vo + ao, stride, count, component};
     };
     std::vector<MeshPart> parts;
-    size_t total = 0, indexTotal = 0;
+    size_t total = 0, indexTotal = 0, skippedModes[5] = {};
     Vec3 minimum{INFINITY, INFINITY, INFINITY}, maximum{-INFINITY, -INFINITY, -INFINITY};
     auto mesh = [&](size_t index, FXMMATRIX matrix) {
         for (const auto &primitive : root.at("meshes").at(index).at("primitives")) {
-            if (primitive.contains("mode") && native_int(primitive.at("mode")) != 4)
+            const auto mode = primitive.contains("mode") ? native_int(primitive.at("mode")) : 4;
+            if (mode < 4 || mode > 6) {
+                ++skippedModes[mode >= 0 && mode < 4 ? mode : 4];
                 continue;
+            }
             auto a = access(natural(primitive.at("attributes").at("POSITION")), 3);
             if (a.component != 5126 || a.count > 2000000 - total)
                 throw std::runtime_error("Preview needs float positions within two million vertices");
@@ -209,6 +212,22 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
             } else
                 for (size_t i = 0; i < a.count; i++)
                     part.mesh.indices.push_back(int(i));
+            if (mode != 4) {
+                const auto source = std::move(part.mesh.indices);
+                part.mesh.indices.clear();
+                for (size_t i = 0; i + 2 < source.size(); i++) {
+                    const size_t odd = i & 1;
+                    if (mode == 5) {
+                        part.mesh.indices.push_back(source[i]);
+                        part.mesh.indices.push_back(source[i + 1 + odd]);
+                        part.mesh.indices.push_back(source[i + 2 - odd]);
+                    } else {
+                        part.mesh.indices.push_back(source[i + 1]);
+                        part.mesh.indices.push_back(source[i + 2]);
+                        part.mesh.indices.push_back(source[0]);
+                    }
+                }
+            }
             part.mesh.validate();
             if (primitive.contains("material")) {
                 const auto &mat = root.at("materials").at(natural(primitive.at("material")));
@@ -263,8 +282,16 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
     };
     for (const auto &n : root.at("scenes").at(root.contains("scene") ? natural(root.at("scene")) : 0).at("nodes"))
         node(natural(n), XMMatrixIdentity(), 0);
+    std::string note;
+    {
+        static const char *const kinds[5] = {"POINTS", "LINES", "LINE_LOOP", "LINE_STRIP", "unknown-mode"};
+        for (int k = 0; k < 5; k++)
+            if (skippedModes[k])
+                note += (note.empty() ? "primitives not drawn (only triangles, strips and fans are loaded): " : ", ") + std::to_string(skippedModes[k]) + " " + kinds[k];
+    }
+    if (skipped) *skipped = note;
     if (!total || maximum.y - minimum.y < .0001)
-        throw std::runtime_error("Model has no triangle geometry or height");
+        throw std::runtime_error("Model has no triangle geometry or height" + (note.empty() ? std::string() : "; " + note));
     double scale = 1.8 / (maximum.y - minimum.y), cx = (minimum.x + maximum.x) / 2,
            cz = (minimum.z + maximum.z) / 2;
     for (auto &part : parts) {
@@ -274,6 +301,11 @@ std::vector<MeshPart> parse_glb(std::string_view bytes) {
         part.mesh.normals();
     }
     return parts;
+}
+std::string model_skipped_note(std::string_view bytes) {
+    std::string note;
+    (void)parse_glb(bytes, &note);
+    return note;
 }
 void validate_model_bytes(std::string_view bytes) {
     (void)parse_glb(bytes);

@@ -2540,7 +2540,8 @@ struct Editor {
             if (files.empty()) return;
             auto asset = import_model(fs::absolute(files.front()).lexically_normal());
             edit([&] { actor()->Asset = asset; });
-            SetWindowTextW(status, L"Model replaced. Name, placement and route kept. Undo restores the previous model.");
+            const auto skippedNote = model_skipped_note(*load_model_bytes(asset));
+            SetWindowTextW(status, wide("Model replaced. Name, placement and route kept. Undo restores the previous model." + (skippedNote.empty() ? std::string() : " Note: " + skippedNote)).c_str());
             return;
         }
         if (id == SaveGroup) {
