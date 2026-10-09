@@ -127,7 +127,10 @@ static json handle_snapshot() {
 // Loading must prepare the scene that play reveals (audit 04-loading-readiness, finding 1). Mirrors the loading barrier on a hidden window: install the
 // scene with playback stopped, wait for the graphics fence, then start play and count the resident-scene installs. The fire and grass objects are what
 // make the stopped-mode and play-mode static packets differ; without the prewarm, starting play builds and installs a second base.
-static json play_start_base_installs(bool prewarm) {
+// With dynamicRock the scene also holds a Dynamic rock (resting-eligible); gameplayCollision makes the rock a collision-world object driven by gameplay
+// (no rigid-body session) and physicsTerrain gives it a terrain to land on (rigid-body session). playSeconds waits for that much play time, enough
+// for the 0.75 s rest check, before the install counters are read.
+static json play_start_base_installs(bool prewarm, bool dynamicRock = false, bool gameplayCollision = false, bool physicsTerrain = false, double playSeconds = 0) {
   WNDCLASSW wc{};
   wc.hInstance = GetModuleHandle(nullptr);
   wc.lpfnWndProc = DefWindowProcW;
@@ -141,7 +144,10 @@ static json play_start_base_installs(bool prewarm) {
     Character rock; rock.Shape = "rock"; rock.X = -2;
     Character fire; fire.Shape = "fire"; fire.ParticleRate = 100; fire.X = 2;
     Character grass; grass.Shape = "grass"; grass.Size = 2; grass.Z = 2;
+    if (dynamicRock) { rock.Dynamic = true; rock.Y = physicsTerrain ? .3 : 0; } // above the ground so a rigid-body session has something to settle
     scene.Characters = {rock, fire, grass};
+    if (gameplayCollision) scene.Game.emplace();
+    if (physicsTerrain) scene.Terrain.emplace();
     NativeSession session(window, 640, 360);
     auto until = [&](auto done) {
       const auto deadline = GetTickCount64() + 20000;
@@ -159,13 +165,13 @@ static json play_start_base_installs(bool prewarm) {
     if (prewarm) session.prewarm_play(true);
     const uint64_t generation = session.scene(scene);
     session.playback(false, true);
-    until([&](const RenderStatus& s) { return s.scene_generation_installed >= generation; });
+    until([&](const RenderStatus& s) { return s.scene_generation_installed >= generation && !s.physics_pending; }); // the loading barrier also waits for the rigid-body session
     const uint64_t fence = session.request_gpu_fence();
     auto fenced = until([&](const RenderStatus& s) { return s.gpu_fence_done >= fence; });
     auto ready = until([&](const RenderStatus& s) { return s.frames >= fenced.frames + 2; }); // the install counters are published at the end of a frame
     session.playback(true);
-    auto playing = until([&](const RenderStatus& s) { return s.playing && s.frames >= ready.frames + 120; });
-    result = {{"prewarm", prewarm}, {"baseInstallsAtReady", ready.scene_base_installs}, {"baseInstallsAfterPlay", playing.scene_base_installs},
+    auto playing = until([&](const RenderStatus& s) { return s.playing && s.frames >= ready.frames + 120 && s.seconds >= playSeconds; });
+    result = {{"prewarm", prewarm}, {"physicsPendingAtReady", fenced.physics_pending}, {"physicsPreparedAtReady", fenced.physics_prepared},{"baseInstallsAtReady", ready.scene_base_installs}, {"baseInstallsAfterPlay", playing.scene_base_installs},
               {"wholePacketUpdatesAtReady", ready.scene_full_updates}, {"wholePacketUpdatesAfterPlay", playing.scene_full_updates},
               {"deltaUpdatesAtReady", ready.scene_delta_updates}, {"deltaUpdatesAfterPlay", playing.scene_delta_updates}};
     session.suspend_rendering(true);
@@ -181,9 +187,16 @@ int wmain(int argc, wchar_t **argv) {
     fs::path output=argv[2];fs::create_directories(output);
     try{
       const auto control=play_start_base_installs(false),prewarmed=play_start_base_installs(true);
-      atomic_write(output/L"play-start-base.json",json{{"control",control},{"prewarmed",prewarmed}}.dump(2));
-      const bool pass=prewarmed["baseInstallsAtReady"].get<uint64_t>()>=1&&prewarmed["baseInstallsAfterPlay"]==prewarmed["baseInstallsAtReady"]&&prewarmed["wholePacketUpdatesAfterPlay"]==prewarmed["wholePacketUpdatesAtReady"];
-      std::cout<<(pass?"PASS":"FAIL")<<" play start base installs\n"<<control.dump()<<'\n'<<prewarmed.dump()<<'\n';
+      const auto rocks=play_start_base_installs(true,true,true,false,2.0),bodies=play_start_base_installs(true,true,false,true,0);
+      SetEnvironmentVariableA("STARLIGHT_SETTLE_BEFORE_PLAY","1");
+      const auto settled=play_start_base_installs(true,true,false,true,2.5);
+      SetEnvironmentVariableA("STARLIGHT_SETTLE_BEFORE_PLAY",nullptr);
+      const auto unsettled=play_start_base_installs(true,true,false,true,2.5);
+      atomic_write(output/L"play-start-base.json",json{{"control",control},{"prewarmed",prewarmed},{"rocks",rocks},{"bodies",bodies},{"settled",settled},{"unsettled",unsettled}}.dump(2));
+      auto constant=[](const json& r){return r["baseInstallsAtReady"].get<uint64_t>()>=1&&r["baseInstallsAfterPlay"]==r["baseInstallsAtReady"];};
+      const bool pass=prewarmed["baseInstallsAtReady"].get<uint64_t>()>=1&&prewarmed["baseInstallsAfterPlay"]==prewarmed["baseInstallsAtReady"]&&prewarmed["wholePacketUpdatesAfterPlay"]==prewarmed["wholePacketUpdatesAtReady"]
+        &&constant(rocks)&&bodies["physicsPreparedAtReady"].get<bool>()&&constant(settled);
+      std::cout<<(pass?"PASS":"FAIL")<<" play start base installs\n"<<control.dump()<<'\n'<<prewarmed.dump()<<'\n'<<rocks.dump()<<'\n'<<bodies.dump()<<'\n'<<settled.dump()<<'\n'<<unsettled.dump()<<'\n';
       return pass?0:1;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
   }
@@ -531,6 +544,22 @@ int wmain(int argc, wchar_t **argv) {
               "Repeat and character-follow continue beyond route duration");
     }
     DestroyWindow(window);
+    {
+      // A scene whose rocks gameplay moves (no rigid-body session) decides its resting set behind the barrier: the base installed there is the only one.
+      const auto rocks = play_start_base_installs(true, true, true, false, 2.0);
+      require(rocks["baseInstallsAtReady"].get<uint64_t>() >= 1 && rocks["baseInstallsAfterPlay"] == rocks["baseInstallsAtReady"],
+              "A scene with dynamic rocks installs one resident scene behind the loading barrier and none during the first seconds of play");
+      // A scene with rigid bodies has its physics session created and cooked behind the barrier, not on the first play frame.
+      const auto bodies = play_start_base_installs(true, true, false, true, 0);
+      require(bodies["physicsPreparedAtReady"].get<bool>() && !bodies["physicsPendingAtReady"].get<bool>(),
+              "The rigid-body session is ready before the loading barrier ends");
+      // Settling the bodies behind the barrier is opt-in (it changes what the first moments of play look like); with it on, the resting set is decided before reveal.
+      SetEnvironmentVariableA("STARLIGHT_SETTLE_BEFORE_PLAY", "1");
+      const auto settled = play_start_base_installs(true, true, false, true, 2.5);
+      SetEnvironmentVariableA("STARLIGHT_SETTLE_BEFORE_PLAY", nullptr);
+      require(settled["baseInstallsAtReady"].get<uint64_t>() >= 1 && settled["baseInstallsAfterPlay"] == settled["baseInstallsAtReady"],
+              "With settling behind the barrier switched on, resting rigid bodies cause no second resident scene install during play");
+    }
     {
       const auto prewarmed = play_start_base_installs(true);
       require(prewarmed["baseInstallsAtReady"].get<uint64_t>() >= 1 &&

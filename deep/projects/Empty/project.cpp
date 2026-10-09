@@ -74,7 +74,7 @@ static int WINAPI RunProjectBody(HINSTANCE instance, LPWSTR command, int) {
     const size_t cardItem=ready.require("key card","Empty scene",cardFile.empty()?hostOptions.cardPath:cardFile);
     if(cardError.empty())cardError=keycard::loadKeyCard(cardFile,card);
     if(cardError.empty())ready.markReady(cardItem);else ready.markFailed(cardItem,cardError);
-    for(const std::string& note:card.skipped)ready.warn("key card "+note);
+    keycard::reportSkippedContent(card,ready,cardFile.empty()?hostOptions.cardPath:cardFile);
     auto report=[&]{
         const std::string text=ready.diagnostics();
         logLine("Empty cannot continue:\n"+text);

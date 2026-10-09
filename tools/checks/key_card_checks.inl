@@ -1,4 +1,5 @@
 #include <fstream>
+#include "../../deep/engine/keycard_view.h"
 template<class Require> void key_card_checks(Require require,const fs::path& folder){
     const auto work=folder/"key-card-checks";fs::remove_all(work);fs::create_directories(work);
     Character cube;cube.Shape="cube";
@@ -217,5 +218,17 @@ template<class Require> void model_asset_checks(Require require,const fs::path& 
         (void)import_texture_bytes(png);
         EngineAssets::verify_on_disk(idPng);
         require(damaged,"A damaged stored texture is detected on disk and importing it again repairs it");
+    }
+    {
+        // A card with objects the host cannot draw loads, but reads as degraded with the count, never as fully loaded (audit 04 finding 7).
+        keycard::KeyCard card;
+        host_readiness::Readiness ready;ready.begin();
+        keycard::reportSkippedContent(card,ready,"clean.starscene");
+        require(ready.items().empty()&&ready.warningCount()==0,"A card with nothing skipped adds no readiness item");
+        for(int i=0;i<7;++i)card.skipped.push_back("object o"+std::to_string(i)+" (model or sculpt) is not drawn by this host");
+        keycard::reportSkippedContent(card,ready,"partial.starscene");
+        require(ready.items().size()==1&&ready.items()[0].state==host_readiness::ItemState::Degraded&&ready.items()[0].need==host_readiness::Need::Optional,"Skipped key-card objects become one optional degraded readiness item");
+        require(!ready.hasBlockingItems()&&ready.allItemsReady(),"A card that loads today still loads: the degraded item does not block");
+        require(ready.warningCount()==1&&ready.warnings()[0].find("7 objects")!=std::string::npos&&ready.warnings()[0].find("o4")!=std::string::npos&&ready.warnings()[0].find("o5")==std::string::npos&&ready.warnings()[0].find("2 more")!=std::string::npos,"The warning names the count and the first five objects");
     }
 }

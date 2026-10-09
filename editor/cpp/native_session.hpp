@@ -58,6 +58,8 @@ struct RenderStatus {
     std::array<double,3> motion_sample{};
     int width = 0, tier = 0;
     bool rr = false, playing = false, suspended = false;
+    bool physics_pending = false;  // a loading barrier is preparing the rigid-body session and it has not finished cooking yet
+    bool physics_prepared = false; // the rigid-body session was created and finished preparing behind the loading barrier
     std::string error;
 };
 // A rigid mesh drawn at a pose. The mesh is uploaded to the GPU once per distinct mesh (identified by contentKey when set, otherwise by address;
