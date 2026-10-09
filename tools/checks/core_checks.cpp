@@ -192,7 +192,7 @@ static int checks_main(int argc, char **argv) {
 #endif
         if (groups_filtered()) {
             std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";
-            atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", true}, {"filtered", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
+            atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", false}, {"filtered", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
             return 3;
         }
         {
