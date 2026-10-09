@@ -44,5 +44,33 @@ static json grass_gpu_checks(void* context,const std::vector<unsigned char>& pac
  std::vector<float> other(count*14);require(sl_grass_readback(context,1,other.data(),int(count))==int(count),sl_error());double isolationError=0;double response=1-(1+12*.2)*exp(-12*.2);
  for(size_t i=0;i<count;++i){const float* source=rest.data()+i*14;auto w=worldPoint(source);w[0]+=20;double bend=std::clamp(double(source[1])/.6,0.,1.);bend*=bend;std::array<double,3> expected{response*bend*(.10*sin(.2*1.7+w[0]*.4+w[2]*.25)+.025*sin(.2*4.1+w[2])),0,response*bend*.07*cos(.2*1.3+w[2]*.3)};auto offset=worldOffset(other.data()+i*14,source);for(int j=0;j<3;++j)isolationError=std::max(isolationError,std::abs(offset[j]-expected[j]));}require(isolationError<.00015,"One grass placement leaked contact state into another");
  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());require(sl_grass_contacts(context,nullptr,0),sl_error());sl_environment_reset(context);frame(0);
+ // Shadow reach: held while the blade spring settles after any change in contact count, then relaxed to what the current contacts need, never below it.
+ {
+  auto reachNow=[&]{float r=0;require(sl_grass_reach(context,0,&r),"Grass reach unavailable");return double(r);};
+  sl_environment_reset(context);frame(0);
+  std::vector<float> crowd(30*6);for(int i=0;i<30;++i)std::copy(body.begin(),body.end(),crowd.begin()+i*6);
+  require(sl_grass_contacts(context,crowd.data(),30),sl_error());frame(.01);require(std::abs(reachNow()-24.16)<.01,"Thirty contacts did not widen the grass shadow reach");
+  require(sl_grass_contacts(context,body.data(),1),sl_error());frame(.1);frame(.4);require(reachNow()>24,"Grass shadow reach shrank while the blades were still settling");
+  frame(.9);double relaxed=reachNow();require(relaxed<5&&relaxed>=.96-1e-4,"Grass shadow reach did not relax toward the remaining contact");
+  frame(3);require(std::abs(reachNow()-.96)<.002,"Grass shadow reach dropped below, or stayed above, what one active contact needs");
+  require(sl_grass_contacts(context,nullptr,0),sl_error());frame(3.1);frame(3.4);require(reachNow()>.95,"Grass shadow reach shrank while the blades were still settling after the contact left");
+  frame(4);double tail=reachNow();require(tail>.16&&tail<.2,"Grass shadow reach did not relax after the contact left");
+  frame(6);require(std::abs(reachNow()-.16)<.002,"Grass shadow reach never returned to its base");
+  sl_environment_reset(context);frame(0);
+ }
+ // Grass pools hold a million vertices each: a pool left wholly unused must be freed once its retirement fences complete, and a later reload must work again.
+ {
+  auto poolBytes=[&]{uint64_t s[4]{};require(sl_grass_stats(context,s),"Grass stats unavailable");return s[3];};
+  auto settleBelow=[&](uint64_t limit){for(int i=0;i<120&&poolBytes()>limit;++i)frame(0);return poolBytes();};
+  const size_t placements=(size_t(1)<<20)/count+2;require(placements<4000,"Grass fixture too small to fill a pool");
+  auto bigPacket=packet;uint32_t n=uint32_t(placements);memcpy(bigPacket.data()+4,&n,4);
+  for(size_t i=1;i<placements;++i){size_t at=bigPacket.size();bigPacket.insert(bigPacket.end(),packet.begin()+12,packet.end());float x=float(matrix[12]+3.0*i);memcpy(bigPacket.data()+at+44+48,&x,4);}
+  const uint64_t pool=64ull<<20;
+  require(sl_scene(context,bigPacket.data(),int(bigPacket.size())),sl_error());frame(0);const uint64_t bigBytes=poolBytes();
+  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());const uint64_t smallBytes=settleBelow(bigBytes-pool);require(smallBytes+pool<=bigBytes,"Grass kept the second pool after the scene shrank");
+  require(sl_scene(context,reinterpret_cast<unsigned char*>(empty),sizeof(empty)),sl_error());const uint64_t emptyBytes=settleBelow(smallBytes-pool);require(emptyBytes+pool<=smallBytes,"Grass kept its last pool after every instance was removed");
+  require(sl_scene(context,bigPacket.data(),int(bigPacket.size())),sl_error());frame(0);const uint64_t againBytes=poolBytes();require(againBytes+(1ull<<20)>=bigBytes&&againBytes<=bigBytes+(1ull<<20),"Grass pools were not rebuilt to the same size after a reload");
+  require(sl_scene(context,packet.data(),int(packet.size())),sl_error());require(sl_grass_contacts(context,nullptr,0),sl_error());sl_environment_reset(context);frame(0);require(read()==rest,"Grass geometry changed after the pool reclaim cycle");
+ }
  return {{"success",true},{"vertices",count},{"movingContactAndRecoverySteps",120},{"peakTrajectoryError",peakError},{"peakRootError",peakRoot},{"peakNormalLengthError",peakNormal},{"peakNormalReferenceError",peakNormalReference},{"peakHistoryError",peakHistory},{"renderedMotionPeak",motion[0]},{"movingPixels",motion[2]},{"lateContactOffset",latePeak},{"instanceIsolationError",isolationError},{"resetVerified",true},{"unloadReloadVerified",true},{"pausedClockVerified",true}};
 }

@@ -68,6 +68,7 @@ extern "C" __declspec(dllimport) uint64_t sl_water_scene_bytes(void *);
 extern "C" __declspec(dllimport) int sl_resize(void *,int,int);
 extern "C" __declspec(dllimport) int sl_grass_contacts(void*,const float*,int);
 extern "C" __declspec(dllimport) int sl_grass_readback(void*,int,float*,int);
+extern "C" __declspec(dllimport) int sl_grass_reach(void*,int,float*);
 extern "C" __declspec(dllimport) int sl_grass_stats(void*,uint64_t*);
 extern "C" __declspec(dllimport) int sl_motion_readback(void*,double*);
 
@@ -279,10 +280,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
       if(tier)throw std::runtime_error("Local shadow lifecycle probe requires raster rendering");
       std::array<float,32*12> lamps{};
       for(int i=0;i<32;++i){auto p=lamps.data()+i*12;p[0]=(i%8-3.5f)*2;p[1]=3;p[2]=(i/8-1.5f)*2;p[3]=6;p[5]=-1;p[7]=-2;p[8]=p[9]=p[10]=1;p[11]=-1;}
+      uint64_t held[6]{};
       for(int count:{1,32,31,8,1,0,32,0,1}){
         if(!sl_environment_lights(context,count?lamps.data():nullptr,count)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
         uint64_t state[6]{};sl_local_shadow_stats(context,state);
-        if(state[2]<uint64_t(count)||(!count&&(state[2]!=0||state[1]!=65536))||(count&&state[3]==0))throw std::runtime_error("Changing light counts did not retain and release shadow resources correctly: count="+std::to_string(count)+" capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1])+" draws="+std::to_string(state[3]));
+        if(state[2]<uint64_t(count)||(count&&state[3]==0)||(!count&&(state[2]!=held[2]||state[1]!=held[1]||state[3]!=0||state[2]==0)))throw std::runtime_error("Changing light counts did not retain and release shadow resources correctly: count="+std::to_string(count)+" capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1])+" draws="+std::to_string(state[3]));
+        std::copy(state,state+6,held);
+      }
+      // An empty scene keeps its array through a short gap (a flashing light must not flush the GPU), then frees it.
+      for(int frame=0;frame<300;++frame){
+        if(!sl_environment_lights(context,nullptr,0)||!sl_frame(context,0,13))throw std::runtime_error(sl_error());
+        uint64_t state[6]{};sl_local_shadow_stats(context,state);
+        if(frame<200&&(state[2]!=held[2]||state[1]!=held[1]))throw std::runtime_error("Empty scene released local shadow resources before the delay: frame="+std::to_string(frame));
+        if(frame==299&&(state[2]!=0||state[1]!=65536))throw std::runtime_error("Empty scene never released local shadow resources: capacity="+std::to_string(state[2])+" bytes="+std::to_string(state[1]));
       }
       uint64_t before[6]{},after[6]{};sl_local_shadow_stats(context,before);
       if(sl_environment_lights(context,lamps.data(),33))throw std::runtime_error("Invalid local light count accepted");

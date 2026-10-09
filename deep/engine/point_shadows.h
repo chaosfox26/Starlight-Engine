@@ -6,7 +6,8 @@
 struct PointShadows {
  ComPtr<ID3D12Resource> depth;
  ComPtr<ID3D12DescriptorHeap> dsv;
- UINT resolution=512,capacity=0,descriptorSize=0;UINT64 bytes=0,draws=0,culled=0;
+ static constexpr UINT kReleaseDelayFrames=240;
+ UINT resolution=512,capacity=0,descriptorSize=0,emptyFrames=0;UINT64 bytes=0,draws=0,culled=0;
  bool enabled=true,culling=true,enabledOverride=false,resolutionOverride=false;
  static bool live(const SpotLight& light){return light.pos.w>.06f&&std::max({light.color.x,light.color.y,light.color.z})>0;}
  static UINT count(const std::vector<SpotLight>& lights){UINT result=0;for(const auto& light:lights)if(live(light))++result;return result;}
@@ -35,8 +36,11 @@ struct PointShadows {
   UINT next=0;if(requested){next=1;while(next<requested)next*=2;}
   // Hysteresis avoids reallocating when intermittent discharges add/remove a
   // light. Release substantially oversized maps on smaller/empty scenes.
+  if(next)emptyFrames=0;
   if(depth&&next<=capacity&&next>=capacity/4&&!(next==0&&capacity>0))return;
-  d.flush();depth.Reset();dsv.Reset();capacity=next;draws=culled=0;
+  // An empty scene keeps its array for kReleaseDelayFrames so a light that flashes again does not flush and rebuild it; disabling shadows frees at once.
+  if(depth&&next==0&&capacity>0&&enabled&&++emptyFrames<kReleaseDelayFrames)return;
+  d.flush();depth.Reset();dsv.Reset();capacity=next;draws=culled=0;emptyFrames=0;
   const UINT cubes=std::max(1u,capacity),size=capacity?resolution:1;
   D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=size;desc.Height=size;desc.DepthOrArraySize=UINT16(cubes*6);desc.MipLevels=1;desc.Format=DXGI_FORMAT_R32_TYPELESS;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
   D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_CLEAR_VALUE clear{};clear.Format=DXGI_FORMAT_D32_FLOAT;clear.DepthStencil.Depth=1;
@@ -57,6 +61,7 @@ struct PointShadows {
  void draw(RenderDevice& d,SunShadows& sun,const std::vector<SunShadows::Item>& items,FrameCB& frame,float time){
   draws=culled=0;for(auto& entry:frame.localShadow)entry={0,0,0,0};
   if(!enabled||d.editorRaytracing||items.empty()||capacity==0)return;
+  {bool any=false;for(UINT light=0;light<32&&!any;++light)any=live(frame.spots[light]);if(!any)return;}
   static const XMFLOAT3 directions[6]={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
   static const XMFLOAT3 ups[6]={{0,1,0},{0,1,0},{0,0,-1},{0,0,1},{0,1,0},{0,1,0}};
   d.barrier(depth.Get(),D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_DEPTH_WRITE);d.cmd->SetGraphicsRootSignature(sun.root.Get());d.cmd->SetPipelineState(sun.pipeline.Get());

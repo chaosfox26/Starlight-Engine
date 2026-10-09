@@ -229,7 +229,7 @@ struct Viewport {
     if((kind<6.8f&&p.emissive<=0)||(kind>9.5f&&kind<11.5f)){
      auto low=p.shadowLow,high=p.shadowHigh;
      if(kind>.5f&&kind<1.2f){float h=std::max(0.f,high.y);low.x-=h*h*.155f;high.x+=h*h*.155f;low.z-=h*h*.095f;high.z+=h*h*.095f;}
-     if(GrassDeformation::accepts(kind)){float reach=grass.reach(grassKey,transform);XMFLOAT3 padding;XMStoreFloat3(&padding,XMVectorSet(reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[0]))),reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[1]))),reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[2]))),0));low.x-=padding.x;low.y-=padding.y;low.z-=padding.z;high.x+=padding.x;high.y+=padding.y;high.z+=padding.z;}
+     if(GrassDeformation::accepts(kind)){float reach=grass.reach(grassKey,transform,time);XMFLOAT3 padding;XMStoreFloat3(&padding,XMVectorSet(reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[0]))),reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[1]))),reach/std::max(.001f,XMVectorGetX(XMVector3Length(transform.r[2]))),0));low.x-=padding.x;low.y-=padding.y;low.z-=padding.z;high.x+=padding.x;high.y+=padding.y;high.z+=padding.z;}
      if(!(fragment&&(fragDiag&2)))casters.push_back({rendered,transform,low,high});
     }
    }
@@ -279,6 +279,9 @@ API int sl_grass_stats(void* handle,uint64_t* values){
  values[3]+=g.poolBytes();
  for(const auto& pair:g.topologies)if(auto topology=pair.second.lock())values[3]+=topology->allocationBytes;
  values[3]+=g.bodyAllocationBytes;return 1;
+}
+API int sl_grass_reach(void* handle,int instance,float* reach){
+ if(!handle||instance<0||!reach)return 0;auto& g=static_cast<Viewport*>(handle)->grass;auto it=g.entries.begin();for(int i=0;i<instance&&it!=g.entries.end();++i)++it;if(it==g.entries.end())return 0;*reach=it->second.shadowReach;return 1;
 }
 API int sl_grass_readback(void* handle,int instance,float* output,int capacity){
  try{if(!handle||instance<0||capacity<0)throw std::runtime_error("Invalid grass readback");auto& v=*static_cast<Viewport*>(handle);auto& d=*v.renderer;

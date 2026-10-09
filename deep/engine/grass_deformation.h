@@ -14,11 +14,12 @@ struct GrassDeformation {
  struct Topology {ComPtr<ID3D12Resource> rest,adjacency;UINT vertices=0,triangleBase=0;XMFLOAT3 low{},high{};uint64_t allocationBytes=0;};
  // Deformed vertices and spring state of every instance live in shared pools, so one dispatch can serve all of them.
  struct Pool {ComPtr<ID3D12Resource> vb,state;UINT capacity=0,used=0;std::vector<std::pair<UINT,UINT>> freeRanges;bool readable=false;uint64_t allocationBytes=0;};
- struct Entry {uint64_t meshKey=0;std::shared_ptr<Topology> topology;GpuMesh mesh;Pool* pool=nullptr;UINT offset=0;bool fresh=true,readable=false;float shadowReach=.16f;uint64_t allocationBytes=0;};
+ struct Entry {uint64_t meshKey=0;std::shared_ptr<Topology> topology;GpuMesh mesh;Pool* pool=nullptr;UINT offset=0;bool fresh=true,readable=false;float shadowReach=.16f,reachHold=0,reachTime=0;UINT reachCount=0;bool reachTimed=false;uint64_t allocationBytes=0;};
  struct Constants {XMFLOAT4X4 world,inverse;XMFLOAT4 clock;UINT settings[4]{};};
  struct EntryRecord {XMFLOAT4X4 world,inverse;XMFLOAT4 clock;UINT settings[4];UINT range[4];};
  static_assert(sizeof(Constants)==160 && sizeof(Vertex)==56 && sizeof(Body)==32 && sizeof(EntryRecord)==176);
  static constexpr UINT kMaxEntryRecords=16384;
+ static constexpr float kReachHold=.5f,kReachDecay=6.f;
  std::map<uint64_t,Entry> entries;
  std::map<uint64_t,std::weak_ptr<Topology>> topologies;
  struct Pending {Entry* entry;Constants constants;};
@@ -45,7 +46,9 @@ struct GrassDeformation {
  }
  static void release(Retired& batch){for(auto& range:batch.ranges)give(*range.pool,range.offset,range.count);}
  void commit(RenderDevice& d){if(!staged.items)return;Retired batch=std::move(staged);staged=Retired{};batch.fence=d.fenceVal;retired.push(d,std::move(batch),[](Retired& done){release(done);});}
- void drain(RenderDevice& d,bool all=false){commit(d);retired.drain(d,[](Retired& done){release(done);},all);}
+ // A pool is wholly unused only once every retired range in it has been released, which happens after the fence of the last frame that used it.
+ void reclaim(){std::erase_if(pools,[](const std::unique_ptr<Pool>& pool){return pool->used==0&&pool->freeRanges.empty();});}
+ void drain(RenderDevice& d,bool all=false){commit(d);retired.drain(d,[](Retired& done){release(done);},all);reclaim();}
  std::vector<Body> contacts;
  ContactIndex contactIndex; // the same boxes bucketed by position, so reach() does not test every body for every grass part
  ComPtr<ID3D12RootSignature> root;
@@ -113,7 +116,7 @@ struct GrassDeformation {
   entry.mesh.vbv.BufferLocation=entry.pool->vb->GetGPUVirtualAddress()+UINT64(entry.offset)*sizeof(Vertex);
   if(auto replaced=entries.find(key);replaced!=entries.end()){staged.add(replaced->second);replaced->second=std::move(entry);}else entries[key]=std::move(entry);
  }
- void reset(){hasTime=false;for(auto& pair:entries){pair.second.fresh=true;pair.second.shadowReach=.16f;}}
+ void reset(){hasTime=false;for(auto& pair:entries){pair.second.fresh=true;pair.second.shadowReach=.16f;pair.second.reachHold=0;pair.second.reachCount=0;}}
  void bodies(RenderDevice& d,const std::vector<Body>& next){
   if(!bodyRing||next.size()>bodyCapacity){if(bodyRing){bodyRing->Unmap(0,nullptr);bodyMapped=nullptr;Retired old;old.add(bodyRing,bodyAllocationBytes);old.fence=d.fenceVal;retired.push(d,std::move(old),[](Retired& done){release(done);});}bodyCapacity=UINT(std::max<size_t>(1,next.size()));bodyRing=buffer(d,UINT64(bodyCapacity)*sizeof(Body)*kFrameCount,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_GENERIC_READ);bodyAllocationBytes=allocation(d,bodyRing);D3D12_RANGE none{0,0};d.must(bodyRing->Map(0,&none,reinterpret_cast<void**>(&bodyMapped)),"map grass contacts");}
   contacts=next;
@@ -188,13 +191,18 @@ struct GrassDeformation {
   pending.push_back({&entry,c});pendingEntries.insert(&entry);entry.fresh=false;return entry.mesh;
  }
  void end(RenderDevice& d,float time){flush(d);previousTime=time;hasTime=true;}
- float reach(uint64_t key,const XMMATRIX& world){
+ float reach(uint64_t key,const XMMATRIX& world,float time){
   const auto& mesh=*entries.at(key).topology;XMFLOAT3 low{1e20f,1e20f,1e20f},high{-1e20f,-1e20f,-1e20f};
   for(UINT k=0;k<8;++k){XMFLOAT3 p;XMStoreFloat3(&p,XMVector3TransformCoord(XMVectorSet(k&1?mesh.high.x:mesh.low.x,k&2?mesh.high.y:mesh.low.y,k&4?mesh.high.z:mesh.low.z,1),world));low.x=std::min(low.x,p.x);low.y=std::min(low.y,p.y);low.z=std::min(low.z,p.z);high.x=std::max(high.x,p.x);high.y=std::max(high.y,p.y);high.z=std::max(high.z,p.z);}
   const UINT count=contactIndex.count(low.x,low.y,low.z,high.x,high.y,high.z);
   // Returning the global count would inflate cascades for irrelevant distant
   // bodies. Keep the conservative bound tied to actual possible contacts.
-  auto& entry=entries.at(key);entry.shadowReach=std::max(entry.shadowReach,.16f+.8f*count);return entry.shadowReach;
+  // Each body bends a blade by at most .8 m, and the blade spring (omega 12) settles to under 2 percent within kReachHold seconds, so after every change in contact count the box keeps its reach for that long and then relaxes toward what the current contacts need.
+  auto& entry=entries.at(key);const float needed=.16f+.8f*count,dt=entry.reachTimed?std::max(0.f,time-entry.reachTime):0.f;entry.reachTime=time;entry.reachTimed=true;
+  if(count!=entry.reachCount){entry.reachCount=count;entry.reachHold=0;}else entry.reachHold+=dt;
+  if(needed>=entry.shadowReach)entry.shadowReach=needed;
+  else if(entry.reachHold>kReachHold)entry.shadowReach=std::max(needed,.16f+(entry.shadowReach-.16f)*expf(-kReachDecay*dt));
+  return entry.shadowReach;
  }
  void retain(RenderDevice& d,const std::set<uint64_t>& active){for(auto it=entries.begin();it!=entries.end();){if(!active.count(it->first)){staged.add(it->second);it=entries.erase(it);}else++it;}commit(d);for(auto it=topologies.begin();it!=topologies.end();)if(it->second.expired())it=topologies.erase(it);else++it;}
 };
