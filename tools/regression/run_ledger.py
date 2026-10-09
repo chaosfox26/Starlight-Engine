@@ -76,7 +76,7 @@ def child_environment(extra):
 
 def apply_result(suite, data):
     suite['completed'] = True
-    suite['success'] = bool(data.get('success')) and not data.get('filtered')
+    suite['success'] = data.get('success') is True and not data.get('filtered')
     suite['error'] = data.get('error') or ('filtered run (STARLIGHT_CHECK_GROUPS): not a full pass' if data.get('filtered') else None)
     suite['checks'] = data.get('checks', [])
     suite['schema'] = data.get('schema')
@@ -240,6 +240,11 @@ def self_test():
     got, _ = evaluate_entry(entry, filtered)
     ok = filtered['success'] is False and 'not a full pass' in filtered['error'] and got == 'NOT-CHECKED'
     print('  %s a filtered result.json is never a success: %s' % ('ok ' if ok else 'BAD', got))
+    bad += not ok
+    texted = {'started': True, 'exitCode': 0}
+    apply_result(texted, {'success': 'false', 'checks': ['a']})
+    ok = texted['success'] is False
+    print('  %s a result.json that says "false" as text is not a success' % ('ok ' if ok else 'BAD'))
     bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
