@@ -77,4 +77,11 @@ static void project_module_checks(const auto& require,const std::filesystem::pat
         pruneSmooth(map,10);
         require(map.size()==1,"PROJ-9: The age is measured across the frame counter wrapping around");
     }
+    {   // RND-1: a snapshot far enough from the tracked state to overflow float snaps to it, and the entity never turns NaN
+        SmoothXf s;
+        s.follow(-3e38f,-3e38f,0,-3e38f,1.f);s.follow(3e38f,3e38f,0,3e38f,1.f);
+        require(std::isfinite(s.x)&&std::isfinite(s.z)&&std::isfinite(s.yaw)&&s.x==3e38f&&s.z==3e38f,"RND-1: A snapshot far from the tracked state snaps to it instead of overflowing");
+        s.follow(3e38f,3e38f,0,3e38f,1.f);
+        require(std::isfinite(s.x)&&std::isfinite(s.z)&&std::isfinite(s.yaw)&&s.x==3e38f,"RND-1: The tracked state stays finite after a far snapshot");
+    }
 }
