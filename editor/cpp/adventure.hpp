@@ -712,7 +712,7 @@ class AdventurePlayer {
                 else if(!victim)victim=ActorTarget{"",origin};
             }
             if(!victim){actor.steering.stop();continue;}auto target=victim->feet;target.y=c.Y;
-            if(actor.health<=0 || (actor.control.blocks_mobility() && !fleeing && !displaced && !launched) || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered) || (target-origin).length()>20){actor.steering.stop();continue;}
+            if(actor.health<=0 || (actor.control.blocks_mobility() && !fleeing && !displaced && !launched) || (actor.boss && actor.bar.phase==BossBreakBar::Phase::Staggered) || (!followingRoute && (target-origin).length()>20)){actor.steering.stop();continue;}
             auto bounds=object_bounds(c);double radius=std::max(bounds.high.x-bounds.low.x,bounds.high.z-bounds.low.z)*.5;
             double spacing=std::max(2.,radius+settings_.PlayerRadius+.2);
             auto routeClear=[&](Vec3 from,Vec3 to){

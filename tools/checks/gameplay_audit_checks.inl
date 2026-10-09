@@ -64,4 +64,12 @@ static void gameplay_audit_checks(const auto& require){
         AdventurePlayer p;p.start(level);
         require(!p.unobstructed({0,1,0},{0,1,-6},"","far"),"GAME-4: Line of sight is still blocked by a solid cube");
     }
+    {
+        // GAME-5: a routed actor that fell far behind its route point keeps walking back to it.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=200;
+        Character a;a.Shape="cube";a.Id="lagging-npc";a.CombatHealth=100;a.Speed=30;a.Route={{100,0}};level.Characters={a};
+        AdventurePlayer p;p.start(level);
+        for(int i=0;i<120*15;++i)p.move(0,0,1./120.);
+        require(p.scene().Characters[0].X>90,"GAME-5: A fast routed actor is not stranded once it lags more than twenty metres behind its route point");
+    }
 }
