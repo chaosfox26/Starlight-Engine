@@ -411,6 +411,7 @@ static void BuildHeart(Mesh& m, int seg = 64) {
 
 // ---- per-entity smoothed transform (interpolation between snapshots) ---------------------------
 #include "smooth_xf.h"
+#include "report_text.h"
 
 #include "persistent_workers.h"
 #include "parallel_metrics.h"
@@ -1968,7 +1969,7 @@ struct RenderDevice {
         double poseAvg = benchPoseMs.empty() ? 0 : poSum / benchPoseMs.size();
         std::string ver = ups->versionString(), fg = ups->fgStatus(), extra = ups->extraStatus();
         uint64_t presentedN = ups->hasPresentedCounter() ? benchPresented : (uint64_t)benchFrames.size();
-        auto esc = [](std::string s) { std::string o; for (char c : s) { if (c == '"' || c == '\\') o.push_back('\\'); o.push_back(c); } return o; };
+        auto esc = [](const std::string& s) { return report_text::escape(s); };
         // Report block: what was actually loaded + drawn, and how the pacing behaved
         std::string modelsJson = "[";
         size_t joints = 0, clips = 0;
@@ -1976,15 +1977,12 @@ struct RenderDevice {
             const CharModel& cm = models[i];
             joints += cm.data.joints.size(); clips += cm.data.clips.size();
             int texOk = 0; for (const auto& v : cm.variants) if (v.ok) ++texOk;
-            char mb[512];
-            snprintf(mb, sizeof(mb), "%s{\"name\":\"%s\",\"verts\":%zu,\"tris\":%zu,\"submeshes\":%zu,\"joints\":%zu,\"clips\":%zu,\"atlasUV\":%s,\"variants\":%d,\"scale\":%.3f}",
+            modelsJson += report_text::format("%s{\"name\":\"%s\",\"verts\":%zu,\"tris\":%zu,\"submeshes\":%zu,\"joints\":%zu,\"clips\":%zu,\"atlasUV\":%s,\"variants\":%d,\"scale\":%.3f}",
                 i ? "," : "", esc(cm.data.name).c_str(), cm.data.verts.size(), cm.data.indices.size() / 3, cm.data.subs.size(), cm.data.joints.size(), cm.data.clips.size(),
                 cm.data.atlasUV ? "true" : "false", texOk, cm.scale);
-            modelsJson += mb;
         }
         modelsJson += "]";
-        char m6[2048];
-        snprintf(m6, sizeof(m6),
+        const std::string m6 = report_text::format(
             "\"inflight\":%d,\"stalls\":%u,\"stallMs\":%.2f,\"models\":%s,\"joints\":%zu,\"clips\":%zu,\"textures\":%d,\"textureMB\":%.1f,"
             "\"texturesFromCache\":%d,\"texRes\":%u,\"modelLoadMs\":%.1f,\"textureLoadMs\":%.1f,\"skinned\":%u,\"charsWhy\":\"%s\","
             "\"fur\":%s,\"furShells\":%u,\"furShellsNear\":%d,\"furShellsMid\":%d,\"instMax\":%u,\"instDropped\":%llu,\"instCap\":%u,\"skinCap\":%u,\"crowdParsed\":%d,\"draws\":%u,\"instEntries\":%u,\"culled\":%u,\"lod\":%u,\"instancingOn\":%s",
@@ -1992,8 +1990,7 @@ struct RenderDevice {
             texturesFromCache, texRes, modelLoadMs, textureLoadMs, skinnedDrawnLast, esc(charsWhy).c_str(),
             noFur ? "false" : "true", furShellsLast, STARLIGHT_FUR_SHELLSNEAR, STARLIGHT_FUR_SHELLSMID,
             benchInstMax, (unsigned long long)instDropped, kMaxInstances, kMaxSkinned, lastCrowd, drawCallLast, instEntriesLast, culledLast, lodDrawnLast, instancingOn ? "true" : "false");
-        char buf[4608];
-        snprintf(buf, sizeof(buf),
+        const std::string buf = report_text::format(
             "{\"instanceMemory\":\"%s\",\"upscaler\":\"%s\",\"requested\":\"%s\",\"reason\":\"%s\",\"version\":\"%s\",\"extra\":\"%s\","
             "\"mode\":\"%s\",\"renderW\":%u,\"renderH\":%u,\"outW\":%u,\"outH\":%u,"
             "\"fgRequested\":%s,\"fgEnabled\":%s,\"fgStatus\":\"%s\",\"vsync\":%s,"
@@ -2010,10 +2007,10 @@ struct RenderDevice {
             benchFrames.size(), (unsigned long long)presentedN, sum > 0 ? presentedN / sum : 0.0, sum, fps, avgMs, p99Ms,
             gpuAvg, gpuMin, gpuP99, gpuFps,
             cpuRecAvg, cpuRecP99, poseAvg, profileSamples ? profileGatherSum / profileSamples : 0.0, profileSamples ? profileEmitSum / profileSamples : 0.0, profileSamples ? profileMergeSum / profileSamples : 0.0,
-            m6,
+            m6.c_str(),
             esc(adapterName).c_str(), adapterVendor, hasServer ? "true" : "false");
         FILE* f = nullptr;
-        if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(buf, f); fclose(f); logLine("report written: " + reportPath); }
+        if (fopen_s(&f, reportPath.c_str(), "w") == 0 && f) { fputs(buf.c_str(), f); fclose(f); logLine("report written: " + reportPath); }
         else logLine("report: cannot write " + reportPath);
     }
     std::function<void()> editorDraw;

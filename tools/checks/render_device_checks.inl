@@ -1,6 +1,7 @@
 // Pure parts of the render device (audit RND): the snapshot smoothing, which must survive bad input.
 #include <limits>
 #include "../../deep/engine/smooth_xf.h"
+#include "../../deep/engine/report_text.h"
 static void render_device_checks(const auto& require){
     const float nan=std::numeric_limits<float>::quiet_NaN(),inf=std::numeric_limits<float>::infinity();
     {
@@ -28,5 +29,14 @@ static void render_device_checks(const auto& require){
         require(std::fabs(s.yaw-(6.0f+0.5f*(0.1f+6.2831853f-6.0f)))<1e-4f,"RND-1: Yaw still turns the short way across the wrap");
         SmoothXf first;first.follow(nan,0,0,0,1.f);
         require(!first.init,"RND-1: A non-finite first sample does not initialise the entity");
+    }
+    {
+        std::string models="[";
+        for(int i=0;i<40;++i)models+=report_text::format("%s{\"name\":\"%s\",\"verts\":%zu}",i?",":"",std::string(100,'m').c_str(),(size_t)i);
+        models+="]";
+        const std::string report=report_text::format("{\"models\":%s,\"tail\":%d}\n",models.c_str(),7);
+        require(report.size()>4000&&report.find("\"tail\":7}")!=std::string::npos&&report.find("\"verts\":39")!=std::string::npos,"RND-6: A report longer than any fixed buffer is written whole");
+        require(report_text::format("%s","").empty()&&report_text::format("plain")=="plain","RND-6: Empty and plain formats work");
+        require(report_text::escape(std::string("a\nb\tc\"d\\e\x01"))=="a\\u000ab\\u0009c\\\"d\\\\e\\u0001","RND-6: Control characters, quotes and backslashes are escaped");
     }
 }
