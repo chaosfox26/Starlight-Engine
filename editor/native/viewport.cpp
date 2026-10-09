@@ -220,7 +220,8 @@ struct Viewport {
    if(gpuGrassPart&&!p.vertexIdentities.empty()){
     // Rest positions never change, so the per-frame history rewrite (hundreds of thousands of hash inserts) is done once per part.
     auto& recorded=staticRecorded[p.vertexIdentities.front()];
-    uint64_t fingerprint=p.source->verts.size();{const size_t n=p.source->verts.size();for(size_t k:{size_t(0),n/3,n/2,n-1}){const auto& q=p.source->verts[k];uint32_t bits[3];memcpy(bits,&q.px,4);memcpy(bits+1,&q.py,4);memcpy(bits+2,&q.pz,4);for(uint32_t b:bits)fingerprint=(fingerprint^b)*1099511628211ull;}}
+    // The content key is mixed in, so a Mesh address reused by other content is recorded again.
+    uint64_t fingerprint=(p.source->verts.size()^p.meshKey)*1099511628211ull;{const size_t n=p.source->verts.size();for(size_t k:{size_t(0),n/3,n/2,n-1}){const auto& q=p.source->verts[k];uint32_t bits[3];memcpy(bits,&q.px,4);memcpy(bits+1,&q.py,4);memcpy(bits+2,&q.pz,4);for(uint32_t b:bits)fingerprint=(fingerprint^b)*1099511628211ull;}}
     if(recorded.first!=p.source.get()||recorded.second!=fingerprint){recorded={p.source.get(),fingerprint};
      for(size_t i=0;i<p.vertexIdentities.size();++i)if(auto id=p.vertexIdentities[i]){const auto& point=p.source->verts[i];staticVertices.set(id,{point.px,point.py,point.pz});}}
    }
@@ -340,7 +341,7 @@ API int sl_fog_obstacles(void* handle,const float* data,int count){
  v.externalFogObstacles=true;v.atmosphere.obstacleLow=std::move(low);v.atmosphere.obstacleHigh=std::move(high);v.atmosphere.obstacleVelocity=std::move(velocity);return 1;
  }catch(const std::exception& e){failure=e.what();return 0;}
 }
-API void sl_environment_reset(void* handle){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();}
+API void sl_environment_reset(void* handle){if(!handle)return;auto& v=*static_cast<Viewport*>(handle);v.grass.reset();v.weather={};v.weatherLow={};v.weatherHigh={};v.atmosphere.reset();v.rt.previousWorldByKey.clear();v.hasEffectTime=false;v.renderer->prevModelByKey.clear();v.renderer->curModelByKey.clear();v.renderer->resetHistory=true;v.previousVertices.clear();v.currentVertices.clear();v.staticVertices.clear();v.staticRecorded.clear();}
 API int sl_surface_weather(void* handle,float moisture,float rain,float windX,float windZ,const float* boxes,int count){
  try{
   if(!handle||!std::isfinite(moisture)||moisture<0||moisture>1||!std::isfinite(rain)||rain<0||rain>1||!std::isfinite(windX)||!std::isfinite(windZ)||std::abs(windX)>20||std::abs(windZ)>20||count<0||count>64||(count&&!boxes))throw std::runtime_error("Invalid surface weather");
