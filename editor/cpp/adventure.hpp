@@ -197,10 +197,10 @@ class AdventurePlayer {
     // Meshes of finished break-ahead results that have not been used yet, so a renderer can have them on the GPU
     // before the object is hit. Returns false when nothing changed since the previous call.
     bool take_prefractured_parts(std::vector<std::shared_ptr<const MeshPart>>& out){
-        const uint64_t version=preVersion_.load();
+        std::lock_guard lock(preMutex_);
+        const uint64_t version=preVersion_.load(); // bumped under this mutex; read under it too, so the entries collected below are exactly those of this version
         if(version==preTaken_)return false;
         preTaken_=version;out.clear();
-        std::lock_guard lock(preMutex_);
         for(const auto& [id,entry]:preFractures_)
             if(entry->state==2&&entry->result)for(const auto& piece:entry->result->pieces)if(piece.part)out.push_back(piece.part);
         return true;
