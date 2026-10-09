@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -17,12 +18,13 @@ namespace starlight_diag {
 inline void starlight_diag_anchor_dummy(){}
 struct Event {double ms;uint32_t thread;char tag[20];double a,b,c;std::atomic<uint32_t> ready;};
 struct EventLog {
-    static constexpr size_t capacity=1u<<21;
+    size_t capacity=1u<<21;   // events kept per module; STARLIGHT_EVENT_LOG_CAPACITY raises it (events past the capacity are dropped, which cuts a long run short)
     Event* events=nullptr;std::atomic<uint32_t> count{0};std::atomic<bool> enabled{false};char prefix[400]{};double frequency=0;
     EventLog(){
         const DWORD length=GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix));
         if(!length||length>=sizeof(prefix)){prefix[0]=0;return;}
         LARGE_INTEGER f;QueryPerformanceFrequency(&f);frequency=double(f.QuadPart);
+        {char text[24]{};if(GetEnvironmentVariableA("STARLIGHT_EVENT_LOG_CAPACITY",text,sizeof(text))){const unsigned long long v=std::strtoull(text,nullptr,10);if(v>=(1u<<21)&&v<=(1ull<<26))capacity=size_t(v);}}
         events=static_cast<Event*>(VirtualAlloc(nullptr,sizeof(Event)*capacity,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         enabled=events!=nullptr;
     }

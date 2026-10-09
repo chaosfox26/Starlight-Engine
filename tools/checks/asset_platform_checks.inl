@@ -91,6 +91,17 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         require(lines==2,"A-10-5: Both events are written out when the log is closed");
     }
     {
+        // A long stress run filled the fixed 2,097,152-event buffer and everything after that was dropped, so a "whole run" analysis covered only the first part of it.
+        // STARLIGHT_EVENT_LOG_CAPACITY raises the capacity; a value outside the accepted range keeps the default.
+        _putenv_s("STARLIGHT_EVENT_LOG",(dir/"events-capacity").string().c_str());
+        const auto capacityWith=[&](const char* value){_putenv_s("STARLIGHT_EVENT_LOG_CAPACITY",value);starlight_diag::EventLog log;return log.capacity;};
+        const size_t byDefault=capacityWith(""),raised=capacityWith("4194304"),tooSmall=capacityWith("1000"),tooLarge=capacityWith("99999999999"),notANumber=capacityWith("many");
+        _putenv_s("STARLIGHT_EVENT_LOG_CAPACITY","");_putenv_s("STARLIGHT_EVENT_LOG","");
+        require(byDefault==(size_t(1)<<21),"Event log: the default capacity is unchanged");
+        require(raised==4194304,"Event log: STARLIGHT_EVENT_LOG_CAPACITY raises the capacity");
+        require(tooSmall==byDefault&&tooLarge==byDefault&&notANumber==byDefault,"Event log: a capacity below the default, above the limit or not a number keeps the default");
+    }
+    {
         // A-10-1: one DLL load kept the unrestricted search order after the vendor-DLL hardening; no load in the engine sources may use it.
         const fs::path engine="deep/engine";std::string offender;
         require(fs::is_directory(engine),"A-10-1: The check runs from the repository root so it can read the engine sources");
