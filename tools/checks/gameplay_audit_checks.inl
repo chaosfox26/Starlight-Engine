@@ -175,4 +175,23 @@ static void gameplay_audit_checks(const auto& require){
         bool threw=false;try{p.start(bad);}catch(...){threw=true;}
         require(threw&&p.combat_actors().size()==1&&p.seconds()>0&&p.scene().Characters.size()==1,"GAME-9: A scene that fails validation does not reset the running session");
     }
+    {
+        // SLOPE-1: the heightmap step limit is applied to the whole frame's move, so the slope an actor can climb depends on the frame rate.
+        // STARLIGHT_ACTOR_STEP_PER_SUBSTEP=1 applies the same 5 cm limit to each sub-step; unset, it is exactly as before.
+        auto distance_walked=[](const char* setting,double frame){
+            _putenv_s("STARLIGHT_ACTOR_STEP_PER_SUBSTEP",setting);
+            SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=8;level.Terrain.emplace();
+            for(int z=0;z<TerrainData::N;z++)for(int x=0;x<TerrainData::N;x++)level.Terrain->Heights[z*TerrainData::N+x]=2+(x*TerrainData::Step-TerrainData::Half)*.8;
+            Character walker;walker.Shape="cube";walker.Id="slope-walker";walker.X=-6;walker.Y=2-6*.8;walker.CombatHealth=100;walker.Speed=2.5;walker.Route={{10,0}};level.Characters={walker};
+            AdventurePlayer p;p.start(level);
+            const double start=p.scene().Characters[0].X;
+            for(int i=0;i<int(std::lround(2/frame));++i)p.move(0,0,frame);
+            return p.scene().Characters[0].X-start;
+        };
+        const double fastFrames=distance_walked("1",1./120),slowFrames=distance_walked("1",1./30);
+        require(fastFrames>3&&std::abs(slowFrames-fastFrames)<.15,"SLOPE-1: With the per-substep limit an actor walks the same distance up a 39 degree slope at 30 and 120 frames a second");
+        const double defaultFast=distance_walked("",1./120),defaultSlow=distance_walked("",1./30);
+        require(defaultSlow<defaultFast-1,"SLOPE-1: Without the switch the frame-wide limit keeps its previous, frame-rate dependent result");
+        _putenv_s("STARLIGHT_ACTOR_STEP_PER_SUBSTEP","");
+    }
 }
