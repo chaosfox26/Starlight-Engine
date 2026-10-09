@@ -1448,6 +1448,7 @@ class AdventurePlayer {
             auto bounds=object_bounds(object);
             interactionBounds_.emplace(object.Id,bounds);
             if(object.Shape && (*object.Shape=="light" || *object.Shape=="fire" || *object.Shape=="craxis-smoke"))continue;
+            if(repair_solids()&&!blocks_movement(object))continue; // grass, lava, lightning and light shards never block the player controller either
             if(object.GameplayRole!="key" && object.GameplayRole!="exit")solids_.push_back({object.Id,bounds});
         }
         solidIndex_.begin_bulk();

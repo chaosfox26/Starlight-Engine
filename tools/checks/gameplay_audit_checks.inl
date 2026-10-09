@@ -82,4 +82,17 @@ static void gameplay_audit_checks(const auto& require){
         const auto& c=p.scene().Characters[0];
         require(c.X<-3.5&&std::abs(c.Y-level.Terrain->height_at(c.X,c.Z))<.03,"GAME-6: An actor blocked by a wall on a slope does not climb off the terrain");
     }
+    {
+        // GAME-7: effect shapes do not block the player, so they cannot make the start position invalid.
+        for(const char* shape:{"grass","lava","chaos-lightning","light-shard"}){
+            SceneData level;level.Game.emplace();
+            Character c;c.Shape=shape;c.Width=c.Height=c.Depth=4;c.Z=6;level.Characters={c};
+            bool inside=false;for(const auto& f:adventure_readiness(level))inside=inside||f.find("starts inside a solid")!=std::string::npos;
+            require(!inside,(std::string("GAME-7: Spawning inside a ")+shape+" object is not reported as standing in a solid").c_str());
+        }
+        SceneData level;level.Game.emplace();
+        Character c;c.Shape="cube";c.Width=c.Height=c.Depth=4;c.Z=6;level.Characters={c};
+        bool inside=false;for(const auto& f:adventure_readiness(level))inside=inside||f.find("starts inside a solid")!=std::string::npos;
+        require(inside,"GAME-7: Spawning inside a solid cube is still reported");
+    }
 }
