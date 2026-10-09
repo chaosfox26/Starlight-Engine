@@ -6,17 +6,21 @@ inline void assign_object_behavior(SceneData& scene,const std::string& id,const 
     if(role!="none" && role!="key" && role!="door" && role!="breakable")throw std::runtime_error("Unsupported object behavior");
     auto it=std::find_if(scene.Characters.begin(),scene.Characters.end(),[&](const auto& c){return c.Id==id;});
     if(it==scene.Characters.end())throw std::runtime_error("The selected object no longer exists");
-    for(auto& rule:scene.Rules)if(rule.Subject==id){
+    const bool wasKey=it->GameplayRole=="key";
+    const std::string key=role=="key"?(wasKey && !it->GameplayKey.empty()?it->GameplayKey:it->Id):std::string{};
+    const std::string ownRule="object-rule-"+id+"-";
+    for(auto& rule:scene.Rules)if(rule.Subject==id || rule.Id.starts_with(ownRule)){
         if(rule.Event=="stand-on-object" && role=="key")throw std::runtime_error("Remove the stand-on objective before making this object collectible");
         if(rule.Id.starts_with("object-rule-")){
             if(role=="none")throw std::runtime_error("Remove this object's quest objective before clearing its behavior");
             if(rule.Event!="stand-on-object"){
                 rule.Event=role=="door"?"object-opened":role=="breakable"?"object-broken":"item-collected";
+                rule.Subject=role=="key"?key:id;
                 rule.Name=(role=="door"?"Open ":role=="breakable"?"Break ":"Collect ")+it->Name;
             }
         }
     }
-    it->GameplayRole=role;it->GameplayKey=role=="key"?it->Id:std::string{};
+    it->GameplayRole=role;it->GameplayKey=key;
     if(role=="breakable")it->Breakable=true;
     if(!scene.Game)scene.Game.emplace();
     scene.validate();
@@ -27,10 +31,13 @@ inline void add_object_quest(SceneData& scene,const std::string& id,bool stand=f
     if(stand && (object->GameplayRole=="key" || object->GameplayRole=="exit" || object->Dynamic))throw std::runtime_error("Choose a solid static block to stand on");
     if(!stand && object->GameplayRole!="door" && object->GameplayRole!="key" && object->GameplayRole!="breakable")throw std::runtime_error("Choose Open, Breakable or Collect first");
     const std::string event=stand?"stand-on-object":object->GameplayRole=="door"?"object-opened":object->GameplayRole=="breakable"?"object-broken":"item-collected";
-    for(const auto& rule:scene.Rules)if(rule.Event==event && rule.Subject==id)throw std::runtime_error("This object already has that objective");
-    GameplayRule rule;rule.Id="object-rule-"+id+"-"+event;rule.Name=(stand?"Stand on ":object->GameplayRole=="door"?"Open ":object->GameplayRole=="breakable"?"Break ":"Collect ")+object->Name;
+    if(event=="item-collected" && object->GameplayKey.empty())throw std::runtime_error("Give a collectible key a key name");
+    const std::string subject=event=="item-collected"?object->GameplayKey:id;
+    const std::string ruleId="object-rule-"+id+"-"+event;
+    for(const auto& rule:scene.Rules)if(rule.Id==ruleId || (rule.Event==event && rule.Subject==subject && event!="item-collected"))throw std::runtime_error("This object already has that objective");
+    GameplayRule rule;rule.Id=ruleId;rule.Name=(stand?"Stand on ":object->GameplayRole=="door"?"Open ":object->GameplayRole=="breakable"?"Break ":"Collect ")+object->Name;
     rule.Description=stand?"Reach the top of this object and stand on it.":"In Play, look at this object within reach and press F (E also works).";
-    rule.Event=event;rule.Subject=id;rule.Actions={{"complete-objective",rule.Id}};
+    rule.Event=event;rule.Subject=subject;rule.Actions={{"complete-objective",rule.Id}};
     auto quest=std::find_if(scene.Quests.begin(),scene.Quests.end(),[](const auto& q){return q.Id=="object-interactions";});
     if(quest==scene.Quests.end()){QuestDefinition q;q.Id="object-interactions";q.Title="Object interactions";q.Description="Try the behaviors assigned to your objects.";scene.Quests.push_back(q);quest=std::prev(scene.Quests.end());}
     if(quest->RuleIds.empty() || (!quest->StepSizes.empty() && quest->StepSizes.back()==5))quest->StepSizes.push_back(1);
