@@ -191,6 +191,8 @@ static int checks_main(int argc, char **argv) {
         if (groups_filtered()) RUN_GROUP(character_controller_checks, character_controller_checks(require,folder)); // a full pass runs it later, in its usual place
 #endif
         if (groups_filtered()) {
+            const std::string requested = std::getenv("STARLIGHT_CHECK_GROUPS");
+            if (requested == "list") return 0; // only the names were printed: no result file, so nothing claims a pass
             std::cout << "STARLIGHT_CHECK_GROUPS is set: only the listed groups ran (" << checks.size() << " checks). This is a development run, not a full pass, and exits 3 so it cannot be mistaken for one.\n";
             atomic_write(folder / "result.json", json{{"schema", "starlight-check-result-2"}, {"success", true}, {"filtered", true}, {"total", checks.size()}, {"argv0", argv[0]}, {"checks", checks}}.dump(2));
             return 3;
