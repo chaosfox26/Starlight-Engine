@@ -135,6 +135,8 @@ static int checks_main(int argc, char **argv) {
         RUN_GROUP(viewport_resident_mesh_checks, viewport_resident_mesh_checks(require));
         RUN_GROUP(viewport_log_path_checks, viewport_log_path_checks(require,folder));
         RUN_GROUP(viewport_null_argument_checks, viewport_null_argument_checks(require));
+        RUN_GROUP(viewport_telegraph_order_checks, viewport_telegraph_order_checks(require));
+        RUN_GROUP(viewport_grass_removal_checks, viewport_grass_removal_checks(require));
         RUN_GROUP(scene_preparation_checks, scene_preparation_checks(require));
         RUN_GROUP(scene_validation_checks, scene_validation_checks(require));
         RUN_GROUP(file_io_checks, file_io_checks(require,folder));
