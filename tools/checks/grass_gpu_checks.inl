@@ -1,7 +1,7 @@
 // Validate actual GPU readback, including the damped trajectory, rather than
 // accepting two different screenshots as proof of correct interaction.
 static json grass_gpu_checks(void* context,const std::vector<unsigned char>& packet){
- auto require=[](bool condition,const char* why){if(!condition)throw std::runtime_error(why);};
+ auto require=[](bool condition,const char* why){if(!condition)throw ValidationFailure(why);};
  auto frame=[&](double time){require(sl_effect_clock(context,time)&&sl_frame(context,time,13),sl_error());};
  auto read=[&]{int count=sl_grass_readback(context,0,nullptr,0);require(count>0,"No resident grass instance");std::vector<float> values(size_t(count)*14);require(sl_grass_readback(context,0,values.data(),count)==count,sl_error());return values;};
  std::array<double,16> matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};wchar_t setting[512]{};
