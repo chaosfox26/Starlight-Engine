@@ -78,6 +78,9 @@ def apply_result(suite, data):
     suite['completed'] = True
     suite['success'] = data.get('success') is True and not data.get('filtered')
     suite['error'] = data.get('error') or ('filtered run (STARLIGHT_CHECK_GROUPS): not a full pass' if data.get('filtered') else None)
+    if suite['success'] and suite.get('exitCode') != 0:
+        suite['success'] = False
+        suite['error'] = 'the suite wrote success but exited with code %s' % suite.get('exitCode')
     suite['checks'] = data.get('checks', [])
     suite['schema'] = data.get('schema')
 
@@ -245,6 +248,11 @@ def self_test():
     apply_result(texted, {'success': 'false', 'checks': ['a']})
     ok = texted['success'] is False
     print('  %s a result.json that says "false" as text is not a success' % ('ok ' if ok else 'BAD'))
+    bad += not ok
+    crashed_after = {'started': True, 'exitCode': 3}
+    apply_result(crashed_after, {'success': True, 'checks': ['a']})
+    ok = crashed_after['success'] is False and 'exited with code 3' in crashed_after['error']
+    print('  %s a suite that wrote success and then exited non-zero is not a success' % ('ok ' if ok else 'BAD'))
     bad += not ok
     os.environ['STARLIGHT_CHECK_GROUPS'] = 'x'
     env = child_environment({'KEEP_ME': '1', 'STARLIGHT_CHECK_GROUPS': 'y'})
