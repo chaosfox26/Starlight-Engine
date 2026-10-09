@@ -137,6 +137,25 @@ void WriteAtlas(SkinnedModel& m, ByteView atlas) {
     m.atlasUV = true;
 }
 
+// cgltf's tokenizer takes time quadratic in the nesting depth of the JSON, so a few hundred kilobytes of brackets would stall the load for minutes. Real glTF nests a dozen levels at most.
+// Brackets are counted everywhere, string literals included: a damaged quote can desynchronise a scanner that tracks strings while the tokenizer still walks the nesting. Only a string holding hundreds of unmatched brackets is refused by mistake.
+constexpr size_t kMaxJsonDepth = 256;
+bool JsonNestsTooDeep(ByteView glb) {
+    size_t begin = 0, end = glb.size;
+    if (glb.size >= 20 && std::memcmp(glb.data, "glTF", 4) == 0) {
+        uint32_t length;
+        std::memcpy(&length, glb.data + 12, sizeof(length));
+        begin = 20;
+        end = length > glb.size - begin ? glb.size : begin + length;
+    }
+    size_t depth = 0;
+    for (size_t i = begin; i < end; ++i) {
+        const uint8_t c = glb.data[i];
+        if (c == '[' || c == '{') { if (++depth > kMaxJsonDepth) return true; }
+        else if ((c == ']' || c == '}') && depth) --depth;
+    }
+    return false;
+}
 LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::string& label, SkinnedModel& out) {
     out = SkinnedModel();
     out.source = label;
@@ -148,6 +167,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
     if (glb.size == 0) return fail(LoadCode::Truncated, "GLB is empty");
     if (!glb.data) return fail(LoadCode::InvalidArgument, "GLB pointer is null");
 
+    if (JsonNestsTooDeep(glb)) return fail(LoadCode::Malformed, "the JSON nests deeper than " + std::to_string(kMaxJsonDepth) + " levels");
     cgltf_options opt{};
     opt.file.read = &RefuseExternalRead;
     opt.file.release = &IgnoreExternalRelease;

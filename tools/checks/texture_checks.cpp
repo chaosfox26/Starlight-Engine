@@ -968,6 +968,20 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             require(e.code == LoadCode::Malformed, "R5: keyframe times that are not finite and strictly increasing are Malformed"); }
         GlbSpec matrixSpec; matrixSpec.matrixJoint = true;
         require(model::loadSkinnedFromMemory(ByteView(makeGlb(matrixSpec)), nullptr, "matrix.glb", scratch).ok() && std::fabs(scratch.joints[1].t.y - 1.f) < 1e-5f && std::fabs(scratch.joints[1].s.x - 1.f) < 1e-5f, "R4: a joint given as a matrix keeps its translation");
+        {   // GLB fuzz finding: bracket nesting made cgltf's tokenizer quadratic, so a 400 KB file stalled the load for minutes
+            auto nested = [&](size_t depth) { glbfuzz::Parts parts; glbfuzz::split(glb, parts); parts.json.insert(1, "\"extras\":" + std::string(depth, '[') + std::string(depth, ']') + ","); return glbfuzz::pack(std::move(parts)); };
+            require(model::loadSkinnedFromMemory(ByteView(nested(200)), nullptr, "nest200.glb", scratch).ok(), "GLB fuzz: a model whose JSON nests 200 levels loads");
+            const auto started = std::chrono::steady_clock::now();
+            e = model::loadSkinnedFromMemory(ByteView(nested(200000)), nullptr, "nest200000.glb", scratch);
+            show("GLB nested 200000 levels", e);
+            require(e.code == LoadCode::Malformed && e.message.find("nests deeper") != std::string::npos && !scratch.loaded, "GLB fuzz: JSON nested beyond 256 levels is Malformed");
+            require(std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() < 5.0, "GLB fuzz: deeply nested JSON is refused in well under a second");
+            // the same nesting behind a damaged quote, which puts a scanner that tracks strings out of step with the tokenizer (found by the fuzzer at 30000 levels, 0.8 s)
+            const auto damaged = editJson(editJson(glbfuzz::makeInterleavedGlb(), "34963}],\"acce", "3496"), "\"scale\":[1,2,1]", "\"scale\":[1," + std::string(100000, '[') + std::string(100000, ']') + ",1]");
+            const auto damagedStart = std::chrono::steady_clock::now();
+            e = model::loadSkinnedFromMemory(ByteView(damaged), nullptr, "damaged-nest.glb", scratch);
+            require(e.failed() && !scratch.loaded && std::chrono::duration<double>(std::chrono::steady_clock::now() - damagedStart).count() < 2.0, "GLB fuzz: deep nesting behind a damaged quote is still refused quickly");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);
