@@ -1026,6 +1026,11 @@ struct RenderDevice {
             if (!ups->init(ctx, swap)) {
                 logLine(std::string("upscaler ") + up::pathName(ups->path()) + " init FAILED -> off");
                 ups->shutdown(); ups.reset(up::createOff()); upsReason += "; init failed -> off";
+                if (!swap) {   // a vendor backend that failed after releasing the swapchain could not recreate it; the off backend never touches it
+                    ComPtr<IDXGISwapChain1> plain;
+                    must(factory->CreateSwapChainForHwnd(queue.Get(), hwnd, &sc, nullptr, nullptr, &plain), "CreateSwapChainForHwnd after upscaler init failure");
+                    must(plain.As(&swap), "SwapChain As IDXGISwapChain4");
+                }
                 must(ups->init(ctx, swap) ? S_OK : E_FAIL, "off backend init");
             }
             logLine(std::string("upscaler active: ") + up::pathName(ups->path()) + " (" + ups->versionString() + ") " + upsReason);
