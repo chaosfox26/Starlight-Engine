@@ -315,6 +315,9 @@ json apply_commands(const fs::path &file) {
             scene.Characters.push_back(std::move(c));
             continue;
         }
+        static const std::set<std::string> identified{"replace-model", "transform", "follow", "configure", "move", "route", "rename", "remove"};
+        if (!identified.contains(kind))
+            throw std::runtime_error("Unsupported editor operation: " + kind);
         auto &c = find(scene, op);
         if (kind == "replace-model") {
             keys(op, {"op", "id", "asset"});
@@ -390,8 +393,7 @@ json apply_commands(const fs::path &file) {
             auto removed=std::vector<Character>{c};auto removedId=c.Id;scene.Characters.erase(scene.Characters.begin() + index);
             for (auto &name : rules_naming_objects(scene, removed)) if (std::find(staleRules.begin(), staleRules.end(), name) == staleRules.end()) staleRules.push_back(std::move(name));
             for(auto& object:scene.Characters)if(object.JointTargetId==removedId){object.JointKind=0;object.JointTargetId.clear();}for(auto& object:scene.Characters)if(object.LightningTargetId==removedId)object.LightningTargetId.clear();
-        } else
-            throw std::runtime_error("Unsupported editor operation: " + kind);
+        }
     }
     scene.validate();
     try {

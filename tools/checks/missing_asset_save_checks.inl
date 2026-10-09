@@ -82,5 +82,14 @@ static void missing_asset_save_checks(const auto& require){
         require(run(json{{"op","follow"},{"id",spot.Id},{"lag",4}}).empty()&&load_scene(target).Characters[0].Follow->Lag==4,"CLI audit 2: A numeric lag in a follow op is applied");
         require(run(json{{"op","follow"},{"id",spot.Id},{"housing",nullptr}}).empty()&&!load_scene(target).Characters[0].Follow->Housing,"CLI audit 2: A null housing in a follow op removes the housing");
     }
+    {
+        // CLI audit 3: an unknown operation is reported as unsupported even when it carries no object id.
+        const auto folder=work/"unknown-op";fs::create_directories(folder);
+        const auto target=folder/"scene.starscene";
+        SceneData empty;save_scene(empty,target);
+        atomic_write(folder/"request.json",json{{"schemaVersion",1},{"scenePath",utf8(fs::absolute(target).wstring())},{"expectedSha256",hash_file(target)},{"operations",json::array({json{{"op","moev"},{"name","x"}}})}}.dump());
+        std::string failure;try{apply_commands(folder/"request.json");}catch(const std::exception& problem){failure=problem.what();}
+        require(failure.find("Unsupported editor operation: moev")!=std::string::npos,"CLI audit 3: An unknown operation is reported as unsupported, not as a missing id");
+    }
     fs::remove_all(work);
 }
