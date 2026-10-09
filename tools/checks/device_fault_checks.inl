@@ -75,6 +75,25 @@ static void device_fault_checks(const auto& require){
         require(broken.empty(),"RND-2: After every injected failure inside a resize the viewport keeps rendering at its previous size and the resize can be retried");
         if(ctx)destroy(ctx);
     }
+    // RND-3: a frame that throws while its command list is recording must not wedge every later frame.
+    {
+        void* ctx=create(window,640,360);
+        require(ctx!=nullptr&&frame(ctx,0,13)==1,"RND-3: A viewport exists for the frame failure sweep");
+        int frameFired=0;std::string wedged;
+        for(int n=1;ctx&&n<=80;++n){
+            fault(n);
+            const int result=frame(ctx,0,13);
+            const bool hit=fault(0)==0;fault(0);
+            if(!hit)break;
+            ++frameFired;
+            if(result==1)continue;
+            if(frame(ctx,0,13)!=1&&frame(ctx,0,13)!=1)wedged+=" "+std::to_string(n);
+        }
+        if(!wedged.empty())std::cout<<"frame failure sweep: frames kept failing after injected failure number(s):"<<wedged<<'\n';
+        require(frameFired>=8,"RND-3: Several checked results inside a frame were failed on purpose");
+        require(wedged.empty(),"RND-3: After a failure inside a frame the next frames render again");
+        if(ctx)destroy(ctx);
+    }
     DestroyWindow(window);
     std::cout<<"device failure checks: "<<fired<<" failures injected, "<<surfaced<<" reported by create/frame, "<<cleanup<<" by destruction\n";
 }

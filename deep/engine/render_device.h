@@ -2074,6 +2074,8 @@ struct RenderDevice {
         alloc = allocs[slot];
         mustHr(alloc->Reset(), "reset frame command allocator");
         mustHr(cmd->Reset(alloc.Get(), pso.Get()), "reset frame command list");
+        // RND-3: anything that throws while this frame is recording must still close the list, or every later frame fails to reset it.
+        struct OpenList { ID3D12GraphicsCommandList* list; ~OpenList() { if (list) (void)list->Close(); } } openList{ cmd.Get() };
         if (tsHeap) {   // GPU timer: the slot fence was waited above, so this slot's PREVIOUS resolve is ready to read
             if (tsFreq) {
                 void* p = nullptr; D3D12_RANGE rr{ (SIZE_T)(sizeof(UINT64) * 2 * slot), (SIZE_T)(sizeof(UINT64) * (2 * slot + 2)) };
@@ -2129,7 +2131,7 @@ struct RenderDevice {
             cmd->SetPipelineState(pso.Get());
         }
 
-        if(editorDraw){try{editorDraw();}catch(...){(void)cmd->Close();throw;}}   // an exception must not leave the frame command list open for every later frame
+        if(editorDraw)editorDraw();
         stageMarks[4]=timingNow();gpuMark(2);
         // ---- reconstruct render-size scene -> output-size upOutput, copy into the backbuffer ----
         if (msaa > 1) resolveScene();
@@ -2169,6 +2171,7 @@ struct RenderDevice {
         }
         lastCpuRecMs = (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _recT0).count();
         lastPoseMs = (float)poseAccumMs;
+        openList.list = nullptr;
         mustHr(cmd->Close(), "close command list");
         ID3D12CommandList* lists[] = { cmd.Get() };
         queue->ExecuteCommandLists(1, lists);
