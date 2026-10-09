@@ -1236,7 +1236,7 @@ struct Editor {
         height = r.bottom;
         if (!view)
             return;
-        if(interfacePercent==0 && inspector && !rebuildingInspector && !changingInterfaceScale) {
+        if(interfacePercent==0 && inspector && !rebuildingInspector && !changingInterfaceScale && !IsIconic(window)) {
             const int next=requested_interface_scale(GetDpiForWindow(window));
             if(next!=settingsScale){apply_interface_scale(next);return;}
         }
