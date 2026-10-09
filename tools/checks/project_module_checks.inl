@@ -22,7 +22,7 @@ static void project_module_checks(const auto& require,const std::filesystem::pat
         require(fileRefused(L"..\\Real.dll"),"10-security 6: A module outside the project folder is still refused");
         std::error_code linked;std::filesystem::create_symlink(project/"Real.dll",project/"Link.dll",linked);
         if(!linked)require(fileRefused(L"Link.dll"),"10-security 6: A module that is a symbolic link is refused");
-        else require(true,"10-security 6: Symbolic links cannot be created in this session, so the link case was not exercised");
+        else std::cout<<"10-security 6: NOT RUN: symbolic links cannot be created in this session, so the link case was not exercised\n";
         std::vector<std::wstring> out;
         append_output_arguments({L"--report",L"r.json",L"--shot",L"s.png"},out);
         require(out==std::vector<std::wstring>({L"--report",L"r.json",L"--shot",L"s.png"}),"10-security 6: Output-destination arguments pass the filter in order");

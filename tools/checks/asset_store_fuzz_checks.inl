@@ -79,7 +79,7 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         const bool made=sparse!=INVALID_HANDLE_VALUE&&DeviceIoControl(sparse,FSCTL_SET_SPARSE,nullptr,0,nullptr,0,&returned,nullptr)&&SetFilePointerEx(sparse,length,nullptr,FILE_BEGIN)&&SetEndOfFile(sparse);
         if(sparse!=INVALID_HANDLE_VALUE)CloseHandle(sparse);
         if(made)require(outcome([&]{(void)EngineAssets::get(AssetKind::Blob,"blob-"+std::string(64,'b'));})==Result::AssetMissingError,"Fuzz: an asset file larger than the 1 GiB load limit is reported as an unusable asset");
-        else require(true,"Fuzz: a sparse 1 GiB file cannot be created here, so the oversize case was not exercised");
+        else std::cout<<"Fuzz: NOT RUN: a sparse 1 GiB file cannot be created here, so the oversize case was not exercised\n";
         std::error_code removed;fs::remove(big,removed);
         place(pristine);
     }
@@ -289,7 +289,7 @@ template<class Require> void asset_store_fuzz_checks(Require require,const fs::p
         if(fs::is_directory(linked/"assets",probe)){
             require(refused([&]{(void)verify_portable_scene(linked);}),"Fuzz: an assets folder that is a junction to somewhere else fails verification");
             fs::remove(linked/"assets",probe);
-        } else require(true,"Fuzz: junctions cannot be created in this session, so the junction case was not exercised");
+        } else std::cout<<"Fuzz: NOT RUN: junctions cannot be created in this session, so the junction case was not exercised\n";
         require(variantOutcome([](json& m){m["assets"].push_back(m["assets"][0]);},untouched)==Result::Accepted,"Fuzz: a manifest listing an asset twice still verifies");
         require(variantOutcome([](json& m){auto twin=m["assets"][0];twin["sha256"]=std::string(64,'0');m["assets"].push_back(twin);},untouched)!=Result::Accepted,"Fuzz: a duplicate entry with a wrong hash fails verification");
         require(refused([&]{(void)verify_portable_scene(work/"no-such-bundle");}),"Fuzz: a folder that does not exist fails verification");
