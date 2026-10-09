@@ -207,4 +207,26 @@ template<class Require> void liquid_terrain_audit_checks(Require require){
         edited.remove_objects({7});
         require(edited.triangles.empty()&&same(edited,build({})),"07#9: Removing the last object leaves an empty layer");
     }
+    {   // P2flow: a surface requested before an edit is not served after the edit when no newer request exists (a paused scene edit renders once and nothing else would refresh it).
+        auto sameSurface=[](const std::vector<MeshPart>& a,const std::vector<MeshPart>& b){
+            if(a.size()!=b.size())return false;
+            for(size_t p=0;p<a.size();++p){
+                if(a[p].mesh.indices!=b[p].mesh.indices||a[p].mesh.vertices.size()!=b[p].mesh.vertices.size())return false;
+                for(size_t i=0;i<a[p].mesh.vertices.size();++i){const Vec3& x=a[p].mesh.vertices[i].position;const Vec3& y=b[p].mesh.vertices[i].position;if(x.x!=y.x||x.y!=y.y||x.z!=y.z)return false;}
+            }
+            return true;
+        };
+        TerrainData terrain;terrain.WaterEnabled=true;terrain.WaterLevel=1.5;
+        auto lake=std::make_unique<TerrainFlow>(terrain,std::vector<LiquidSource>{});
+        lake->geometry_begin_async();
+        const auto requested=lake->geometry_for_render();
+        Character cube;cube.Shape="cube";cube.KeepAboveFloor=false;
+        FlowObstacleMask mask;mask.add(shape_geometry(cube).front().mesh,cube);mask.finish();
+        lake->set_obstacles(mask);
+        require(!sameSurface(requested,lake->geometry()),"P2flow: The test edit changes the liquid surface");
+        require(sameSurface(lake->geometry_for_render(),lake->geometry()),"P2flow: After an edit with no newer request, the render shows the surface of the present state, not the one requested before the edit");
+        lake->geometry_begin_async();
+        require(sameSurface(lake->geometry_for_render(),requested),"P2flow: A surface requested before a newer request still shows one frame late, as the one-frame-ahead pipelining documents");
+        require(sameSurface(lake->geometry_for_render(),lake->geometry()),"P2flow: The newer request, once taken, shows the present state");
+    }
 }

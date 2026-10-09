@@ -837,7 +837,7 @@ FlowGeometryScratchHolder::~FlowGeometryScratchHolder(){delete scratch;}
 struct FlowAsyncGeometry {
     std::mutex mutex;std::condition_variable wake,idle;
     const TerrainFlow* owner=nullptr;
-    bool requested=false,running=false,stop=false,hasPrepared=false;
+    bool requested=false,running=false,stop=false,hasPrepared=false;uint64_t requestVersion=0,latestVersion=0,preparedVersion=0; // TerrainFlow::stateVersion_ of the running request, the latest begin and the prepared surface
     std::vector<MeshPart> prepared;std::exception_ptr error;
     std::thread thread;
     void run(){
@@ -845,7 +845,7 @@ struct FlowAsyncGeometry {
         for(;;){
             wake.wait(lock,[&]{return requested||stop;});
             if(stop)return;
-            requested=false;running=true;lock.unlock();
+            requested=false;running=true;const uint64_t version=requestVersion;lock.unlock();
             std::vector<MeshPart> result;std::exception_ptr failure;
             const double g0=starlight_diag::evnow();const auto before=flow_geometry_profile();
             try{result=owner->geometry_checked();}catch(...){failure=std::current_exception();}
@@ -855,7 +855,7 @@ struct FlowAsyncGeometry {
                 starlight_diag::evlog("geom3",after.obstacleMs-before.obstacleMs,after.normalsMs-before.normalsMs,double(after.triangles-before.triangles));
                 starlight_diag::evlog("geom4",after.clipTopologyMs-before.clipTopologyMs,after.clipCrossingsMs-before.clipCrossingsMs,after.clipClearanceMs-before.clipClearanceMs);}
             lock.lock();
-            if(failure)error=failure;else{prepared=std::move(result);hasPrepared=true;}
+            if(failure)error=failure;else{prepared=std::move(result);hasPrepared=true;preparedVersion=version;}
             running=false;idle.notify_all();
         }
     }
@@ -865,8 +865,8 @@ FlowAsyncGeometryHolder::~FlowAsyncGeometryHolder(){delete state;}
 void TerrainFlow::geometry_begin_async() const {
     if(!asyncGeometry_.state){auto* created=new FlowAsyncGeometry;created->owner=this;created->thread=std::thread([created]{created->run();});asyncGeometry_.state=created;}
     auto& s=*asyncGeometry_.state;std::lock_guard lock(s.mutex);
-    if(s.requested||s.running)return;
-    s.requested=true;s.wake.notify_one();
+    s.latestVersion=stateVersion_;if(s.requested||s.running)return;
+    s.requested=true;s.requestVersion=stateVersion_;s.wake.notify_one();
 }
 void TerrainFlow::settle_async_impl() const {
     auto& s=*asyncGeometry_.state;std::unique_lock lock(s.mutex);
@@ -876,11 +876,11 @@ void TerrainFlow::settle_async_impl() const {
 std::vector<MeshPart> TerrainFlow::geometry_for_render() const {
     if(asyncGeometry_.state){
         auto& s=*asyncGeometry_.state;
-        {std::lock_guard lock(s.mutex);if(s.hasPrepared){s.hasPrepared=false;return std::move(s.prepared);}}
+        {std::lock_guard lock(s.mutex);if(s.hasPrepared&&(s.preparedVersion!=s.latestVersion||s.preparedVersion==stateVersion_)){s.hasPrepared=false;return std::move(s.prepared);}}
         settle_async_impl();
         // Nothing was ready (first frame, or right after a reset): wait for the run just started and hand out a copy while
         // keeping the original, so the next frame finds a finished result (one frame old) without waiting again.
-        {std::lock_guard lock(s.mutex);if(s.hasPrepared)return s.prepared;}
+        {std::lock_guard lock(s.mutex);if(s.hasPrepared&&s.preparedVersion==stateVersion_)return s.prepared;}
     }
     return geometry_checked();
 }
