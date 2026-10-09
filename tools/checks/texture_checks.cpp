@@ -989,6 +989,16 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             show("GLB whose data URI claims 9 TB", e);
             require(e.code == LoadCode::Malformed && e.message.find("data URI holds fewer") != std::string::npos, "GLB fuzz: a data URI buffer cannot claim more bytes than its text holds");
         }
+        {   // GLB fuzz findings: a node scaled to zero gave NaN normals (no inverse), and a transform that overflows gave infinite vertices
+            const auto quad = glbfuzz::makeInterleavedGlb();
+            require(model::loadSkinnedFromMemory(ByteView(quad), nullptr, "quad.glb", scratch).ok() && scratch.verts.size() == 4, "GLB fuzz: the interleaved quad fixture loads");
+            e = model::loadSkinnedFromMemory(ByteView(editJson(quad, "\"scale\":[1,2,1]", "\"scale\":[0,2,1]")), nullptr, "zero-scale.glb", scratch);
+            show("GLB whose node scale is zero", e);
+            require(e.ok() && modelProblem(scratch).empty(), "GLB fuzz: a node scaled to zero loads with finite normals");
+            e = model::loadSkinnedFromMemory(ByteView(editJson(quad, "\"translation\":[0,0.5,0],\"scale\":[1,2,1]", "\"translation\":[3e38,0,0],\"scale\":[3e38,3e38,3e38]")), nullptr, "overflow.glb", scratch);
+            show("GLB whose node transform overflows", e);
+            require(e.code == LoadCode::Malformed && !scratch.loaded, "GLB fuzz: vertices that overflow to infinity under the node transform are Malformed");
+        }
         const std::string junk = "definitely not a glb file, only text that is long enough to have a header";
         e = model::loadSkinnedFromMemory(ByteView(reinterpret_cast<const uint8_t*>(junk.data()), junk.size()), nullptr, "junk.glb", scratch);
         show("non-GLB bytes", e);

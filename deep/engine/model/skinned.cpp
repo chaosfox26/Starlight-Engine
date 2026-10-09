@@ -235,7 +235,9 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         if (!node->mesh) return true;
         float world[16]; cgltf_node_transform_world(node, world);
         XMMATRIX W = node->skin ? XMMatrixIdentity() : FromGltf(world);
-        XMMATRIX Wn = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+        XMVECTOR determinant;
+        XMMATRIX inverse = XMMatrixInverse(&determinant, W);
+        XMMATRIX Wn = XMVectorGetX(determinant) == 0.0f || XMMatrixIsInfinite(inverse) || XMMatrixIsNaN(inverse) ? W : XMMatrixTranspose(inverse);   // a zero scale has no inverse; its normals fall back to the matrix itself instead of NaN
         std::string nodeName = node->name ? node->name : "";
         auto bad = [&](LoadCode code, cgltf_size pi, const std::string& what) {
             geometryError = makeLoadError(code, label, "node '" + nodeName + "' primitive " + std::to_string(pi) + ": " + what);
@@ -368,6 +370,12 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
         WriteAtlas(out, *atlasUv);
     }
     GenerateTangents(out);
+    for (size_t v = 0; v < out.verts.size(); ++v) {
+        const SkinVertex& sv = out.verts[v];
+        const float all[] = { sv.px, sv.py, sv.pz, sv.nx, sv.ny, sv.nz, sv.tx, sv.ty, sv.tz, sv.tw, sv.u, sv.v, sv.w[0], sv.w[1], sv.w[2], sv.w[3] };
+        for (float f : all)
+            if (!std::isfinite(f)) return fail(LoadCode::Malformed, "vertex " + std::to_string(v) + " is not finite after the node transforms and tangent generation");
+    }
     out.loaded = true;
     return LoadError();
 }
