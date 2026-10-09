@@ -166,7 +166,7 @@ template<class Require> void active_scene_guard_checks(Require require,const fs:
     require(exportProblems.empty()&&exported==withModels,exportMessage.c_str());
 }
 template<class Require> void generated_scene_readback_checks(Require require,const fs::path& folder,const fs::file_time_type& runStarted){
-    auto documents=guard_documents(folder,{L"active-scene-guard",L"asset-store-fuzz"},L"library-");
+    auto documents=guard_documents(folder,{L"active-scene-guard",L"asset-store-fuzz",L"key-card-adapter-checks"},L"library-");
     // Only files this run wrote: a leftover from an earlier build or a crashed run is not this run's output.
     std::erase_if(documents,[&](const fs::path& file){std::error_code timeError;const auto written=fs::last_write_time(file,timeError);return !timeError&&written<runStarted;});
     require(!documents.empty(),"Checks generate scene files for the read-back guard");
