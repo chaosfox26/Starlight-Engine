@@ -21,4 +21,15 @@ static void id_remap_checks(const auto& require){
     // The paste, duplicate, group placement and asset-browser placement paths run inside the editor window, which this program cannot drive: each must still renew ids through the shared function.
     require(source_occurrences("editor/cpp/editor_main.cpp","renew_object_ids(")>=2&&source_occurrences("editor/cpp/selection_clipboard.inl","renew_object_ids(")>=1&&source_occurrences("editor/cpp/asset_browser.inl","renew_object_ids(")>=1,"CORE-01: paste, duplicate, group and asset-browser placement renew ids through renew_object_ids");
     require(source_occurrences("editor/cpp/editor_main.cpp","Id = new_id()")+source_occurrences("editor/cpp/selection_clipboard.inl","Id = new_id()")+source_occurrences("editor/cpp/asset_browser.inl","Id = new_id()")==0,"CORE-01: no copy path hands out ids one by one, which would drop the links between the copies");
+    // EDIT-5 on the reusable-object path: a single-object file cannot name a joint or lightning target that is in its scene, so it loads without those links; a group keeps its own.
+    {
+        Character anchor;anchor.Id="kc-link-anchor";anchor.Shape="cube";
+        Character pendulum;pendulum.Id="kc-link-pendulum";pendulum.Shape="cube";pendulum.Dynamic=true;pendulum.JointKind=2;pendulum.JointTargetId=anchor.Id;
+        const auto group=decode_object_group(encode_object_group({pendulum,anchor}));
+        require(group.size()==2&&group[0].JointKind==2&&group[0].JointTargetId==group[1].Id,"EDIT-5: a reusable group keeps a joint between its own members");
+        auto single=json::parse(encode_object_template(anchor));
+        single["Object"]["Dynamic"]=true;single["Object"]["JointKind"]=2;single["Object"]["JointTargetId"]="kc-gone";single["Object"]["LightningTargetId"]="kc-gone";
+        const auto loaded=decode_object_template(single.dump());
+        require(loaded.JointKind==0&&loaded.JointTargetId.empty()&&loaded.LightningTargetId.empty(),"EDIT-5: a single reusable object does not keep joint or lightning links that name nothing in its file");
+    }
 }

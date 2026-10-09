@@ -22,7 +22,8 @@ std::string encode_object_template(const Character& object) {
     if (result.size() > maximumBytes) throw std::runtime_error("Reusable object exceeds 32 MiB");
     return result;
 }
-Character decode_object_template(std::string_view bytes) {
+namespace {
+Character decode_object_record(std::string_view bytes) {
     if (bytes.size() > maximumBytes) throw std::runtime_error("Reusable object exceeds 32 MiB");
     auto data = json::parse(bytes);
     if (data.at("Format") != "starlight-object") throw std::runtime_error("Unsupported reusable object format");
@@ -32,6 +33,14 @@ Character decode_object_template(std::string_view bytes) {
     self_contained(object);
     if (!object.Shape && !object.Sculpt) (void)EngineAssets::get(AssetKind::Model, object.Asset);
     object.Id = new_id();
+    return object;
+}
+}
+// EDIT-5: a single object has no companions in its file, so a joint or lightning link there can only name an object that is not in the scene. Group files keep theirs (decode_object_group remaps them).
+Character decode_object_template(std::string_view bytes) {
+    auto object = decode_object_record(bytes);
+    if (!object.JointTargetId.empty()) { object.JointKind = 0; object.JointTargetId.clear(); }
+    object.LightningTargetId.clear();
     return object;
 }
 void save_object_template(const Character& object, const fs::path& path) {
@@ -77,7 +86,7 @@ std::vector<Character> decode_object_group(std::string_view bytes) {
         throw std::runtime_error("Reusable groups require between 1 and 4096 objects");
     std::vector<Character> result;
     std::unordered_map<std::string,std::string> ids;
-    for(const auto& object:objects){auto decoded=decode_object_template(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty()&&!ids.emplace(old,decoded.Id).second)throw std::runtime_error("Reusable group repeats an object identity");result.push_back(std::move(decoded));}
+    for(const auto& object:objects){auto decoded=decode_object_record(json{{"Format","starlight-object"},{"Version",2},{"Object",object}}.dump());auto old=object.value("Id",std::string{});if(!old.empty()&&!ids.emplace(old,decoded.Id).second)throw std::runtime_error("Reusable group repeats an object identity");result.push_back(std::move(decoded));}
     for(auto& object:result)if(!object.LightningTargetId.empty()){auto target=ids.find(object.LightningTargetId);if(target==ids.end())throw std::runtime_error("Reusable group lightning target is missing");object.LightningTargetId=target->second;}
 
     for(auto& object:result)if(!object.JointTargetId.empty()){auto target=ids.find(object.JointTargetId);if(target==ids.end())throw std::runtime_error("Reusable group joint target is missing");object.JointTargetId=target->second;}
