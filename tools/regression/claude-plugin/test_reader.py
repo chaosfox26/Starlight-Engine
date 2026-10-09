@@ -160,5 +160,14 @@ for name, kw, code, text in cmp_cases:
     print('%s  %s (exit %d)' % ('ok  ' if ok else 'FAIL', name, got))
     if not ok:
         print('      expected exit %d containing %r; output: %s' % (code, text, out[:300].replace('\n', ' | ')))
+import importlib.util
+spec = importlib.util.spec_from_file_location('read_results', READER)
+reader = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(reader)
+sys.path.insert(0, os.path.join(HERE, '..'))
+import registry
+ok = reader.DEFAULT == registry.DEFAULT_RESULTS
+failed += not ok
+print('%s  the plugin reader and the ledger tools read one results folder' % ('ok  ' if ok else 'FAIL'))
 print('ALL PASSED' if not failed else '%d FAILED' % failed)
 sys.exit(1 if failed else 0)
