@@ -76,6 +76,6 @@ static void preset_validate_checks(const auto& require,const fs::path& folder){
 
     const fs::path ansi=dir/L"ansi-error.json";
     bool wrote=true;
-    try{starlight::preset::write(ansi,nlohmann::json{{"error","Cannot copy café settings"}});}catch(const std::exception&){wrote=false;}
+    try{starlight::preset::write(ansi,nlohmann::json{{"error","Cannot copy caf\xE9 settings"}});}catch(const std::exception&){wrote=false;}
     require(wrote&&fs::exists(ansi),"LAUNCH-2: an error message holding non-UTF-8 text is still written as the launch error file");
 }
