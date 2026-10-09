@@ -236,7 +236,7 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
             for (const cgltf_node* a = n->parent; a; a = a->parent) {
                 auto pit = jointOf.find(a);
                 if (pit != jointOf.end()) { jt.parent = pit->second; break; }
-                if (!throughAncestors) break;
+                if (!throughAncestors) continue;
                 float local[16]; cgltf_node_transform_local(a, local);
                 base = XMMatrixMultiply(base, FromGltf(local));
             }

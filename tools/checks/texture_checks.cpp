@@ -1334,9 +1334,11 @@ template <class R> void run(const fs::path& dir, const fs::path& root, R& requir
             const XMFLOAT3 m1 = transformed(midRig, 1, 0.f, 0.f, 0.f);
             require(std::fabs(m1.x) < 1e-5f && std::fabs(m1.y) < 1e-5f && std::fabs(m1.z - 3.f) < 1e-5f, "R4: a non-joint node between two joints contributes its transform (hand-computed origin -> (0,0,3))");
             setAncestors(false);
+            model::SkinnedModel midDefault;
+            require(model::loadSkinnedFromMemory(ByteView(makeGlb(midSpec)), nullptr, "mid-default.glb", midDefault).ok() && midDefault.joints[1].parent == 0, "R4: by default a joint below a non-joint node still keeps its joint ancestor as parent");
         }
         {
-            auto loadWith = [&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
+            auto loadWith =[&](int primitives, int mode, model::SkinnedModel& m) { GlbSpec s; s.primitives = primitives; s.extraMode = mode; return model::loadSkinnedFromMemory(ByteView(makeGlb(s)), nullptr, "modes.glb", m); };
             model::SkinnedModel strip, fan, points, lines, onlyLines;
             const std::vector<uint32_t> wantStrip{ 4, 5, 6, 5, 7, 6 }, wantFan{ 5, 6, 4, 6, 7, 4 };
             require(loadWith(1, 5, strip).ok() && strip.subs.size() == 2 && strip.verts.size() == 8 && strip.warnings.empty() && std::vector<uint32_t>(strip.indices.begin() + 6, strip.indices.end()) == wantStrip && strip.subs[1].firstIndex == 6 && strip.subs[1].indexCount == 6,
