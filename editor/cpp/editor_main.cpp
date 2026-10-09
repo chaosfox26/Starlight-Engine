@@ -1466,8 +1466,8 @@ struct Editor {
         if (sliders.contains(key)) return SendMessage(inputs.at(key), TBM_GETPOS, 0, 0) / sliders.at(key);
         auto s = text(inputs.at(key));
         size_t consumed = 0;
-        double v = std::stod(s, &consumed);
-        if (consumed != s.size() || !std::isfinite(v))
+        double v = 0;bool parsed = true;try { v = std::stod(s, &consumed); } catch (const std::logic_error &) { parsed = false; }
+        if (!parsed || consumed != s.size() || !std::isfinite(v))
             throw std::runtime_error("Enter a valid number for " + key);
         return v;
     }
