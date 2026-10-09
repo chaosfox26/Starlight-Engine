@@ -65,4 +65,14 @@ class AuditRecords(unittest.TestCase):
             subprocess.run([str(PROGRAM),'findings',str(request),str(output)],check=True,capture_output=True)
             self.assertTrue(any(row['detail']=='long-path finding' for row in json.loads(output.read_text())))
 
+    def test_oversized_result_is_reported_not_dropped(self):
+        with tempfile.TemporaryDirectory(prefix='starlight-oversized-') as temp:
+            base=Path(temp);runs=base/'runs';runs.mkdir()
+            (runs/'result.json').write_text(json.dumps({'passed':False,'case':'hidden failure','padding':'x'*(2*1024*1024+1)}))
+            request=base/'request.json';request.write_text(json.dumps({'root':str(runs)}))
+            output=base/'findings.json';subprocess.run([str(PROGRAM),'findings',str(request),str(output)],check=True,capture_output=True)
+            actual=json.loads(output.read_text(encoding='utf-8'))
+            self.assertEqual(audit_engine.collect_findings(runs),actual)
+            self.assertTrue(any(row['detail'].startswith('Too large to read') for row in actual))
+
 if __name__=='__main__':unittest.main()

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -37,5 +38,17 @@ class NativeAnalysis(unittest.TestCase):
             self.assertTrue((root/'analysis/malformed/failure.txt').is_file())
             self.assertTrue((root/'analysis/malformed/progress.txt').read_text(encoding='utf-8').startswith('-1\n'))
             self.assertEqual((root/'asset.txt').read_text(),'retained')
+
+    def test_git_is_not_taken_from_the_analysed_tree(self):
+        with tempfile.TemporaryDirectory(prefix='starlight-native-git-') as temp:
+            root=Path(temp)/'root';root.mkdir();(root/'asset.txt').write_text('retained')
+            shutil.copyfile(Path(os.environ.get('SystemRoot','C:\\Windows'))/'System32'/'cmd.exe',root/'git.exe')
+            output=root/'analysis/run'
+            args=[str(PROGRAM),'--root',str(root),'--output',str(output),'--rules',str(ROOT/'tools/audit')]
+            env=os.environ.copy();env['PATH']=''
+            subprocess.run(args,env=env,cwd=str(root),check=True,capture_output=True)
+            state=json.loads((output/'run-state.json').read_text(encoding='utf-8'))
+            self.assertIsNone(state['gitStart']['head']['exitCode'])
+            self.assertIsNone(state['gitEnd']['head']['exitCode'])
 
 if __name__=='__main__':unittest.main()
