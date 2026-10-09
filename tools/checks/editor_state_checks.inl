@@ -1,5 +1,6 @@
 // Editor state edges found by the 2026-10-08 editor audit: a scene load reports the hash of the bytes it decoded (finding 7) and deleting an object names the rules left pointing at it (finding 11).
 #include "../../editor/cpp/object_template.hpp"
+#include "source_text.hpp"
 static void editor_state_checks(const auto& require,const fs::path& folder){
     const auto work=folder/"editor-state-checks";fs::remove_all(work);fs::create_directories(work);
     {
@@ -28,4 +29,25 @@ static void editor_state_checks(const auto& require,const fs::path& folder){
         require(rules_naming_objects(scene,{"vault"}).size()==1,"Editor audit 11: an objective named like an object is not an object link");
         require(rules_naming_objects(scene,{""}).empty(),"Editor audit 11: a rule with no subject is not matched by an empty id");
     }
+    {
+        // The --commands remove operation reports the rules it leaves pointing at nothing, once each, and says nothing when there are none.
+        Character lever;lever.Shape="cube";lever.Name="Lever";
+        Character other;other.Shape="cube";other.Name="Other";
+        SceneData scene;scene.Characters={lever,other};
+        GameplayRule rule;rule.Name="Press the lever";rule.Subject=lever.Id;rule.Actions={{"complete-objective","lever-pressed"}};
+        scene.Rules={rule};
+        const auto file=work/"rules.starscene";save_scene(scene,file);
+        auto removeOne=[&](const std::string& id){
+            json request={{"schemaVersion",1},{"scenePath",utf8(fs::absolute(file).wstring())},{"expectedSha256",hash_file(file)},
+                {"operations",json::array({json{{"op","remove"},{"id",id}}})}};
+            atomic_write(work/"request.json",request.dump());
+            return apply_commands(work/"request.json");
+        };
+        const auto unrelated=removeOne(other.Id);
+        require(unrelated.value("success",false)&&!unrelated.contains("rulesNamingRemovedObjects"),"Editor audit 11: removing an object no rule names adds no rule warning to the --commands result");
+        const auto named=removeOne(lever.Id);
+        require(named.contains("rulesNamingRemovedObjects")&&named["rulesNamingRemovedObjects"]==json::array({"Press the lever"}),"Editor audit 11: removing an object a rule names lists that rule in the --commands result");
+    }
+    // The editor's delete handler shows the same list in its status line; this program cannot press Delete in the window.
+    require(source_occurrences("editor/cpp/editor_main.cpp","rules_naming_objects(scene, ids)")==1&&source_occurrences("editor/cpp/editor_main.cpp","These gameplay rules still point at a deleted object")==1,"Editor audit 11: the editor's delete handler reports the rules left pointing at the deleted objects");
 }
