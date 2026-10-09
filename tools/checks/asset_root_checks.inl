@@ -286,6 +286,17 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
    const auto onlyLines=text_of([&]{(void)parse_glb(asset_checks_mode_glb(1,false));});
    require(has(onlyLines,"no triangle geometry")&&has(onlyLines,"1 LINES")&&model_uv_vertex_count(asset_checks_mode_glb(1,false))==0,"06#11: A model with only line primitives is refused with a message that names them");
   }
+  {
+   // A negative accessor count is refused; as an unsigned size it would wrap and inflate the UV vertex total.
+   auto json_only_glb=[&](const std::string& text){
+    std::string bytes="glTF";auto word=[&](uint32_t v){bytes.append(reinterpret_cast<const char*>(&v),4);};
+    word(2);word(uint32_t(20+text.size()));word(uint32_t(text.size()));word(0x4e4f534a);bytes+=text;return bytes;
+   };
+   const std::string accessor=R"({"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1}}]}],"accessors":[{"count":)";
+   require(model_uv_vertex_count(json_only_glb(accessor+R"(4)"+R"(},{"count":4}]})"))==4,"A UV accessor with a whole, positive count is counted");
+   bool refusedNegative=false;try{(void)model_uv_vertex_count(json_only_glb(accessor+R"(-1)"+R"(},{"count":4}]})"));}catch(const std::runtime_error&){refusedNegative=true;}
+   require(refusedNegative,"CC-02: A negative accessor count is refused instead of wrapping into a huge vertex total");
+  }
   const auto glb=asset_checks_uv_glb(false),mixed=asset_checks_uv_glb(true);
   const auto uvModel=import_model_bytes(glb),mixedModel=import_model_bytes(mixed),plainModel=import_model(solid_glb_fixture(work));
   require(*load_model_bytes(uvModel)==glb&&model_uv_vertex_count(glb)==4&&model_uv_vertex_count(mixed)==4,"The model bytes are available in memory exactly as authored and the UV-bearing vertices are counted");
@@ -506,6 +517,25 @@ template<class Require> void asset_root_checks(Require require,const fs::path& f
   bool refusedAfterDepth=false;
   try{validate_model_bytes(with_extras(std::string(300000,'[')+"{\"uri\":\"file.bin\"}"+std::string(300000,']')));}catch(const std::runtime_error&){refusedAfterDepth=true;}
   require(refusedAfterDepth,"CC-01: An external URI buried 300000 levels deep is still refused");
+  // A primitive's base colour is copied out of the material; a deeply nested colour must be refused on a 1 MB stack, where a copy overflows it.
+  auto with_material=[&](const std::string& factor){
+   std::string json=glb.substr(20,u32(glb,12));json.insert(json.rfind('}'),",\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorFactor\":"+factor+"}}]");
+   const std::string primitive="\"attributes\":{\"POSITION\":0}";json.insert(json.find(primitive)+primitive.size(),",\"material\":0");
+   while(json.size()%4)json.push_back(' ');
+   std::string out=glb.substr(0,12),header(8,'\0');put32(header,0,uint32_t(json.size()));std::memcpy(&header[4],glb.data()+16,4);
+   out+=header+json+glb.substr(20+u32(glb,12));put32(out,8,uint32_t(out.size()));return out;
+  };
+  require(parse_glb(with_material("[1,0.5,0.25]")).size()==1,"The material fixture parses with its base colour");
+  struct MaterialJob {std::string bytes, outcome;};
+  MaterialJob job{with_material(std::string(200000,'[')+std::string(200000,']')),"unfinished"};
+  HANDLE thread=CreateThread(nullptr,1024u*1024,[](LPVOID parameter)->DWORD{
+   auto* a=static_cast<MaterialJob*>(parameter);
+   try{(void)parse_glb(a->bytes);a->outcome="accepted";}catch(const std::exception&){a->outcome="refused";}
+   return 0;
+  },&job,0,nullptr);
+  require(thread!=nullptr,"A 1 MB test thread can be created");
+  WaitForSingleObject(thread,INFINITE);CloseHandle(thread);
+  require(job.outcome=="refused","CC-01: A base colour nested 200000 levels deep is refused on a 1 MB stack without overflowing it");
  }
  require(files_in(dataFolder,".tmp")==0,"No temporary files are left in the data folder");
 }

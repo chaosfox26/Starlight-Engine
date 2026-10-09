@@ -148,6 +148,21 @@ template<class Require> void adversarial_parser_checks(Require require, const fs
         refuses([&] { starlight::gfxrt::parse_manifest("{\"schema\":1,\"set_id\":" + deep + "}"); });
         require(total == 5 && refusedDeep == 5, "Reusable objects, groups and scenes nested hundreds of thousands deep are refused without a stack overflow");
     }
+    {
+        // The checks above run on a 64 MB thread; the editor decodes reusable groups on a 1 MB thread, where copying a deep object overflows the stack.
+        struct DeepGroupJob { std::string text, outcome; };
+        DeepGroupJob job{"{\"Format\":\"starlight-object-group\",\"Version\":2,\"Objects\":[{\"Name\":" + std::string(60000, '[') + std::string(60000, ']') + "}]}", "unfinished"};
+        HANDLE thread = CreateThread(nullptr, 1024u * 1024, [](LPVOID parameter) -> DWORD {
+            auto* a = static_cast<DeepGroupJob*>(parameter);
+            try { (void)decode_object_group(a->text); a->outcome = "accepted"; }
+            catch (const std::exception&) { a->outcome = "refused"; }
+            return 0;
+        }, &job, 0, nullptr);
+        require(thread != nullptr, "A 1 MB test thread can be created");
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+        require(job.outcome == "refused", "A reusable group nested 60000 deep is refused on a 1 MB stack without overflowing it");
+    }
     std::cout << "ADVERSARIAL scenes tried=" << sceneTried << " defects=" << sceneDefects << "\n";
     require(sceneTried > 200 && sceneDefects == 0, "Damaged starter scenes are refused or accepted without crashing");
 }
