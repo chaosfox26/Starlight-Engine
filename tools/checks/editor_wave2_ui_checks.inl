@@ -39,4 +39,14 @@
     listNotify();
     check("EDIT-2: deselecting the last row leaves no active object", selected == -1 && selectionIds.empty());
     fixture();
+    // EDIT-4: a double-click on the 3D view is two presses, not a command.
+    currentMode = "Select"; last = {0, 0};
+    SendMessage(view, WM_LBUTTONDBLCLK, MK_LBUTTON, MAKELPARAM(7, 9));
+    ReleaseCapture();
+    check("EDIT-4: the second click of a double-click on the 3D view is handled as a press", last.x == 7 && last.y == 9);
+    playing = true;
+    bool doubleClickThrew = false;
+    try { message(WM_COMMAND, MAKEWPARAM(0, STN_DBLCLK), reinterpret_cast<LPARAM>(view)); } catch (const std::exception&) { doubleClickThrew = true; }
+    playing = false;
+    check("EDIT-4: the 3D view's double-click notification is not run as an editing command while playing", !doubleClickThrew);
 }

@@ -514,14 +514,14 @@ struct Editor {
                 self->camera();
                 return 0;
             }
-            if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN) {
+            if (m == WM_LBUTTONDOWN || m == WM_LBUTTONDBLCLK || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN) {   // a quick second click is another press, not a command (EDIT-4)
                 if (self->openMenu) {
                     self->toggle_menu(0);
                     return 0;
                 }
                 SetFocus(h);
                 SetCapture(h);
-                self->pointer_down(GET_X_LPARAM(l), GET_Y_LPARAM(l), m);
+                self->pointer_down(GET_X_LPARAM(l), GET_Y_LPARAM(l), m == WM_LBUTTONDBLCLK ? UINT(WM_LBUTTONDOWN) : m);
                 return 0;
             }
             if (m == WM_MOUSEMOVE) {
@@ -3496,6 +3496,7 @@ struct Editor {
                 }
                 return 0;
             }
+            if (LOWORD(w) == 0) return 0;   // controls without an id, such as the 3D view (STN_DBLCLK), are not commands
             if (HIWORD(w) == BN_CLICKED || HIWORD(w) == CBN_SELCHANGE || HIWORD(w) == LBN_SELCHANGE)
                 command(LOWORD(w));
             return 0;
