@@ -334,7 +334,9 @@ LoadError LoadSkinnedImpl(ByteView glb, const ByteView* atlasUv, const std::stri
                         return bad(LoadCode::SkeletonInvalid, pi, "vertex " + std::to_string(v) + " uses joint " + std::to_string(j[k]) + " but the skin has " + std::to_string(out.joints.size()) + " joints");
                 XMFLOAT3 fp, fn;
                 XMStoreFloat3(&fp, XMVector3Transform(XMVectorSet(p[0], p[1], p[2], 1.0f), W));
-                XMStoreFloat3(&fn, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn)));
+                XMVECTOR nv = XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(nn[0], nn[1], nn[2], 0.0f), Wn));
+                if (XMVectorGetX(XMVector3LengthSq(nv)) == 0.0f) nv = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);   // a zero NORMAL has no direction; use the up normal a glb without NORMAL gets, so its tangent is not zero either
+                XMStoreFloat3(&fn, nv);
                 SkinVertex sv{};
                 sv.px = fp.x; sv.py = fp.y; sv.pz = fp.z; sv.nx = fn.x; sv.ny = fn.y; sv.nz = fn.z;
                 sv.u = t[0]; sv.v = t[1];
