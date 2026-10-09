@@ -19,7 +19,7 @@ inline void starlight_diag_anchor_dummy(){}
 struct Event {double ms;uint32_t thread;char tag[20];double a,b,c;std::atomic<uint32_t> ready;};
 struct EventLog {
     size_t capacity=1u<<21;   // events kept per module; STARLIGHT_EVENT_LOG_CAPACITY raises it (events past the capacity are dropped, which cuts a long run short)
-    Event* events=nullptr;std::atomic<uint32_t> count{0};std::atomic<bool> enabled{false};char prefix[400]{};double frequency=0;
+    Event* events=nullptr;std::atomic<uint64_t> count{0};std::atomic<bool> enabled{false};char prefix[400]{};double frequency=0;
     EventLog(){
         const DWORD length=GetEnvironmentVariableA("STARLIGHT_EVENT_LOG",prefix,sizeof(prefix));
         if(!length||length>=sizeof(prefix)){prefix[0]=0;return;}
@@ -30,7 +30,7 @@ struct EventLog {
     }
     static double now(){static const double perMs=[]{LARGE_INTEGER f;QueryPerformanceFrequency(&f);return double(f.QuadPart)/1000.;}();LARGE_INTEGER q;QueryPerformanceCounter(&q);return double(q.QuadPart)/perMs;}
     void add(const char* tag,double a,double b,double c){
-        const uint32_t i=count.fetch_add(1,std::memory_order_relaxed);if(i>=capacity)return;
+        const uint64_t i=count.fetch_add(1,std::memory_order_relaxed);if(i>=capacity)return;
         Event& e=events[i];e.ms=now();e.thread=GetCurrentThreadId();std::strncpy(e.tag,tag,sizeof(e.tag)-1);e.tag[sizeof(e.tag)-1]=0;e.a=a;e.b=b;e.c=c;e.ready.store(1,std::memory_order_release);
     }
     ~EventLog(){
@@ -42,8 +42,8 @@ struct EventLog {
         const char* base=std::strrchr(name,'\\');base=base?base+1:name;
         char path[900];std::snprintf(path,sizeof(path),"%s.%s.events",prefix,base);
         FILE* f=nullptr;fopen_s(&f,path,"w");
-        if(f){const uint32_t n=std::min<uint32_t>(count.load(),uint32_t(capacity));
-            for(uint32_t i=0;i<n;++i)if(events[i].ready.load(std::memory_order_acquire))std::fprintf(f,"%.4f %u %s %.5f %.5f %.5f\n",events[i].ms,events[i].thread,events[i].tag,events[i].a,events[i].b,events[i].c);
+        if(f){const uint64_t n=std::min<uint64_t>(count.load(),uint64_t(capacity));
+            for(uint64_t i=0;i<n;++i)if(events[i].ready.load(std::memory_order_acquire))std::fprintf(f,"%.4f %u %s %.5f %.5f %.5f\n",events[i].ms,events[i].thread,events[i].tag,events[i].a,events[i].b,events[i].c);
             std::fclose(f);}
     }
 };

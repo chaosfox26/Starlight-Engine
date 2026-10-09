@@ -163,6 +163,20 @@ static void asset_platform_checks(const auto& require,const fs::path& folder){
         require(closedLines==2,"A-10-5: An event reserved but never filled is not written out");
     }
     {
+        // The event counter is 64-bit: a 32-bit one wrapped after 2^32 logged calls and wrote the late events over the first ones.
+        _putenv_s("STARLIGHT_EVENT_LOG",(dir/"wrapped").string().c_str());
+        alignas(starlight_diag::EventLog) unsigned char storage[sizeof(starlight_diag::EventLog)];
+        auto* wrapped=new(storage) starlight_diag::EventLog;
+        wrapped->count.store(0xFFFFFFFFu);
+        wrapped->add("late",1,2,3);wrapped->add("later",4,5,6);
+        const bool overwritten=wrapped->events[0].ready.load()!=0;
+        wrapped->enabled=false;
+        VirtualFree(wrapped->events,0,MEM_RELEASE);
+        wrapped->~EventLog();
+        _putenv_s("STARLIGHT_EVENT_LOG","");
+        require(!overwritten,"Event log: a counter past 2^32 events drops new events instead of wrapping onto the first ones");
+    }
+    {
         // A long stress run filled the fixed 2,097,152-event buffer and everything after that was dropped, so a "whole run" analysis covered only the first part of it.
         // STARLIGHT_EVENT_LOG_CAPACITY raises the capacity; a value outside the accepted range keeps the default.
         _putenv_s("STARLIGHT_EVENT_LOG",(dir/"events-capacity").string().c_str());
