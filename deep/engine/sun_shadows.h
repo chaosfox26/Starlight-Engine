@@ -14,7 +14,7 @@ struct SunShadows {
  ComPtr<ID3D12DescriptorHeap> dsv;
  ComPtr<ID3D12RootSignature> root;
  ComPtr<ID3D12PipelineState> pipeline;
- UINT resolution=2048,descriptorSize=0;UINT64 bytes=0,draws=0;
+ UINT resolution=2048,requestedResolution=2048,descriptorSize=0;UINT64 bytes=0,draws=0;
  bool enabled=true,enabledOverride=false,resolutionOverride=false;
  void init(RenderDevice& d,ID3D12DescriptorHeap* surfaceHeap){
   wchar_t value[32]{};
@@ -22,7 +22,7 @@ struct SunShadows {
    if(wcscmp(value,L"0")&&wcscmp(value,L"1"))throw std::runtime_error("Sun shadows must be 0 or 1");enabled=value[0]==L'1';enabledOverride=true;
   }
   if(GetEnvironmentVariableW(L"STARLIGHT_SHADOW_RESOLUTION",value,32)){
-   if(wcscmp(value,L"1024")&&wcscmp(value,L"2048")&&wcscmp(value,L"4096"))throw std::runtime_error("Shadow resolution must be 1024, 2048 or 4096");resolution=UINT(_wtoi(value));resolutionOverride=true;
+   if(wcscmp(value,L"1024")&&wcscmp(value,L"2048")&&wcscmp(value,L"4096"))throw std::runtime_error("Shadow resolution must be 1024, 2048 or 4096");requestedResolution=resolution=UINT(_wtoi(value));resolutionOverride=true;
   }
   allocate(d,surfaceHeap,resolution);
   createPipeline(d);
@@ -41,7 +41,7 @@ struct SunShadows {
  }
  void setQuality(RenderDevice& d,ID3D12DescriptorHeap* surfaceHeap,int quality){
   if(!enabledOverride)enabled=quality>0;
-  UINT size=enabled?(resolutionOverride?resolution:quality==1?1024:quality==3?4096:2048):1;
+  UINT size=enabled?(resolutionOverride?requestedResolution:quality==1?1024:quality==3?4096:2048):1;
   allocate(d,surfaceHeap,size);
  }
  void createPipeline(RenderDevice& d){
