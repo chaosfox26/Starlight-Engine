@@ -1550,7 +1550,7 @@ class AdventurePlayer {
         presentationVelocity_={};
         // Without collision there is no controller to land a launch, so the arc is flown here: up at 6 m/s, back to launch height when the vertical speed reaches -6 m/s.
         if(launchAirborne_){controlVelocity_.y-=9.81*dt;velocity.x=controlVelocity_.x;velocity.z=controlVelocity_.z;if(controlVelocity_.y<=-6){launchAirborne_=false;control_.remaining=1;controlVelocity_={};++impactSerial_;}}
-        if(right==0 && forward==0 && dodgeFraction==0){update_rules();return;}
+        if(velocity.x==0 && velocity.z==0){update_rules();return;}
         const auto presentationStart=position;
         Vec3 delta=velocity*dt;
         // Bounded substeps prevent tunnelling through thin walls at high speed.

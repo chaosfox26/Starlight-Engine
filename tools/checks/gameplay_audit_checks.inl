@@ -39,4 +39,16 @@ static void gameplay_audit_checks(const auto& require){
         for(int i=0;i<720;++i)p.move(0,0,1./120.);
         require(!p.crowd_control().active,"GAME-1: A launch on a player in a no-collision scene ends instead of freezing the player");
     }
+    {
+        // GAME-2: forced movement (knockback, pull) must move the player when collision is off.
+        SceneData level;level.Game.emplace();level.Game->Collision=false;level.Game->SpawnZ=0;
+        AdventurePlayer p;p.start(level);auto start=p.position;
+        p.apply_control(ControlEffect::Knockback,{1,true},true,false,{0,1.7,-3});
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.position.z>start.z+2.5,"GAME-2: Knockback moves the player in a no-collision scene");
+        p.start(level);start=p.position;
+        p.apply_control(ControlEffect::Pull,{1,true},true,false,{0,1.7,-5});
+        for(int i=0;i<60;++i)p.move(0,0,1./120.);
+        require(p.position.z<start.z-3,"GAME-2: Pull moves the player in a no-collision scene");
+    }
 }
