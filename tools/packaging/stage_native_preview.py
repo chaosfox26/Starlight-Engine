@@ -26,7 +26,7 @@ parser.add_argument('--runtime-directory', type=Path)
 parser.add_argument('--toolchain-directory', type=Path)
 parser.add_argument('--streamline-sdk', type=Path)
 parser.add_argument('--rr-dll', type=Path, default=Path(os.environ.get('STARLIGHT_RR_DLL', 'D:/Upscaler updates/nvngx_dlssd.dll')), help='nvngx_dlssd.dll to ship (env STARLIGHT_RR_DLL)')
-parser.add_argument('--rr-license', type=Path, default=Path(os.environ['STARLIGHT_RR_LICENSE']) if os.environ.get('STARLIGHT_RR_LICENSE') else root.parent/'GameProject/starlight-realms/native-dx12/third_party/sdk/streamline/external/ngx-sdk/license.txt', help='NVIDIA RTX SDK license text to ship (env STARLIGHT_RR_LICENSE)')
+parser.add_argument('--rr-license', type=Path, default=Path(os.environ.get('STARLIGHT_RR_LICENSE', 'NVIDIA-RTX-SDK-license.txt')), help='NVIDIA RTX SDK license text to ship (env STARLIGHT_RR_LICENSE); the SDK is not stored in this repository, so pass its license file')
 args = parser.parse_args()
 for external in (args.rr_dll, args.rr_license):
     if not external.is_file():

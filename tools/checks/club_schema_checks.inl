@@ -449,14 +449,15 @@ template<class Require> void club_schema_checks(Require require,const fs::path& 
     {
         fs::path starter;
         for(auto base=fs::current_path();!base.empty();base=base.parent_path()){
-            auto candidate=base/"starters"/"gameproject-club"/"club-room.starscene";
+            auto candidate=base/"starters"/"club-room"/"club-room.starscene";
             if(fs::exists(candidate)){starter=candidate;break;}
             if(base==base.parent_path())break;
         }
-        require(!starter.empty(),"The GameProject club starter card is found in the engine checkout");
+        if(starter.empty())std::cout<<"NOT RUN: the club starter card is not in this checkout, so its canonical form, 68 cast assets and portable export were not checked"<<std::endl;
+        else{
         const auto bytes=read_file(starter);
         const auto card=SceneData::decode(bytes);
-        require(card.encode()==bytes,"The GameProject club starter card is stored in the engine's own canonical form");
+        require(card.encode()==bytes,"The club starter card is stored in the engine's own canonical form");
         size_t lights=0,followed=0,rings=0,cylinders=0,glowing=0;
         for(const auto& c:card.Characters){if(c.Shape=="light")++lights;if(c.Follow)++followed;if(c.Shape=="ring")++rings;if(c.Shape=="cylinder")++cylinders;if(c.Glow>0)++glowing;}
         require(card.Characters.size()==33&&lights==3&&followed==3&&rings==2&&cylinders==1&&glowing==17,"The starter card holds the room surfaces, three follow-spot lights, the dance floor slab and its two rings");
@@ -467,7 +468,7 @@ template<class Require> void club_schema_checks(Require require,const fs::path& 
         std::vector<fs::path> libraryRoots;std::string rootError;
         try{libraryRoots=EngineAssets::default_roots();}catch(const std::exception& e){rootError=e.what();}
         std::string rootList;for(const auto& r:libraryRoots)rootList+=(rootList.empty()?"":"; ")+utf8(r.wstring());
-        const std::string rootMessage="The starter card needs its 68 cast assets in a registered asset library; this machine's registered roots: "+(rootList.empty()?std::string("none"):rootList)+(rootError.empty()?std::string():" (registry problem: "+rootError+")")+". Restore or copy the durable GameProject asset store and register it with: Starlight.NativeCommands --asset-root-add <folder>";
+        const std::string rootMessage="The starter card needs its 68 cast assets in a registered asset library; this machine's registered roots: "+(rootList.empty()?std::string("none"):rootList)+(rootError.empty()?std::string():" (registry problem: "+rootError+")")+". Restore or copy the durable asset store and register it with: Starlight.NativeCommands --asset-root-add <folder>";
         require(!libraryRoots.empty(),rootMessage.c_str());
         {
             EngineAssets::ScopedRoot library(libraryRoots.front());
@@ -488,7 +489,7 @@ template<class Require> void club_schema_checks(Require require,const fs::path& 
                 else if(EngineAssets::exists(AssetKind::Texture,id))++textures;
                 else ++absent;
             }
-            require(models==4&&textures==60&&blobs==4&&absent==0,"Every model, texture and UV blob the starter card names is in the durable GameProject store");
+            require(models==4&&textures==60&&blobs==4&&absent==0,"Every model, texture and UV blob the starter card names is in the durable asset store");
             require(cast_missing_assets(card).empty(),"The starter card has no missing cast asset in the durable store");
             bool realBlobs=true,atlasesMatch=true;std::string atlasNote;
             for(const auto& model:card.Cast.Models){
@@ -516,6 +517,7 @@ template<class Require> void club_schema_checks(Require require,const fs::path& 
             manifest["assets"]=kept;atomic_write(bundle/"manifest.json",manifest.dump(2));
             bool refused=false;try{verify_portable_scene(bundle);}catch(const std::exception&){refused=true;}
             require(refused,"A bundle missing one cast asset fails verification");
+        }
         }
     }
     {

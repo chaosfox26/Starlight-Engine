@@ -200,11 +200,11 @@ static void decode_fuzz_checks(const auto& require, const fs::path& folder) {
         hunt("built scene", json::parse(built.encode()), 1, rounds * 2, scene_read, scene_save);
         sweep("built scene", json::parse(built.encode()), 1, 300, scene_read, scene_save);
     }
-    const struct { const char* folderName; const char* file; size_t divisor; } starters[] = {{"empty-demo", "empty-demo.starscene", 1}, {"gameproject-club", "club-room.starscene", 4}, {"moonseed-glade", "moonseed-glade.starscene", 40}};
+    const struct { const char* folderName; const char* file; size_t divisor; } starters[] = {{"empty-demo", "empty-demo.starscene", 1}, {"club-room", "club-room.starscene", 4}, {"moonseed-glade", "moonseed-glade.starscene", 40}};
     uint64_t salt = 2;
     for (const auto& starter : starters) {
         const auto path = find_starter(starter.folderName, starter.file);
-        if (path.empty()) continue;
+        if (path.empty()) { std::cout << "Fuzz: NOT RUN: the starter scene " << starter.file << " is not in this checkout, so it was not fuzzed" << std::endl; continue; }
         hunt(starter.file, json::parse(read_file(path)), salt, std::max<size_t>(3, rounds / starter.divisor), scene_read, scene_save);
         sweep(starter.file, json::parse(read_file(path)), salt++, starter.divisor == 1 ? 100000 : 150 / starter.divisor, scene_read, scene_save);
     }
