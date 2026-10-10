@@ -282,25 +282,9 @@
       "group": "Automation/runtime",
       "path": "deep/src/runtime.cpp",
       "purpose": "Native project host",
-      "output": "Running Empty/game project module",
+      "output": "Running project module",
       "status": "Product runtime, not test coverage by itself",
       "integrationScope": "engine tool/component; assess before integration"
-    },
-    {
-      "group": "Project-specific",
-      "path": "deep/projects/GameProject/net/build-net.bat",
-      "purpose": "Build standalone GameProject network test",
-      "output": "net/bin/test_net.exe",
-      "status": "Separate project scope; not general engine audit",
-      "integrationScope": "reference-only; not automatic audit execution"
-    },
-    {
-      "group": "Project-specific",
-      "path": "deep/projects/GameProject/net/test_net.cpp",
-      "purpose": "Standalone network-module test program",
-      "output": "Console/network test behavior",
-      "status": "Requires separate environment/endpoint review before inclusion",
-      "integrationScope": "reference-only; not automatic audit execution"
     },
     {
       "group": "Reference/migration",

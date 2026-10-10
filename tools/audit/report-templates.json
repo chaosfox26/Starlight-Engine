@@ -59,7 +59,7 @@
       "",
       "## Ownership and execution paths",
       "",
-      "```text\nNative Win32 UI / commands\n  -> authored SceneData + undo/save transactions\n  -> NativeSession worker (camera, simulation, scene updates)\n  -> render packet -> viewport C ABI -> D3D12 resources\n  -> raster / inline DXR -> wavelet or native RR -> atmosphere/composite -> presentation\n\nActive Play -> existing editor canvas/session; retained secondary-preview class -> separate session\nNative physics wrapper -> Jolt jobs/collision cooking -> body poses\nTerrainFlow + obstacle coverage -> water/lava surface geometry\n\nProject/preset UI -> native Starlight host -> Empty / game project DLL\nGameProject crowd preparation -> persistent range workers -> serial GPU submission\n```",
+      "```text\nNative Win32 UI / commands\n  -> authored SceneData + undo/save transactions\n  -> NativeSession worker (camera, simulation, scene updates)\n  -> render packet -> viewport C ABI -> D3D12 resources\n  -> raster / inline DXR -> wavelet or native RR -> atmosphere/composite -> presentation\n\nActive Play -> existing editor canvas/session; retained secondary-preview class -> separate session\nNative physics wrapper -> Jolt jobs/collision cooking -> body poses\nTerrainFlow + obstacle coverage -> water/lava surface geometry\n\nProject/preset UI -> native Starlight host -> Empty / project DLL\nProject crowd preparation -> persistent range workers -> serial GPU submission\n```",
       "",
       "This diagram is a source-backed interpretation of the inspected module relationships. It is not a captured runtime trace; consult include/build evidence and subsystem citations.",
       "",

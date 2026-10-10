@@ -11,11 +11,11 @@ REVIEWED = '2026-09-23'
 ENGINES = ['Unreal Engine 5', 'Unity 6', 'Godot 4']
 # These are reviewed descriptions, not live online discovery. URLs may roll forward.
 ROWS = [
-    ('Animation workflow', ['Static model import','Routes and simulation controls','Crowd runtime'], [
+    ('Animation workflow', ['Static model import','Routes and simulation controls'], [
         ('Animation Blueprints support character animation logic.', 'https://dev.epicgames.com/documentation/unreal-engine/animation-blueprints-in-unreal-engine'),
         ('Animation systems support clips and controller-based animation workflows.', 'https://docs.unity3d.com/6000.0/Documentation/Manual/AnimationOverview.html'),
         ('Animation nodes and an animation editor provide animation authoring.', 'https://docs.godotengine.org/en/stable/tutorials/animation/')],
-     'Prove imported character animation through editor authoring and standalone export. Routes and a specialized crowd runtime are not equivalent to that pipeline.'),
+     'Prove imported character animation through editor authoring and standalone export. Routes and simulation controls are not equivalent to that pipeline.'),
     ('Gameplay authoring', ['Adventure gameplay foundation'], [
         ('Blueprints provides node-based gameplay scripting.', 'https://dev.epicgames.com/documentation/en-us/unreal-engine/blueprints-visual-scripting-in-unreal-engine'),
         ('C# scripting provides programmable gameplay behavior.', 'https://docs.unity3d.com/6000.0/Documentation/Manual/scripting.html'),

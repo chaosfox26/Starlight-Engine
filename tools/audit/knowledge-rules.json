@@ -119,7 +119,7 @@
     "Static model import": [
       "Bring a model into the scene as preview geometry.",
       "Choose a GLB model, validate it, then place and transform instances. The importer handles static mesh geometry and validates its buffers/accessors/hierarchy.",
-      "Imported objects feed scene geometry and optional sculpt/collision preparation. Creator import is distinct from the skinned crowd runtime.",
+      "Imported objects feed scene geometry and optional sculpt/collision preparation. Creator import is distinct from skinned character runtimes.",
       "Partial asset pipeline: static GLB preview"
     ],
     "Render ownership and updates": [
@@ -190,15 +190,9 @@
     ],
     "Project host boundary": [
       "Launch native projects with selected scenes and presets.",
-      "Choose a project manifest, choose a scene, reconcile/check/save preset settings and launch the native host. Empty and GameProject are project modules.",
+      "Choose a project manifest, choose a scene, reconcile/check/save preset settings and launch the native host. Empty is the project module in this tree; other project folders are built when present.",
       "Project schema 3 and .startest settings belong to the project workflow. A creator .starscene is not automatically exported into a standalone game.",
       "Implemented host; general export/distribution incomplete"
-    ],
-    "Crowd runtime": [
-      "Exercise large numbers of skinned instances in the separate game project runtime.",
-      "Gather/cull instances, evaluate poses and build instance buckets using specialized project code.",
-      "It shares renderer lineage and worker machinery, but is not the creator static-model importer or 100,000 independent gameplay entities.",
-      "Implemented specialized runtime; scope-specific results"
     ],
     "Persistent CPU workers": [
       "Reuse CPU threads for parallel preparation.",

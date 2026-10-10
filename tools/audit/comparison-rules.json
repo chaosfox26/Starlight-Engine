@@ -11,8 +11,7 @@
       "Animation workflow",
       [
         "Static model import",
-        "Routes and simulation controls",
-        "Crowd runtime"
+        "Routes and simulation controls"
       ],
       [
         [
@@ -28,7 +27,7 @@
           "https://docs.godotengine.org/en/stable/tutorials/animation/"
         ]
       ],
-      "Prove imported character animation through editor authoring and standalone export. Routes and a specialized crowd runtime are not equivalent to that pipeline."
+      "Prove imported character animation through editor authoring and standalone export. Routes and simulation controls are not equivalent to that pipeline."
     ],
     [
       "Gameplay authoring",

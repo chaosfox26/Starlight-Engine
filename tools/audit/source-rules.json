@@ -410,7 +410,7 @@
           "accessor|Accessor"
         ]
       ],
-      "Creator static import must not inherit the separate game project crowd runtime’s skinning/animation capability. Full imported material/animation authoring is not established."
+      "Creator static import must not be credited with skinning/animation capability. Full imported material/animation authoring is not established."
     ],
     [
       "Reusable assets and scene composition",
@@ -662,29 +662,10 @@
         ],
         [
           "CMakeLists.txt",
-          "foreach\\(project_name IN ITEMS Empty GameProject"
+          "foreach\\(project_name IN LISTS starlight_projects"
         ]
       ],
       "Creator scene Play and project-DLL execution are separate workflows. See current publication and closeout evidence for tested export cases; project-host and editor-player workflows remain distinct."
-    ],
-    [
-      "Crowd runtime",
-      "The separate game project contains crowd gathering, pose evaluation and instance-bucket emission using renderer parallel preparation.",
-      [
-        [
-          "deep/projects/GameProject/project.cpp",
-          "poolThreads"
-        ],
-        [
-          "deep/projects/GameProject/project.cpp",
-          "pose|Pose"
-        ],
-        [
-          "deep/projects/GameProject/project.cpp",
-          "bucket|Bucket"
-        ]
-      ],
-      "Do not attribute large-crowd figures to the editor or to independent gameplay entities; inherited results are workload-specific."
     ],
     [
       "Persistent CPU workers",
