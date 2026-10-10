@@ -36,7 +36,7 @@
 | analysis | Compact reports and retained historical evidence; new runs use analysis/run-*. This is not source or an alternate engine |
 | audit-runs | Original regression evidence, including the required comparison.bin fixture |
 | Starlight Documents/Current/docs/claude-handoff/analysis | Selected analysis evidence kept beside the current handoff |
-| publication | Independent sanitized GitHub checkout, formerly D:\projects\Starlight-Publish. Never use as the primary development tree or push the private parent Git history |
+| publication | Independent sanitized checkout of this repository for publication. Never use it as the primary development tree. |
 | _quarantine (removed) | Former temporary holding area, manually deleted by the owner after review. It is no longer available for restoration. See CLEANUP-STATUS.md for post-removal verification. |
 
 The analyzer excludes analysis, publication and _quarantine from its engine file census and records that scope explicitly. Existing reports keep their original paths as historical evidence.
@@ -77,6 +77,5 @@ Claude Code and Starbus are separate projects and are untouched. Old automation 
 
 The latest full run is analysis/run-20260929-213020-5404-8804937: 10 of 13 stages passed. Remaining failures are the editor-controls deadline, fullscreen timing-display visibility, and denoiser object motion vectors. Summary and retention changes were checked separately afterward; they do not resolve these runtime failures. Raw captures and temporary packages from this run were compacted; written results remain. Do not interpret missing historical captures as missing engine assets.
 
-The publication history has been rewritten for identity cleanup. Collaborators with an older publication clone should use a fresh clone rather than merge the old history back. The local parent development history is separate and must not be pushed. The external privacy utility is D:/projects/Starlight-Privacy-Tools/anonymize_starlight.py; its private identity list, backups and reports are intentionally outside this engine folder and must not be copied into publication. It is not a build dependency.
 
 Existing archives are dated snapshots, not live mirrors. Folder sizes change with builds and tests; use current measurements rather than old report sizes.

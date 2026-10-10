@@ -37,7 +37,7 @@ The physics library is the git submodule `deep/third_party/JoltPhysics` (https:/
 0373ec0dd762e4bc2f6acdb08371ee84fa23c6db
 ```
 
-Check it with `git -C deep/third_party/JoltPhysics rev-parse HEAD`. If the folder is empty, run `git submodule update --init deep/third_party/JoltPhysics`. The folder must be a real directory. A junction or symbolic link there makes the `native-no-managed` test report "Linked path requires separate verification".
+Check it with `git submodule status deep/third_party/JoltPhysics` (a leading `-` means the submodule is not initialised, and the commit shown must be the pinned one). Do not use `git -C deep/third_party/JoltPhysics rev-parse HEAD` on an empty folder: git then walks up and reports the repository's own commit. If the folder is empty, run `git submodule update --init deep/third_party/JoltPhysics`. The folder must be a real directory. A junction or symbolic link there makes the `native-no-managed` test report "Linked path requires separate verification".
 
 ## 3. Files that are not in git
 
@@ -81,7 +81,7 @@ out\build\Release\Starlight.NativeTextureChecks.exe C:\sc\tex
 
 It prints `365 texture checks passed (2K/4K DDS, BC5/BC7, memory loaders, WARP upload)`.
 
-Some checks read a club starter scene that is not part of this repository. They print `NOT RUN: <reason>` and skip. They are never counted as passes. Nineteen core checks are skipped for that reason (the club starter card checks in `tools/checks/club_schema_checks.inl`, `adversarial_parser_checks.inl` and `decode_fuzz_checks.inl`).
+Some checks read a club starter scene that is not part of this repository. They print `NOT RUN: <reason>` and skip. They are never counted as passes. One more case can print `NOT RUN: symbolic links cannot be created in this session`; it runs when symbolic links can be created (Windows Developer Mode on, or an elevated shell). About nineteen core checks are skipped for that reason (the club starter card checks in `tools/checks/club_schema_checks.inl`, `adversarial_parser_checks.inl` and `decode_fuzz_checks.inl`).
 
 ## 6. The whole verification in one command
 
