@@ -263,7 +263,7 @@ The following is the recoverable milestone sequence. Earlier phases have no prec
 | Order / recorded date | Completed work or outcome | Boundaries / lessons |
 |---|---|---|
 | Earlier foundation | Preserved GameProject native D3D12 renderer; initial process separation and root manifests. | Original reference remains distinct from Starlight creator. |
-| Modular runtime phase | `.star`/`.startest` reconciliation, DLL project host, Empty/GameProject modules, project GUI and launch-plan workflow. | Does not export `.starscene` games. |
+| Modular runtime phase | `.star`/`.startest` reconciliation, DLL project host, Empty and other project modules, project GUI and launch-plan workflow. | Does not export `.starscene` games. |
 | Controlled optimization phase, now paused | Persistent range workers and 96-byte crowd vertices retained. Job038 reconstructed paired comparison recorded 130.967 → 148.583 FPS (+13.447%). | Specific reconstruction, not cumulative/universal gain. Later acceptance recorded crowd 144.3, club 421.9, Empty 415.5 FPS. |
 | Rejected optimization experiments | Job043 mesh-shader candidate differed visually; Job044 mixed pipeline failed initialization. | Not accepted improvements; no delivered mesh-shader system inferred. |
 | Creator foundation | WPF/native host, static import, route drawing/playback, selection/transforms, scene save/history, local AI commands, project panel, music. | Missing `SS_NOTIFY` once caused real viewport hit testing to fail despite synthetic message tests; fixed and regression retained. |

@@ -48,7 +48,6 @@ Workspace root: `D:/projects/Starlight-Engine/`.
 
 | Layer | Location | Responsibility |
 |---|---|---|
-| Original GameProject reference | `<separate-game-project>/starlight-realms/native-dx12/` | Preserved renderer/runtime reference and original tools. Not overwritten by the latest editor changes. |
 | Modular Starlight runtime | `deep/` | C++ project host, shared rendering implementation, project DLLs, settings reconciliation and controlled engine experiments. |
 | Creator editor | `editor/` | WPF UX, editable scene data, geometry creation, terrain, sculpting, media and native preview integration. |
 | Early compatibility host | Root `bin/`, root `projects/`, `.starlight.json` manifests | Earlier process-launch separation experiment. Not the same architecture as the later `.star`/DLL runtime. |
@@ -70,10 +69,8 @@ The actual desktop shortcut at `C:/Users/user/OneDrive/Desktop/Starlight Editor.
 Current examples:
 
 - `deep/projects/Empty/Empty.star` → `Empty.dll`, scene `empty`.
-- `deep/projects/GameProject/GameProject.star` → `GameProject.dll`, scenes including `crowd`, `club`, and `live-bar`.
-- The GameProject manifest still references model and texture directories in the original workspace by absolute path.
 
-The current `.star` examples use schema version **3**. A project declares its module, common arguments, named scenes, default scene and supported test capabilities. The crowd scene declares checks such as zero culled instances and at least 100,000 skinned instances. Those declarations are acceptance requirements, not proof that every launch satisfies them.
+The current `.star` examples use schema version **3**. A project declares its module, common arguments, named scenes, default scene and supported test capabilities. Test declarations in a project are acceptance requirements, not proof that every launch satisfies them.
 
 The WPF `ProjectWindow` can select a project, select a scene, load/edit a preset, reconcile a working copy, save the result and launch `deep/bin/Starlight.exe`. It uses `ProcessStartInfo.ArgumentList` and first requests a launch plan. Reconciliation runs on a copied preset and has a bounded timeout.
 
@@ -457,7 +454,7 @@ All relative paths below are beneath `D:/projects/Starlight-Engine/`.
 |---|---|
 | `deep/src/runtime.cpp` | `.star` project/preset host and DLL entry point loading. |
 | `deep/src/preset_reconciliation.inc` | Preset reconciliation implementation. |
-| `deep/projects/{Empty,GameProject}/` | Project manifests/modules and project-specific runtime source. |
+| `deep/projects/Empty/` | Project manifests/modules and project-specific runtime source. |
 | `deep/settings/native-1440p.startest` | Example native performance preset. |
 | `deep/engine/render_device.h` | Shared renderer, resource lifecycle, pacing, scene/shader/crowd paths. |
 | `deep/engine/persistent_workers.h` | Persistent range-worker pool. |

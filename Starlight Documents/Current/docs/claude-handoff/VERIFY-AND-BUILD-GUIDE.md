@@ -17,7 +17,7 @@ Always use absolute paths in scripted runs. Paths below use `<worktree>` for the
 | Python 3 | On `PATH` as `python` | Needed by `verify_all.py`, `run_ledger.py`, the impact tool and the `py-` ctest tests. |
 | Windows SDK, DXC | `C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe` | `CMakeLists.txt` calls `find_program(... dxc ... REQUIRED)`, so configure stops without it. |
 | Jolt Physics | `deep\third_party\JoltPhysics` | A git submodule (see `.gitmodules`). An empty folder in a worktree. Section 3 links a populated copy. |
-| NGX SDK | `<separate-game-project>\starlight-realms\native-dx12\third_party\sdk\streamline\external\ngx-sdk` | Used by the renderer. The default path is `<checkout>\..\GameProject\...`. Configure stops with `Set STARLIGHT_NGX_SDK to the installed native NGX SDK` when `include\nvsdk_ngx.h` is missing. For a worktree outside the `Starlight-Engine-repair` sibling layout, pass `-DSTARLIGHT_NGX_SDK=<absolute path>`. |
+| NGX SDK | The folder of the NVIDIA NGX SDK, for example `C:\sdk\ngx-sdk` | Used by the renderer. There is no default path and the SDK is not stored in this repository: pass `-DSTARLIGHT_NGX_SDK=<absolute path>`. Configure stops with `Set STARLIGHT_NGX_SDK to the folder of the NVIDIA NGX SDK` when `include\nvsdk_ngx.h` is missing. |
 
 The configure flags used by the setup script are:
 

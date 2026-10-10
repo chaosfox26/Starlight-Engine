@@ -14,7 +14,7 @@ Current packaging verification and remaining issues are recorded at the top of t
 
 Publication history was rewritten for identity cleanup. Do not merge an older publication history back; use a fresh clone. Privacy tooling and private backups live outside this folder and are not build inputs.
 
-GameProject, Claude Code and Starbus are outside this cleanup. Do not change those projects or services as part of Starlight organization.
+Claude Code and Starbus are outside this cleanup. Do not change those projects or services as part of Starlight organization.
 
 Current comprehensive reference: Starlight Documents/Current/docs/claude-handoff/CURRENT-ENGINE-WORKUP.md, with FEATURE-CATALOG.md and TOOL-CATALOG.md beside it. These supersede dated handoff status statements.
 Overnight repair session 8 October 2026 (every environment variable, changelog, verification commands, known gaps): Starlight Documents/Current/docs/claude-handoff/REPAIR-SESSION-20261008-CHANGES.md.
