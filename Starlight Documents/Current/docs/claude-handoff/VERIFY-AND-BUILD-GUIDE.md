@@ -208,7 +208,7 @@ python <worktree>\tools\regression\run_ledger.py --build-dir <worktree>\out\agen
 | `native-core` fails when CTest runs from the build folder | Old working-directory bug | Fixed in `2b43d9c`. Run CTest with `--test-dir`, as in section 5.6. |
 | `native-no-managed` reports "Linked path requires separate verification" | The Jolt junction in a worktree | Expected in a worktree. Do not edit the manifest. Check the main checkout instead. |
 | `native-textures` reports a missing `editor/checks/corner-controls/left-controls.png` | The worktree is older than `integration-20261009` | On that branch these PNGs are tracked. Reset the worktree to the branch tip. |
-| `cmake` configure fails with `Set STARLIGHT_NGX_SDK ...` | NGX default path is not present for this checkout | Pass `-DSTARLIGHT_NGX_SDK=<absolute path>` (section 1). |
+| `cmake` configure fails with `Set STARLIGHT_NGX_SDK ...` | the NGX SDK folder was not given | Pass `-DSTARLIGHT_NGX_SDK=<absolute path>` (section 1). |
 | Configure fails at `dxc` (`REQUIRED`) | Windows SDK 10.0.26100.0 is not installed, and `dxc.exe` is not on `PATH` | Install the Windows SDK, or put `dxc.exe` on `PATH`. |
 | Jolt sources not found at configure | The submodule folder is empty | Run `git submodule update --init deep/third_party/JoltPhysics`, or let `agent-setup.ps1` link a populated copy. |
 | A crashed run shows exit code 127 in Git Bash | Git Bash reports a Windows fast-fail (0xC0000409) as 127, and `timeout` also shows 127 | Use the PowerShell runner `D:\projects\_recovery\claude-fix-20261002\stress\varrun.ps1` to get the real exit code. |

@@ -1,3 +1,5 @@
+Built with AI assistance. This engine was designed, written and tested by AI (Claude, by Anthropic, working with Codex and a human owner who directs the work).
+
 # Starlight Engine — current workspace
 
 Start with [WORKSPACE-STRUCTURE.md](WORKSPACE-STRUCTURE.md). This is the authoritative development directory. Do not select a version by searching old executables or dated reports.
